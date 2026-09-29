@@ -1,0 +1,192 @@
+{
+ "questions": [
+  {
+   "question_id": "9e30818c-9f89-5d6e-880b-34c513b912f5",
+   "question_number": 1,
+   "sort_order": 0,
+   "is_multipart": false,
+   "question_text": "A cuboid face measures $5\\,\\text{cm}$ by $2\\,\\text{cm}$. Find its area.",
+   "question_text_sinhala": null,
+   "lesson_ids": [
+    "00000000-0000-4000-8000-000000000007"
+   ],
+   "diagram_dsl": null,
+   "answers": [
+    {
+     "answer_id": "6ca296f0-68c2-5972-b47c-dc2890a51be9",
+     "approach": "Area $=$ length $\\times$ width.\n\n- $5 \\times 2$",
+     "final_answer_latex": "$10\\,\\text{cm}^2$"
+    }
+   ],
+   "ingestion_metadata": {
+    "needs_human_review": true
+   }
+  },
+  {
+   "question_id": "1cf7ea0f-15a3-5029-a555-d808059baa30",
+   "question_number": 2,
+   "sort_order": 1,
+   "is_multipart": true,
+   "question_text": "A rectangle is $10$ cm by $4$ cm.",
+   "question_text_sinhala": null,
+   "lesson_ids": [
+    "00000000-0000-4000-8000-000000000007",
+    "00000000-0000-4000-8000-000000000009"
+   ],
+   "diagram_dsl": null,
+   "answers": [],
+   "sub_questions": [
+    {
+     "sub_question_id": "aa5cf7c9-cb39-5579-9a41-4554677a3320",
+     "label": "a",
+     "sort_order": 0,
+     "text": "Find its perimeter.",
+     "text_sinhala": null,
+     "diagram_dsl": null,
+     "sub_answer": {
+      "sub_answer_id": "6c7ffab5-8ff9-5151-b71f-13b16c2c0a21",
+      "approach": "$2(10+4)$",
+      "final_answer_latex": "$28\\,\\text{cm}$"
+     },
+     "sub_questions": []
+    },
+    {
+     "sub_question_id": "c427706e-c091-56b0-ae10-9c61b4745b19",
+     "label": "b",
+     "sort_order": 1,
+     "text": "It is split into two equal squares.",
+     "text_sinhala": null,
+     "diagram_dsl": null,
+     "sub_questions": [
+      {
+       "sub_question_id": "ed1dd312-b850-561c-8ed5-1cd77957ca5d",
+       "label": "i",
+       "sort_order": 0,
+       "text": "Find the side of each square.",
+       "text_sinhala": null,
+       "diagram_dsl": null,
+       "sub_answer": {
+        "sub_answer_id": "dba4b631-4810-50e3-aecf-16567087a149",
+        "approach": "$10/2$",
+        "final_answer_latex": "$5\\,\\text{cm}$"
+       },
+       "sub_questions": []
+      },
+      {
+       "sub_question_id": "dc12c31d-ceab-509a-bb48-8c26c3c4f917",
+       "label": "ii",
+       "sort_order": 1,
+       "text": "Find the perimeter of one square.",
+       "text_sinhala": null,
+       "diagram_dsl": null,
+       "sub_answer": {
+        "sub_answer_id": "61559668-c71d-573e-9f12-dd3e76926e85",
+        "approach": "$4 \\times 5$",
+        "final_answer_latex": "$20\\,\\text{cm}$"
+       },
+       "sub_questions": []
+      }
+     ]
+    }
+   ],
+   "ingestion_metadata": {
+    "needs_human_review": true
+   }
+  },
+  {
+   "question_id": "bfff5f95-0950-56d5-b304-3bfc3386ad4f",
+   "question_number": 3,
+   "sort_order": 2,
+   "is_multipart": false,
+   "question_text": "The rectangle in the figure has sides in the ratio $9:4$.",
+   "question_text_sinhala": null,
+   "lesson_ids": [
+    "00000000-0000-4000-8000-000000000009"
+   ],
+   "diagram_dsl": {
+    "schema": "vibhaga.diagram",
+    "schemaVersion": 1,
+    "canvas": {
+     "width": 200,
+     "height": 120
+    },
+    "defaults": {
+     "strokeWidth": 2,
+     "fontSize": 18
+    },
+    "a11y": {
+     "title": "Synthetic rectangle ABCD",
+     "description": "A rectangle with vertices A, B, C, D."
+    },
+    "elements": [
+     {
+      "id": "AB",
+      "type": "line",
+      "points": [
+       [
+        20,
+        20
+       ],
+       [
+        180,
+        20
+       ]
+      ]
+     },
+     {
+      "id": "BC",
+      "type": "line",
+      "points": [
+       [
+        180,
+        20
+       ],
+       [
+        180,
+        100
+       ]
+      ]
+     },
+     {
+      "id": "CD",
+      "type": "line",
+      "points": [
+       [
+        180,
+        100
+       ],
+       [
+        20,
+        100
+       ]
+      ]
+     },
+     {
+      "id": "DA",
+      "type": "line",
+      "points": [
+       [
+        20,
+        100
+       ],
+       [
+        20,
+        20
+       ]
+      ]
+     }
+    ]
+   },
+   "answers": [
+    {
+     "answer_id": "ca959279-6020-5a8b-bca1-9d5dfc15af09",
+     "approach": "Count the units.",
+     "final_answer_latex": "$9:4$"
+    }
+   ],
+   "ingestion_metadata": {
+    "needs_human_review": true
+   }
+  }
+ ]
+}

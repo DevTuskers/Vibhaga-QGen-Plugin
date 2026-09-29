@@ -1,0 +1,37 @@
+id_seed: "w0-selftest"
+lessons:
+  L07: 00000000-0000-4000-8000-000000000007
+  L09: 00000000-0000-4000-8000-000000000009
+figures:
+  F1: figures/q3.json
+questions:
+  - n: 1
+    lessons: [L07]
+    stem: "A cuboid face measures $5\\,\\text{cm}$ by $2\\,\\text{cm}$. Find its area."
+    approach: "Area $=$ length $\\times$ width.\n\n- $5 \\times 2$"
+    final: "$10\\,\\text{cm}^2$"
+  - n: 2
+    lessons: [L07, L09]
+    stem: "A rectangle is $10$ cm by $4$ cm."
+    parts:
+      - label: a
+        text: "Find its perimeter."
+        approach: "$2(10+4)$"
+        final: "$28\\,\\text{cm}$"
+      - label: b
+        text: "It is split into two equal squares."
+        parts:
+          - label: i
+            text: "Find the side of each square."
+            approach: "$10/2$"
+            final: "$5\\,\\text{cm}$"
+          - label: ii
+            text: "Find the perimeter of one square."
+            approach: "$4 \\times 5$"
+            final: "$20\\,\\text{cm}$"
+  - n: 3
+    lessons: [L09]
+    stem: "The rectangle in the figure has sides in the ratio $9:4$."
+    figure: F1
+    approach: "Count the units."
+    final: "$9:4$"

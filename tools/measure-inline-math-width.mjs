@@ -39,7 +39,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const UMBRELLA = path.resolve(process.env.VIBHAGA_ROOT ?? path.join(HERE, ".."));
+const UMBRELLA = path.resolve(process.env.VIBHAGA_ROOT ?? path.join(HERE, "..", ".."));
 const ADMIN = path.resolve(process.env.VIBHAGA_ADMIN ?? path.join(UMBRELLA, "Vibhaga-Admin"));
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };

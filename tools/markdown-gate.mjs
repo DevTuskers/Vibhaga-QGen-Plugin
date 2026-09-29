@@ -59,7 +59,7 @@ import path from "node:path";
 // own words (§0.5). ⚠️ The override form was also not written down anywhere — it is in the usage
 // block above now, because a form nobody documented is a form nobody tested.
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const UMBRELLA = path.resolve(process.env.VIBHAGA_ROOT ?? path.resolve(HERE, ".."));
+const UMBRELLA = path.resolve(process.env.VIBHAGA_ROOT ?? path.resolve(HERE, "..", ".."));
 const WEB = path.resolve(process.env.VIBHAGA_WEB ?? path.join(UMBRELLA, "Vibhaga-Web"));
 const ADMIN = path.resolve(process.env.VIBHAGA_ADMIN ?? path.join(UMBRELLA, "Vibhaga-Admin"));
 

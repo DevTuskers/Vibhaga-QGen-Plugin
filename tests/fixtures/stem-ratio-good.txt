@@ -1,0 +1,28 @@
+figure:   stem-ratio-good-1
+source:   constructed; frame is the question figure's own canvas
+channel:  constructed
+stem:     A cuboid has a rectangular face 5 cm long and 2 cm wide.
+ask:      1 the ratio of the face's length to its width
+labels:   A B C D "5 cm" "2 cm"
+points:   A B C D
+segments: AB BC CD DA
+anchors:
+  A 60 40
+  B 310 40
+  C 310 140
+  D 60 140
+claims:
+  K1  right A B C                 | stem     | the face is a rectangle
+  K2  ratio len AB / len BC = 2.5 | stem     | the stem's own 5:2
+  K3  label "A" names A           | printed  |
+  K4  label "B" names B           | printed  |
+  K5  label "C" names C           | printed  |
+  K6  label "D" names D           | printed  |
+  K7  label "5 cm" names AB       | stem     | the stem's own length
+  K8  label "2 cm" names BC       | stem     | the stem's own width
+  K9  derive 5 / 2 = 2.5          | inferred | the ratio the stem actually states
+  K10 none tickMark parallelMark angleArc arrow shaded | printed |
+load-bearing:
+  1 -> K2
+unreadable: (none)
+ambiguous:  (none)

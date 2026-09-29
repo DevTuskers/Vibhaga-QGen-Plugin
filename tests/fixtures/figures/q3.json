@@ -1,0 +1,7 @@
+{"schema":"vibhaga.diagram","schemaVersion":1,"canvas":{"width":200,"height":120},
+ "defaults":{"strokeWidth":2,"fontSize":18},
+ "a11y":{"title":"Synthetic rectangle ABCD","description":"A rectangle with vertices A, B, C, D."},
+ "elements":[{"id":"AB","type":"line","points":[[20,20],[180,20]]},
+             {"id":"BC","type":"line","points":[[180,20],[180,100]]},
+             {"id":"CD","type":"line","points":[[180,100],[20,100]]},
+             {"id":"DA","type":"line","points":[[20,100],[20,20]]}]}

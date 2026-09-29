@@ -743,7 +743,9 @@ def self_test() -> int:
     import unittest
     path = HERE / "test_playground_publish.py"
     if not path.exists():
-        print("test_playground_publish.py not found beside the tool"); return 2
+        path = HERE.parent / "tests" / "test_playground_publish.py"   # plugin layout: tests/ beside tools/
+    if not path.exists():
+        print("test_playground_publish.py not found beside the tool or in ../tests"); return 2
     spec = importlib.util.spec_from_file_location("test_playground_publish", path)
     mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
     res = unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.loadTestsFromModule(mod))
