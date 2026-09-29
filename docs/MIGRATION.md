@@ -20,11 +20,11 @@ Session W0 of the vibhaga-qgen plugin. Source: `Vibhaga-Docs@08c09a9`, tools fro
 | `check-inline-math-width.py` | as-is | as-is | estimator; the measured check is `measure-inline-math-width.mjs` |
 | `measure-inline-math-width.mjs` | as-is + fix | as-is | same UMBRELLA resolution fix as markdown-gate |
 | `vdd_cookbook.py` | as-is | as-is | note: **W3 extends it** — do not rewrite here |
-| `audit-claim-set.py` | **modify** | modify | `channel:` optional (missing ⇒ `constructed`); new required `stem:` header on constructed sets; stem-ratio check (every `ratio`/`angle` claim's value justified by the stem's numbers or a cited `derive`); `SELF_TEST_STEM_RATIO` red-team; scrubbed real id fragments in fixture text |
-| `vdd-check.mjs` | **modify** | modify | "page"→"claim" wording; single tight constructed band (ratio ≤ 2 % · angle ≤ 1 ° · residual ≤ 1 %) — `--band raster` dropped; label metrics (≥ 8 px canvas edge · ≥ 6 px stroke) in `--json` as `labels:`; `--admin` flag > `VIBHAGA_ADMIN` > sibling; new self-test cases |
+| `audit-claim-set.py` | **modify** | modify | `channel:` optional (missing ⇒ `constructed`); new required `stem:` header on constructed sets; stem-ratio check (every `ratio`/`angle` claim's value justified by the stem's numbers or a cited `derive`); `SELF_TEST_STEM_RATIO` red-team; scrubbed real id fragments in fixture text. **Review F1:** a cited `derive` now justifies only if every literal in its expression is a stem number, a constant {1,2,90,180,360}, or a backed derive's value (transitive, no cycles) — an invented `derive 3 / 2 = 1.5` can no longer rescue a copied ratio |
+| `vdd-check.mjs` | **modify** | modify | "page"→"claim" wording; single tight constructed band (ratio ≤ 2 % · angle ≤ 1 ° · residual ≤ 1 %) — `--band raster` dropped; label metrics in `--json` as `labels:`; `--admin` flag > `VIBHAGA_ADMIN` > sibling; new self-test cases. **Review F3:** label metrics are rendered px at each width (viewBox units × render scale), measured to the stroke's EDGE (centreline − half its rendered width), and an unmeasurable bbox fails closed |
 | `run-gate.sh` | **modify** | modify | paper assumptions removed (paper_metadata header, S7 manifest join, quarantine/verdicts, split-PDF sha, 1–2 lessons/question rule → ≥1 lesson uuid); kept markup/KaTeX, Sinhala-in-`\text`, structure, flag-true, no-`exam`, figure checks + red-team fixture |
 | `check-suite.py` | **modify** | modify | re-pointed at the plugin; the single offline runner — unittest discovery, each tool's `--self-test` (vdd-check SKIPs cleanly without an Admin checkout), `node --test` for `.mjs`, link/trap lint over skills |
-| `build-staged.py` (old) | **replace** | replace | new `tools/build-staged.py`: `content.yaml` (or `content.json`) → `staged.json`; deterministic uuid5 ids; refuses duplicate n, unknown lesson/figure key, missing figure file, depth > 2, leaf without approach+final, parts+whole answer, non-bare label, non-uuid lesson |
+| `build-staged.py` (old) | **replace** | replace | new `tools/build-staged.py`: `content.yaml` (or `content.json`) → `staged.json`; deterministic uuid5 ids; refuses duplicate n, **duplicate sibling label (review F2 — same-named parts collide on one uuid5 path)**, unknown lesson/figure key, missing figure file, depth > 2, leaf without approach+final, parts+whole answer, non-bare label, non-uuid lesson |
 | `vdd-layout.mjs` | **keep** | drop (default) | plan said drop unless a kept skill section cites it — `draw-and-verify-question-vdd` **§4.0a** is the explicit-layout recipe for reframing an existing document (§3.1a's contract); kept with its `test_vdd_layout.mjs`; Admin default made HERE-relative |
 | `test_vdd_layout.mjs` | keep | drop (with tool) | `node --test` suite, runs offline |
 | `yaml-from-staged.py` | drop | drop/replace | the inverse direction; not needed by the generation path |
@@ -61,7 +61,7 @@ Session W0 of the vibhaga-qgen plugin. Source: `Vibhaga-Docs@08c09a9`, tools fro
 
 | source @08c09a9 | verdict | what changed / why |
 |---|---|---|
-| `generate-lesson-questions` → `skills/generate` | **modify** | re-pointed to `tools/`; `build-staged` step added; corpus-refusal rule (refuse grades without a corpus checkout); O/L cards assembled from G10+G11 via the O/L mapping with O/L lesson ids; scope cards live in the PRIVATE corpus `maths/grade-NN/scope-cards/` + `maths/ol/scope-cards/` (W2); "Runs so far" ids scrubbed to a one-line summary; W7 rewrites as the orchestrator |
+| `generate-lesson-questions` → `skills/generate` | **modify** | re-pointed to `tools/`; `build-staged` step added; corpus-refusal rule (refuse grades without a corpus checkout); O/L cards assembled from the G10+G11 *scope cards* via the O/L mapping in Vibhaga-Docs `lessons/ol/mathematics.md` (review F4 — O/L refused until BOTH cards exist), with O/L lesson ids; scope cards live in the PRIVATE corpus `maths/grade-NN/scope-cards/` + `maths/ol/scope-cards/` (W2); "Runs so far" ids scrubbed to a one-line summary; W7 rewrites as the orchestrator |
 | `author-question-text` | **modify** | kept §1a (authoring a stem where nothing is printed) + §3 markup law + binding §0 items (e.g. `question_text_sinhala: null`); dropped transcription, furniture quarantine, regime channels; field-corruption lessons kept (silent field corruption is not paper-specific) |
 | `structure-question-parts` | **modify** | plan said "as-is"; the paper-side wrapper (S12 contract, printed-label rulings) had to go — the label/depth/duplicate-id law is kept verbatim |
 | `read-figure-claim-set` | **modify** | constructed channel only; the claim grammar kept verbatim; new `stem:` header + stem-ratio check documented; printed-figure reading and Audit B source-reading dropped |
@@ -82,7 +82,7 @@ Session W0 of the vibhaga-qgen plugin. Source: `Vibhaga-Docs@08c09a9`, tools fro
   code paths and self-tests — the parsers accept them even though the plugin only produces
   `constructed`.
 
-## Hygiene scan — commands and results (re-run 2026-09-30; raw output `wt/qgen-w0/hygiene.txt`)
+## Hygiene scan — commands and results (re-run 2026-09-29; raw output `wt/qgen-w0/hygiene.txt`)
 
 ```
 git grep -nIE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'

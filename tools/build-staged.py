@@ -39,9 +39,14 @@ scope lives on the batch row, never on a question).
 ids are uuid5(NAMESPACE, f"{id_seed}/q{n}" for the question, + "/<label-path>" per part,
 + "+answer" for the (sub-)answer) — two runs on the same spec are byte-identical.
 
-Exit 0 wrote the doc · exit 2 refused (duplicate n · unknown lesson/figure key · missing figure file ·
-parts deeper than 2 · leaf part without approach+final · a question carrying both parts and a whole
-answer · non-bare label · non-uuid lesson · malformed spec).
+⚠️ IDENTITY IS THE SEED + NUMBER + LABEL PATH. After a first publish, keep `id_seed`, `n` and every
+label stable: renumbering or relabelling a part creates NEW uuids, and publish writes NEW rows that
+orphan the published ones — it does not rename in place. (Sibling labels must therefore be unique —
+two parts labelled `a` under one parent collide on the same sub_question_id, and the builder refuses.)
+
+Exit 0 wrote the doc · exit 2 refused (duplicate n · duplicate sibling label · unknown lesson/figure
+key · missing figure file · parts deeper than 2 · leaf part without approach+final · a question
+carrying both parts and a whole answer · non-bare label · non-uuid lesson · malformed spec).
 """
 import argparse
 import json
@@ -116,6 +121,21 @@ def answer_pair(node, where, required):
     return approach is not None
 
 
+def check_sibling_labels(children, where):
+    """Two same-labelled siblings would collide on the same id — the label is part of the uuid5 path.
+    Refuse before any row is built. (Missing/non-bare labels are left for build_part's own refusal.)"""
+    seen = set()
+    for child in children:
+        lab = child.get("label") if isinstance(child, dict) else None
+        if not isinstance(lab, str):
+            continue
+        lab = lab.strip()
+        if lab in seen:
+            die(f"{where}: duplicate part label {lab!r} among siblings — labels key the "
+                f"sub_question_id, so two same-named parts collide")
+        seen.add(lab)
+
+
 def build_part(node, base_id, sort_order, depth, figures, base, where):
     if not isinstance(node, dict):
         die(f"{where}: a part must be a mapping")
@@ -134,6 +154,7 @@ def build_part(node, base_id, sort_order, depth, figures, base, where):
     children = node.get("parts") or []
     if not isinstance(children, list):
         die(f"{where}: 'parts' must be a list")
+    check_sibling_labels(children, where)
     has_answer = answer_pair(node, where, required=not children)
     part_base = f"{base_id}/{label}"
     out = {
@@ -179,6 +200,7 @@ def build_question(node, index, figures, lessons, base, seed):
     children = node.get("parts") or []
     if not isinstance(children, list):
         die(f"{where} (q{n}): 'parts' must be a list")
+    check_sibling_labels(children, f"{where} (q{n})")
     if children and (node.get("approach") is not None or node.get("final") is not None):
         die(f"{where} (q{n}): a question carries either parts OR a whole answer — 'approach'/'final' are only for a part-less question")
     has_answer = answer_pair(node, f"{where} (q{n})", required=not children)

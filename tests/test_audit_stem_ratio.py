@@ -26,6 +26,15 @@ class StemRatioCheckTests(unittest.TestCase):
         r = self.run_tool("stem-ratio-good.txt")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
+    def test_unbacked_derive_fails_and_names_the_literal(self):
+        # the claim cites `derive K9` (= 3/2 = 1.5, matching the drawn value) but the stem
+        # never mentions 3 — an invented derive must not rescue a copied ratio.
+        r = self.run_tool("stem-ratio-unbacked-derive.txt")
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("K2", r.stdout)
+        self.assertIn("not backed", r.stdout)
+        self.assertIn("3", r.stdout)
+
     def test_self_test_passes(self):
         r = subprocess.run([sys.executable, str(TOOL), "--self-test"],
                            capture_output=True, text=True)

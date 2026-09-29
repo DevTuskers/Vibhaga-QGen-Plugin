@@ -92,10 +92,13 @@ notes. Every command below reads credentials from `Vibhaga-Admin/.env.local` at 
 1. **Read the lesson.** From the corpus checkout, list for the lesson: its sections, every worked example and exercise
    (these are what you must *not* copy), its vocabulary in Sinhala as printed, and the figures you could reuse as a
    *kind* of figure. Write that list into your notes. This is your scope statement.
-   - **O/L work:** an O/L scope card is assembled from the grade-10 + grade-11 lesson files via the O/L mapping, and an
-     O/L question is tagged with the O/L lesson ids (owner ruling 2026-09-29). Scope cards live in the PRIVATE corpus at
-     `maths/grade-NN/scope-cards/<NN>-<slug>.yaml` and `maths/ol/scope-cards/` (arrives W2) — never copy one into this
-     public repo.
+   - **O/L work:** an O/L scope card is assembled from the grade-10 + grade-11 *scope cards* (not the lesson
+     files) via the O/L mapping in Vibhaga-Docs `lessons/ol/mathematics.md`, and an O/L question is tagged
+     with the O/L lesson ids (owner ruling 2026-09-29). Scope cards live in the PRIVATE corpus at
+     `maths/grade-NN/scope-cards/<NN>-<slug>.yaml` and `maths/ol/scope-cards/` — they arrive in W2, and a
+     grade is enabled only once its scope cards exist: **O/L is refused until BOTH the G10 and G11 cards
+     exist.** Until W2 lands, §0.1's interim gate holds — no published corpus README for the requested
+     grade ⇒ REFUSE. Never copy a scope card into this public repo.
 2. **Find the taxonomy and what exists.**
    - `python3 $T lessons --grade 6 --subject Mathematics` gives the `lesson_id`.
    - `python3 $T questions list --lesson-id <id> --all --out existing.json` gives every row already tagged to the lesson.
@@ -120,7 +123,10 @@ notes. Every command below reads credentials from `Vibhaga-Admin/.env.local` at 
      goes in `sub_questions[].text`, also in the medium's language.
    - **Structure:** follow [`structure-question-parts`](../structure-question-parts/SKILL.md) §0 and §2.
      `build-staged.py` mints the uuids for you; parts go in `sub_questions`, depth capped at 2, labels bare (`a`, `i` —
-     the builder refuses `(a)`/`a)`/`a.`).
+     the builder refuses `(a)`/`a)`/`a.`) and unique among siblings (two same-named parts collide on one id).
+     ⚠️ **Ids are keyed on `id_seed` + `n` + the label path** — after a first publish keep all three stable:
+     renumbering or relabelling mints NEW uuids and publish writes NEW rows that orphan the published ones
+     (there is no rename).
    - **Figure** (only where the question needs one): a playground figure is never printed, so the claim set is
      `channel: constructed` ([`read-figure-claim-set`](../read-figure-claim-set/SKILL.md) §2.3) with a `stem:` header
      carrying the stem text (the audit's stem-ratio check refuses a drawn ratio the stem does not justify). Its

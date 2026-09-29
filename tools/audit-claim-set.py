@@ -9,7 +9,10 @@ Plugin move (2026-09-29): `channel:` is OPTIONAL and defaults to `constructed` �
 is authored on the canvas, not read off a printed page. A constructed set then REQUIRES a `stem:`
 header (free text, may wrap), and every `ratio … = v` / `angle … = v` claim must be justified by a
 pair of stem numbers (|a/b − v|/v ≤ TOL_RATIO · within TOL_ANGLE) or cite a matching `derive Kn`
-claim — the stem is the only ground truth a generated figure has.
+claim — and a cited derive counts only when every literal in its expression is a stem number, a
+canonical constant (1, 2, 90, 180, 360), or the value of another backed derive (transitively, no
+cycles): an invented `derive 3 / 2 = 1.5` must not rescue a copied ratio. The stem is the only
+ground truth a generated figure has.
 
 ⚠️ **WHY THIS EXISTS, AND WHAT IT IS NOT.**
 S6a (`read-figure-claim-set`) emits a claim set precisely so that a *second* agent can check a figure
@@ -527,6 +530,7 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
     axis_pairs: set = set()  # frozensets — `axis QP` on the same segment as `axis PQ` is a dup
     ats: list = []         # (cid, value, (x, y)) from `at <v> <x> <y>` claims
     derives: list = []     # (cid, value) from `derive <expr> = <value>` — the ANSWER-SIDE ground truth
+    derive_literals: dict = {}  # cid -> numeric literals in the derive's expression (2d's backing check)
     arrows: list = []      # (cid, P, Q) from `arrow P -> Q`, so 2c can project it onto a scale
     label_targets: dict = {}
     # `tick`/`interval` are collected, not checked inline: a claim may legitimately precede the
@@ -660,6 +664,7 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
                 check(abs(got - want) < 1e-9,
                       f"{cid}: {pred} -> `{m[1]}` evaluates to {got:g}", cid)
                 derives.append((cid, want))
+                derive_literals[cid] = tuple(float(x) for x in re.findall(r"\d+(?:\.\d+)?", m[1]))
             stats["anchor_checked"] += 1
         elif (m := re.match(r"^arrow ([A-Z]) -> ([A-Z])$", pred)):
             if all(pt(g, cid) for g in m.groups()) and \
@@ -877,23 +882,72 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
         #       (1) a pair of stem numbers a,b (a≠0, b≠0, same number allowed) with
         #           |a/b − v|/v ≤ TOL_RATIO, for a `ratio` claim; a stem number within TOL_ANGLE,
         #           for an `angle` claim; OR
-        #       (2) the claim's note cites `derive Kn`, where Kn is a `derive` claim in this set
-        #           whose value matches under the same tolerance.
+        #       (2) the claim's note cites `derive Kn`, where Kn is a BACKED `derive` claim in
+        #           this set whose value matches under the same tolerance. A derive is backed
+        #           only if every numeric literal in its expression is itself a stem number,
+        #           one of the canonical constants {1, 2, 90, 180, 360} (counts and the angles
+        #           a figure may own outright), or the value of another derive in this set
+        #           that is itself backed — transitively, no cycles. Without that, an invented
+        #           `derive 3 / 2 = 1.5` rescues any copied ratio (review F1).
         #     `right`/`equal`/`axis`/`tick`/`at`/etc are exempt — only `ratio` and `angle` state a
         #     bare value the stem must own.
         stem_nums = [float(x) for x in
                      re.findall(r"\d+(?:\.\d+)?", " ".join(cs["meta"].get("stem", [])))]
         derive_vals = {dcid: dv for dcid, dv in derives}
+        derive_by_value: dict = {}
+        for dcid, dv in derives:
+            derive_by_value.setdefault(dv, []).append(dcid)
+        DERIVE_CONSTANTS = (1.0, 2.0, 90.0, 180.0, 360.0)
 
-        def cited_derive(note: str, v: float, rel: bool) -> str | None:
+        def lit_backed(lit: float, dcid: str) -> bool:
+            return (any(abs(lit - s) <= 1e-9 for s in stem_nums)
+                    or lit in DERIVE_CONSTANTS
+                    or any(d2 != dcid and d2 in backed_derives
+                           for d2 in derive_by_value.get(lit, ())))
+
+        # backing is a fixpoint: a pure citation cycle never seeds, so neither member backs the
+        # other — and a derive may not cite its OWN value (`derive 1.5 = 1.5` proves nothing).
+        backed_derives: set = set()
+        changed = True
+        while changed:
+            changed = False
+            for dcid, _ in derives:
+                if dcid not in backed_derives and \
+                        all(lit_backed(l, dcid) for l in derive_literals.get(dcid, ())):
+                    backed_derives.add(dcid)
+                    changed = True
+
+        def cited_derives(note: str, v: float, rel: bool) -> list:
+            """Cited `derive Kn` references whose VALUE matches under the claim's tolerance."""
+            hits = []
             for dref in re.findall(r"derive\s+([A-Z]\d+[a-z]?)\b", note):
                 dv = derive_vals.get(dref)
                 if dv is None:
                     continue
                 if (rel and v != 0 and abs(dv - v) / v <= TOL_RATIO) or \
                         (not rel and abs(dv - v) <= TOL_ANGLE):
-                    return dref
-            return None
+                    hits.append(dref)
+            return hits
+
+        def stem_check(c: dict, v: float, justified: bool, rel: bool) -> None:
+            matches = cited_derives(c["note"], v, rel)
+            backed = [d for d in matches if d in backed_derives]
+            if justified or backed:
+                return
+            if matches:
+                unb = sorted({f"{l:g}" for d in matches
+                              for l in derive_literals.get(d, ()) if not lit_backed(l, d)})
+                check(False,
+                      f"{c['id']}: {c['pred']} -> {v:g} cites `derive "
+                      f"{'`, `derive '.join(matches)}`, but its literal(s) "
+                      f"{', '.join(unb)} are not backed by the stem (stem numbers "
+                      f"{stem_nums}; a derive may only restate stem numbers, the constants "
+                      f"1, 2, 90, 180, 360, or a backed derive's value)", c["id"])
+            else:
+                check(False,
+                      f"{c['id']}: {c['pred']} -> {v:g} is not justified by the stem "
+                      f"(stem numbers {stem_nums}; drawn ratio copied? — cite a matching "
+                      f"`derive` if the value is derived)", c["id"])
 
         for c in cs["claims"]:
             if (m := re.match(r"^ratio len ([A-Z])([A-Z]) / len ([A-Z])([A-Z]) = (\d+(?:\.\d+)?)$",
@@ -903,19 +957,11 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
                     continue            # a zero ratio already fails the anchor check above
                 justified = any(a_ != 0 and b_ != 0 and abs(a_ / b_ - v) / v <= TOL_RATIO
                                 for a_ in stem_nums for b_ in stem_nums)
-                dref = None if justified else cited_derive(c["note"], v, rel=True)
-                check(justified or dref is not None,
-                      f"{c['id']}: {c['pred']} -> {v:g} is not justified by the stem "
-                      f"(stem numbers {stem_nums}; drawn ratio copied? — cite a matching "
-                      f"`derive` if the value is derived)", c["id"])
+                stem_check(c, v, justified, rel=True)
             elif (m := re.match(r"^angle ([A-Z]) ([A-Z]) ([A-Z]) = (\d+(?:\.\d+)?)$", c["pred"])):
                 v = float(m[4])
                 justified = any(abs(n - v) <= TOL_ANGLE for n in stem_nums)
-                dref = None if justified else cited_derive(c["note"], v, rel=False)
-                check(justified or dref is not None,
-                      f"{c['id']}: {c['pred']} -> {v:g} is not justified by the stem "
-                      f"(stem numbers {stem_nums}; drawn ratio copied? — cite a matching "
-                      f"`derive` if the value is derived)", c["id"])
+                stem_check(c, v, justified, rel=False)
     checked_arrows = set()
     for acid, P, Q in arrows:
         for (P2, Q2), ax in axes.items():
@@ -1521,10 +1567,26 @@ STEM_RATIO_MUTATIONS = [
     ("the corrected set — anchors and claim at the stem's own 2.5 (must PASS)",
      [("  B 210 40", "  B 310 40"), ("  C 210 140", "  C 310 140"),
       ("ratio len AB / len BC = 1.5", "ratio len AB / len BC = 2.5")], True),
-    ("the wrong ratio rescued by a matching `derive` citation (must PASS)",
+    ("the wrong ratio rescued by a BACKED `derive` citation (must PASS) — the stem names 3 and 2",
+     [("stem:     A cuboid has a rectangular face 5 cm long and 2 cm wide.",
+       "stem:     A cuboid has a rectangular face 5 cm long and 2 cm wide, divided in the "
+       "ratio 3 : 2."),
+      ("K9  derive 5 / 2 = 2.5", "K9  derive 3 / 2 = 1.5"),
+      ("the drawn ratio — copied from the canvas, not the stem",
+       "the face's 3:2 division, per derive K9")], True),
+    ("the wrong ratio rescued by an UNBACKED `derive` (fails — the literal 3 is no stem number)",
      [("K9  derive 5 / 2 = 2.5", "K9  derive 3 / 2 = 1.5"),
       ("the drawn ratio — copied from the canvas, not the stem",
-       "the face's 3:2 sub-division, per derive K9")], True),
+       "the face's drawn proportions, per derive K9")], False),
+    ("a `derive` chain — backed via another derive's value (must PASS)",
+     [("stem:     A cuboid has a rectangular face 5 cm long and 2 cm wide.",
+       "stem:     A cuboid has a rectangular face 5 cm long and 2 cm wide, with a mark every "
+       "3 cm along the face."),
+      ("K9  derive 5 / 2 = 2.5          | inferred | the ratio the stem actually states",
+       "K9  derive 3 / 2 = 1.5          | inferred | the stem's mark spacing\n"
+       "  K11 derive 1.5 * 1 = 1.5        | inferred | restates K9"),
+      ("the drawn ratio — copied from the canvas, not the stem",
+       "the face's drawn proportions, per derive K11")], True),
     ("a `derive` cited but with a NON-matching value (still fails)",
      [("the drawn ratio — copied from the canvas, not the stem",
        "the face's drawn proportions, per derive K9")], False),

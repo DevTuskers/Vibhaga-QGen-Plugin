@@ -153,6 +153,42 @@ class BuildStagedTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self.assert_refuses(spec, tmp, "at most 2 levels")
 
+    def test_refuse_duplicate_sibling_label(self):
+        # two parts labelled `a` under one parent collide on the same uuid5 label path —
+        # the builder must refuse rather than emit duplicate sub_question_ids.
+        spec = copy.deepcopy(BASE)
+        spec["questions"][0] = {"n": 1, "lessons": ["L07"], "stem": "…",
+                                "parts": [
+                                    {"label": "a", "text": "…", "approach": "…", "final": "…"},
+                                    {"label": "a", "text": "…", "approach": "…", "final": "…"},
+                                ]}
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec, tmp, "duplicate part label")
+
+    def test_refuse_duplicate_nested_label(self):
+        # same collision one level down — grandchildren of `a`.
+        spec = copy.deepcopy(BASE)
+        spec["questions"][0] = {"n": 1, "lessons": ["L07"], "stem": "…",
+                                "parts": [{"label": "a", "text": "…", "parts": [
+                                    {"label": "i", "text": "…", "approach": "…", "final": "…"},
+                                    {"label": "i", "text": "…", "approach": "…", "final": "…"},
+                                ]}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec, tmp, "duplicate part label")
+
+    def test_same_label_under_different_parents_is_fine(self):
+        spec = copy.deepcopy(BASE)
+        spec["questions"][0] = {"n": 1, "lessons": ["L07"], "stem": "…",
+                                "parts": [
+                                    {"label": "a", "text": "…", "parts": [
+                                        {"label": "i", "text": "…", "approach": "…", "final": "…"}]},
+                                    {"label": "b", "text": "…", "parts": [
+                                        {"label": "i", "text": "…", "approach": "…", "final": "…"}]},
+                                ]}
+        with tempfile.TemporaryDirectory() as tmp:
+            _, out, r = self.build(spec, tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+
     def test_refuse_leaf_without_answer(self):
         spec = copy.deepcopy(BASE)
         spec["questions"][0] = {"n": 1, "lessons": ["L07"], "stem": "…",

@@ -287,7 +287,9 @@ moved by the same (dx, dy) on the reviewer's card) · **claim-set coverage** (`s
 `angle`/`right`/`ratio`/`collinear`/`on`/`parallel`/`equal`/`circle` claim recomputed from the claim
 set's stated values and canvas anchors and from the drawing, on the single tight band (§5.3) · a
 **Chromium render of BOTH code paths** at 320 · 375 · 768 with screenshots and the SVG read back ·
-**label metrics**: every `<text>` bbox ≥ 8 px from the canvas edge and ≥ 6 px from stroke geometry.
+**label metrics**: every `<text>` bbox ≥ 8 rendered px from the canvas edge and ≥ 6 rendered px from
+stroke geometry — rendered px at each width (viewBox units shrink on a narrow render), measured to the
+stroke's EDGE (centreline − half its width); a bbox that cannot be measured fails closed.
 Exit 1 on any hard failure; `--allow K6` downgrades a numeric finding that is a **declared**
 departure (write it in `departures:` first). Canvas anchors come from `<figure>.anchors.json` (the
 cookbook writes it), `meta.anchors`, or every `point` element labelled with one capital.
@@ -577,7 +579,7 @@ scale:     the claim set says NOT to scale, so BOTH visible consequences are in 
            `a11y.title` ends "(not to scale)" and a `text` element reads "not to scale" (§3.5)
 coverage:  segments 6/6 covered · labels A B C D E F all present · the mark drawn · 0 unaccounted elements
 numeric:   4 ratios <= 0.66% · 5 angles <= 0.30° · collinearity residuals below band · vs claim-set anchors
-labels:    every <text> ≥ 8 px from canvas edge, ≥ 6 px from strokes, at 320 / 375 / 768 px
+labels:    every <text> ≥ 8 rendered px from canvas edge, ≥ 6 rendered px from stroke edges, at 320 / 375 / 768 px
 rendered:  320 / 375 / 768 px, light + dark — labels legible, none overlapping a stroke
 departures: the right-angle mark drawn as a white-filled `rect`, not `angleMark variant:"right"` — the
             variant is `fill:"none"` and the ray shows through it (T-S6b-3). Same corner, same size, opaque.
@@ -735,7 +737,7 @@ code"* is exactly the thing a green harness cannot tell you.
       verification record (§5.4).
 - [ ] `checkDiagram()` warnings are resolved **or** explained by the claim set's `scale:` (§5.3).
 - [ ] Screenshots read at **320 · 375 · 768** px: no label overlapping a stroke, no label outside its
-      angle, nothing clipped — and the label metrics agree (≥ 8 px edge, ≥ 6 px stroke).
+      angle, nothing clipped — and the label metrics agree (≥ 8 rendered px edge, ≥ 6 rendered px stroke).
 - [ ] **Orientation passed (§3.1a):** frame applied, evidence retained, upright labels, no invented
       givens/reflection or flattened intentional geometry; exact map and justification recorded.
 - [ ] **Framing passed (§3.1a):** complete visible-ink bounds/clearances on stored and normalized

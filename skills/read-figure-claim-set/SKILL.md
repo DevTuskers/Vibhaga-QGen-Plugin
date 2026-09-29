@@ -49,7 +49,11 @@ apply with the variant notes below.
    figure's scale; `printed` only where the question figure *is* redrawn apparatus.
 2. ⚠️ **Every numeric claim must be justified by the STEM, and `audit-claim-set.py` enforces it.** A
    `ratio len AB / len CD = v` claim passes only if some pair of stem numbers `a, b` has `a/b ≈ v`, or the
-   claim cites `derive Kn` whose value matches; `angle … = v` likewise. The failure message says the value
+   claim cites `derive Kn` whose value matches **and whose literals are backed**: every numeric literal in
+   the cited derive's expression must be a stem number, a canonical constant (`1`, `2`, `90`, `180`,
+   `360`), or the value of another backed derive (transitively, no cycles) — an invented
+   `derive 3 / 2 = 1.5` does not rescue a copied 1.5 when the stem says 5 and 2; the failure names the
+   unbacked literal. `angle … = v` likewise. The failure message says the value
    is not justified by the stem — *"drawn ratio copied?"* — and names the claim id. The red-team this
    exists for: a cuboid-face figure drawn 1.5:1 for a 5:2 stem passed the OLD audit because its anchors
    agreed with its claim — claim and drawing were self-consistently wrong together.
@@ -86,7 +90,7 @@ headers carry the difference:
 |---|---|
 | `source:` | ⚠️ **the FRAME the anchors are in**, and where it came from — *"constructed; frame is the question's own canvas, 504 × 146, y down"*, or *"extends the question figure `figures/q3.json`; frame is that figure's own canvas"* for an answer figure. `source:` is checked for **presence**, so this is legal and it is the one line that tells a reader which kind of claim set they are holding |
 | `channel:` | ⭐ **`constructed`** — and it is load-bearing: `constructed` REQUIRES at least one `derive` claim (audit check 2c), because it is the flag that says *"no source reaches the claims that are the answer"*. ⚠️ In this plugin `channel:` is **optional** and defaults to `constructed`; when present, an unknown value is still refused |
-| `stem:` | ⭐ **NEW for this plugin — REQUIRED on a constructed set.** The question's stem text (wraps like other headers). The stem-ratio check (§0.2) justifies every `ratio`/`angle` numeric claim against the ASCII decimals in this text — `5:2` in the stem gives numbers 5 and 2 — or against a cited `derive` claim's value |
+| `stem:` | ⭐ **NEW for this plugin — REQUIRED on a constructed set.** The question's stem text (wraps like other headers). The stem-ratio check (§0.2) justifies every `ratio`/`angle` numeric claim against the ASCII decimals in this text — `5:2` in the stem gives numbers 5 and 2 — or against a cited `derive` claim's value, and that derive's own literals must trace back to the same stem numbers (§0.2) |
 | `scale:` | the declared drawing scale (§3.3) — *"drawn to scale"* or *"NOT to scale"*, with the site it applies to |
 
 **The evidence tags do the rest:**

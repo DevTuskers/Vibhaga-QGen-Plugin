@@ -31,7 +31,9 @@
  *  10. RENDER on BOTH code paths (the stored document = student surfaces; `normalizeVdd(doc)` = the
  *      Admin card) at 320 · 375 · 768 px in real Chromium, screenshots to --out, and the SVG read:
  *      every claim-set label rendered as a `<text>`, `aria-label` and `<desc>` resolve, and every
- *      `<text>` label's bbox measured ≥ 8 px from the canvas edge and ≥ 6 px from stroke geometry
+ *      `<text>` label's bbox measured ≥ 8 rendered px from the canvas edge and ≥ 6 rendered px from
+ *      stroke geometry — rendered px at each width (viewBox units × render scale), measured to the
+ *      stroke's EDGE (centreline − half its rendered width); an unmeasurable bbox fails closed
  *      (declare an intentional departure with an `allow: label:"<text>"` claim-set line)
  *
  * CANVAS ANCHORS (for 8–9). The drawing's named points, in canvas coordinates, come from — in
@@ -459,25 +461,30 @@ else {
             ctx.fillStyle = "transparent"; ctx.fillStyle = style.stroke; ctx.fillRect(0, 0, 1, 1);
             return [...ctx.getImageData(0, 0, 1, 1).data].some((v, k) => k < 3 && v !== bg[k]) ? [index] : [];
           });
-          // label metrics: every <text> bbox's min distance to the canvas edge (fail < 8 px) and
-          // to any stroke geometry — sampled with getPointAtLength (fail < 6 px). No exclusions;
-          // an intentional attachment is declared via `allow: label:"<text>"`.
+          // label metrics, in RENDERED px at this width: getBBox returns viewBox user units, so every
+          // distance goes through pxPerUnit (a canvas wider than the render shrinks units into px).
+          // Every <text> bbox's min distance to the canvas edge (fail < 8 px) and to any stroke
+          // geometry — sampled with getPointAtLength, measured to the stroke's EDGE (centreline minus
+          // half its rendered stroke-width; fail < 6 px). No exclusions; an intentional attachment is
+          // declared via `allow: label:"<text>"`. An unmeasurable bbox fails CLOSED.
           const vb = svg.viewBox?.baseVal;
+          const pxPerUnit = vb && vb.width ? svg.getBoundingClientRect().width / vb.width : null;
           const strokes = scope("line,polyline,polygon,path,circle,rect,ellipse");
           const labelMetrics = scope("text").map((t) => {
             let bb; try { bb = t.getBBox(); } catch { bb = null; }
-            if (!bb || !vb) return { text: t.textContent, edge_px: null, stroke_px: null, ok: false };
-            const edge = Math.min(bb.x - vb.x, bb.y - vb.y, vb.x + vb.width - (bb.x + bb.width), vb.y + vb.height - (bb.y + bb.height));
+            if (!bb || !pxPerUnit) return { text: t.textContent, edge_px: null, stroke_px: null, ok: false };
+            const edge = Math.min(bb.x - vb.x, bb.y - vb.y, vb.x + vb.width - (bb.x + bb.width), vb.y + vb.height - (bb.y + bb.height)) * pxPerUnit;
             let stroke = Infinity;
             for (const s of strokes) {
               let L; try { L = s.getTotalLength(); } catch { continue; }
               if (!Number.isFinite(L) || L <= 0) continue;
+              const sw = (parseFloat(getComputedStyle(s).strokeWidth) || 0) * pxPerUnit;
               const n = Math.max(8, Math.min(64, Math.ceil(L / 4)));
               for (let i = 0; i <= n; i++) {
                 const p = s.getPointAtLength((L * i) / n);
                 const dx = Math.max(bb.x - p.x, 0, p.x - (bb.x + bb.width));
                 const dy = Math.max(bb.y - p.y, 0, p.y - (bb.y + bb.height));
-                stroke = Math.min(stroke, Math.hypot(dx, dy));
+                stroke = Math.min(stroke, Math.hypot(dx, dy) * pxPerUnit - sw / 2);
               }
             }
             const edge_px = +edge.toFixed(1), stroke_px = stroke === Infinity ? null : +stroke.toFixed(1);
@@ -511,7 +518,8 @@ else {
         if (!r.ariaLabel) fails.push(`render ${w}px ${s}: role=img has no aria-label`);
         if (!r.descResolves) fails.push(`render ${w}px ${s}: aria-describedby does not resolve to the <desc>`);
         for (const l of r.labels ?? []) {
-          if (l.edge_px !== null && l.edge_px < 8) fails.push(`label ${JSON.stringify(l.text)}: render ${w}px ${s} bbox is ${l.edge_px}px from the canvas edge (< 8px — move it in or declare 'allow: label:${JSON.stringify(l.text)}')`);
+          if (l.edge_px === null) fails.push(`label ${JSON.stringify(l.text)}: render ${w}px ${s} bbox could not be measured — failing closed (a label that cannot be measured cannot be proven clear; declare 'allow: label:${JSON.stringify(l.text)}' only if intentional)`);
+          else if (l.edge_px < 8) fails.push(`label ${JSON.stringify(l.text)}: render ${w}px ${s} bbox is ${l.edge_px}px from the canvas edge (< 8px — move it in or declare 'allow: label:${JSON.stringify(l.text)}')`);
           if (l.stroke_px !== null && l.stroke_px < 6) fails.push(`label ${JSON.stringify(l.text)}: render ${w}px ${s} bbox is ${l.stroke_px}px from stroke geometry (< 6px — move it clear or declare 'allow: label:${JSON.stringify(l.text)}')`);
         }
         if (cs) for (const g of cs.labels) if (!r.texts.includes(g)) fails.push(`render ${w}px ${s}: label ${JSON.stringify(g)} did not render as <text> (rendered: ${r.texts.map((t) => JSON.stringify(t)).join(" ")})`);
@@ -750,6 +758,16 @@ async function selfTest() {
     const clear = r.results[0].student.labels.find((l) => l.text === "clear");
     t("label metrics emitted per <text> with {text, edge_px, stroke_px, ok}",
       !!clear && clear.ok && clear.edge_px >= 8 && clear.stroke_px >= 6);
+    // F3: the rule is RENDERED px at each width — a canvas far wider than the render shrinks user
+    // units into px. 20 units is comfortably ≥ 8 on the canvas but ≈ 6 px at 320, so it must fail.
+    const wideDoc = { ...tri, canvas: { ...tri.canvas, width: 1000 }, elements: [...linesOnly,
+      { id: "farT", type: "text", at: [960, 130], value: "far" },
+    ] };
+    const rw = await render(wideDoc, null, labOut, [320], false, []);
+    const far = rw.results[0].student.labels.find((l) => l.text === "far");
+    t("label ≥8 units from edge but <8 rendered px at 320 fails (unit→px conversion)",
+      rw.fails.some((f) => f.includes('label "far"') && f.includes("student") && f.includes("canvas edge")) &&
+      !!far && !far.ok && far.edge_px < 8);
     const cli = fs.mkdtempSync(path.join(CACHE, "label-cli-"));
     try {
       fs.writeFileSync(path.join(cli, "lab.json"), JSON.stringify(labDoc));
