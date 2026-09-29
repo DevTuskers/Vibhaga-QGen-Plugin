@@ -1,0 +1,6 @@
+{
+  "name": "vibhaga-qgen",
+  "version": "0.1.0",
+  "description": "Author, verify and publish generated maths practice questions for vibhaga.lk — corpus-driven question generation, VDD figures, staged-doc tooling and an offline test suite.",
+  "repository": "https://github.com/DevTuskers/Vibhaga-QGen-Plugin"
+}
