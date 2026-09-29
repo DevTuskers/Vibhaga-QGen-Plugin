@@ -550,7 +550,7 @@ it.** The only thing that caught this was S13 — an independent read of the sou
    membership at each labelled tick. It runs off the *stored* VDD plus the *stored*
    `final_answer_latex`, needs no page, and **it fires here on one point: 0 is on no heavy part and
    `-2 < x ≤ 2` contains 0.** (This is S8 §3's "second method" as a machine check —
-   [S6a](../read-figure-claim-set/SKILL.md) §3.2 owns the `interval` predicate.)
+   [S6a](../skills/read-figure-claim-set/SKILL.md) §3.2 owns the `interval` predicate.)
 3. ⛔ **ITS PRECONDITION IS THE WHOLE POINT: an S6a CLAIM SET MUST EXIST.** The claim set is the only
    artefact that says *what the printed figure means*, independently of the drawing. **Without it the
    check degenerates into comparing the drawing with itself** — which is exactly the passing
@@ -561,7 +561,7 @@ it.** The only thing that caught this was S13 — an independent read of the sou
    `checkDiagram()` is **two** checks, and both are gated on an `angleMark` with a numeric label
    (`validate.ts:34-47`, `:49-57`) — so it is silent on
    number lines, sectors, grids, patterns and area models: **9 of the 20** figures live when
-   [S6a](../read-figure-claim-set/SKILL.md) §3.5 took its census (2026-08-26; **22** live today) fall in
+   [S6a](../skills/read-figure-claim-set/SKILL.md) §3.5 took its census (2026-08-26; **22** live today) fall in
    classes it cannot reach at all. An undocumented scope makes an empty
    result look like a clean bill of health (**T102**, one level up: there the gate had no *input*; here it
    has no *jurisdiction*).
