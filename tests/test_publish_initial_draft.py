@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 import publish as tool
 
 
-JOB = "501b9979-3121-4b97-96a6-2e02dd3bad13"
+JOB = "99999999-9999-4999-8999-999999999999"
 PAPER = "22222222-2222-4222-8222-222222222222"
 ACTOR = "11111111-2222-4333-8444-555555555555"
 SCOPE = {"grade": 8, "subject": "Mathematics", "medium": "sinhala"}
