@@ -1,6 +1,7 @@
 ---
 name: draw-and-verify-question-vdd
-description: Draw a VDD figure for a question — usually inside Vibhaga-Admin's onboarding-review Edit mode for the question, sub-question or answer — from the claim set the read-figure-claim-set skill emitted (constructed channel: the geometry is authored from the stem's stated values and the claim set's anchors, then proven by audit + render). Use when a figure must be created or corrected — a printed-mark fidelity claim, a missing drawing, or a field found unusable on inspection. Never draw without a claim set; never save without a render.
+description: >-
+  Draw a VDD figure for a question — usually inside Vibhaga-Admin's onboarding-review Edit mode for the question, sub-question or answer — from the claim set the read-figure-claim-set skill emitted (constructed channel: the geometry is authored from the stem's stated values and the claim set's anchors, then proven by audit + render). Use when a figure must be created or corrected — a printed-mark fidelity claim, a missing drawing, or a field found unusable on inspection. Never draw without a claim set; never save without a render.
 ---
 
 > **Moved from Vibhaga-Docs `.devin/skills/draw-and-verify-question-vdd` @08c09a9; paper-only sections removed (see docs/MIGRATION.md).** Figure source-reading references now point at `skills/read-figure-claim-set`.
