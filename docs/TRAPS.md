@@ -30,6 +30,7 @@ a stale cache, an unrecorded id, a flag that lives on the row but not the doc.
 | T128 | a correct "never" rule applied beyond its real constraint manufactures its own defect |
 | T136 | a constructed claim set that "passes" because you read the footer, not the exit code |
 | T142 | the playground publish raises the flag on the ROW, not in the staged doc |
+| T-QG-1 | a skill over ~50 KB silently does not load — `devin plugins info` is the check |
 
 ---
 ## T4 — A `204` from `/auth/v1/logout` is not proof of revocation
@@ -665,3 +666,20 @@ Audit A from a parser into a geometry check (62–97 assertions per figure on th
 **The check:** after every real publish, PUT the doc back with `published: true` and the flag `true` on every id in `question_ids ∪ reflagged ∪ reraised`. Then GET it and assert both fields per id. `playground-publish.py publish` does this (read-back 1) before its SQL read-back. Cited by `generate-lesson-questions` §1/§4. *(Phase 5 critique finding; tool guard added in Phase 6, 2026-09-27.)*
 
 *Source: Vibhaga-Docs `.devin/skills/_maths-onboarding/TRAPS.md` T142 @08c09a9 — production ids scrubbed; paper-era references kept as history where the lesson is pipeline-neutral.*
+
+---
+
+## T-QG-1 — The skill that never loaded: a ~50 KB ceiling nobody announced
+
+**Looked true:** `skills/draw-and-verify-question-vdd/SKILL.md` was committed alongside the other seven
+skills, so the CLI loads it like the other seven.
+**Actually:** `devin plugins info` listed **7 of 8** skills — the 57.5 KB file was silently skipped while
+every loading skill was ≤ 46.5 KB. No error, no warning, one skill simply absent from the list. Working
+hypothesis: a ~50 KB per-skill size cap (**unconfirmed by docs** — the bound was never measured, only
+inferred from which files loaded).
+**The check:** after adding or growing a SKILL.md, run `devin plugins info` and count the skills — the
+list length is the gate, not the file's presence in the repo. Over the cap, split long-form material
+(worked examples, long tables, trap stories) verbatim into a sibling `reference.md` and leave pointer
+lines behind — the 2026-09-30 split of this skill is the worked example.
+
+*Source: this plugin — observed 2026-09-30 on `skills/draw-and-verify-question-vdd` (7 of 8 skills in `devin plugins info`).*
