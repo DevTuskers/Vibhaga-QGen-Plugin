@@ -59,7 +59,8 @@ Open the lesson file and fill `curated:` for each `todo` card:
   Each needs ≥1 `probe`: a string that *would* appear in the lesson if the concept were taught —
   the textbook's own Sinhala term, and a symbol or English form where relevant (e.g. degree measure
   → `°`). `check` fails when any probe occurs in the lesson file (NFC-normalized, ASCII
-  case-insensitive): a probe that hits means the concept is probably taught — re-read the lesson and
+  case-insensitive; whole-word matching for pure-English probes so `ton` can't hit `button`): a
+  probe that hits means the concept is probably taught — re-read the lesson and
   fix the item, never swap in a weaker probe. If no probe can honestly be absent, drop the item.
 - **`prerequisites`** — earlier lessons whose concepts this lesson's worked examples actually use:
   `grade-06/05` form for the same grade (must be an existing, lower-numbered card) or

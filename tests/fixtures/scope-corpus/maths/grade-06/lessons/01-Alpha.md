@@ -21,7 +21,7 @@ syllabus_refs:
 
 <a id="fx-01-p001-u002"></a>
 
-An intro paragraph with **alpha term** and a second **shared term**.
+An intro paragraph with **alpha term** and a second **shared term** at the café.
 
 <a id="fx-01-p001-u003"></a>
 
@@ -79,5 +79,5 @@ An example sentence with a zebra in it.
 
 <a id="fx-01-p001-u013"></a>
 
-- First summary bullet.
-- Second summary bullet.
+- **•** First summary bullet.
+- ● Second summary bullet.

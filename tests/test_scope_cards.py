@@ -23,7 +23,9 @@ FIXTURE = HERE / "fixtures" / "scope-corpus"
 CURATED = {
     "status": "drafted",
     "not_taught": [{"concept": "quokka-counting", "why": "not part of this lesson",
-                    "probes": ["qq-not-a-word"]}],
+                    "probes": ["qq-not-a-word"]},
+                   {"concept": "wombat-weighing", "why": "also not part of this lesson",
+                    "probes": ["ww-not-a-word"]}],
     "prerequisites": [],
     "difficulty_hooks": [{"level": "M", "hook": "a routine-then-twist hook"},
                          {"level": "H", "hook": "a non-routine hook"}],
@@ -220,6 +222,91 @@ class ScopeCardsTest(unittest.TestCase):
             r = self.check(corpus)
             self.assertEqual(r.returncode, 1)
             self.assertIn("OCCURS", r.stdout)
+
+    def test_probe_nfc_and_ascii_case_insensitive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.draft(corpus)
+            self.curate_all(corpus)
+            # an NFD probe still matches the NFC 'café' in the lesson; 'ZEBRA' case-folds
+            self.curate(corpus, "01-Alpha", {
+                **CURATED,
+                "not_taught": [{"concept": "a", "why": "w", "probes": ["café"]},
+                               {"concept": "b", "why": "w", "probes": ["ZEBRA"]}]})
+            r = self.check(corpus)
+            self.assertEqual(r.returncode, 1)
+            self.assertEqual(r.stdout.count("OCCURS"), 2, r.stdout)
+
+    def test_probe_ascii_word_boundary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.draft(corpus)
+            self.curate_all(corpus)
+            # 'erm' is only a substring of 'term', never a standalone word — OK
+            self.curate(corpus, "01-Alpha", {
+                **CURATED,
+                "not_taught": [{"concept": "a", "why": "w", "probes": ["erm"]},
+                               {"concept": "b", "why": "w", "probes": ["qq-x"]}]})
+            r = self.check(corpus)
+            self.assertEqual(r.returncode, 0, r.stdout)
+            # 'term' IS a whole word in the lesson ('alpha term')
+            self.curate(corpus, "01-Alpha", {
+                **CURATED,
+                "not_taught": [{"concept": "a", "why": "w", "probes": ["term"]},
+                               {"concept": "b", "why": "w", "probes": ["qq-x"]}]})
+            r = self.check(corpus)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("OCCURS", r.stdout)
+
+    def test_check_fails_wrong_source_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.draft(corpus)
+            self.curate_all(corpus)
+            p = self.cards_dir(corpus) / "01-Alpha.yaml"
+            doc = yaml.safe_load(p.read_text(encoding="utf-8"))
+            doc["source"]["file"] = "lessons/02-Beta.md"
+            p.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            r = self.check(corpus)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("source.file must be", r.stdout)
+
+    def test_check_fails_missing_generated_and_curated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.draft(corpus)
+            self.curate_all(corpus)
+            p = self.cards_dir(corpus) / "01-Alpha.yaml"
+            doc = yaml.safe_load(p.read_text(encoding="utf-8"))
+            del doc["generated"], doc["curated"]
+            p.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            r = self.check(corpus)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("generated must be a mapping", r.stdout)
+            self.assertIn("curated must be a mapping", r.stdout)
+
+    def test_check_fails_orphan_card(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.draft(corpus)
+            self.curate_all(corpus)
+            (self.cards_dir(corpus) / "99-Gamma.yaml").write_text(
+                "schema_version: 1\n", encoding="utf-8")
+            r = self.check(corpus)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("99-Gamma.yaml FAIL: card has no published lesson", r.stdout)
+
+    def test_check_fails_not_taught_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.draft(corpus)
+            self.curate_all(corpus)
+            for n in (1, 6):
+                nt = [{"concept": f"c{i}", "why": "w", "probes": ["qq-x"]} for i in range(n)]
+                self.curate(corpus, "02-Beta", {**CURATED, "not_taught": nt})
+                r = self.check(corpus)
+                self.assertEqual(r.returncode, 1, f"n={n}: {r.stdout}")
+                self.assertIn("2-5", r.stdout)
 
     def test_check_fails_bad_prerequisites(self):
         with tempfile.TemporaryDirectory() as tmp:

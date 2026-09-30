@@ -65,6 +65,10 @@ TABLE_ROW_RE = re.compile(r'^\s*\|')
 TAG_RE = re.compile(r'^\s*</?(table|thead|tbody|tfoot|tr|td|th|caption|colgroup|col)[\s>]')
 BOLD_RE = re.compile(r'\*\*([^*\n]+)\*\*')
 BULLET_RE = re.compile(r'^[-*]\s+')
+# Corpus summary items are `- ` bullets whose text opens with a decorative glyph — `**•**`, `●`,
+# `•` (optionally bold-wrapped, optionally doubled) — which is furniture, not content.
+GLYPH_BULLET_RE = re.compile(r'^\s*(?:\*\*)?[•●]+(?:\*\*)?\s*')
+ASCII_WORD_RE = re.compile(r'^[a-z ]+$')
 NUMPARA_RE = re.compile(r'^\(\d+\)|^\d+[.)]\s')
 SECNUM_RE = re.compile(r'^\s*(\d+(?:\s*\.\s*\d+)*)(?:\s+|$)')
 NOISE_RE = re.compile(r'[\d\W_]+')
@@ -94,6 +98,18 @@ def ascii_lower(s: str) -> str:
 
 def probe_norm(s: str) -> str:
     return ascii_lower(nfc(s))
+
+
+def probe_occurs(probe: str, lesson_text_nfc: str) -> bool:
+    """A pure-ASCII alphabetic probe matches on word boundaries — `ton` must not fire on
+    `button`. Sinhala probes and anything containing digits or symbols stay substring
+    matches. NFC + ASCII case-fold applies in both paths."""
+    p = probe_norm(probe)
+    if ASCII_WORD_RE.fullmatch(p):
+        rx = re.compile(r"(?<![a-z0-9])" + r"\s+".join(re.escape(w) for w in p.split())
+                        + r"(?![a-z0-9])")
+        return rx.search(lesson_text_nfc) is not None
+    return p in lesson_text_nfc
 
 
 def sha256_file(path: Path) -> str:
@@ -311,7 +327,7 @@ def summary_items(elems: list[dict], start: int, level: int) -> list[str]:
             continue
         t = el["text"].strip()
         if BULLET_RE.match(t):
-            items.append(re.sub(BULLET_RE, "", t))
+            items.append(GLYPH_BULLET_RE.sub("", re.sub(BULLET_RE, "", t)))
         elif items:
             items[-1] += " " + t
     return [clean(x) for x in items]
@@ -613,6 +629,8 @@ def curated_problems(curated: dict, lesson_text_nfc: str, card_lesson: int,
     if not isinstance(nt, list):
         probs.append("curated.not_taught must be a list")
         nt = []
+    if not 2 <= len(nt) <= 5:
+        probs.append(f"curated.not_taught must have 2-5 entries (got {len(nt)})")
     for i, item in enumerate(nt):
         where = f"not_taught[{i}]"
         if not isinstance(item, dict):
@@ -628,7 +646,7 @@ def curated_problems(curated: dict, lesson_text_nfc: str, card_lesson: int,
             probs.append(f"{where}: needs at least one nonempty probe")
             continue
         for p in probes:
-            if probe_norm(p) in lesson_text_nfc:
+            if probe_occurs(p, lesson_text_nfc):
                 probs.append(f"{where}: probe {p!r} OCCURS in the lesson — "
                              f"if the term is printed, the concept may be taught")
 
@@ -734,8 +752,7 @@ def cmd_check(args) -> int:
     if cards.is_dir():
         expected = {files[n].stem for n in included}
         for p in sorted(cards.glob("*.yaml")):
-            if p.stem.split("-", 1)[0].isdigit() and int(p.stem.split("-", 1)[0]) in included \
-                    and p.stem not in expected:
+            if p.stem not in expected:
                 n_cards += 1
                 n_fail += 1
                 print(f"{p.name} FAIL: card has no published lesson")
@@ -772,7 +789,9 @@ def self_test() -> int:
             doc = yaml.safe_load(p.read_text(encoding="utf-8"))
             doc["curated"] = {"status": "drafted", "not_taught": [
                 {"concept": "absent-thing", "why": "not in the fixture lesson",
-                 "probes": ["qq-not-a-word"]}],
+                 "probes": ["qq-not-a-word"]},
+                {"concept": "absent-other", "why": "also absent from the fixture lesson",
+                 "probes": ["ww-not-a-word"]}],
                 "prerequisites": [], "difficulty_hooks": [
                     {"level": "M", "hook": "hook one"}, {"level": "H", "hook": "hook two"}]}
             p.write_text(dump_card(doc), encoding="utf-8")
