@@ -41,6 +41,7 @@ Session W0 of the vibhaga-qgen plugin. Source: `Vibhaga-Docs@08c09a9`, tools fro
 | `AUTHORING-YAML.md` | drop | drop | superseded by `content.yaml` documented in `build-staged.py` + `generate` skill |
 | `orchestrate.md` | drop | drop | the S1–S13 paper pipeline; W7 writes the generation orchestrator |
 | `TRAPS.md` | extract | partial | `docs/TRAPS.md` — the 6 mandated traps (T5, T9, T77, T125, T136, T142) + every trap still cited by kept text (T4, T13, T14, T25, T30, T34, T56, T61, T70, T74, T96, T98, T99, T104, T114, T128) = **22 traps**; ids/stems scrubbed |
+| `scope-cards.py` | — **new (W2)** | new | lesson scope cards: `draft` emits the tool-owned `generated:` block (sections, vocabulary, worked examples, exercises, activities, figure kinds, summary) pinned to the lesson's sha256, preserving `curated:`; `check` verifies schema, staleness, probe grounding, prerequisites and hooks; `--exam ol` refused until OD-3 |
 
 ## Tests & fixtures
 
@@ -55,6 +56,7 @@ Session W0 of the vibhaga-qgen plugin. Source: `Vibhaga-Docs@08c09a9`, tools fro
 | `test_build_staged.py` | **new** | golden `staged.json`, determinism, every refusal |
 | `tests/fixtures/{content.yaml,staged-golden.json,figures/}` | **new** | synthetic spec + golden output; `00000000-0000-4000-8000-…` placeholder lesson uuids |
 | `tests/fixtures/stem-ratio-{bad,good}.txt` | **new** | the red-team fixture pair for the stem-ratio check |
+| `test_scope_cards.py` + `tests/fixtures/scope-corpus/` | — **new (W2)** | offline suite over a synthetic 2-lesson corpus (English filler, structural keywords only): draft fields, byte-identical rerun, curated preservation, every `check` failure mode, every exit-2 refusal |
 | vector/raster audit-claim-set fixtures in self-tests | kept | the tool still parses those channels; they exercise the shared grammar — no new work |
 
 ## Skills & agents
@@ -69,6 +71,7 @@ Session W0 of the vibhaga-qgen plugin. Source: `Vibhaga-Docs@08c09a9`, tools fro
 | `author-question-answers` | **modify** | D3 independent derivation + second-method check + §4 field-fitting + §4.5 figure trigger + §5a answer-id key trap kept; marking-scheme sourcing dropped (there is none); live counts/ids/stems scrubbed; noted `content.yaml` has no answer-figure key yet (§4.5.5) |
 | `critique-onboarded-content` → `agents/qgen-critic.md` | **replace** | custom-subagent format (`agents/<name>.md`); only §1.3 playground mode + the C-checks it needs; marked **draft — W6 completes** |
 | `drive-admin-onboarding-ui` → `skills/visual-check` | **replace** | short `/generate` driving section: sign in → card render check → student-preview element shot at 375 px → SIGN OUT with revocation proof; W4 adds the one-command renderer |
+| `skills/scope-cards` | — **new (W2)** | card curation skill (probe grounding, prerequisite forms, difficulty hooks); `generate` §0.1 + §2 step 1 updated to read the card first — a grade with no scope cards is refused |
 | all other `.devin/skills/*` (S1–S15 paper suite, admin-job, coverage, transcription, etc.) | **drop** | paper-pipeline skills with no generation analogue |
 
 ## Deliberately kept paper-era mentions
