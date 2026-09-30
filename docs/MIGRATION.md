@@ -89,7 +89,7 @@ Session W0 of the vibhaga-qgen plugin. Source: `Vibhaga-Docs@08c09a9`, tools fro
 
 ```
 git grep -nIE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-git grep -nIE 'supabase\.co|adgwjkjxlmumgogilepj|jtrbmmsufghmnrzvcbix'
+git grep -nIE "supabase\.co|$CONTENT_REF|$ADMIN_AUTH_REF"   # refs from your private env, never written here
 git grep -nIE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
 git grep -nP '[\x{0D80}-\x{0DFF}]'
 git grep -nIE '\b[0-9a-f]{8}\b' -- skills agents docs
@@ -98,7 +98,7 @@ git grep -nIE '\b[0-9a-f]{8}\b' -- skills agents docs
 | hit class | disposition |
 |---|---|
 | uuids in `tests/` + `tools/` | **all synthetic** — `00000000-…-4000-8000-…` lesson placeholders, `11111111`/`22222222`/`deadbeef` test constants, uuid5 ids in `staged-golden.json` derived from a synthetic `id_seed`, `6b1c9c6e-…` the uuid5 NAMESPACE constant in `build-staged.py`. **One real job id found and replaced** (`501b9979-…` → `99999999-…` in `test_publish_initial_draft.py`; it was run-12's live job) |
-| `supabase.co` / project refs | **0 hits** |
+| `supabase.co` / project refs | **0 hits** outside this section. ⚠️ 2026-09-30: the scan command itself had the two refs written in literally (a self-inflicted hit the scan could not see); replaced by env variables. They remain in git history before this commit. |
 | emails | `user:pass@api.test`, `user@r2.test`, `actor@example.test` — synthetic `.test` domains only ✅ |
 | Sinhala | kept only as **generic vocabulary/grammar fixtures**, never question stems: `markdown-gate.mjs` self-test inputs (the gate's Sinhala rules need Sinhala inputs — generic instruction phrases like *"complete the table"*), `run-gate.sh` + `author-question-answers` limb-A drawing-verb **regex**, one-word fixture labels (`භාග` *fractions*, `අක්ෂ` *axis*, `සෙ.මී.` *cm* abbrev), `vdd-layout.mjs` font-load probe `සිංහල`, T128's two vocabulary word-pairs in TRAPS.md |
 | 8-hex id fragments in `skills/ agents/ docs/` | **0 hits** |
