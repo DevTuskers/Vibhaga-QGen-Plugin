@@ -41,6 +41,7 @@ Session W0 of the vibhaga-qgen plugin. Source: `Vibhaga-Docs@08c09a9`, tools fro
 | `AUTHORING-YAML.md` | drop | drop | superseded by `content.yaml` documented in `build-staged.py` + `generate` skill |
 | `orchestrate.md` | drop | drop | the S1–S13 paper pipeline; W7 writes the generation orchestrator |
 | `TRAPS.md` | extract | partial | `docs/TRAPS.md` — the 6 mandated traps (T5, T9, T77, T125, T136, T142) + every trap still cited by kept text (T4, T13, T14, T25, T30, T34, T56, T61, T70, T74, T96, T98, T99, T104, T114, T128) = **22 traps**; ids/stems scrubbed |
+| `scope-cards.py` | — **new (W2)** | new | lesson scope cards: `draft` emits the tool-owned `generated:` block (sections, vocabulary, worked examples, exercises, activities, figure kinds, summary) pinned to the lesson's sha256, preserving `curated:`; `check` verifies schema, staleness, probe grounding, prerequisites and hooks; `--exam ol` refused until OD-3 |
 
 ## Tests & fixtures
 
@@ -55,6 +56,7 @@ Session W0 of the vibhaga-qgen plugin. Source: `Vibhaga-Docs@08c09a9`, tools fro
 | `test_build_staged.py` | **new** | golden `staged.json`, determinism, every refusal |
 | `tests/fixtures/{content.yaml,staged-golden.json,figures/}` | **new** | synthetic spec + golden output; `00000000-0000-4000-8000-…` placeholder lesson uuids |
 | `tests/fixtures/stem-ratio-{bad,good}.txt` | **new** | the red-team fixture pair for the stem-ratio check |
+| `test_scope_cards.py` + `tests/fixtures/scope-corpus/` | — **new (W2)** | offline suite over a synthetic 2-lesson corpus (English filler, structural keywords only): draft fields, byte-identical rerun, curated preservation, every `check` failure mode, every exit-2 refusal |
 | vector/raster audit-claim-set fixtures in self-tests | kept | the tool still parses those channels; they exercise the shared grammar — no new work |
 
 ## Skills & agents
@@ -66,9 +68,11 @@ Session W0 of the vibhaga-qgen plugin. Source: `Vibhaga-Docs@08c09a9`, tools fro
 | `structure-question-parts` | **modify** | plan said "as-is"; the paper-side wrapper (S12 contract, printed-label rulings) had to go — the label/depth/duplicate-id law is kept verbatim |
 | `read-figure-claim-set` | **modify** | constructed channel only; the claim grammar kept verbatim; new `stem:` header + stem-ratio check documented; printed-figure reading and Audit B source-reading dropped |
 | `draw-and-verify-question-vdd` | **modify** | §3/§4 kept; §5 rewritten as drawn-vs-stated (claim-set anchors are canvas coordinates; vdd-check's numeric check + label metrics); live figure uuids scrubbed to generic references; §4.0a layout recipe kept — **this is why `vdd-layout.mjs` is carried** |
+| `draw-and-verify-question-vdd` → `SKILL.md` + `reference.md` | **split (2026-09-30)** | split first on a wrong hypothesis — the 57 KB file skipped `devin plugins info`, so a ~50 KB size cap was suspected; the 38 KB split still failed. **Real cause:** the frontmatter was not valid YAML (an unquoted `: ` inside the plain-scalar `description`) — fixed with a `>-` folded block, and a frontmatter lint added to `check-suite.py` (T-QG-1). Split kept: long-form material lives verbatim in `reference.md` (§3.7.2–3.7.4, §4.0a, §5.4–5.5, §6 traps) with pointer lines in `SKILL.md` |
 | `author-question-answers` | **modify** | D3 independent derivation + second-method check + §4 field-fitting + §4.5 figure trigger + §5a answer-id key trap kept; marking-scheme sourcing dropped (there is none); live counts/ids/stems scrubbed; noted `content.yaml` has no answer-figure key yet (§4.5.5) |
 | `critique-onboarded-content` → `agents/qgen-critic.md` | **replace** | custom-subagent format (`agents/<name>.md`); only §1.3 playground mode + the C-checks it needs; marked **draft — W6 completes** |
 | `drive-admin-onboarding-ui` → `skills/visual-check` | **replace** | short `/generate` driving section: sign in → card render check → student-preview element shot at 375 px → SIGN OUT with revocation proof; W4 adds the one-command renderer |
+| `skills/scope-cards` | — **new (W2)** | card curation skill (probe grounding, prerequisite forms, difficulty hooks); `generate` §0.1 + §2 step 1 updated to read the card first — a grade with no scope cards is refused |
 | all other `.devin/skills/*` (S1–S15 paper suite, admin-job, coverage, transcription, etc.) | **drop** | paper-pipeline skills with no generation analogue |
 
 ## Deliberately kept paper-era mentions
@@ -86,7 +90,7 @@ Session W0 of the vibhaga-qgen plugin. Source: `Vibhaga-Docs@08c09a9`, tools fro
 
 ```
 git grep -nIE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-git grep -nIE 'supabase\.co|adgwjkjxlmumgogilepj|jtrbmmsufghmnrzvcbix'
+git grep -nIE "supabase\.co|$CONTENT_REF|$ADMIN_AUTH_REF"   # refs from your private env, never written here
 git grep -nIE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
 git grep -nP '[\x{0D80}-\x{0DFF}]'
 git grep -nIE '\b[0-9a-f]{8}\b' -- skills agents docs
@@ -95,7 +99,7 @@ git grep -nIE '\b[0-9a-f]{8}\b' -- skills agents docs
 | hit class | disposition |
 |---|---|
 | uuids in `tests/` + `tools/` | **all synthetic** — `00000000-…-4000-8000-…` lesson placeholders, `11111111`/`22222222`/`deadbeef` test constants, uuid5 ids in `staged-golden.json` derived from a synthetic `id_seed`, `6b1c9c6e-…` the uuid5 NAMESPACE constant in `build-staged.py`. **One real job id found and replaced** (`501b9979-…` → `99999999-…` in `test_publish_initial_draft.py`; it was run-12's live job) |
-| `supabase.co` / project refs | **0 hits** |
+| `supabase.co` / project refs | **0 hits** outside this section. ⚠️ 2026-09-30: the scan command itself had the two refs written in literally (a self-inflicted hit the scan could not see); replaced by env variables. They remain in git history before this commit. |
 | emails | `user:pass@api.test`, `user@r2.test`, `actor@example.test` — synthetic `.test` domains only ✅ |
 | Sinhala | kept only as **generic vocabulary/grammar fixtures**, never question stems: `markdown-gate.mjs` self-test inputs (the gate's Sinhala rules need Sinhala inputs — generic instruction phrases like *"complete the table"*), `run-gate.sh` + `author-question-answers` limb-A drawing-verb **regex**, one-word fixture labels (`භාග` *fractions*, `අක්ෂ` *axis*, `සෙ.මී.` *cm* abbrev), `vdd-layout.mjs` font-load probe `සිංහල`, T128's two vocabulary word-pairs in TRAPS.md |
 | 8-hex id fragments in `skills/ agents/ docs/` | **0 hits** |

@@ -49,8 +49,9 @@ the `qgen-critic` agent ([`agents/qgen-critic.md`](../../agents/qgen-critic.md))
    endpoint (0018 PD-4), and there must not be one. Resolve the checkout via `VIBHAGA_CORPUS` or the sibling
    `../Vibhaga-Maths-Corpus` of this plugin. Read `maths/grade-06/README.md` (for the grade in scope) first: only
    lessons it lists as published are sources. **If the corpus has no published README for the requested grade, REFUSE
-   — do not guess the lesson list.** Then read the lesson file itself, including every figure's `**Description:**`.
-   Never hand-edit the corpus.
+   — do not guess the lesson list. A lesson also needs a scope card** in `maths/grade-NN/scope-cards/` (made by
+   [`scope-cards`](../scope-cards/SKILL.md)) — **a grade or lesson with no scope cards is refused.** Then read the
+   lesson file itself, including every figure's `**Description:**`. Never hand-edit the corpus.
 2. **Every question stays inside the lesson, the grade and the syllabus.** A question that needs a later lesson's idea is
    out of scope, even if the maths is right. Tag it with that lesson's `lesson_id` from the live taxonomy (`lessons`
    subcommand), never a guessed uuid.
@@ -89,16 +90,19 @@ Work in `wt/<topic>/` (umbrella worktree rule). Keep a run ledger there: the too
 notes. Every command below reads credentials from `Vibhaga-Admin/.env.local` at run time and never prints them.
 `T=tools/playground-publish.py` (run from the plugin root).
 
-1. **Read the lesson.** From the corpus checkout, list for the lesson: its sections, every worked example and exercise
-   (these are what you must *not* copy), its vocabulary in Sinhala as printed, and the figures you could reuse as a
-   *kind* of figure. Write that list into your notes. This is your scope statement.
+1. **Read the scope card, then the lesson.** From the corpus checkout, open the lesson's scope card first
+   (`maths/grade-NN/scope-cards/<NN>-<slug>.yaml` — [`scope-cards`](../scope-cards/SKILL.md) drafts and checks them).
+   The card *is* your scope statement: `sections` + `summary` + `vocabulary` + `not_taught` say what the lesson does
+   and does not teach; `worked_examples` + `exercises` are the don't-copy list; `figure_kinds` say which figures you
+   could reuse as a *kind* of figure; `difficulty_hooks` anchor the R/M/H rubric. **A grade or lesson with no scope
+   cards is refused** — never author from the lesson file alone. Then read the lesson file itself, including every
+   figure's `**Description:**`. Write the scope statement into your notes.
    - **O/L work:** an O/L scope card is assembled from the grade-10 + grade-11 *scope cards* (not the lesson
      files) via the O/L mapping in Vibhaga-Docs `lessons/ol/mathematics.md`, and an O/L question is tagged
      with the O/L lesson ids (owner ruling 2026-09-29). Scope cards live in the PRIVATE corpus at
-     `maths/grade-NN/scope-cards/<NN>-<slug>.yaml` and `maths/ol/scope-cards/` — they arrive in W2, and a
-     grade is enabled only once its scope cards exist: **O/L is refused until BOTH the G10 and G11 cards
-     exist.** Until W2 lands, §0.1's interim gate holds — no published corpus README for the requested
-     grade ⇒ REFUSE. Never copy a scope card into this public repo.
+     `maths/grade-NN/scope-cards/<NN>-<slug>.yaml` and `maths/ol/scope-cards/`; **O/L is refused until BOTH the
+     G10 and G11 card sets exist** (composition itself is plan OD-3 — the tool refuses). Never copy a scope card
+     into this public repo.
 2. **Find the taxonomy and what exists.**
    - `python3 $T lessons --grade 6 --subject Mathematics` gives the `lesson_id`.
    - `python3 $T questions list --lesson-id <id> --all --out existing.json` gives every row already tagged to the lesson.

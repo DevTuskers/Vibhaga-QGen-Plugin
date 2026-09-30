@@ -19,6 +19,8 @@ deleted, a table silently losing cells. All of it mechanical, all of it catchabl
   5. Substantive lines deleted in the staged diff are surfaced as warnings.
   6. A GFM table row must not have more cells than its header (extras are silently DELETED).
   7. A blank line inside a pipe table splits it; rows after render as a paragraph with pipes in it.
+  8. Every skills/*/SKILL.md + agents/*.md frontmatter parses as YAML with non-empty `name`/`description`
+     (T-QG-1: the CLI drops a skill whose frontmatter does not parse — silently, at install).
 
 Part B — the real test run, all offline:
   · `python3 -m unittest discover -s tests -p 'test_*.py'`
@@ -241,6 +243,52 @@ def check_table_breaks(_docs: dict[Path, str]) -> None:
 
 
 # ---------------------------------------------------------------------------------------------
+# A8. Frontmatter must parse — the CLI drops a skill whose frontmatter is not valid YAML, with no
+#     error at install (T-QG-1: a plain-scalar `description:` containing `constructed channel: …`
+#     cost a skill a whole debugging round).
+# ---------------------------------------------------------------------------------------------
+FRONTMATTER = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*\r?\n", re.S)
+
+
+def frontmatter_errors(label: str, text: str, expect_name: str | None = None) -> list[str]:
+    """Frontmatter lint for one file — returns error strings (empty = clean)."""
+    import yaml  # lazy — same convention as the other tools
+
+    m = FRONTMATTER.match(text)
+    if not m:
+        return [f"{label}: no `---` frontmatter block at the top — the CLI drops the skill silently (T-QG-1)"]
+    try:
+        fm = yaml.safe_load(m.group(1))
+    except yaml.YAMLError as e:
+        return [
+            f"{label}: frontmatter is not valid YAML — {e} — the CLI drops the skill with no "
+            f"error at install (T-QG-1). Quote or fold (`>-`) any scalar containing a colon."
+        ]
+    if not isinstance(fm, dict):
+        return [f"{label}: frontmatter is not a mapping — the CLI drops the skill silently (T-QG-1)"]
+    errs: list[str] = []
+    for key in ("name", "description"):
+        if not isinstance(fm.get(key), str) or not fm[key].strip():
+            errs.append(f"{label}: frontmatter needs a non-empty string `{key}`")
+    if expect_name is not None and fm.get("name") != expect_name:
+        errs.append(
+            f"{label}: frontmatter `name:` {fm.get('name')!r} != directory name {expect_name!r}"
+        )
+    return errs
+
+
+def check_frontmatter(docs: dict[Path, str]) -> None:
+    for p, s in docs.items():
+        if p.name == "SKILL.md" and p.parent.parent.name == "skills":
+            expect = p.parent.name
+        elif p.parent.name == "agents":
+            expect = None
+        else:
+            continue
+        ERRORS.extend(frontmatter_errors(rel(p), s, expect))
+
+
+# ---------------------------------------------------------------------------------------------
 # Part B — the offline test run.
 # ---------------------------------------------------------------------------------------------
 def sibling(name: str, env_key: str) -> Path:
@@ -272,6 +320,7 @@ def run_tests() -> None:
     run("unittest", [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py"], env)
     run("audit-claim-set --self-test", [sys.executable, "tools/audit-claim-set.py", "--self-test"], env)
     run("playground-publish --self-test", [sys.executable, "tools/playground-publish.py", "--self-test"], env)
+    run("scope-cards --self-test", [sys.executable, "tools/scope-cards.py", "--self-test"], env)
 
     if have_web and have_admin:
         run("markdown-gate --self-test", ["node", "tools/markdown-gate.mjs", "--self-test"], env)
@@ -300,6 +349,7 @@ def main() -> int:
     check_trap_references(docs)
     check_enum_consumers(docs)
     check_links(docs)
+    check_frontmatter(docs)
     check_deletions()
 
     print("part B — offline test run:")
@@ -316,4 +366,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) == 3 and sys.argv[1] == "--lint-frontmatter":
+        target = Path(sys.argv[2])
+        expect = target.parent.name if target.name == "SKILL.md" else None
+        errs = frontmatter_errors(str(target), target.read_text(encoding="utf-8"), expect)
+        for e in errs:
+            print(f"ERROR  {e}")
+        sys.exit(1 if errs else 0)
     sys.exit(main())

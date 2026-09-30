@@ -1,0 +1,8 @@
+schema_version: 1
+corpus_id: fixture-maths-grade-06
+grade: 6
+subject: Mathematics
+medium: si
+included_lessons:
+- 1
+- 2

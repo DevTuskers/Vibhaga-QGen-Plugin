@@ -30,6 +30,7 @@ a stale cache, an unrecorded id, a flag that lives on the row but not the doc.
 | T128 | a correct "never" rule applied beyond its real constraint manufactures its own defect |
 | T136 | a constructed claim set that "passes" because you read the footer, not the exit code |
 | T142 | the playground publish raises the flag on the ROW, not in the staged doc |
+| T-QG-1 | a skill whose frontmatter is not valid YAML is silently dropped by the CLI — `devin plugins info` + the frontmatter lint are the check |
 
 ---
 ## T4 — A `204` from `/auth/v1/logout` is not proof of revocation
@@ -665,3 +666,26 @@ Audit A from a parser into a geometry check (62–97 assertions per figure on th
 **The check:** after every real publish, PUT the doc back with `published: true` and the flag `true` on every id in `question_ids ∪ reflagged ∪ reraised`. Then GET it and assert both fields per id. `playground-publish.py publish` does this (read-back 1) before its SQL read-back. Cited by `generate-lesson-questions` §1/§4. *(Phase 5 critique finding; tool guard added in Phase 6, 2026-09-27.)*
 
 *Source: Vibhaga-Docs `.devin/skills/_maths-onboarding/TRAPS.md` T142 @08c09a9 — production ids scrubbed; paper-era references kept as history where the lesson is pipeline-neutral.*
+
+---
+
+## T-QG-1 — The skill that never loaded: frontmatter that is not valid YAML is dropped silently
+
+**Looked true:** `skills/draw-and-verify-question-vdd/SKILL.md` was committed alongside the other seven
+skills, so the CLI loads it like the other seven.
+**Actually:** `devin plugins info` listed **7 of 8** skills — the file was silently skipped, no error at
+install. The first suspect was size (57.5 KB vs ≤ 46.5 KB for every loading skill), so the file was split
+— **and the 38 KB SKILL.md still did not load**. The size hypothesis was wrong. The real cause: the
+`description:` was a **plain scalar containing `constructed channel: the geometry…`** — an unquoted
+`: ` inside a plain scalar is a YAML mapping error (*"mapping values are not allowed here"*), and a skill
+whose frontmatter does not parse is dropped with no error, no warning. The fix was two lines:
+`description: >-` (a folded block) and nothing else.
+**The check:** two gates — count the skills in `devin plugins info` after adding or editing a SKILL.md,
+and the **`check-suite.py` frontmatter lint**, which runs `yaml.safe_load` on every
+`skills/*/SKILL.md` + `agents/*.md` frontmatter and requires non-empty `name`/`description` strings (for
+skills, `name` must equal the directory name). Quote or fold any description that contains a colon.
+⚠️ **The wrong-hypothesis split was kept** — `reference.md` holds the long-form material and SKILL.md is
+smaller for it; a wrong theory can still leave a good diff, but a second guess after the first one fails
+is a loop, not a fix: when the explanation doesn't predict, instrument the parse, not the file.
+
+*Source: this plugin — observed 2026-09-30 on `skills/draw-and-verify-question-vdd` (7 of 8 skills in `devin plugins info`).*
