@@ -35,6 +35,8 @@ anchors ARE canvas coordinates, in the frame `source:` declares — that is the 
 paper side, where anchors were source-page points.)
 ⚠️ **"Per figure" includes an ANSWER's figure** — usually answer figures are constructed too; §2.3's rules
 apply with the variant notes below.
+⭐ **If the figure matches a template, don't author this file by hand:** [`figure-templates`](../figure-templates/SKILL.md)
+(`tools/vdd_templates.py`) emits the whole claim set — stem-checked, derive-backed — together with the drawing.
 
 ---
 
@@ -54,8 +56,20 @@ apply with the variant notes below.
    `360`), or the value of another backed derive (transitively, no cycles) — an invented
    `derive 3 / 2 = 1.5` does not rescue a copied 1.5 when the stem says 5 and 2; the failure names the
    unbacked literal. `angle … = v` likewise. The failure message says the value
-   is not justified by the stem — *"drawn ratio copied?"* — and names the claim id. The red-team this
-   exists for: a cuboid-face figure drawn 1.5:1 for a 5:2 stem passed the OLD audit because its anchors
+   is not justified by the stem — *"drawn ratio copied?"* — and names the claim id.
+   ⚠️ But the stem-pair check alone cannot refuse a forged ratio when the stem **happens to name
+   the copied numbers** — the real incident's stem stated 5, 3 *and* 2, and 3/2 = 1.5 was
+   "stem-justified". Three further doors close that (review R1 + critique R3): **(a) LABEL-RATIO** —
+   a ratio between two segments carrying numeric labels (`label "5 cm" names DC`) must equal the
+   *labelled* numbers' ratio, whatever the drawn anchors say. **(b) MIS-CITATION** — a `derive Kn`
+   cited in the note must exist *and* match the claimed value; citing `derive K1` that says 2.5 for
+   a claimed 1.5 is a false justification even when a stem pair coincides. **(c) DRAWN-VS-LABEL
+   PAIRS** — the forge that claims the copied ratio on the *unlabelled parallel* edge never trips
+   (a), so independently of the claims, every pair of segments carrying numeric labels must have a
+   drawn anchor ratio equal to the printed ratio. A deliberately not-to-scale (foreshortened)
+   labelled edge is adjudicated by naming its label claim's id in `ambiguous:`. The red-team this
+   exists for: a
+   cuboid-face figure drawn 1.5:1 for a 5:2 stem passed the OLD audit because its anchors
    agreed with its claim — claim and drawing were self-consistently wrong together.
 3. **You do not draw.** Anchors are canvas coordinates as you intend them, in a named frame; element
    types, budgets and `a11y` are the drawing skill's
@@ -395,7 +409,11 @@ Every one of these is mechanical, and every one has caught something real:
   and the claims came from the same intent, so they cannot honestly differ.
 - **Claims vs. the stem (constructed only).** Every `ratio`/`angle` numeric claim is justified by the
   `stem:` numbers or a `derive` citation (§0.2). This is the check that catches a claim set which is
-  self-consistent and wrong for the question.
+  self-consistent and wrong for the question. ⚠️ The stem check alone has a hole — a stem stating
+  5, 3 and 2 justifies a forged 1.5 (= 3/2), which is exactly the drawn lie. Two checks close it:
+  a ratio claimed on **labelled** segments must equal the *labelled* numbers (a not-to-scale
+  ratio belongs in `ambiguous:`), and every cited `derive Kn` must exist **and** match the claim's
+  value.
 - **Arithmetic.** Angles at a point on a straight line sum to 180; a triangle's sum to 180; a
   complementary pair to 90; vertical angles are equal.
 - **Scale honesty.** A declared not-to-scale site is `scale:`'d (§3.3).

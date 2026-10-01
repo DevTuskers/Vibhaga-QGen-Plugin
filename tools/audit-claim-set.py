@@ -949,19 +949,102 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
                       f"(stem numbers {stem_nums}; drawn ratio copied? — cite a matching "
                       f"`derive` if the value is derived)", c["id"])
 
+        # 2e. TWO DOORS the stem-pair check alone leaves open (the 2026-09-29 cuboid: the stem
+        #     states 5, 3 and 2, so the FORGED drawn ratio 1.5 = 3/2 is "stem-justified" — the
+        #     claim set and the drawing agreed and both were wrong):
+        #       (i)  MIS-CITATION — every `derive Kn` a ratio/angle claim cites must exist AND
+        #            match the claim's own value. Citing a derive that says something else is a
+        #            false justification, whatever the stem happens to allow.
+        #       (ii) LABEL-RATIO — a ratio between two segments that carry NUMERIC labels is
+        #            owned by the figure's own printed numbers: `ratio len PQ / len RS = v` with
+        #            PQ labelled "5 cm" and RS "2 cm" must claim 2.5, not the drawn 1.5. A
+        #            deliberately not-to-scale ratio between labelled segments is adjudicated
+        #            in `ambiguous:` like any other contested claim.
+        seg_label: dict = {}   # "PQ" -> (number, glyph, claim-id) — orientations tried at use
+        for target, users in label_targets.items():
+            if not re.fullmatch(r"[A-Z]{2}", target):
+                continue
+            lm = re.match(r"^\s*(\d+(?:\.\d+)?)\s*[^\d\s]*\s*$", users[0][1])
+            if not lm:
+                continue
+            cid0, glyph0 = users[0][0], users[0][1]
+            # (iv) UNDECLARED-TARGET (critic forge2): a numeric label bound to a segment-shaped
+            #      name that `segments:` never declares ("5 cm" names AC, a diagonal) dodges the
+            #      whole drawn-vs-label machinery — the pair check below cannot see it. The
+            #      label may name the segment either way around (DC for the declared CD).
+            declared = target in cs["segments"] or target[::-1] in cs["segments"]
+            if not check(declared,
+                         f"{cid0}: numeric label {glyph0!r} bound to an undeclared segment "
+                         f"{target} — declare it in `segments:` so the drawn-vs-label check "
+                         f"can measure it", cid0):
+                continue
+            n = float(lm[1])
+            # (v) a printed length of 0 or less is not a length — and a zero would silently
+            #     no-op the pair check's ratio denominator.
+            if not check(n > 0, f"{cid0}: {target} is labelled {glyph0!r} — a length label "
+                                "must be a positive number", cid0):
+                continue
+            seg_label[target] = (n, glyph0, cid0)
         for c in cs["claims"]:
             if (m := re.match(r"^ratio len ([A-Z])([A-Z]) / len ([A-Z])([A-Z]) = (\d+(?:\.\d+)?)$",
                               c["pred"])):
-                v = float(m[5])
+                v, rel = float(m[5]), True
                 if v == 0:
                     continue            # a zero ratio already fails the anchor check above
                 justified = any(a_ != 0 and b_ != 0 and abs(a_ / b_ - v) / v <= TOL_RATIO
                                 for a_ in stem_nums for b_ in stem_nums)
-                stem_check(c, v, justified, rel=True)
             elif (m := re.match(r"^angle ([A-Z]) ([A-Z]) ([A-Z]) = (\d+(?:\.\d+)?)$", c["pred"])):
-                v = float(m[4])
+                v, rel = float(m[4]), False
                 justified = any(abs(n - v) <= TOL_ANGLE for n in stem_nums)
-                stem_check(c, v, justified, rel=False)
+            else:
+                continue
+            # (i) every cited derive must exist and state THIS value — not just any derive
+            for dref in re.findall(r"derive\s+([A-Z]\d+[a-z]?)\b", c["note"]):
+                dv = derive_vals.get(dref)
+                ok = dv is not None and ((rel and abs(dv - v) / v <= TOL_RATIO)
+                                         or (not rel and abs(dv - v) <= TOL_ANGLE))
+                check(ok, f"{c['id']}: {c['pred']} -> cites `derive {dref}`"
+                          + (f" (= {dv:g}), matching the claim" if ok
+                             else (f" (= {dv:g}), which does not match {v:g} — citing a derive "
+                                   f"that says something else is a false justification"
+                                   if dv is not None
+                                   else ", but no `derive` claim with that id exists")), c["id"])
+            # (ii) a ratio between two LABELLED segments must equal their printed numbers
+            if rel:
+                n1 = seg_label.get(m[1] + m[2]) or seg_label.get(m[2] + m[1])
+                n2 = seg_label.get(m[3] + m[4]) or seg_label.get(m[4] + m[3])
+                if n1 is not None and n2 is not None and n2[0] != 0:
+                    check(abs(n1[0] / n2[0] - v) / v <= TOL_RATIO,
+                          f"{c['id']}: {c['pred']} -> the figure labels {m[1]}{m[2]} {n1[1]!r} and "
+                          f"{m[3]}{m[4]} {n2[1]!r}, so the drawn ratio must be "
+                          f"{n1[0] / n2[0]:g}, not {v:g} (a not-to-scale ratio on labelled "
+                          f"segments belongs in `ambiguous:`)", c["id"])
+                    stats["anchor_checked"] += 1
+            stem_check(c, v, justified, rel)
+        # (iii) DRAWN-LENGTH-vs-LABEL pairs (critic forge1): a forge can claim the copied ratio
+        #       on the UNLABELLED parallel edge so that (ii) never sees the labelled one. So —
+        #       regardless of what any claim names — every PAIR of declared segments carrying
+        #       plain-numeric labels must have its DRAWN anchor ratio equal the printed ratio:
+        #       the figure's own labels are the ground truth. A deliberately foreshortened edge
+        #       (an oblique-projection depth edge) is adjudicated by naming ITS label claim's id
+        #       in `ambiguous:`.
+        lab_segs = sorted(seg_label.items())
+        for i, (s1, (n1, g1, c1)) in enumerate(lab_segs):
+            if not (s1[0] in a and s1[1] in a):
+                continue
+            d1 = dist(a[s1[0]], a[s1[1]])
+            for s2, (n2, g2, c2) in lab_segs[i + 1:]:
+                if not (s2[0] in a and s2[1] in a) or n2 == 0 or d1 == 0:
+                    continue
+                d2 = dist(a[s2[0]], a[s2[1]])
+                drawn, want = d1 / d2, n1 / n2
+                cid = c1 if c1 in adjudicated else c2
+                check(abs(drawn - want) / want <= TOL_RATIO,
+                      f"labels {c1}/{c2} ({g1!r} on {s1}, {g2!r} on {s2}): the anchors draw "
+                      f"len {s1} / len {s2} = {drawn:g} but the printed numbers say {want:g} — "
+                      f"the drawing disagrees with its own labels (a deliberately foreshortened "
+                      f"edge is adjudicated by naming its label claim in `ambiguous:`)", cid)
+                stats["anchor_checked"] += 1
     checked_arrows = set()
     for acid, P, Q in arrows:
         for (P2, Q2), ax in axes.items():
@@ -1531,6 +1614,8 @@ CONSTRUCTED_MUTATIONS = [
 # (5 cm × 2 cm → 2.5). Anchors agree with the claim, so every check the pre-plugin tool ran passes;
 # only the stem-justification check (2d) catches that no pair of stem numbers gives 1.5. This is the
 # planted-bad baseline: it MUST fail, and the failure must cite K2.
+# ⚠️ Since R1 (the label-ratio check, 2e-ii): the same 1.5 ALSO fails because the LABELS say 5:2 —
+# a stem that HAPPENS to name 3 and 2 can no longer rescue the drawn ratio on labelled segments.
 SELF_TEST_STEM_RATIO = """\
 figure:   selftest-stem-ratio-1
 source:   constructed; frame is the question figure's own canvas
@@ -1567,18 +1652,20 @@ STEM_RATIO_MUTATIONS = [
     ("the corrected set — anchors and claim at the stem's own 2.5 (must PASS)",
      [("  B 210 40", "  B 310 40"), ("  C 210 140", "  C 310 140"),
       ("ratio len AB / len BC = 1.5", "ratio len AB / len BC = 2.5")], True),
-    ("the wrong ratio rescued by a BACKED `derive` citation (must PASS) — the stem names 3 and 2",
+    ("the wrong ratio citing a BACKED `derive` STILL fails — stem 3:2 justifies it, but the "
+     "labels say 5:2 (the label-ratio door, 2e-ii)",
      [("stem:     A cuboid has a rectangular face 5 cm long and 2 cm wide.",
        "stem:     A cuboid has a rectangular face 5 cm long and 2 cm wide, divided in the "
        "ratio 3 : 2."),
       ("K9  derive 5 / 2 = 2.5", "K9  derive 3 / 2 = 1.5"),
       ("the drawn ratio — copied from the canvas, not the stem",
-       "the face's 3:2 division, per derive K9")], True),
+       "the face's 3:2 division, per derive K9")], False),
     ("the wrong ratio rescued by an UNBACKED `derive` (fails — the literal 3 is no stem number)",
      [("K9  derive 5 / 2 = 2.5", "K9  derive 3 / 2 = 1.5"),
       ("the drawn ratio — copied from the canvas, not the stem",
        "the face's drawn proportions, per derive K9")], False),
-    ("a `derive` chain — backed via another derive's value (must PASS)",
+    ("a `derive` chain — backed via another derive's value — STILL fails against the labels "
+     "(2e-ii)",
      [("stem:     A cuboid has a rectangular face 5 cm long and 2 cm wide.",
        "stem:     A cuboid has a rectangular face 5 cm long and 2 cm wide, with a mark every "
        "3 cm along the face."),
@@ -1586,10 +1673,48 @@ STEM_RATIO_MUTATIONS = [
        "K9  derive 3 / 2 = 1.5          | inferred | the stem's mark spacing\n"
        "  K11 derive 1.5 * 1 = 1.5        | inferred | restates K9"),
       ("the drawn ratio — copied from the canvas, not the stem",
-       "the face's drawn proportions, per derive K11")], True),
-    ("a `derive` cited but with a NON-matching value (still fails)",
+       "the face's drawn proportions, per derive K11")], False),
+    ("a `derive` cited but with a NON-matching value (still fails — mis-citation, 2e-i)",
      [("the drawn ratio — copied from the canvas, not the stem",
        "the face's drawn proportions, per derive K9")], False),
+    ("a `derive` cited that does not exist at all (still fails — mis-citation, 2e-i)",
+     [("the drawn ratio — copied from the canvas, not the stem",
+       "the face's drawn proportions, per derive K99")], False),
+    ("the corrected set citing the MATCHING derive (must PASS) — label-ratio and stem agree",
+     [("  B 210 40", "  B 310 40"), ("  C 210 140", "  C 310 140"),
+      ("ratio len AB / len BC = 1.5 | stem     | the drawn ratio — copied from the canvas, not "
+       "the stem",
+       "ratio len AB / len BC = 2.5 | stem     | the stem's ratio, per derive K9")], True),
+    ("a deliberately not-to-scale ratio on labelled segments, ADJUDICATED in `ambiguous:` "
+     "(must PASS — a contested claim is written down, not hidden; the label claim's id is what "
+     "adjudicates the drawn-vs-label pair)",
+     [("ambiguous:  (none)",
+       "ambiguous:\n  K2, K7 - the face is drawn 1.5:1 for readability while the labels state "
+       "5 cm : 2 cm — deliberately not to scale")], True),
+    # ⭐ CRITIC R3 — the parallel-edge door: labels moved onto the parallel DC/DA while the claim
+    # rides the UNLABELLED AB/BC, anchors drawn 1.5, a BACKED `derive 3 / 2` (3 and 2 are stem
+    # numbers). Checks 2d/2e-i/2e-ii all pass it — only the anchor-vs-label PAIR check (2e-iii)
+    # sees that the DRAWN DC/DA disagree with their own printed "5 cm"/"2 cm".
+    ("the forged ratio claimed on the UNLABELLED parallel edge — drawn-vs-labels pair check "
+     "(2e-iii) still sees the printed numbers disagree with the anchors (fails)",
+     [("stem:     A cuboid has a rectangular face 5 cm long and 2 cm wide.",
+       "stem:     A cuboid is 5 cm long, 3 cm wide and 2 cm high."),
+      ("K7  label \"5 cm\" names AB", "K7  label \"5 cm\" names DC"),
+      ("K8  label \"2 cm\" names BC", "K8  label \"2 cm\" names DA"),
+      ("K9  derive 5 / 2 = 2.5", "K9  derive 3 / 2 = 1.5"),
+      ("the drawn ratio — copied from the canvas, not the stem",
+       "the front-face ratio, per derive K9")], False),
+    # ⭐ CRITIC R4 — the labels bound to names `segments:` never declared (AC is a DIAGONAL here):
+    # the pair check can only measure declared segments, so the binding itself must fail.
+    ("a numeric label on a name `segments:` never declared (2e-iv — the diagonal dodge, fails)",
+     [("  B 210 40", "  B 310 40"), ("  C 210 140", "  C 310 140"),
+      ("ratio len AB / len BC = 1.5", "ratio len AB / len BC = 2.5"),
+      ("K7  label \"5 cm\" names AB", "K7  label \"5 cm\" names AC")], False),
+    # and a non-positive printed length is not a length at all — the zero would silently no-op
+    # the pair check's denominator
+    ("a ZERO numeric label on a segment (2e-v — not a length, fails)",
+     [("K8  label \"2 cm\" names BC", "K8  label \"0 cm\" names BC"),
+      ('"2 cm"', '"0 cm"')], False),
     ("`stem:` deleted — no ground truth to justify anything (fails)",
      [("stem:     A cuboid has a rectangular face 5 cm long and 2 cm wide.\n", "")], False),
 ]

@@ -63,6 +63,10 @@ circulated while this file was written and that measurement disproved:
 Path C — author the JSON in the working dir, write `meta.diagram_dsl` in the publish payload — is the
 auditable one, and the one this skill's verification section (§5) is built around.
 
+> **Before drawing by hand:** if the figure matches one of the nine entries in
+> [`figure-templates`](../figure-templates/SKILL.md), `tools/vdd_templates.py` draws it AND emits the
+> claim set — stem-checked, with its own label-clearance pre-flight. §4's render check still gates it.
+
 ## 3. Draw from the claim set
 
 ### 3.1 Construction, not transformation — this is what makes it THIS skill

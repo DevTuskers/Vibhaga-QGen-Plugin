@@ -42,6 +42,7 @@ Session W0 of the vibhaga-qgen plugin. Source: `Vibhaga-Docs@08c09a9`, tools fro
 | `orchestrate.md` | drop | drop | the S1–S13 paper pipeline; W7 writes the generation orchestrator |
 | `TRAPS.md` | extract | partial | `docs/TRAPS.md` — the 6 mandated traps (T5, T9, T77, T125, T136, T142) + every trap still cited by kept text (T4, T13, T14, T25, T30, T34, T56, T61, T70, T74, T96, T98, T99, T104, T114, T128) = **22 traps**; ids/stems scrubbed |
 | `scope-cards.py` | — **new (W2)** | new | lesson scope cards: `draft` emits the tool-owned `generated:` block (sections, vocabulary, worked examples, exercises, activities, figure kinds, summary) pinned to the lesson's sha256, preserving `curated:`; `check` verifies schema, staleness, probe grounding, prerequisites and hooks; `--exam ol` refused until OD-3 |
+| `vdd_templates.py` | — **new (W3)** | — | the nine stem-checked figure builders: grid polygon, shaded grid, rays-from-a-point, number line, pictograph, rectangle-with-points, house pentagon, cuboid, dot pattern. Each takes the stem's numbers (`require_stem` against the audit's own regex), computes the geometry from them, fits the canvas, pre-flights label clearance (≥6 px to strokes / ≥8 px to the edge at the narrowest render width, real align/baseline semantics — the card surface's wider normalize is modelled), then emits the `constructed` claim set with its own derive backing (T-QG-2: a claim set must never be copied off the drawing). CLI: `list`, `build spec.json`, `--self-test` (all nine → audit; wired into `check-suite.py` Part B) |
 
 ## Tests & fixtures
 
@@ -57,6 +58,7 @@ Session W0 of the vibhaga-qgen plugin. Source: `Vibhaga-Docs@08c09a9`, tools fro
 | `tests/fixtures/{content.yaml,staged-golden.json,figures/}` | **new** | synthetic spec + golden output; `00000000-0000-4000-8000-…` placeholder lesson uuids |
 | `tests/fixtures/stem-ratio-{bad,good}.txt` | **new** | the red-team fixture pair for the stem-ratio check |
 | `test_scope_cards.py` + `tests/fixtures/scope-corpus/` | — **new (W2)** | offline suite over a synthetic 2-lesson corpus (English filler, structural keywords only): draft fields, byte-identical rerun, curated preservation, every `check` failure mode, every exit-2 refusal |
+| `test_vdd_templates.py` | — **new (W3)** | per-template claim-set assertions + audit exit-0 sweep over the synthetic self-test specs; the T-QG-2 red team (5:2 stem → 5:2 drawing; a hand-altered `= 1.5` claim with rescaled anchors exits non-zero naming the claim id; `length=1.5` against a 5:2 stem → `TemplateError`); every refusal path |
 | vector/raster audit-claim-set fixtures in self-tests | kept | the tool still parses those channels; they exercise the shared grammar — no new work |
 
 ## Skills & agents
@@ -73,6 +75,7 @@ Session W0 of the vibhaga-qgen plugin. Source: `Vibhaga-Docs@08c09a9`, tools fro
 | `critique-onboarded-content` → `agents/qgen-critic.md` | **replace** | custom-subagent format (`agents/<name>.md`); only §1.3 playground mode + the C-checks it needs; marked **draft — W6 completes** |
 | `drive-admin-onboarding-ui` → `skills/visual-check` | **replace** | short `/generate` driving section: sign in → card render check → student-preview element shot at 375 px → SIGN OUT with revocation proof; W4 adds the one-command renderer |
 | `skills/scope-cards` | — **new (W2)** | card curation skill (probe grounding, prerequisite forms, difficulty hooks); `generate` §0.1 + §2 step 1 updated to read the card first — a grade with no scope cards is refused |
+| `skills/figure-templates` | — **new (W3)** | when a template covers the figure vs hand-draw with the cookbook; the nine-entry catalogue (inputs, stem-checked numbers, emitted claims, limits); the spec → build → audit-claim-set → vdd-check workflow; pointer lines added where figures are first discussed in `generate`, `read-figure-claim-set`, `draw-and-verify-question-vdd` |
 | all other `.devin/skills/*` (S1–S15 paper suite, admin-job, coverage, transcription, etc.) | **drop** | paper-pipeline skills with no generation analogue |
 
 ## Deliberately kept paper-era mentions
