@@ -116,6 +116,21 @@ class PerTemplateClaims(unittest.TestCase):
         self.assertAlmostEqual(float(m.group(2)), b.anchors["P"][1], places=4)
         self.assertIn("budget:", b.claims)               # 39 elements > 32
 
+    def test_number_line_prefers_round_numeral_steps(self):
+        # W8 dogfood: the smallest-fitting-divisor rule labelled 60 63 66 … 90 and
+        # 730 734 … 750 — a round-to-ten line must land on the tens
+        b = vt.build_number_line(figure_id="t1",
+                                 stem="A number line shows 60 to 90, each unit in 1 part.",
+                                 v0=60, v1=90, parts_per_unit=1)
+        self.assertRegex(b.claims, r"tick [A-Z][A-Z] step 5")
+        numerals = re.findall(r'label "(\d+)" names \1', b.claims)
+        self.assertEqual(numerals, [str(v) for v in range(60, 91, 5)])
+        b = vt.build_number_line(figure_id="t1",
+                                 stem="A number line shows 730 to 750, each unit in 1 part.",
+                                 v0=730, v1=750, parts_per_unit=1)
+        m = re.search(r"tick [A-Z][A-Z] step (\d+)", b.claims)
+        self.assertIn(int(m.group(1)), (5, 10))
+
     def test_rays_marks_each_angle_and_reflex(self):
         b = vt.build_rays_from_point(figure_id="t1", stem="Angles 1, 2 and 3 are marked.",
                                      rays={"A": "NE", "B": "S", "C": "W"},

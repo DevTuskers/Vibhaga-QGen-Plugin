@@ -1010,6 +1010,14 @@ def build_rays_from_point(*, figure_id, stem, ask=None, title=None, description=
 # ────────────────────────────────────────────────────────────────────────────────
 # 4. number_line — a subdivided scale with marked points
 # ────────────────────────────────────────────────────────────────────────────────
+# numeral steps a reader expects, nicest-first: the 1·2·5 decades plus the 25s
+# (60 65 70 …, 730 735 740 …) — never the smallest fitting divisor, which labels
+# 60 63 66 … 90 and lands on no round ten
+_NICE_STEPS = sorted({m * 10 ** e for e in range(4) for m in (1, 2, 5)}
+                     | {25 * 10 ** e for e in range(3)})
+
+
+
 def build_number_line(*, figure_id, stem, ask=None, title=None, description=None, medium="english",
                       v0, v1, parts_per_unit, points=None, unit_px=None, overhang=30.0):
     require_stem(stem, v0=v0, v1=v1, parts_per_unit=parts_per_unit)
@@ -1040,8 +1048,10 @@ def build_number_line(*, figure_id, stem, ask=None, title=None, description=None
     est_span = span_v * unit_px + 2 * overhang + 12
     num_gap = _clearance_units(4.0, est_span)
     wlab = max(_label_width(f"{v:g}", 16) for v in (v0, v1, v0 + 1))
-    num_step = next((k for k in range(1, n_units + 1)
-                     if n_units % k == 0 and k * unit_px >= wlab + num_gap), n_units)
+    fits = lambda k: n_units % k == 0 and k * unit_px >= wlab + num_gap   # noqa: E731
+    num_step = next((k for k in _NICE_STEPS if fits(k)), None)
+    if num_step is None:                                # no nice divisor fits
+        num_step = next((k for k in range(1, n_units + 1) if fits(k)), n_units)
     elements: list[dict] = []
     elements.append({"id": "axis", "type": "arrow", "head": "both",
                      "points": [[-overhang, axis_y], [span_v * unit_px + overhang, axis_y]]})
