@@ -10,8 +10,8 @@ that does not exist there proves nothing, which is why Q3 carries the wrong_proj
 is sliced out of the REAL queries.sql (from its `-- Q2` / `-- Q3` header comment to the statement's
 terminating `;`), then guarded locally: ONE statement starting WITH or SELECT — Q2 opens `WITH`, so
 critic-read's SELECT-only assertion does not apply — and no write token (a smoke check; the read-only
-transaction is the real guard; slicing stops at the first `;`, so a block must never hold one inside
-a literal or comment).
+transaction is the real guard; slicing stops at the first `;` on a non-comment line, so a block must
+never hold one inside a string literal).
 
 psql runs `-X -q -w -A -F '\\t' -P footer=off -v ON_ERROR_STOP=1 -v batch_id=… -v expected=…` (q3:
 `-v actor_id=…`) with the SQL on stdin (`-f -`) prefixed `set default_transaction_read_only=on;`.

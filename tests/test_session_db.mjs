@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { q3Block, pgEnvFromUrl, claimsFor } from "../tools/session-db.mjs";
+import { q3Block, pgEnvFromUrl, claimsFor, pushFigure, claimsForWarn } from "../tools/session-db.mjs";
 
 // Synthetic SQL + a synthetic URL only — never a real host, user, or query text.
 
@@ -73,4 +73,26 @@ test("claimsFor: --claims-dir resolves <id>-claims.txt (the vdd_templates name) 
   const base = path.join(dir, "fig");
   fs.writeFileSync(`${base}-claims.txt`, "x");
   assert.equal(claimsFor("fig", base, dir).path, `${base}-claims.txt`);
+});
+
+test("pushFigure: a duplicate id lands as <id>~k but claims resolve by the BASE id", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-dup-"));
+  fs.writeFileSync(path.join(dir, "Q3-claims.txt"), "claims:\n  K1 none x | stem |\n");
+  const figures = [], seen = new Map();
+  pushFigure(figures, seen, "Q3", {}, "t", null, dir);
+  pushFigure(figures, seen, "Q3", {}, "t", null, dir);
+  assert.equal(figures[0].id, "Q3");
+  assert.equal(figures[1].id, "Q3~2");       // the dup keeps its display suffix
+  assert.equal(figures[1].baseId, "Q3");
+  // …but `Q3~2.claims.txt` is never a real filename — the dup shares Q3's claim set.
+  assert.equal(figures[0].claims.path, path.join(dir, "Q3-claims.txt"));
+  assert.equal(figures[1].claims.path, path.join(dir, "Q3-claims.txt"));
+});
+
+test("claimsForWarn: warns only under --claims-dir and only when nothing resolved", () => {
+  const dir = "/tmp/vc-claims-dir";
+  assert.equal(claimsForWarn("Q3", dir, null),
+    `WARN no claim set for Q3 (looked for Q3.claims.txt / Q3-claims.txt in ${dir})`);
+  assert.equal(claimsForWarn("Q3", dir, { path: "p", text: "t" }), null); // resolved → silent
+  assert.equal(claimsForWarn("Q3", null, null), null);                    // no --claims-dir → silent
 });

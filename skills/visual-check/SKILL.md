@@ -28,7 +28,10 @@ node tools/visual-check.mjs <staged.json | dir | figure.json …> \
   sub-question / answer level as `Q<n>[.<label>][.ans<k>]`), a single VDD `.json`, or a directory
   of them. Claim sets are optional: `<base>.claims.txt`, `<base>-claims.txt`, or
   `--claims-dir/<id>.claims.txt` / `--claims-dir/<id>-claims.txt` (the name `vdd_templates.py`
-  emits for a figure id — `Q3` → `Q3-claims.txt`).
+  emits for a figure id — `Q3` → `Q3-claims.txt`). With `--claims-dir`, a figure that resolves no
+  claim set gets a `WARN` line and a count in the summary — and a staged doc's figure id is
+  `Q<n>[.<label>][.ans<k>]`, so a template's `figure_id` must equal that id for its claims to be
+  found.
 - **What it renders** — the real Admin `/diagtest` page (real `globals.css`, real next/font
   Inter + Noto Sans Sinhala, real `html[data-theme]` light/dark via `localStorage
   vibhaga_admin_theme`) with an esbuild bundle of the real `DiagramRenderer` injected — same

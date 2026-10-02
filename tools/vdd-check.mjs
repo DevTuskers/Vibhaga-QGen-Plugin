@@ -7,7 +7,7 @@
  *     node tools/vdd-check.mjs figure.json \
  *          [--claims q7-claims.txt] [--anchors figure.anchors.json] \
  *          [--out /tmp/vdd-out] [--widths 320,375,768] [--no-render] [--headed] [--json] \
- *          [--allow K5,"label:7 cm"] [--admin /path/to/Vibhaga-Admin]
+ *          [--allow K5,"label:7 cm"] [--medium sinhala] [--admin /path/to/Vibhaga-Admin]
  *     node tools/vdd-check.mjs --self-test
  *
  * Vibhaga-Admin resolution: `--admin PATH` > `VIBHAGA_ADMIN` env > `<plugin>/../Vibhaga-Admin`.
