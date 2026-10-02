@@ -27,7 +27,8 @@ node tools/visual-check.mjs <staged.json | dir | figure.json …> \
 - **Inputs** — any mix of: a staged doc JSON (collects every `diagram_dsl` at question /
   sub-question / answer level as `Q<n>[.<label>][.ans<k>]`), a single VDD `.json`, or a directory
   of them. Claim sets are optional: `<base>.claims.txt`, `<base>-claims.txt`, or
-  `--claims-dir/<id>.claims.txt`.
+  `--claims-dir/<id>.claims.txt` / `--claims-dir/<id>-claims.txt` (the name `vdd_templates.py`
+  emits for a figure id — `Q3` → `Q3-claims.txt`).
 - **What it renders** — the real Admin `/diagtest` page (real `globals.css`, real next/font
   Inter + Noto Sans Sinhala, real `html[data-theme]` light/dark via `localStorage
   vibhaga_admin_theme`) with an esbuild bundle of the real `DiagramRenderer` injected — same

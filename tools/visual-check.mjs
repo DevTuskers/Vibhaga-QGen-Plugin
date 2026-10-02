@@ -23,7 +23,8 @@
  *   · a single VDD `.json` (schema `vibhaga.diagram`), id = basename;
  *   · a directory → every VDD `.json` in it (`*.anchors.json` and non-VDD JSON skipped).
  * A figure's claim set (optional): sibling `<base>.claims.txt` or `<base>-claims.txt`, else
- * `<claims-dir>/<id>.claims.txt` via `--claims-dir`.
+ * `<claims-dir>/<id>.claims.txt` or `<claims-dir>/<id>-claims.txt` via `--claims-dir` (the second
+ * name is what vdd_templates.py emits: figure id `Q3` → `Q3-claims.txt`).
  *
  * Server: `--base-url` is used as-is (must answer `GET /diagtest` 200); otherwise
  * `node_modules/.bin/next dev -p <free port>` is spawned in the Admin checkout and waited on for up
@@ -55,7 +56,7 @@ import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
 import { assess } from "./visual-metrics.mjs";
-import { q3Block, pgEnvFromUrl } from "./session-db.mjs";
+import { q3Block, pgEnvFromUrl, claimsFor } from "./session-db.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN = path.resolve(HERE, "..");
@@ -403,14 +404,6 @@ async function ensureServer() {
 // ── Inputs ───────────────────────────────────────────────────────────────────────────────────────
 const isVdd = (o) => o && typeof o === "object" && o.schema === "vibhaga.diagram";
 const isStaged = (o) => o && typeof o === "object" && Array.isArray(o.questions);
-
-function claimsFor(id, fileBase, claimsDir) {
-  const cands = [];
-  if (fileBase) cands.push(`${fileBase}.claims.txt`, `${fileBase}-claims.txt`);
-  if (claimsDir) cands.push(path.join(claimsDir, `${id}.claims.txt`));
-  for (const f of cands) if (fs.existsSync(f)) return { path: f, text: fs.readFileSync(f, "utf8") };
-  return null;
-}
 
 function collectFigures(inputs, claimsDir) {
   const figures = [];

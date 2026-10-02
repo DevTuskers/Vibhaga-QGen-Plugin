@@ -1,7 +1,10 @@
-// Pure helpers for `visual-check --session`'s revocation proof — separated so the unit tests can
-// import them without touching the Admin checkout, esbuild, or a browser. No secrets: the URL is
-// only ever parsed into PG* environment variables for the psql child process, never placed on its
-// command line (argv leaks into `ps`) and never printed.
+// Offline-testable helpers for `visual-check.mjs` — separated so the unit tests can import them
+// without touching the Admin checkout, esbuild, or a browser: q3Block/pgEnvFromUrl feed
+// `--session`'s revocation proof, claimsFor resolves a figure's claim-set file. No secrets: the
+// URL is only ever parsed into PG* environment variables for the psql child process, never placed
+// on its command line (argv leaks into `ps`) and never printed.
+import fs from "node:fs";
+import path from "node:path";
 
 /**
  * Slice the Q3 block out of queries.sql's text: from the "Q3 —" marker's first SELECT to its
@@ -33,4 +36,18 @@ export function pgEnvFromUrl(raw) {
     PGSSLMODE: u.searchParams.get("sslmode") ?? "require",
   };
   return env;
+}
+
+/**
+ * Find a figure's claim set, in order: `<fileBase>.claims.txt`, `<fileBase>-claims.txt` beside a
+ * VDD input, then under `--claims-dir` as `<id>.claims.txt` OR `<id>-claims.txt` — the second name
+ * is what `tools/vdd_templates.py` emits for a figure id (`Q3` → `Q3-claims.txt`). → {path, text}
+ * or null.
+ */
+export function claimsFor(id, fileBase, claimsDir) {
+  const cands = [];
+  if (fileBase) cands.push(`${fileBase}.claims.txt`, `${fileBase}-claims.txt`);
+  if (claimsDir) cands.push(path.join(claimsDir, `${id}.claims.txt`), path.join(claimsDir, `${id}-claims.txt`));
+  for (const f of cands) if (fs.existsSync(f)) return { path: f, text: fs.readFileSync(f, "utf8") };
+  return null;
 }

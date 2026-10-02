@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { q3Block, pgEnvFromUrl } from "../tools/session-db.mjs";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { q3Block, pgEnvFromUrl, claimsFor } from "../tools/session-db.mjs";
 
 // Synthetic SQL + a synthetic URL only — never a real host, user, or query text.
 
@@ -50,4 +53,24 @@ test("pgEnvFromUrl: percent-decoded user/password/database, IPv6 brackets stripp
   assert.equal(env.PGUSER, "svc user");
   assert.equal(env.PGHOST, "2001:db8::1");
   assert.equal(env.PGDATABASE, "auth db");
+});
+
+test("claimsFor: --claims-dir resolves <id>-claims.txt (the vdd_templates name) too", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-claims-"));
+  // Only the dash name exists — a staged doc's figure id Q3 must still find it.
+  fs.writeFileSync(path.join(dir, "Q3-claims.txt"), "claims:\n  K1 none x | stem |\n");
+  const hit = claimsFor("Q3", null, dir);
+  assert.equal(hit.path, path.join(dir, "Q3-claims.txt"));
+  assert.match(hit.text, /K1 none x/);
+  // <id>.claims.txt still wins when both exist beside it.
+  fs.writeFileSync(path.join(dir, "Q3.claims.txt"), "claims:\n  K9 none y | stem |\n");
+  assert.equal(claimsFor("Q3", null, dir).path, path.join(dir, "Q3.claims.txt"));
+  // A dotted part id works the same way; a missing figure resolves to null.
+  fs.writeFileSync(path.join(dir, "Q3.b-claims.txt"), "x");
+  assert.equal(claimsFor("Q3.b", null, dir).path, path.join(dir, "Q3.b-claims.txt"));
+  assert.equal(claimsFor("Q9", null, dir), null);
+  // Beside a VDD input file the sibling names are unchanged.
+  const base = path.join(dir, "fig");
+  fs.writeFileSync(`${base}-claims.txt`, "x");
+  assert.equal(claimsFor("fig", base, dir).path, `${base}-claims.txt`);
 });
