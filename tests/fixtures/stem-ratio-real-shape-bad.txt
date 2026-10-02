@@ -1,0 +1,28 @@
+figure:   stem-ratio-real-shape-1
+source:   constructed; frame is the question figure's own canvas
+channel:  constructed
+stem:     A cuboid is 5 cm long, 3 cm wide and 2 cm high.
+ask:      1 the ratio of the face's length to its width
+labels:   A B C D "5 cm" "2 cm"
+points:   A B C D
+segments: AB BC CD DA
+anchors:
+  A 60 40
+  B 210 40
+  C 210 140
+  D 60 140
+claims:
+  K1  right A B C                 | stem     | the face is a rectangle
+  K2  ratio len AB / len BC = 1.5 | stem     | the drawn ratio — but 1.5 = 3/2 IS a stem pair, and the cited derive is backed; only the figure's own labels refute it
+  K3  label "A" names A           | printed  |
+  K4  label "B" names B           | printed  |
+  K5  label "C" names C           | printed  |
+  K6  label "D" names D           | printed  |
+  K7  label "5 cm" names AB       | stem     | the stem's own length
+  K8  label "2 cm" names BC       | stem     | the stem's own width — wait, width is 3: the DRAWN ratio borrows the third stem number
+  K9  derive 3 / 2 = 1.5          | inferred | 3 and 2 are both stem numbers, so this derive is legitimately backed
+  K10 none tickMark parallelMark angleArc arrow shaded | printed |
+load-bearing:
+  1 -> K2
+unreadable: (none)
+ambiguous:  (none)

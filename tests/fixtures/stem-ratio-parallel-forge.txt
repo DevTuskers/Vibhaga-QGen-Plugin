@@ -1,0 +1,46 @@
+figure:   stem-ratio-parallel-forge-1
+source:   constructed; frame is the question figure's own canvas
+channel:  constructed
+stem:     A cuboid is 5 cm long, 3 cm wide and 2 cm high.
+ask:      a the ratio of the face's length to its width
+labels:   A B C D "5 cm" "2 cm" "3 cm"
+points:   A B C D E F G H
+segments: AB BC CD DA AE BF CG DH EF FG GH EH
+anchors:
+  A 60 40
+  B 210 40
+  C 210 140
+  D 60 140
+  E 99 17.5
+  F 249 17.5
+  G 249 117.5
+  H 99 117.5
+claims:
+  K1  derive 3 / 2 = 1.5          | stem     | 3 and 2 are both stem numbers — this derive is legitimately backed
+  K2  ratio len AB / len BC = 1.5 | stem     | the front-face ratio, per derive K1 — the copied 1.5 rides the UNLABELLED parallel edges
+  K3  right D A B                 | stem     | the front face is a true rectangle
+  K4  right A B C                 | stem     | the front face is a true rectangle
+  K5  right B C D                 | stem     | the front face is a true rectangle
+  K6  right C D A                 | stem     | the front face is a true rectangle
+  K7  parallel AB CD              | inferred | a cuboid's edge classes
+  K8  parallel AB EF              | inferred | a cuboid's edge classes
+  K9  parallel BC DA              | inferred | a cuboid's edge classes
+  K10 parallel BC FG              | inferred | a cuboid's edge classes
+  K11 parallel AE BF              | inferred | a cuboid's edge classes
+  K12 parallel AE CG              | inferred | a cuboid's edge classes
+  K13 paint DH dashed             | inferred | a hidden edge drawn broken
+  K14 paint EH dashed             | inferred | a hidden edge drawn broken
+  K15 paint GH dashed             | inferred | a hidden edge drawn broken
+  K16 label "A" names A           | printed  |
+  K17 label "B" names B           | printed  |
+  K18 label "C" names C           | printed  |
+  K19 label "D" names D           | printed  |
+  K20 label "5 cm" names DC       | stem     | the stem's 5 cm — printed on the PARALLEL edge to the claimed one
+  K21 label "2 cm" names DA       | stem     | the stem's 2 cm
+  K22 label "3 cm" names CG       | stem     | the stem's 3 cm
+  K23 none tickMark parallelMark angleMark arrow shaded | printed |
+load-bearing:
+  a -> K1, K2
+unreadable: (none)
+ambiguous:  (none)
+departures: (none)

@@ -131,7 +131,10 @@ notes. Every command below reads credentials from `Vibhaga-Admin/.env.local` at 
      ⚠️ **Ids are keyed on `id_seed` + `n` + the label path** — after a first publish keep all three stable:
      renumbering or relabelling mints NEW uuids and publish writes NEW rows that orphan the published ones
      (there is no rename).
-   - **Figure** (only where the question needs one): a playground figure is never printed, so the claim set is
+   - **Figure** (only where the question needs one): if it matches one of the nine templates in
+     [`figure-templates`](../figure-templates/SKILL.md), `tools/vdd_templates.py` builds it and emits the
+     claim set itself — the stem's numbers drive the drawing and the claims (T-QG-2). Otherwise: a
+     playground figure is never printed, so the claim set is
      `channel: constructed` ([`read-figure-claim-set`](../read-figure-claim-set/SKILL.md) §2.3) with a `stem:` header
      carrying the stem text (the audit's stem-ratio check refuses a drawn ratio the stem does not justify). Its
      `source:` names the frame, e.g. *"constructed; frame is the question's own canvas"*. ⚠️ **A question-side

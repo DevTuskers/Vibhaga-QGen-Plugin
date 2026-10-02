@@ -31,6 +31,7 @@ a stale cache, an unrecorded id, a flag that lives on the row but not the doc.
 | T136 | a constructed claim set that "passes" because you read the footer, not the exit code |
 | T142 | the playground publish raises the flag on the ROW, not in the staged doc |
 | T-QG-1 | a skill whose frontmatter is not valid YAML is silently dropped by the CLI — `devin plugins info` + the frontmatter lint are the check |
+| T-QG-2 | a claim set that records the DRAWN ratio passes every audit line — the stem's own numbers must drive the figure, and the value be justified by them |
 
 ---
 ## T4 — A `204` from `/auth/v1/logout` is not proof of revocation
@@ -689,3 +690,42 @@ smaller for it; a wrong theory can still leave a good diff, but a second guess a
 is a loop, not a fix: when the explanation doesn't predict, instrument the parse, not the file.
 
 *Source: this plugin — observed 2026-09-30 on `skills/draw-and-verify-question-vdd` (7 of 8 skills in `devin plugins info`).*
+
+---
+
+## T-QG-2 — The claim set agreed with itself: the audit can't see a figure built to its own record
+
+**Looked true:** the generated cuboid's claim set recorded `ratio len AB / len BC = 1.5`, the anchors
+agreed, `audit-claim-set.py` reported a pass — so the figure was right.
+**Actually:** the stem said **5:2**. The claim set had been written down from the *drawing*, not from
+the stem — Audit A then recomputed every numeric claim against the very anchors that carried the same
+wrong value and found self-consistency, so the render it gate-kept passed too. A claim set authored
+from its own figure is a tautology: every check inside the loop agrees, and the only witness that could
+disagree — the stem's own numbers — was never consulted. That is why `audit-claim-set.py` now REQUIRES
+a `stem:` header on every `constructed` set and refuses a `ratio`/`angle` claim whose value the stem's
+numbers (or a transitively backed `derive`) do not justify.
+⚠️ **The stem-pair check alone has a hole: the incident stem itself stated 5, 3 AND 2 — and
+`3 / 2 = 1.5` IS stem-justified.** Three further checks close it (review R1 + critique R3):
+**LABEL-RATIO** — a ratio claimed on segments carrying numeric labels (`label "5 cm" names DC`)
+must equal the *labelled* numbers' ratio; **MIS-CITATION** — a `derive Kn` cited in the note must
+exist *and* match the claimed value; and the **DRAWN-VS-LABEL pair check** — every *pair* of
+segments carrying numeric labels must have a drawn anchor ratio equal to the printed ratio, so the
+forge that claims 1.5 on the *unlabelled parallel* edge while "5 cm"/"2 cm" print on the other face
+still fails (the labels are ground truth the claim cannot route around). A deliberately
+foreshortened edge — an oblique-projection depth edge — is declared by naming its *label claim's*
+id in `ambiguous:`. (And the dodge that binds the numeric labels to names `segments:` never
+declared — a face diagonal `AC` — fails outright: a two-capital label target must be a declared
+segment, so the pair check can always measure it.) This is why `cuboid` (and
+`house_pentagon`/`rectangle_points` where labels exist) claim the ratio on the
+**labelled** segments. And it is why `tools/vdd_templates.py`
+exists at all: a template takes the stem's numbers, refuses any parameter the stem never states
+(`require_stem`), computes the geometry FROM them, and emits the claim set itself — there is no hand
+step where the drawn ratio can be copied into the claims.
+**The check:** for any figure a template can build, build it — the numbers come from the stem by
+construction. For a hand-built claim set, write every `ratio`/`angle` value from the STEM text first,
+then draw to it; if the drawing you have in mind doesn't match the stem's numbers, the drawing is
+wrong, not the stem. Never read a value off the canvas back into a claim (that is the draw→claim→audit
+loop that passed 1.5 vs 5:2). Cited by `figure-templates` and `generate` §4.
+
+*Source: this plugin — the 2026-09-29 cuboid incident; the audit change landed in W0 (`audit-claim-set.py`
+check 2d) and the templates in W3.*
