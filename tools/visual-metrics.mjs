@@ -304,7 +304,6 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
     if (el.type === "point" && typeof el.label === "string" && !pointByLabel.has(el.label))
       pointByLabel.set(el.label, el.at);
 
-  // ONE target computation — the per-width rows and the per-label finding must agree:
   // a point label's target is its OWN point's `at`; a word label (≥3-letter run, any script) is a
   // header/legend and is not measured; anything else's target is the nearest painted geometry.
   const targetOf = (l) => {
@@ -316,6 +315,24 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
   const targetBad = (l, tg) =>
     !tg.skipped && tg.d != null && l.fontSizeU > 0 && tg.d > TARGET_FACTOR * l.fontSizeU;
 
+  // ONE target result per label, shared by the rows and the finding — the distance to the thing
+  // a label names is a canvas-unit invariant, but the DOM box is re-measured at every width and
+  // px rounding wobbles it ~±0.7u (a number-line point label read 26.8u at 320 and 27.5u at 375,
+  // straddling the 1.5×fontSize bound, so the rows said not-ok while no finding fired). Evaluate
+  // it once on the LEAST-quantised measurement — the largest pxPerUnit that produced a box.
+  const targetByLabel = new Map(); // label index -> { l, tg }
+  {
+    const best = new Map();
+    for (const w of widths)
+      for (const l of w.labels ?? []) {
+        const c = best.get(l.i);
+        if (!c || (!c.l.bbox && l.bbox) || (!!c.l.bbox === !!l.bbox && (w.pxPerUnit || 0) > c.ppu))
+          best.set(l.i, { l, ppu: w.pxPerUnit || 0 });
+      }
+    for (const [i, c] of best) targetByLabel.set(i, { l: c.l, tg: targetOf(c.l) });
+  }
+  const targetRes = (l) => targetByLabel.get(l.i) ?? { l, tg: targetOf(l) };
+
   // ── edge + stroke, per label per width (rendered px) ─────────────────────────────────────────
   const rows = [];
   for (const w of widths) {
@@ -323,7 +340,7 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
     for (const l of w.labels ?? []) {
       const edge_px = l.edge_u == null || ppu == null ? null : l.edge_u * ppu;
       const stroke_px = l.stroke_u == null || ppu == null ? null : l.stroke_u * ppu;
-      const tg = targetOf(l);
+      const tr = targetRes(l);
       const row = {
         i: l.i,
         text: l.text,
@@ -331,10 +348,10 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
         width: w.width,
         edge_px: round1(edge_px),
         stroke_px: round1(stroke_px),
-        target_u: tg.skipped ? null : round1(tg.d),
+        target_u: tr.tg.skipped ? null : round1(tr.tg.d),
         geom_u: round1(l.geom_u),
         fontSizeU: round1(l.fontSizeU),
-        ok: edge_px !== null && edge_px >= EDGE_MIN_PX && (stroke_px === null || stroke_px >= STROKE_MIN_PX) && !targetBad(l, tg),
+        ok: edge_px !== null && edge_px >= EDGE_MIN_PX && (stroke_px === null || stroke_px >= STROKE_MIN_PX) && !targetBad(tr.l, tr.tg),
       };
       rows.push(row);
       if (edge_px === null)
@@ -346,17 +363,19 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
     }
   }
 
-  // Width-invariant rules (target, arc, font) run once per label — every width renders the same
-  // canvas units, so width[0]'s measurement stands for all.
+  // Width-invariant rules (arc, font) run once per label — every width renders the same canvas
+  // units, so width[0]'s measurement stands for all. Target is also invariant, but its DOM box
+  // estimate wobbles per width — its single result comes from targetByLabel (computed above on
+  // the least-quantised width) rather than trusting width[0].
   const firstLabels = widths[0]?.labels ?? [];
 
   // ── target ───────────────────────────────────────────────────────────────────────────────────
   let targetFails = 0;
   for (const l of firstLabels) {
-    const tg = targetOf(l);
-    if (targetBad(l, tg)) {
+    const tr = targetRes(l);
+    if (targetBad(tr.l, tr.tg)) {
       if (!allow.has(`label:${l.text}`)) targetFails++;
-      declared("target", `label ${JSON.stringify(l.text)}: ${round1(tg.d)}u from ${tg.via} (> ${TARGET_FACTOR}× fontSize ${round1(l.fontSizeU)}u)`, l.text);
+      declared("target", `label ${JSON.stringify(l.text)}: ${round1(tr.tg.d)}u from ${tr.tg.via} (> ${TARGET_FACTOR}× fontSize ${round1(tr.l.fontSizeU)}u)`, l.text);
     }
   }
   const target = { fails: targetFails };

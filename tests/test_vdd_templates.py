@@ -668,6 +668,24 @@ class RenderedClearance(unittest.TestCase):
                     self.assertGreater(lbl["at"][1],
                                        max(d["center"][1] for d in dots))
 
+    def test_number_line_point_label_in_the_stroke_target_window(self):
+        # W8 dogfood round 2: a MID_DOWN-modelled lift put the label 36.1 units up — the real
+        # DOM box (a capital reaches ~0.5·size below the anchor, not 0.58·size) left it 27.1u
+        # from its point, over visual-check's 1.5×fontSize target bound. The lift must satisfy
+        # BOTH rules: point→box stays ≤ 1.5·fontSize AND the box clears the tick's top stroke
+        # edge (11 + half its stroke) by ≥ 6 px + slack rendered.
+        b = vt.build_number_line(figure_id="t1",
+                                 stem="A number line shows 730 to 750, each unit in 1 part.",
+                                 v0=730, v1=750, parts_per_unit=1, points={"P": 736})
+        dot = next(e for e in b.doc["elements"] if e["id"] == "dotP")
+        mark_off = -dot["labelOffset"][1]
+        self.assertLessEqual(mark_off - 0.5 * vt.FS, 1.5 * vt.FS)      # target on the DOM reach
+        W = b.doc["canvas"]["width"]
+        s = min(1.0, vt.PLATE_INNER / W)
+        y1 = next(bx[3] for t, *bx in vt.label_boxes(b.doc["elements"]) if t == "P")
+        gap_px = (dot["at"][1] - 11 - 1 - y1) * s                      # box bottom → tick top edge
+        self.assertGreaterEqual(gap_px, vt.STROKE_PX + vt.SLACK_STROKE - 1e-6)
+
     def test_cuboid_height_label_within_target_distance(self):
         # visual-check's target rule: a label sits within 1.5 × fontSize of the edge it names —
         # the cuboid's height label floated ~26 units off DA (rebuild Q8 review).

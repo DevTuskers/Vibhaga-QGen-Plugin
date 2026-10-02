@@ -63,6 +63,11 @@ PLATE_INNER = 294.0
 # +0.543·size below. The old ±size/2 estimate under-measures the top by ~3 units and real renders
 # failed the edge rule while the estimate passed (rebuild Q4: 7.9 px at 320).
 MID_UP, MID_DOWN = 0.70, 0.58
+# …but a lone point label reaches only ~0.50·size below its dominant-baseline middle anchor —
+# measured on the rendered DOM box (2026-10-08, Inter capital "P"/"Q" at 18: point→box distance
+# mark_off − 9.0, i.e. +0.50·size; DiagramRenderer's own label box uses ±0.5·size). Modelled at
+# 0.53 to keep a small pad over the measurement. A descender glyph (gjpqy…) reaches ~MID_DOWN.
+POINT_LABEL_DOWN = 0.53
 
 COMPASS = {"N": -90.0, "NE": -45.0, "E": 0.0, "SE": 45.0,
            "S": 90.0, "SW": 135.0, "W": 180.0, "NW": -135.0}
@@ -223,8 +228,12 @@ def label_boxes(elements: list[dict], font_size: float = FS) -> list[tuple[str, 
             size = font_size                      # the point label ignores el.fontSize — always defaults
             ox, oy = el.get("labelOffset", [8, -8])
             w = _label_width(el["label"], size)
+            # the rendered box is shallower below the anchor than the text-run MID_DOWN bound —
+            # a lone capital has no descender (measured ~0.50·size); keep MID_DOWN for labels
+            # carrying a descender letter.
+            down = size * (MID_DOWN if re.search(r"[gjpqy]", str(el["label"])) else POINT_LABEL_DOWN)
             out.append((el["label"], el["at"][0] + ox, el["at"][1] + oy - size * MID_UP,
-                        el["at"][0] + ox + w, el["at"][1] + oy + size * MID_DOWN))
+                        el["at"][0] + ox + w, el["at"][1] + oy + down))
         elif t == "angleMark" and el.get("label"):
             size = font_size * 0.9
             r = el["r"] * (math.sqrt(2) if el.get("variant") == "right" else 1)
@@ -1072,11 +1081,17 @@ def build_number_line(*, figure_id, stem, ask=None, title=None, description=None
     u, vv = _unused_letters(set(marks), 2)
     anchors[u] = (x_of(v0), axis_y)
     anchors[vv] = (x_of(v1), axis_y)
-    # the point label must clear its own major tick (top at 11 units + half its stroke) by
-    # 6 px + slack ON THE RENDER — on a wide canvas that is more canvas units than a fixed
-    # offset provides, so size the lift from the figure's own width
+    # the point label sits in a pinched window: its box bottom — POINT_LABEL_DOWN·FS below the
+    # anchor, the real DOM reach of a lone capital (the text-run MID_DOWN overstates it, and the
+    # extra lift pushed point→label past the target bound) — must clear the tick's top stroke
+    # edge (11 + half its 2-unit stroke) by 6 px + slack ON THE RENDER, while the point→box
+    # distance stays inside visual-check's target rule: 1.5 × fontSize from the named point.
     est_span = span_v * unit_px + 2 * overhang + 12
-    mark_off = 21.0 + FS * (MID_DOWN - 0.5) + _clearance_units(STROKE_PX + SLACK_STROKE, est_span)
+    mark_off = 12.0 + POINT_LABEL_DOWN * FS + _clearance_units(STROKE_PX + SLACK_STROKE, est_span)
+    if mark_off - 0.5 * FS > 1.5 * FS:   # target bound on the measured DOM reach (~0.5·size)
+        raise TemplateError(f"number_line: the stroke-cleared point-label lift puts the label "
+                            f"~{mark_off - 0.5 * FS:.1f} units from its point (> {1.5 * FS:g} = "
+                            f"1.5×fontSize {FS:g}) — the range is too wide for one canvas")
     for n, v in marks.items():
         anchors[n] = (x_of(v), axis_y)
         elements.append({"id": f"dot{n}", "type": "point", "at": vc.P((x_of(v), axis_y)), "r": 3,
