@@ -112,7 +112,13 @@ def main():
                 cmp(pp + ".text_sinhala", s.get("text_sinhala"), x["text_sinhala"]); cmp(pp + ".sort_order", i, x["sort_order"])
                 cmp(pp + ".parent", parent, x["parent"]); cmp(pp + ".diagram_dsl", s.get("diagram_dsl"), x["diagram_dsl"])
                 lsa = {a["sub_answer_id"]: a for a in (x["answers"] or [])}
-                for a in s.get("answers") or []:
+                # a part's staged sub-answers live in BOTH shapes publish.ts collectSubAnswers
+                # accepts: the singular `sub_answer` object (what build-staged emits) and the
+                # `answers` list (canonical). Reading only the list reported every published
+                # sub_answer as "live row not in staged" (T-QG-4).
+                staged_sa = ([s["sub_answer"]] if isinstance(s.get("sub_answer"), dict) else []) \
+                    + [a for a in s.get("answers") or [] if isinstance(a, dict)]
+                for a in staged_sa:
                     y = lsa.pop(a["sub_answer_id"], None)
                     if not y: bad.append(f"{pp}.sa[{a['sub_answer_id'][:8]}]: missing live"); continue
                     cmp(f"{pp}.sa.approach", a.get("approach"), y["approach"]); cmp(f"{pp}.sa.final", a.get("final_answer_latex"), y["final_answer_latex"])

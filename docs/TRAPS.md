@@ -32,6 +32,7 @@ a stale cache, an unrecorded id, a flag that lives on the row but not the doc.
 | T142 | the playground publish raises the flag on the ROW, not in the staged doc |
 | T-QG-1 | a skill whose frontmatter is not valid YAML is silently dropped by the CLI — `devin plugins info` + the frontmatter lint are the check |
 | T-QG-2 | a claim set that records the DRAWN ratio passes every audit line — the stem's own numbers must drive the figure, and the value be justified by them |
+| T-QG-4 | a drift check whose READ side knows a narrower shape than the write path reports a clean publish as failed |
 
 ---
 ## T4 — A `204` from `/auth/v1/logout` is not proof of revocation
@@ -756,3 +757,25 @@ against strokes like any other label). Cited by `visual-check`.
 
 *Source: this plugin — W4, 2026-09-30; the stored production figure failed on first real render
 through `/diagtest`.*
+
+---
+
+## T-QG-4 — The drift check that never saw the answer: the read side knew a narrower shape than the write path
+
+**Looked true:** a playground publish loop ended `published 4/4`, `read-back 1: staged doc confirms
+4 published + flagged`, `provenance: 4 id(s) · OK` — then `t77: 4 question(s) · 92 comparisons ·
+12 mismatch(es)`, every line `Q<n>.<part>.sa[<id>]: live row not in staged`. The run read as FAILED.
+**Actually:** those live `sub_answers` rows WERE the staged ones — the printed ids matched the staged
+doc's uuid5 `sub_answer_id`s exactly. `build-staged.py` emits a part's answer as the singular
+`sub_answer` object (the shape `publish.ts collectSubAnswers` accepts beside `answers[]`), but
+`t77-staged-vs-published.py` collected staged sub-answers only from `s.answers` — so every
+sub-answer the publish wrote looked unclaimed, and none of their approach/final/diagram_dsl fields
+were ever compared (92 vs the correct 128 comparisons). Question level needed no fix: build-staged
+emits only `answers[]` there and the API reads only that.
+**The check:** t77 now folds `s.sub_answer` ahead of `s.answers[]` — `collectSubAnswers`' own order —
+before comparing. A staged doc carrying BOTH keys for one answer still flags (the duplicate pops the
+live row once, then reports `missing live`), which is the double-insert refusal the staged schema
+warns about. Pinned by `tests/test_t77_sub_answer_shapes.py`.
+
+*Source: this plugin — W6, 2026-10-02; found on the first publish of a batch whose parts all carried
+the singular form.*

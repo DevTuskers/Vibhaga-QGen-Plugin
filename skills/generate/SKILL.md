@@ -183,11 +183,24 @@ notes. Every command below reads credentials from `Vibhaga-Admin/.env.local` at 
    - Exit 0 is the only success. Exit 1 means a read-back mismatch: the run is failed until staged and live agree
      (**T77**).
 9. **Close out:** every network subcommand ends by logging out and printing two revocation queries. After the last one,
-   run them against the **Admin Auth** project ([Vibhaga-Docs `AGENTS.md`](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/AGENTS.md) § Onboarding-tool verification). Then hand the
-   session to a **separate** agent running the `qgen-critic` agent in its
-   playground mode. Its inputs are the lesson file plus the rows scoped by `source_batch_id`, and it checks
-   correctness, fit to the lesson and duplication, not faithfulness to a paper. Leave the questions published and
+   run them against the **Admin Auth** project ([Vibhaga-Docs `AGENTS.md`](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/AGENTS.md) § Onboarding-tool verification). Leave the questions published and
    flagged. A human clears them.
+10. **Critique (W6).** Spawn a **fresh** subagent with the `qgen-critic` profile
+    ([`agents/qgen-critic.md`](../../agents/qgen-critic.md)). Its inputs are exactly four: the scope card(s), the
+    lesson Markdown, the rows read by `tools/critic-read.py <sid>` (queries.sql Q4, SELECT-only) and visual-check's
+    `report.json`. Give it **paths only** — never `content.yaml`, claim sets, staged docs, your notes, and never a
+    hint about which items you doubt (a hinted critic is not independent, **T25**). Spawn prompt, filled in:
+    ```
+    Critique playground batch <sid> per your profile. Paths: plugin <plugin checkout>; corpus <corpus checkout>;
+    content-DB env <Vibhaga-DB/.env>; visual-check output <dir with report.json>; write the report to
+    <report path>. [VIBHAGA_ADMIN=<Admin checkout> VIBHAGA_WEB=<Web checkout> — when the plugin is not a
+    sibling of them, e.g. a worktree.] [Chunk: questions <n..m>.] [Previous report: <path>.]
+    ```
+    Keep the actor scratch in a directory the critic is not pointed at. Above 8 questions, chunk (profile §7).
+    The critic is **image-blind**: the `light-375.png` look per figure stays with you ([`visual-check`](../visual-check/SKILL.md)
+    "LOOK"), and its could-not-check list says so. Fix every BLOCKER/MAJOR/MINOR (re-author → validate → `doc put` →
+    publish flagged), then spawn a **new** critic with the previous report (profile §6) until it is SATISFIED.
+    Compare its R/M/H ratings with yours: a gap of more than one level on a part is a MINOR.
 
 ## 3. What makes a generated question fit
 
@@ -226,8 +239,8 @@ notes. Every command below reads credentials from `Vibhaga-Admin/.env.local` at 
    rows are absent from the student `GET /v1/questions` for the lesson. That is supporting evidence only (see §1: the
    student API also hides non-solvable rows).
 6. The revocation counts are 0 and 0 on the Admin Auth project, for the actor that exists there.
-7. A separate critic ran `qgen-critic` (playground mode), and every BLOCKER, MAJOR and MINOR
-   finding is fixed (republish flagged) or recorded as an owner question.
+7. A fresh `qgen-critic` subagent (§2 step 10) reported SATISFIED, and every BLOCKER, MAJOR and MINOR
+   finding on the way is fixed (republish flagged) or recorded as an owner question.
 8. The ledger (session id, question ids) is written into the run's logbook entry.
 
 ## 6. Keep this skill alive

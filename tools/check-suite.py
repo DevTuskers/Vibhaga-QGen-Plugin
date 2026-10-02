@@ -25,7 +25,8 @@ deleted, a table silently losing cells. All of it mechanical, all of it catchabl
 Part B — the real test run, all offline:
   · `python3 -m unittest discover -s tests -p 'test_*.py'`
   · tool self-tests: `audit-claim-set.py --self-test`, `playground-publish.py --self-test`,
-    `scope-cards.py --self-test`, `vdd_templates.py --self-test` (always);
+    `scope-cards.py --self-test`, `vdd_templates.py --self-test`, `critic-read.py --self-test`
+    (always);
     `node markdown-gate.mjs --self-test` (needs Vibhaga-Web + Vibhaga-Admin), `node vdd-check.mjs
     --self-test` (needs Vibhaga-Admin — playwright/chromium). A missing sibling checkout prints a
     SKIP line, not a failure.
@@ -323,6 +324,7 @@ def run_tests() -> None:
     run("playground-publish --self-test", [sys.executable, "tools/playground-publish.py", "--self-test"], env)
     run("scope-cards --self-test", [sys.executable, "tools/scope-cards.py", "--self-test"], env)
     run("vdd_templates --self-test", [sys.executable, "tools/vdd_templates.py", "--self-test"], env)
+    run("critic-read --self-test", [sys.executable, "tools/critic-read.py", "--self-test"], env)
 
     if have_web and have_admin:
         run("markdown-gate --self-test", ["node", "tools/markdown-gate.mjs", "--self-test"], env)
