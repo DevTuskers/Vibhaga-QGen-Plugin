@@ -71,7 +71,10 @@ no env file.
 ## LOOK — the rule the metrics cannot replace
 
 **Open ONE PNG per figure once — the `light-375.png` — and log what you saw.** A PASS is "no rule
-fired", not "looks right". What the five rules **cannot** catch:
+fired", not "looks right". ⚠️ **The look is the lead's job, never the critic's:** the `qgen-critic`
+subagent is image-blind (probed 2026-10-02 — a PNG read returns a placeholder), so it consumes
+`report.json` only and lists every visual conclusion as could-not-check. Point it at the output
+directory, not at a PNG. What the five rules **cannot** catch:
 
 - a label that clears every stroke but **names the wrong or an ambiguous edge** (e.g. a cuboid
   depth label at a corner);

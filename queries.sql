@@ -6,6 +6,7 @@
 -- Every block is a single SELECT: nothing here writes, and nothing selects a secret or a token value.
 -- Column names checked against information_schema on 2026-09-30 (questions.lesson_ids is uuid[],
 -- sub_questions.sub_question_id is the part key, auth.refresh_tokens.user_id is varchar).
+-- Q4 columns checked 2026-10-02 (lessons.sort_order, sub_answers.sub_question_id, answers/sub_answers.diagram_dsl).
 -- Which database each block targets is stated in its header. Hosts and project refs are NOT in this
 -- public file: see Vibhaga-Docs AGENTS.md § "Onboarding-tool verification" for the two projects.
 
@@ -103,3 +104,74 @@ FROM (SELECT count(*) AS actor_exists FROM auth.users WHERE id = :'actor_id'::uu
      (SELECT count(*) AS active_refresh_tokens FROM auth.refresh_tokens
        WHERE user_id = (:'actor_id')::uuid::text AND revoked IS NOT TRUE) t,
      (SELECT to_regclass('public.question_batches') IS NOT NULL AS wrong_project) w;
+
+-- ============================================================================================
+-- Q4 — The critic's read of a playground batch                       DATABASE: content
+-- Variables: batch_id (uuid — the session id).
+-- Read-only input for agents/qgen-critic.md. Q4a is the session row (it plays the paper's role:
+-- grade XOR exam, subject, medium) with its intended lessons resolved. Q4b is one row per question
+-- in question_number order, every level nested as JSON: the question's own answers, and each part
+-- with its parent id (rebuild the tree from parent_sub_question_id; depth ≤ 2) and its sub-answers;
+-- diagram_dsl at every level; lesson_ids resolved to (sort_order = lesson number, name). Q4c lists
+-- every OTHER question sharing a lesson with the batch — full stems plus part texts — for the
+-- "not a copy" check. Each block emits ONE JSON object per line (newlines inside text are escaped),
+-- so run it with `psql -X -A -t -v ON_ERROR_STOP=1` and parse line by line. For G6, a lesson's
+-- sort_order is its lesson number × 10 (70 = lesson 07) — match the scope card by number AND name. All statuses are returned: a row unpublished back to draft is still shown,
+-- with its status, so read the status column before judging.
+-- ============================================================================================
+
+-- Q4a — the session row (expect exactly 1 line)
+SELECT to_jsonb(r) FROM (
+SELECT b.batch_id, b.name, b.status, b.grade, b.exam, b.subject, b.medium, b.question_count,
+       (SELECT jsonb_agg(jsonb_build_object('lesson_id', l.lesson_id, 'sort_order', l.sort_order,
+                                            'name', l.name, 'name_sinhala', l.name_sinhala)
+                         ORDER BY l.sort_order)
+          FROM lessons l WHERE l.lesson_id = ANY (b.lesson_ids))       AS session_lessons
+FROM question_batches b
+WHERE b.batch_id = :'batch_id'::uuid) r;
+
+-- Q4b — the batch, one JSON line per question, parts/answers nested
+SELECT to_jsonb(r) FROM (
+SELECT q.question_number, q.question_id, q.status, q.needs_human_review, q.is_multipart,
+       q.grade, q.exam, q.subject, q.medium,
+       (SELECT jsonb_agg(jsonb_build_object('lesson_id', l.lesson_id, 'sort_order', l.sort_order,
+                                            'name', l.name, 'grade', l.grade, 'exam', l.exam)
+                         ORDER BY l.sort_order)
+          FROM lessons l WHERE l.lesson_id = ANY (q.lesson_ids))       AS lessons,
+       cardinality(q.lesson_ids)                                        AS lesson_id_count,
+       q.question_text, q.question_text_sinhala, q.diagram_dsl,
+       (SELECT jsonb_agg(jsonb_build_object('answer_id', a.answer_id, 'approach', a.approach,
+                                            'final_answer_latex', a.final_answer_latex,
+                                            'diagram_dsl', a.diagram_dsl,
+                                            'verified_by', a.verified_by, 'verified_at', a.verified_at)
+                         ORDER BY a.created_at, a.answer_id)
+          FROM answers a WHERE a.question_id = q.question_id)           AS answers,
+       (SELECT jsonb_agg(jsonb_build_object(
+                 'sub_question_id', s.sub_question_id, 'parent_sub_question_id', s.parent_sub_question_id,
+                 'label', s.label, 'sort_order', s.sort_order, 'text', s.text,
+                 'text_sinhala', s.text_sinhala, 'diagram_dsl', s.diagram_dsl,
+                 'sub_answers', (SELECT jsonb_agg(jsonb_build_object(
+                                          'sub_answer_id', x.sub_answer_id, 'approach', x.approach,
+                                          'final_answer_latex', x.final_answer_latex,
+                                          'diagram_dsl', x.diagram_dsl,
+                                          'verified_by', x.verified_by, 'verified_at', x.verified_at)
+                                        ORDER BY x.created_at, x.sub_answer_id)
+                                   FROM sub_answers x WHERE x.sub_question_id = s.sub_question_id))
+                         ORDER BY s.parent_sub_question_id NULLS FIRST, s.sort_order, s.label)
+          FROM sub_questions s WHERE s.question_id = q.question_id)     AS parts
+FROM questions q
+WHERE q.source_batch_id = :'batch_id'::uuid) r
+ORDER BY r.question_number, r.question_id;
+
+-- Q4c — every other question tagged with a lesson the batch uses (dedup / not-a-copy), one JSON line each
+SELECT to_jsonb(r) FROM (
+SELECT q.question_id, q.source_batch_id, q.source_paper_id, q.status, q.question_number,
+       q.question_text,
+       (SELECT string_agg(s.label || ') ' || s.text, ' | ' ORDER BY s.parent_sub_question_id NULLS FIRST, s.sort_order)
+          FROM sub_questions s WHERE s.question_id = q.question_id)     AS part_texts
+FROM questions q
+WHERE q.source_batch_id IS DISTINCT FROM :'batch_id'::uuid
+  AND q.lesson_ids && (SELECT coalesce(array_agg(DISTINCT t), '{}'::uuid[])
+                         FROM questions x CROSS JOIN LATERAL unnest(x.lesson_ids) AS t
+                        WHERE x.source_batch_id = :'batch_id'::uuid)
+ORDER BY q.source_paper_id NULLS FIRST, q.source_batch_id, q.question_number, q.question_id) r;
