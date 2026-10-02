@@ -665,7 +665,7 @@ Audit A from a parser into a geometry check (62–97 assertions per figure on th
 
 **Looked true:** every playground publish forces `needs_human_review = true` (0018 OD-2), so after a publish "the question is flagged" everywhere. The onboarding flag verbs mirror into the staged doc and say so (`staged_doc_updated`).
 **Actually:** the publish response has no `staged_doc_updated` field, and the server does not write the forced flag back into `playground/<id>/questions.json`. A doc saved with the flag down stays down in R2 while the live row is up. The Phase 5 page then showed a flagged, withheld question as green "Published" after a reload. It was fixed client-side by `persistPublishOutcome` (Vibhaga-Admin#87), and any other client (curl, script, agent) reopens the hole.
-**The check:** after every real publish, PUT the doc back with `published: true` and the flag `true` on every id in `question_ids ∪ reflagged ∪ reraised`. Then GET it and assert both fields per id. `playground-publish.py publish` does this (read-back 1) before its SQL read-back. Cited by `generate-lesson-questions` §1/§4. *(Phase 5 critique finding; tool guard added in Phase 6, 2026-09-27.)*
+**The check:** after every real publish, PUT the doc back with `published: true` and the flag `true` on every id in `question_ids ∪ reflagged ∪ reraised`. Then GET it and assert both fields per id. `playground-publish.py publish` does this (read-back 1) before its SQL read-back. Cited by `generate` §1/§4. *(Phase 5 critique finding; tool guard added in Phase 6, 2026-09-27.)*
 
 *Source: Vibhaga-Docs `.devin/skills/_maths-onboarding/TRAPS.md` T142 @08c09a9 — production ids scrubbed; paper-era references kept as history where the lesson is pipeline-neutral.*
 

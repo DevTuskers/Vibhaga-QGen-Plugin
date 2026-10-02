@@ -110,6 +110,25 @@ class BuildStagedTest(unittest.TestCase):
             # figure key F1 resolved into question 3's diagram_dsl
             self.assertEqual(doc["questions"][2]["diagram_dsl"], json.loads(FIG.read_text()))
 
+    def test_ids_out_round_trips_through_publish_ids_loader(self):
+        """--ids-out writes the question_ids in question order, in exactly the shape
+        playground-publish.py's load_ids_file accepts (a non-empty list of unique uuids)."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "playground_publish", ROOT / "tools" / "playground-publish.py")
+        pp = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pp)
+        with tempfile.TemporaryDirectory() as tmp:
+            out, ids = Path(tmp) / "staged.json", Path(tmp) / "ids.json"
+            r = subprocess.run([sys.executable, str(TOOL), str(FIXTURE),
+                                "--out", str(out), "--ids-out", str(ids)],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            want = [q["question_id"] for q in json.loads(out.read_text())["questions"]]
+            self.assertTrue(want)
+            self.assertEqual(json.loads(ids.read_text()), want)  # raw file: same order
+            self.assertEqual(pp.load_ids_file(ids), want)         # and it loads as a publish set
+
     # ---- refusals (exit 2) ------------------------------------------------
 
     def test_refuse_duplicate_n(self):

@@ -4,8 +4,11 @@
 New for vibhaga-qgen (replaces the paper-side build-staged.py + yaml-from-staged.py — those compiled a
 staged doc out of an extraction run; here the author IS the source). Usage:
 
-    build-staged.py content.yaml [--out staged.json]
-    build-staged.py content.json [--out staged.json]      # JSON input needs no PyYAML
+    build-staged.py content.yaml [--out staged.json] [--ids-out ids.json]
+    build-staged.py content.json [--out staged.json] [--ids-out ids.json]  # JSON input needs no PyYAML
+
+`--ids-out` additionally writes the bare JSON list of question_ids in question order — exactly the
+file `playground-publish.py publish --ids-file` consumes (non-empty unique uuids).
 
 content.yaml shape (keys in `lessons:`/`figures:` are local names resolved by the builder):
 
@@ -266,6 +269,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="build-staged.py", description="content.yaml → staged.json for a generated question batch")
     ap.add_argument("spec", help="content.yaml (or content.json — needs no PyYAML)")
     ap.add_argument("--out", help="output staged.json path (default: staged.json beside the spec; '-' for stdout)")
+    ap.add_argument("--ids-out", help="also write the JSON list of question_ids in question order — the exact file playground-publish.py publish --ids-file consumes")
     args = ap.parse_args(argv)
     if not Path(args.spec).is_file():
         die(f"no such spec file: {args.spec}")
@@ -277,6 +281,11 @@ def main(argv=None):
         out = Path(args.out) if args.out else Path(args.spec).resolve().parent / "staged.json"
         out.write_text(text, encoding="utf-8")
         print(f"build-staged: wrote {out} ({len(doc['questions'])} question(s))")
+    if args.ids_out:
+        ids = Path(args.ids_out)
+        ids.write_text(json.dumps([q["question_id"] for q in doc["questions"]], indent=1) + "\n",
+                       encoding="utf-8")
+        print(f"build-staged: wrote {ids} ({len(doc['questions'])} question id(s), in question order)")
     return 0
 
 

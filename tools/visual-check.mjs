@@ -23,7 +23,8 @@
  *   · a single VDD `.json` (schema `vibhaga.diagram`), id = basename;
  *   · a directory → every VDD `.json` in it (`*.anchors.json` and non-VDD JSON skipped).
  * A figure's claim set (optional): sibling `<base>.claims.txt` or `<base>-claims.txt`, else
- * `<claims-dir>/<id>.claims.txt` via `--claims-dir`.
+ * `<claims-dir>/<id>.claims.txt` or `<claims-dir>/<id>-claims.txt` via `--claims-dir` (the second
+ * name is what vdd_templates.py emits: figure id `Q3` → `Q3-claims.txt`).
  *
  * Server: `--base-url` is used as-is (must answer `GET /diagtest` 200); otherwise
  * `node_modules/.bin/next dev -p <free port>` is spawned in the Admin checkout and waited on for up
@@ -55,7 +56,7 @@ import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
 import { assess } from "./visual-metrics.mjs";
-import { q3Block, pgEnvFromUrl } from "./session-db.mjs";
+import { q3Block, pgEnvFromUrl, pushFigure, claimsForWarn } from "./session-db.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN = path.resolve(HERE, "..");
@@ -404,23 +405,12 @@ async function ensureServer() {
 const isVdd = (o) => o && typeof o === "object" && o.schema === "vibhaga.diagram";
 const isStaged = (o) => o && typeof o === "object" && Array.isArray(o.questions);
 
-function claimsFor(id, fileBase, claimsDir) {
-  const cands = [];
-  if (fileBase) cands.push(`${fileBase}.claims.txt`, `${fileBase}-claims.txt`);
-  if (claimsDir) cands.push(path.join(claimsDir, `${id}.claims.txt`));
-  for (const f of cands) if (fs.existsSync(f)) return { path: f, text: fs.readFileSync(f, "utf8") };
-  return null;
-}
-
 function collectFigures(inputs, claimsDir) {
   const figures = [];
   const seen = new Map();
-  const push = (id, doc, source, fileBase) => {
-    const k = (seen.get(id) ?? 0) + 1;
-    seen.set(id, k);
-    const fid = k === 1 ? id : `${id}~${k}`;
-    figures.push({ id: fid, doc, source, claims: claimsFor(fid, fileBase, claimsDir) });
-  };
+  // pushFigure (session-db.mjs) dedups `id` to `id~k` but resolves claims by the BASE id —
+  // a duplicate shares the first figure's claim file.
+  const push = (id, doc, source, fileBase) => pushFigure(figures, seen, id, doc, source, fileBase, claimsDir);
   const walkSubs = (list, prefix, source) => {
     for (const s of list ?? []) {
       if (!s || typeof s !== "object") continue;
@@ -567,6 +557,11 @@ async function batchMode() {
   if (claimsDir && !fs.existsSync(claimsDir)) die(`--claims-dir ${claimsDir} does not exist`);
   const figures = collectFigures(positional, claimsDir);
   if (!figures.length) die("no VDD figures found in the given inputs");
+  let noClaims = 0; // --claims-dir only: a resolved-everywhere failure is loud, never fatal
+  for (const fig of figures) {
+    const w = claimsForWarn(fig.baseId ?? fig.id, claimsDir, fig.claims);
+    if (w) { console.log(w); noClaims++; }
+  }
   for (const fig of figures) {
     fig.outDir = path.join(out, fig.id);
     fig.pngs = [];
@@ -587,7 +582,7 @@ async function batchMode() {
     pngs += fig.pngs.length;
     console.log(figureLine(fig, pad));
   }
-  console.log(`${figures.length} figures · ${pass} pass · ${figures.length - pass} fail · PNGs: ${pngs} · report: ${path.join(out, "report.json")}`);
+  console.log(`${figures.length} figures · ${pass} pass · ${figures.length - pass} fail${claimsDir ? ` · ${noClaims} without claims` : ""} · PNGs: ${pngs} · report: ${path.join(out, "report.json")}`);
   fs.mkdirSync(out, { recursive: true });
   const report = {
     tool: "visual-check",

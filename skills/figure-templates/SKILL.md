@@ -83,7 +83,9 @@ python3 tools/vdd_templates.py build spec.json --out out/
 
 `spec.json` is an object or a list of objects, each `{"template": "<kind>", "figure_id":
 "q8", "stem": "<stem text>", "ask": [["a", "…"]], …params}`. Output per figure:
-`out/q8.json`, `out/q8.anchors.json`, `out/q8-claims.txt`. Then the gates, in order:
+`out/q8.json`, `out/q8.anchors.json`, `out/q8-claims.txt`. ⚠️ Inside a `generate` run, set `figure_id` to the
+figure's **staged id** (`Q8`, `Q8.b`) — visual-check resolves a staged doc's claim sets as
+`<claims-dir>/<staged id>-claims.txt`, so any other name leaves the figure claims-less. Then the gates, in order:
 
 ```bash
 python3 tools/audit-claim-set.py out/q8-claims.txt                 # claim audit (exit 0)

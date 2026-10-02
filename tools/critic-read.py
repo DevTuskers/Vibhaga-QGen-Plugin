@@ -4,9 +4,10 @@
     python3 tools/critic-read.py <batch_id> --out DIR [--db-env PATH] [--queries PATH]
 
 Slices the Q4a/Q4b/Q4c blocks out of `queries.sql` (from each `-- Q4x` header comment line to the
-terminating `;` of its statement), asserts each slice is a single SELECT with no write token (a
-smoke check — the read-only transaction is the guard; slicing stops at the first `;`, so Q4 must
-never hold a `;` inside a literal or comment), and runs each read-only through `psql -X -A -t -q -w
+terminating `;` of its statement — a `;` inside a `-- ` comment line does not terminate), asserts
+each slice is a single SELECT with no write token (a
+smoke check — the read-only transaction is the guard; slicing stops at the first `;` on a
+non-comment line, so Q4 must never hold a `;` inside a literal), and runs each read-only through `psql -X -A -t -q -w
 -v ON_ERROR_STOP=1 -v batch_id=<id> -f -` with the SQL on stdin prefixed
 `set default_transaction_read_only=on;`. The DB URL is NEVER on argv or printed — it is split into
 PG* environment variables (the session-db.mjs `pgEnvFromUrl` approach, ported).
@@ -66,22 +67,38 @@ WRITE_TOKENS = re.compile(
     re.I)
 BLOCKS = {"q4a": "Q4a", "q4b": "Q4b", "q4c": "Q4c"}
 
+# Message prefix — sql-proof.py imports these helpers and sets its own name before calling them.
+PROG = "critic-read"
+
 
 def die(msg: str, code: int = 2) -> "SystemExit":
-    print(f"critic-read: {msg}", file=sys.stderr)
+    print(f"{PROG}: {msg}", file=sys.stderr)
     raise SystemExit(code)
 
 
 def slice_block(sql_text: str, marker: str) -> str:
-    """From the `-- <marker>` header comment line through the statement's terminating `;`."""
+    """From the `-- <marker>` header comment line through the statement's terminating `;`.
+    The terminator is the first `;` on a NON-comment line — `-- ` comment lines may legitimately
+    end a bullet with `;` (Q2's header does), and cutting there would slice mid-comment. A `;`
+    inside a statement's string literal still breaks the slice — queries.sql holds none."""
     lines = sql_text.splitlines()
     start = next((i for i, l in enumerate(lines) if re.match(rf"-- {marker}\b", l)), None)
     if start is None:
         die(f"queries.sql has no `-- {marker}` block")
-    rest = "\n".join(lines[start:])
-    if ";" not in rest:
-        die(f"queries.sql `-- {marker}` block has no terminating `;`")
-    return rest[: rest.index(";") + 1]
+    out = []
+    for line in lines[start:]:
+        if line.lstrip().startswith("--"):
+            out.append(line)
+            continue
+        if ";" in line:
+            # Cut at the first `;` — unless what follows it is a real statement tail rather than a
+            # trailing `-- ` comment: keep the whole line so the single-statement assertion sees it.
+            tail = line[line.index(";") + 1:]
+            out.append(line[: line.index(";") + 1] if not tail.strip() or tail.strip().startswith("--")
+                       else line)
+            return "\n".join(out)
+        out.append(line)
+    die(f"queries.sql `-- {marker}` block has no terminating `;`")
 
 
 def assert_single_select(block: str, marker: str) -> str:
@@ -128,16 +145,16 @@ def resolve_db_url(db_env: str | None) -> str:
         url = read_env(p).get("DATABASE_URL")
         if not url:
             die(f"--db-env {db_env} has no DATABASE_URL line")
-        print(f"critic-read: DB URL from --db-env {db_env}", file=sys.stderr)
+        print(f"{PROG}: DB URL from --db-env {db_env}", file=sys.stderr)
         return url
     if os.environ.get("DATABASE_URL"):
-        print("critic-read: DB URL from DATABASE_URL env", file=sys.stderr)
+        print(f"{PROG}: DB URL from DATABASE_URL env", file=sys.stderr)
         return os.environ["DATABASE_URL"]
     url = load_db_url(_auth.ENV_PATH)
     if not url:
         die("no DATABASE_URL in the environment, no --db-env, and no Vibhaga-DB/.env beside "
             f"Vibhaga-Admin ({_auth.ENV_PATH})")
-    print("critic-read: DB URL from Vibhaga-DB/.env", file=sys.stderr)
+    print(f"{PROG}: DB URL from Vibhaga-DB/.env", file=sys.stderr)
     return url
 
 
@@ -153,7 +170,7 @@ def run_block(pg: dict[str, str], batch_id: str, block: str, marker: str) -> lis
         die("psql is not on PATH")
     if proc.returncode != 0:
         err = proc.stderr.strip().splitlines()
-        print(f"critic-read: psql failed on {marker} (exit {proc.returncode})"
+        print(f"{PROG}: psql failed on {marker} (exit {proc.returncode})"
               + (f" — {err[-1]}" if err else ""), file=sys.stderr)
         raise SystemExit(1)
     return [l for l in proc.stdout.splitlines() if l.strip()]
@@ -226,7 +243,7 @@ def question_artefacts(q: dict) -> tuple[list[dict], list[str], int]:
             figs.append(f"{qid}.ans{k}\t{a.get('answer_id') or '-'}")
     parts, n_orphans = part_tree(q.get("parts") or [], qid)
     if n_orphans:
-        print(f"critic-read: WARNING {qid}: {n_orphans} orphan part(s)", file=sys.stderr)
+        print(f"{PROG}: WARNING {qid}: {n_orphans} orphan part(s)", file=sys.stderr)
     for p, pid in parts:
         if p.get("text"):
             fields.append({"id": f"{pid}.text", "field": "text", "text": p["text"]})
@@ -347,7 +364,7 @@ def main(argv: list[str] | None = None) -> int:
     (out_dir / "hashes.txt").write_text("\n".join(hashes) + "\n", encoding="utf-8")
     (out_dir / "figures.txt").write_text(("\n".join(figs) + "\n") if figs else "", encoding="utf-8")
 
-    print(f"critic-read: {len(questions)} question(s) · {parts_total} part(s) · {len(figs)} figure(s) · "
+    print(f"{PROG}: {len(questions)} question(s) · {parts_total} part(s) · {len(figs)} figure(s) · "
           f"{len(q4c_lines)} other row(s) on the same lessons → {out_dir}")
     return 0
 

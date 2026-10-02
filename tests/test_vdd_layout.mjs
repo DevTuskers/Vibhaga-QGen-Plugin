@@ -457,7 +457,7 @@ test('actual Chromium paint fitting and normalizer refusal on synthetic fixtures
     await t.test('real Inter/Noto metadata and Webpack/Turbo local asset discovery; missing fonts cannot approve',async()=>{
       const fonts=renderer.provenance.fonts;
       assert.equal(fonts.status,'actual-local-assets');assert.ok(fonts.assets.length>=2);assert.ok(fonts.resolvedFaces.some(f=>/Inter/.test(f.family)));assert.ok(fonts.resolvedFaces.some(f=>/Noto/.test(f.family)));
-      const admin=path.resolve(fileURLToPath(new URL('.',import.meta.url)),'../../Vibhaga-Admin'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'vdd-fonts-'));
+      const admin=path.resolve(process.env.VIBHAGA_ADMIN??path.join(fileURLToPath(new URL('.',import.meta.url)),'../../Vibhaga-Admin')),dir=fs.mkdtempSync(path.join(os.tmpdir(),'vdd-fonts-'));
       try {
         for(const mode of ['css','chunks']) {
           const root=path.join(dir,mode);fs.mkdirSync(root);fs.mkdirSync(path.join(root,mode));fs.mkdirSync(path.join(root,'media'));

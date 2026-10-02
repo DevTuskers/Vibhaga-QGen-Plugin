@@ -9,6 +9,7 @@
 -- Q4 columns checked 2026-10-02 (lessons.sort_order, sub_answers.sub_question_id, answers/sub_answers.diagram_dsl).
 -- Which database each block targets is stated in its header. Hosts and project refs are NOT in this
 -- public file: see Vibhaga-Docs AGENTS.md § "Onboarding-tool verification" for the two projects.
+-- Blocks Q2 and Q3 are run non-interactively by `tools/sql-proof.py` (read-only; exits on the `ok` column).
 
 
 -- ============================================================================================
