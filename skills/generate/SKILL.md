@@ -147,7 +147,10 @@ notes. Every command below reads credentials from `Vibhaga-Admin/.env.local` at 
      [`draw-and-verify-question-vdd`](../draw-and-verify-question-vdd/SKILL.md) §3 and verify it with §4 and §5.
      `vdd-check.mjs` renders it through the real components at its default widths (320, 375 and 768 px, the student-facing
      set), and angles and ratios are checked numerically against the claim set; label clearance to the canvas edge and
-     to strokes is measured in the same render. A real `a11y.title` and
+     to strokes is measured in the same render. Then batch the figure (or the whole staged doc) through
+     `node tools/visual-check.mjs <file|dir>` — [`visual-check`](../visual-check/SKILL.md) renders through the real
+     `/diagtest` page (real font stack, KaTeX overlays, both themes) and measures every label; **LOOK at one
+     `light-375.png` per figure** — a PASS is not "looks right". A real `a11y.title` and
      `a11y.description` are required: the API errors without the title and warns without the description. The
      description must not give away the answer (**T125**).
    - **Answers:** follow [`author-question-answers`](../author-question-answers/SKILL.md) §3 (independent derivation
@@ -162,7 +165,9 @@ notes. Every command below reads credentials from `Vibhaga-Admin/.env.local` at 
 6. **Validate until clean:** `python3 $T validate <sid> --staged staged.json` (exit 0 means no errors). Fix every error.
    Read every warning, and fix it unless your notes say why it stays.
 7. **Save:** `python3 $T doc put <sid> --staged staged.json --ledger ledger.json`. Then `doc get <sid> --out server.json`
-   and confirm the server array is the one you meant to save.
+   and confirm the server array is the one you meant to save. For rendered evidence of what was saved,
+   `node tools/visual-check.mjs --session <sid>` — [`visual-check`](../visual-check/SKILL.md) mode 2: headed browser,
+   sign in, per-question student-preview element shots light+dark, sign out, revocation proof.
 8. **Publish, flagged:**
    - `python3 $T publish <sid> --staged staged.json --scope grade=6,subject=Mathematics,medium=sinhala --ids-file ids.json --ledger ledger.json --dry-run --accept-signatures 0`.
      This is the dry-run. Read `signatures_at_risk`: on a new session it is 0.

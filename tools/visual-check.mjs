@@ -1,0 +1,948 @@
+#!/usr/bin/env node
+/**
+ * visual-check.mjs — batch-render VDD figures through the REAL Admin `/diagtest` host page
+ * (real globals.css, real next/font Inter + Noto Sans Sinhala, real `html[data-theme]` theming)
+ * and measure every label against the geometry in RENDERED pixels.
+ *
+ *     node tools/visual-check.mjs <inputs…> [--out DIR] [--widths 320,375,768] [--themes light,dark]
+ *                                          [--base-url URL] [--claims-dir DIR] [--headed]
+ *                                          [--admin PATH]
+ *     node tools/visual-check.mjs --session <playground-session-id> [--out DIR] [--base-url URL]
+ *                                          [--admin PATH]     (always headed — signs in, then out)
+ *     node tools/visual-check.mjs --self-test
+ *
+ * `--admin PATH` is the Vibhaga-Admin CHECKOUT (`--admin` flag > `VIBHAGA_ADMIN` env >
+ * `<plugin>/../Vibhaga-Admin`) — the same convention as vdd-check.mjs. ⚠️ It is NOT the session
+ * flag the plan once called `--admin <session>`: playground sessions are selected with `--session`.
+ *
+ * Inputs (any mix, positional):
+ *   · a staged doc JSON (the tools/build-staged.py shape — tests/fixtures/staged-golden.json):
+ *     every non-null `diagram_dsl` at question / sub-question (both depths) / answer / sub-answer
+ *     level becomes a figure, id `Q<n>`, `Q<n>.<label>`, `Q<n>.<label>.<label2>`, `Q<n>.ans<k>`,
+ *     `Q<n>.<label>.ans<k>`;
+ *   · a single VDD `.json` (schema `vibhaga.diagram`), id = basename;
+ *   · a directory → every VDD `.json` in it (`*.anchors.json` and non-VDD JSON skipped).
+ * A figure's claim set (optional): sibling `<base>.claims.txt` or `<base>-claims.txt`, else
+ * `<claims-dir>/<id>.claims.txt` via `--claims-dir`.
+ *
+ * Server: `--base-url` is used as-is (must answer `GET /diagtest` 200); otherwise
+ * `node_modules/.bin/next dev -p <free port>` is spawned in the Admin checkout and waited on for up
+ * to 180 s (first compile is slow). `/diagtest` DOES need the NEXT_PUBLIC_* env vars —
+ * `src/lib/env.ts` throws at module load (QuestionCard → lib/api/onboarding → lib/api/fetch → env),
+ * so a checkout with no `.env.local` fails fast with a clear message. The spawned server is killed
+ * on exit (SIGINT/SIGTERM too).
+ *
+ * Rendering: one page load per theme (`addInitScript` writes `localStorage['vibhaga_admin_theme']`
+ * before ThemeScript runs, plus `colorScheme` emulation; `documentElement.dataset.theme` is
+ * asserted), then an esbuild bundle of the real `@/components/diagram/DiagramRenderer` is injected
+ * (bundled exactly like vdd-check.mjs: Admin's esbuild, `--alias:@=<admin>/src`, cache keyed by
+ * source mtimes + this file's hash). `window.__vc.render(doc, widths)` overlays a container on the
+ * page and renders `<figure data-vc-figure>` plates — the StudentPreview `PreviewFigure` classes
+ * minus `max-w-md`, so 768 really is 768 px. One render per figure; measurement runs on the LIGHT
+ * pass (dark asserts an <svg> drew and the aria-label is present, and screenshots).
+ *
+ * PNG: element screenshot of each `figure[data-vc-figure]` → `<out>/<id>/<theme>-<w>.png`
+ * (default out `os.tmpdir()/visual-check-out`), plus `<out>/report.json` (a W4 deliverable — the
+ * label rows carry the measured label↔edge / label↔stroke distances per width).
+ *
+ * Per figure ONE stdout line + a summary. Exit 1 on any FAIL, 2 on usage/env errors, 0 otherwise.
+ */
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import http from "node:http";
+import crypto from "node:crypto";
+import { assess } from "./visual-metrics.mjs";
+import { q3Block, pgEnvFromUrl } from "./session-db.mjs";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const PLUGIN = path.resolve(HERE, "..");
+const args = process.argv.slice(2);
+const VALUE_OPTS = new Set(["--out", "--widths", "--themes", "--base-url", "--claims-dir", "--admin", "--session"]);
+const positional = [];
+for (let i = 0; i < args.length; i++) {
+  if (VALUE_OPTS.has(args[i])) { i++; continue; }
+  if (!args[i].startsWith("--")) positional.push(args[i]);
+}
+const flag = (name) => args.includes(name);
+const die = (msg) => { console.error(`visual-check: ${msg}`); process.exit(2); };
+const opt = (name, dflt) => {
+  const i = args.indexOf(name);
+  if (i < 0) return dflt;
+  const v = args[i + 1];
+  if (v === undefined || v.startsWith("--")) die(`${name} needs a value (got ${v ?? "end of argv"})`);
+  return v;
+};
+
+const ADMIN = path.resolve(opt("--admin") ?? process.env.VIBHAGA_ADMIN ?? path.join(PLUGIN, "..", "Vibhaga-Admin"));
+if (!fs.existsSync(path.join(ADMIN, "package.json"))) die(`no Vibhaga-Admin at ${ADMIN} (pass --admin PATH or set VIBHAGA_ADMIN)`);
+const ESBUILD = path.join(ADMIN, "node_modules/.bin/esbuild");
+if (!fs.existsSync(ESBUILD)) die(`no esbuild at ${ESBUILD} — run \`npm ci\` in Vibhaga-Admin`);
+const NEXT = path.join(ADMIN, "node_modules/.bin/next");
+if (!fs.existsSync(NEXT)) die(`no next binary at ${NEXT} — run \`npm ci\` in Vibhaga-Admin`);
+const PLAYWRIGHT = path.join(ADMIN, "node_modules/playwright/index.mjs");
+if (!fs.existsSync(PLAYWRIGHT)) die(`no playwright at ${PLAYWRIGHT} — run \`npm ci\` in Vibhaga-Admin`);
+
+// ── esbuild bundles — same cache discipline as vdd-check.mjs: Admin's own esbuild, a node_modules
+// symlink so bare imports (react-dom/client, @vibhaga/shared, @/*) resolve through the checkout,
+// and a cache key of source mtimes + this file's hash. ────────────────────────────────────────────
+const CACHE = path.join(os.tmpdir(), "vibhaga-vdd-check");
+fs.mkdirSync(CACHE, { recursive: true });
+const NM = path.join(CACHE, "node_modules");
+// rmSync unconditionally: a DANGLING symlink (a VIBHAGA_ADMIN path removed since the last run)
+// reads as "missing" to existsSync, so the re-create would EEXIST.
+try { if (fs.lstatSync(NM).isSymbolicLink()) fs.unlinkSync(NM); else fs.rmSync(NM, { recursive: true, force: true }); } catch (e) { if (e.code !== "ENOENT") throw e; }
+fs.symlinkSync(path.join(ADMIN, "node_modules"), NM, "dir");
+const SRC = path.join(ADMIN, "src/components/diagram");
+const SHARED_SCHEMA = path.join(ADMIN, "node_modules/@vibhaga/shared/dist/vdd-schema");
+if (!fs.existsSync(SHARED_SCHEMA)) die(`no @vibhaga/shared under ${ADMIN}/node_modules — run \`npm ci\` in an Admin checkout that carries the package`);
+function stamp() {
+  // Every local file the renderer touches: the source itself, its @/lib imports (cn,
+  // markdown/config → KATEX_OPTIONS), the shared-schema dist, and the katex version (a bump
+  // changes the overlay DOM without any source mtime moving).
+  const katexVer = JSON.parse(
+    fs.readFileSync(path.join(ADMIN, "node_modules/katex/package.json"), "utf8"),
+  ).version;
+  return [
+    ...["DiagramRenderer.tsx"].map((f) => path.join(SRC, f)),
+    ...["cn.ts"].map((f) => path.join(ADMIN, "src/lib", f)),
+    ...["config.ts"].map((f) => path.join(ADMIN, "src/lib/markdown", f)),
+    ...["index.js", "parse.js", "types.js", "colors.js"].map((f) => path.join(SHARED_SCHEMA, f)),
+  ].map((f) => fs.statSync(f).mtimeMs.toFixed(0)).join("-") + `-${katexVer}`;
+}
+const SELF_HASH = crypto.createHash("sha1").update(fs.readFileSync(fileURLToPath(import.meta.url))).digest("hex").slice(0, 8);
+
+// Node-side bundle: the REAL strict parser, for the invalid-doc FAIL ("would show 'Diagram coming
+// soon'") and to hand the renderer the same parsed document the review surface renders.
+const NODE_BUNDLE = path.join(CACHE, `vc-lib-${stamp()}-${SELF_HASH}.mjs`);
+if (!fs.existsSync(NODE_BUNDLE)) {
+  const entry = path.join(CACHE, "vc-lib-entry.ts");
+  fs.writeFileSync(entry, `export { parseVddDocument } from "@vibhaga/shared/vdd-schema";\n`);
+  execFileSync(ESBUILD, [entry, "--bundle", "--format=esm", "--platform=node", `--outfile=${NODE_BUNDLE}`,
+    `--alias:@=${path.join(ADMIN, "src")}`, "--log-level=error"]);
+}
+const lib = await import(pathToFileURL(NODE_BUNDLE).href);
+
+// Browser bundle: exposes window.__vc = { render(doc, widths), clear(), measure(scope) }.
+// ⚠️ `math` elements are NOT in the <svg>: DiagramRenderer overlays KaTeX HTML in an absolutely
+// positioned div inside the [role="img"] container (DD4 — "never <foreignObject>", DiagramRenderer.tsx
+// header + renderMathOverlay), so measure() collects the top-level .katex span of each overlay and
+// converts its client rect to canvas units through svg.getScreenCTM().inverse().
+const RENDER_BUNDLE = path.join(CACHE, `vc-render-${stamp()}-${SELF_HASH}.js`);
+if (!fs.existsSync(RENDER_BUNDLE)) {
+  const entry = path.join(CACHE, "vc-render-entry.tsx");
+  fs.writeFileSync(entry, `import { createRoot } from "react-dom/client";
+import { createElement as h } from "react";
+import { DiagramRenderer } from "@/components/diagram/DiagramRenderer";
+import { parseVddDocument } from "@vibhaga/shared/vdd-schema";
+
+const g = window as any;
+let mount: HTMLDivElement | null = null;
+let root: any = null;
+
+// The overlay that owns the rendered figures: absolute top-left over the page, z-index max, the
+// page's own computed body background, 16px padding; every other body child is display:none'd once.
+function ensureHost(): HTMLDivElement {
+  if (mount) return mount;
+  const bg = getComputedStyle(document.body).backgroundColor;
+  for (const c of Array.from(document.body.children)) (c as HTMLElement).style.display = "none";
+  const host = document.createElement("div");
+  host.id = "__vc_host";
+  host.style.cssText = "position:absolute;top:0;left:0;z-index:2147483647;background:" + bg + ";padding:16px;min-height:100vh;";
+  document.body.appendChild(host);
+  mount = document.createElement("div");
+  host.appendChild(mount);
+  root = createRoot(mount);
+  return mount;
+}
+
+const PRIM_SEL = "line,polyline,polygon,path,circle,rect,ellipse";
+function paintOn(v: string): boolean { return !!v && v !== "none" && v !== "transparent" && v !== "rgba(0, 0, 0, 0)"; }
+
+/** Measure every [role=img] figure under scope — one entry each (per-width hosts in batch mode). */
+function measure(scope: ParentNode) {
+  const hosts = [...scope.querySelectorAll('[role="img"]')] as HTMLElement[];
+  return hosts.map((host, index) => {
+    const svg = host.querySelector("svg");
+    if (!svg) return { index, svg: false, ariaLabel: host.getAttribute("aria-label") ?? null, labels: [] };
+    const vb = (svg as SVGSVGElement).viewBox?.baseVal;
+    const srect = svg.getBoundingClientRect();
+    const pxPerUnit = vb && vb.width ? srect.width / vb.width : null;
+    const ctm = (svg as SVGSVGElement).getScreenCTM();
+    const inv = ctm ? ctm.inverse() : null;
+    const boxOf = (el: Element): [number, number, number, number] | null => {
+      if (!inv) return null;
+      const r = el.getBoundingClientRect();
+      if (!(r.width > 0 || r.height > 0)) return null;
+      const cs = [[r.left, r.top], [r.right, r.top], [r.right, r.bottom], [r.left, r.bottom]]
+        .map(([x, y]) => new DOMPoint(x, y).matrixTransform(inv));
+      const xs = cs.map((p) => p.x), ys = cs.map((p) => p.y);
+      const x0 = Math.min(...xs), y0 = Math.min(...ys);
+      return [x0, y0, Math.max(...xs) - x0, Math.max(...ys) - y0];
+    };
+    const prims = ([...svg.querySelectorAll(PRIM_SEL)] as SVGGeometryElement[])
+      .filter((e) => !e.closest("defs") && !e.closest("marker"))
+      .map((el) => {
+        const s = getComputedStyle(el);
+        const shown = s.visibility === "visible" && s.display !== "none" && parseFloat(s.opacity || "1") > 0;
+        const pts: { x: number; y: number }[] = [];
+        try {
+          const L = el.getTotalLength();
+          if (Number.isFinite(L) && L > 0) {
+            const n = Math.max(8, Math.min(64, Math.ceil(L / 4)));
+            for (let i = 0; i <= n; i++) pts.push(el.getPointAtLength((L * i) / n));
+          }
+        } catch (_) { /* not a geometry element on this engine */ }
+        return {
+          el, pts,
+          stroked: shown && paintOn(s.stroke) && parseFloat(s.strokeWidth) > 0 && parseFloat(s.strokeOpacity || "1") > 0,
+          filled: shown && paintOn(s.fill) && parseFloat(s.fillOpacity || "1") > 0,
+          halfStroke: (parseFloat(s.strokeWidth) || 0) / 2,
+        };
+      })
+      .filter((p) => p.stroked || p.filled);
+    const labelEls = [
+      ...([...svg.querySelectorAll("text")] as SVGTextElement[])
+        .filter((t) => !t.closest("defs") && !t.closest("marker"))
+        .map((e) => ({ e: e as Element, kind: "text" })),
+      ...([...host.querySelectorAll(".katex")] as HTMLElement[])
+        .filter((e) => !(e.parentElement && e.parentElement.closest(".katex")))
+        .map((e) => ({ e: e as Element, kind: "math" })),
+    ];
+    // Math overlay font sizes: DiagramRenderer sets fontSize = (fontSizeU / W) · 100 cqw AND
+    // katex.css puts font-size: 1.21em on .katex — so the computed px is
+    // fontSizeU·pxPerUnit·1.21, not canvas units. Recover units from the parsed doc's math
+    // element (matched by trimmed latex, then by POSITION — the overlay centres on the at point, so
+    // nearest at disambiguates two math elements carrying the same latex; a residual collision
+    // only misreports if they also differ in fontSize — nearest wins, noted here);
+    // fontSizeOf semantics mirrored: el.fontSize ?? defaults.fontSize ?? 18.
+    const mathEls = ((g.__vcDoc?.elements ?? []) as any[])
+      .filter((el) => el.type === "math")
+      .map((el) => ({ latex: String(el.latex).trim(), at: el.at,
+        fs: el.fontSize ?? g.__vcDoc?.defaults?.fontSize ?? 18 }));
+    const labels = labelEls.map(({ e, kind }, i) => {
+      const bbox = boxOf(e);
+      const cs = getComputedStyle(e);
+      const html = kind === "math" ? e.querySelector(".katex-html") : null;
+      const text = (html ? html.textContent : e.textContent || "").trim();
+      const latex = kind === "math" ? e.querySelector("annotation")?.textContent?.trim() ?? undefined : undefined;
+      const ownG = e.closest("g");
+      let edge_u = null, stroke_u = null, geom_u = null;
+      if (bbox && vb) {
+        edge_u = Math.min(
+          bbox[0] - vb.x, bbox[1] - vb.y,
+          vb.x + vb.width - (bbox[0] + bbox[2]), vb.y + vb.height - (bbox[1] + bbox[3]));
+        const centre: [number, number] = [bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2];
+        const corners = [centre, [bbox[0], bbox[1]], [bbox[0] + bbox[2], bbox[1]],
+          [bbox[0], bbox[1] + bbox[3]], [bbox[0] + bbox[2], bbox[1] + bbox[3]]] as [number, number][];
+        let stroke = Infinity, geom = Infinity;
+        for (const p of prims) {
+          if (ownG && ownG.contains(p.el as Element)) continue; // the label's own element never counts
+          let d = Infinity;
+          for (const pt of p.pts) {
+            const dx = Math.max(bbox[0] - pt.x, 0, pt.x - (bbox[0] + bbox[2]));
+            const dy = Math.max(bbox[1] - pt.y, 0, pt.y - (bbox[1] + bbox[3]));
+            const dd = Math.hypot(dx, dy);
+            if (dd < d) d = dd;
+          }
+          if (Number.isFinite(d)) {
+            if (p.stroked) stroke = Math.min(stroke, d - p.halfStroke);
+            geom = Math.min(geom, d);
+          }
+          if (p.filled) {
+            // isPointInFill's input space is engine-dependent (element-local vs viewport units);
+            // try both — a false "inside" only zeroes a distance the paint really neighbours.
+            const m = p.el.getCTM() ? p.el.getCTM()!.inverse() : null;
+            for (const [x, y] of corners) {
+              const dp = new DOMPoint(x, y);
+              let inFill = false;
+              try { inFill = p.el.isPointInFill(dp); } catch (_) {}
+              if (!inFill && m) { try { inFill = p.el.isPointInFill(dp.matrixTransform(m)); } catch (_) {} }
+              if (inFill) { geom = 0; break; }
+            }
+          }
+        }
+        stroke_u = stroke === Infinity ? null : stroke;
+        geom_u = geom === Infinity ? null : geom;
+      }
+      return { i, text, latex, kind, bbox,
+        fontFamily: cs.fontFamily,
+        // For svg <text> cs.fontSize IS in user units (geometry properties report unscaled — the
+        // viewBox→px scale lives on the CTM). For math overlays it is CSS px =
+        // units·pxPerUnit·1.21 (.katex's em), so prefer the doc's fontSizeU and fall back to
+        // px ÷ (pxPerUnit·1.21) — guarded so a null/0 scale yields null, never Infinity/NaN.
+        fontSizeU: (() => {
+          if (kind !== "math") return parseFloat(cs.fontSize) || null;
+          const cands = mathEls.filter((m) => m.latex === (latex ?? ""));
+          let el = cands[0];
+          if (cands.length > 1 && bbox) {
+            const c = [bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2];
+            el = cands.reduce((a, b) => (!a.at ? b : !b.at ? a
+              : Math.hypot(c[0] - a.at[0], c[1] - a.at[1]) <= Math.hypot(c[0] - b.at[0], c[1] - b.at[1]) ? a : b));
+          }
+          if (el) return el.fs;
+          const u = parseFloat(cs.fontSize) / ((pxPerUnit || 0) * 1.21);
+          return Number.isFinite(u) ? u : null;
+        })(),
+        edge_u, stroke_u, geom_u };
+    });
+    return { index, svg: true,
+      viewBox: vb ? [vb.x, vb.y, vb.width, vb.height] : null,
+      pxPerUnit, ariaLabel: host.getAttribute("aria-label") ?? null, labels };
+  });
+}
+
+g.__vc = {
+  render(doc: unknown, widths: number[]) {
+    const r = parseVddDocument(doc);
+    if (!r.ok) return { ok: false, errors: r.errors };
+    g.__vcDoc = r.value; // measure() reads per-element fontSize for math labels
+    ensureHost();
+    root.render(h("div", { "data-vc-row": "" }, widths.map((w: number) =>
+      h("div", { key: w, "data-vc-width": w, style: { width: w + "px" } },
+        // The StudentPreview PreviewFigure plate minus max-w-md — 768 really is 768 px.
+        h("figure", { "data-vc-figure": "",
+          className: "overflow-hidden rounded-[var(--radius-lg)] border border-border bg-white p-3" },
+          h(DiagramRenderer, { dsl: r.value }))))));
+    return { ok: true };
+  },
+  clear() { root?.render(h("div", null)); },
+  measure,
+  /** Every [data-vc-width] host of the current render → one measurement each (batch mode). */
+  measureAll() {
+    return [...document.querySelectorAll("[data-vc-width]")].map((wdiv) => ({
+      width: Number((wdiv as HTMLElement).getAttribute("data-vc-width")),
+      ...(measure(wdiv as HTMLElement)[0] ?? { svg: false, labels: [] }),
+    }));
+  },
+};
+`);
+  execFileSync(ESBUILD, [entry, "--bundle", "--format=iife", "--jsx=automatic", `--outfile=${RENDER_BUNDLE}`,
+    `--alias:@=${path.join(ADMIN, "src")}`, "--loader:.css=empty", "--define:process.env.NODE_ENV=\"production\"",
+    "--resolve-extensions=.tsx,.ts,.js", "--log-level=error"]);
+}
+const RENDER_SOURCE = fs.readFileSync(RENDER_BUNDLE, "utf8");
+
+// ── Env file (never printed, and never READ by mode 1) — /diagtest needs the NEXT_PUBLIC_* vars:
+// src/lib/env.ts throws at module load (QuestionCard → lib/api/onboarding → lib/api/fetch → env),
+// so a checkout with no env file serves a 500. `next dev` loads `.env.local` itself; all mode 1
+// needs is to know ONE exists (`VIBHAGA_ADMIN_ENV` path wins over the default) so a missing env is
+// a clear usage error instead of a 180 s timeout. Only --session ever parses the file — for the
+// admin credentials, which are read at runtime and never printed or placed on a command line.
+function adminEnvFile() {
+  const override = process.env.VIBHAGA_ADMIN_ENV;
+  if (override && fs.existsSync(override)) return override;
+  const local = path.join(ADMIN, ".env.local");
+  return fs.existsSync(local) ? local : null;
+}
+function parseEnvFile(file) {
+  const out = {};
+  for (const raw of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+    const m = raw.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    if (!m) continue;
+    let v = m[2].trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    out[m[1]] = v;
+  }
+  return out;
+}
+
+// ── Dev server ───────────────────────────────────────────────────────────────────────────────────
+async function freePort() {
+  return new Promise((ok, no) => {
+    const s = http.createServer();
+    s.once("error", no);
+    s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => ok(p)); });
+  });
+}
+async function probe(url) {
+  try { const r = await fetch(url, { signal: AbortSignal.timeout(4000) }); return r.status; }
+  catch { return 0; }
+}
+let lastBaseUrl = null;
+/** → { baseUrl, proc|null }. Kills a spawned server on exit/SIGINT/SIGTERM. */
+async function ensureServer() {
+  const base = opt("--base-url");
+  if (base) {
+    const status = await probe(`${base.replace(/\/$/, "")}/diagtest`);
+    if (status !== 200) die(`--base-url ${base} does not answer GET /diagtest 200 (got ${status || "no response"})`);
+    lastBaseUrl = base.replace(/\/$/, "");
+    return { baseUrl: lastBaseUrl, proc: null };
+  }
+  // /diagtest needs the NEXT_PUBLIC_* vars — src/lib/env.ts throws at module load
+  // (QuestionCard → lib/api/onboarding → lib/api/fetch → env), so the page 500s without them.
+  // Existence check only — this mode never reads the env file; `next dev` loads it itself.
+  const envFile = adminEnvFile();
+  if (!envFile)
+    die(`next dev cannot serve /diagtest — ${ADMIN} has no env file and VIBHAGA_ADMIN_ENV (${process.env.VIBHAGA_ADMIN_ENV ?? "unset"}) does not exist. /diagtest's module graph throws without NEXT_PUBLIC_API_BASE_URL/NEXT_PUBLIC_SUPABASE_URL/NEXT_PUBLIC_SUPABASE_ANON_KEY (src/lib/env.ts).`);
+  const port = await freePort();
+  const proc = spawn(NEXT, ["dev", "-p", String(port)], { cwd: ADMIN, env: { ...process.env }, stdio: ["ignore", "pipe", "pipe"] });
+  let tail = [];
+  const hear = (d) => { tail.push(...String(d).split("\n")); tail = tail.slice(-25); };
+  proc.stdout.on("data", hear);
+  proc.stderr.on("data", hear);
+  let exited = null;
+  proc.on("exit", (code) => { exited = code; });
+  const stop = () => { try { proc.kill("SIGTERM"); } catch {} };
+  process.once("exit", stop);
+  for (const sig of ["SIGINT", "SIGTERM"]) process.once(sig, () => { stop(); process.exit(sig === "SIGINT" ? 130 : 143); });
+  const deadline = Date.now() + 180_000;
+  const url = `http://localhost:${port}`;
+  for (;;) {
+    if (exited !== null) die(`next dev exited ${exited} before /diagtest answered.\n${tail.join("\n")}`);
+    if (Date.now() > deadline) { stop(); die(`/diagtest did not answer 200 within 180s on ${url}. If the page 500s, ${envFile} is missing a NEXT_PUBLIC_* var — src/lib/env.ts throws at module load.\n${tail.join("\n")}`); }
+    if (await probe(`${url}/diagtest`) === 200) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  lastBaseUrl = url;
+  return { baseUrl: url, proc };
+}
+
+// ── Inputs ───────────────────────────────────────────────────────────────────────────────────────
+const isVdd = (o) => o && typeof o === "object" && o.schema === "vibhaga.diagram";
+const isStaged = (o) => o && typeof o === "object" && Array.isArray(o.questions);
+
+function claimsFor(id, fileBase, claimsDir) {
+  const cands = [];
+  if (fileBase) cands.push(`${fileBase}.claims.txt`, `${fileBase}-claims.txt`);
+  if (claimsDir) cands.push(path.join(claimsDir, `${id}.claims.txt`));
+  for (const f of cands) if (fs.existsSync(f)) return { path: f, text: fs.readFileSync(f, "utf8") };
+  return null;
+}
+
+function collectFigures(inputs, claimsDir) {
+  const figures = [];
+  const seen = new Map();
+  const push = (id, doc, source, fileBase) => {
+    const k = (seen.get(id) ?? 0) + 1;
+    seen.set(id, k);
+    const fid = k === 1 ? id : `${id}~${k}`;
+    figures.push({ id: fid, doc, source, claims: claimsFor(fid, fileBase, claimsDir) });
+  };
+  const walkSubs = (list, prefix, source) => {
+    for (const s of list ?? []) {
+      if (!s || typeof s !== "object") continue;
+      const id = `${prefix}.${s.label ?? "?"}`;
+      if (s.diagram_dsl) push(id, s.diagram_dsl, source, null);
+      // sub-answers: canonical `answers: []`, plus the legacy singular `sub_answer` folded first
+      // (the same order Admin's normalizeStagedQuestions uses).
+      const answers = [...(s.sub_answer ? [s.sub_answer] : []), ...(Array.isArray(s.answers) ? s.answers : [])];
+      answers.forEach((a, k) => { if (a?.diagram_dsl) push(`${id}.ans${k + 1}`, a.diagram_dsl, source, null); });
+      walkSubs(s.sub_questions, id, source);
+    }
+  };
+  for (const input of inputs) {
+    const st = fs.statSync(input, { throwIfNoEntry: false });
+    if (!st) die(`no such input: ${input}`);
+    if (st.isDirectory()) {
+      for (const f of fs.readdirSync(input).sort()) {
+        if (!f.endsWith(".json") || f.endsWith(".anchors.json")) continue;
+        const full = path.join(input, f);
+        let doc;
+        try { doc = JSON.parse(fs.readFileSync(full, "utf8")); } catch { continue; }
+        if (isVdd(doc)) push(path.basename(f, ".json"), doc, full, full.slice(0, -5));
+      }
+      continue;
+    }
+    let doc;
+    try { doc = JSON.parse(fs.readFileSync(input, "utf8")); }
+    catch (e) { die(`${input}: not JSON — ${e.message}`); }
+    if (isVdd(doc)) push(path.basename(input, ".json"), doc, input, input.slice(0, -5));
+    else if (isStaged(doc)) walkStagedDoc(doc, input, push, walkSubs);
+    else die(`${input}: neither a VDD document (schema:"vibhaga.diagram") nor a staged doc (questions[])`);
+  }
+  return figures;
+}
+function walkStagedDoc(staged, source, push, walkSubs) {
+  (staged.questions ?? []).forEach((q, i) => {
+    if (!q || typeof q !== "object") return;
+    const id = `Q${q.question_number ?? i + 1}`;
+    if (q.diagram_dsl) push(id, q.diagram_dsl, source, null);
+    (Array.isArray(q.answers) ? q.answers : []).forEach((a, k) => {
+      if (a?.diagram_dsl) push(`${id}.ans${k + 1}`, a.diagram_dsl, source, null);
+    });
+    walkSubs(q.sub_questions, id, source);
+  });
+}
+
+// ── The batch run ────────────────────────────────────────────────────────────────────────────────
+async function runBatch(figures, { out, widths, themes, headed }) {
+  const server = await ensureServer();
+  const { chromium } = await import(pathToFileURL(PLAYWRIGHT).href);
+  const browser = await chromium.launch({ headless: !headed });
+  const measureTheme = themes.includes("light") ? "light" : themes[0];
+  try {
+    for (const theme of themes) {
+      const ctx = await browser.newContext({
+        viewport: { width: Math.max(...widths) + 64, height: 1600 },
+        colorScheme: theme,
+      });
+      await ctx.addInitScript((t) => { try { localStorage.setItem("vibhaga_admin_theme", t); } catch (_) {} }, theme);
+      const page = await ctx.newPage();
+      await page.goto(`${server.baseUrl}/diagtest`, { waitUntil: "domcontentloaded", timeout: 120_000 });
+      await page.waitForFunction((t) => document.documentElement.dataset.theme === t, theme, { timeout: 30_000 });
+      await page.evaluate(() => document.fonts.ready.then(() => true));
+      await page.addScriptTag({ content: RENDER_SOURCE });
+      await page.waitForFunction(() => typeof window.__vc === "object", null, { timeout: 15_000 });
+      for (const fig of figures) {
+        if (fig.invalid) continue;
+        const r = await page.evaluate(([doc, ws]) => window.__vc.render(doc, ws), [fig.parsed, widths]);
+        if (!r?.ok) {
+          fig.invalid = r?.errors ?? "render() failed";
+          fig.findings.push({ rule: "parse", severity: "fail", message: `in-page parseVddDocument failed — a student would see 'Diagram coming soon'` });
+          continue;
+        }
+        await page.waitForSelector("figure[data-vc-figure] svg", { timeout: 15_000 });
+        await page.evaluate(() => document.fonts.ready.then(() => true));
+        const measured = await page.evaluate(() => window.__vc.measureAll());
+        if (theme === measureTheme) {
+          fig.measured = measured;
+          for (const m of measured) {
+            if (!m.svg) fig.findings.push({ rule: "render", severity: "fail", message: `no <svg> drew at ${m.width}px — 'Diagram coming soon' territory` });
+            else if (!m.ariaLabel) fig.findings.push({ rule: "render", severity: "fail", message: `no aria-label on the figure at ${m.width}px` });
+          }
+        } else {
+          // Non-light passes only assert the figure drew (svg + accessible name) — label metrics
+          // are the light pass's job.
+          for (const m of measured) {
+            if (!m.svg || !m.ariaLabel)
+              fig.findings.push({ rule: "render", severity: "fail", message: `${theme} pass: ${!m.svg ? "no <svg> drew" : "no aria-label"} at ${m.width}px` });
+          }
+        }
+        for (const w of widths) {
+          const shot = path.join(fig.outDir, `${theme}-${w}.png`);
+          fs.mkdirSync(fig.outDir, { recursive: true });
+          await page.locator(`[data-vc-width="${w}"] figure[data-vc-figure]`).screenshot({ path: shot });
+          fig.pngs.push(shot);
+        }
+      }
+      await ctx.close();
+    }
+  } finally {
+    await browser.close();
+    if (server.proc) { server.proc.kill("SIGTERM"); }
+  }
+  // verdicts — the pure module decides
+  for (const fig of figures) {
+    const res = assess({
+      doc: fig.parsed ?? fig.doc,
+      claims: fig.claims?.text ?? null,
+      widths: fig.measured ?? [],
+    });
+    res.findings.unshift(...fig.findings);
+    if (res.findings.some((f) => f.severity === "fail")) res.verdict = "FAIL";
+    fig.result = res;
+  }
+  return figures;
+}
+
+function figureLine(fig, pad) {
+  const a = fig.result;
+  const failsOf = (rule) => a.findings.filter((f) => f.rule === rule && f.severity === "fail");
+  const parts = [];
+  const fontF = failsOf("font");
+  parts.push(a.font && (a.font.math || a.font.text) ? (fontF.length ? `font: ${fontF[0].message.replace(/^font /, "")}` : "font ok") : "font —");
+  const uniq = a.labels.filter((l) => l.width === a.labels[0]?.width).length || new Set(a.labels.map((l) => `${l.i}:${l.text}`)).size;
+  const minE = a.labels.reduce((m, l) => Math.min(m, l.edge_px ?? Infinity), Infinity);
+  const minS = a.labels.reduce((m, l) => Math.min(m, l.stroke_px ?? Infinity), Infinity);
+  parts.push(`labels ${uniq} (min edge ${minE === Infinity ? "—" : minE + "px"}, min stroke ${minS === Infinity ? "—" : minS + "px"})`);
+  parts.push(`target ${failsOf("target").length ? `${failsOf("target").length} fail` : "ok"}`);
+  parts.push(`arc ${a.arcs ? (failsOf("arc").length ? `${failsOf("arc").length} fail` : "ok") : "—"}`);
+  const shadedF = failsOf("shaded");
+  parts.push(`shaded ${a.shaded ? (shadedF.length ? `measured ${a.shaded.measured} ≠ claimed ${a.shaded.claimed}` : "ok") : "—"}`);
+  const other = failsOf("parse").concat(failsOf("render")).map((f) => f.message).join("; ");
+  return `${fig.id.padEnd(pad)}  ${fig.result.verdict.padEnd(4)}  ${parts.join(" · ")}${other ? ` · ${other}` : ""}  → ${fig.outDir}/`;
+}
+
+async function batchMode() {
+  if (!positional.length && !flag("--self-test")) die(`usage: visual-check.mjs <inputs…> [--out DIR] [--widths 320,375,768] [--themes light,dark] [--base-url URL] [--claims-dir DIR] [--headed] [--admin PATH]\n       visual-check.mjs --session <id>   (⚠️ --session, not --admin — --admin PATH is the Admin CHECKOUT)\n       visual-check.mjs --self-test`);
+  const out = path.resolve(opt("--out", path.join(os.tmpdir(), "visual-check-out")));
+  const widths = opt("--widths", "320,375,768").split(",").map(Number);
+  if (!widths.length || widths.some((w) => !(w > 0))) die(`bad --widths: ${opt("--widths")}`);
+  const themes = opt("--themes", "light,dark").split(",").map((t) => t.trim());
+  if (!themes.length || themes.some((t) => !["light", "dark"].includes(t))) die(`bad --themes: ${opt("--themes")} (light,dark)`);
+  const claimsDir = opt("--claims-dir") ? path.resolve(opt("--claims-dir")) : null;
+  if (claimsDir && !fs.existsSync(claimsDir)) die(`--claims-dir ${claimsDir} does not exist`);
+  const figures = collectFigures(positional, claimsDir);
+  if (!figures.length) die("no VDD figures found in the given inputs");
+  for (const fig of figures) {
+    fig.outDir = path.join(out, fig.id);
+    fig.pngs = [];
+    fig.findings = [];
+    const r = lib.parseVddDocument(fig.doc);
+    if (!r.ok) {
+      fig.invalid = r.errors;
+      fig.parsed = null;
+      fig.findings.push({ rule: "parse", severity: "fail", message: `document fails parseVddDocument: ${JSON.stringify(r.errors?.slice?.(0, 3) ?? r.errors).slice(0, 200)} — a student would see 'Diagram coming soon'` });
+    } else fig.parsed = r.value;
+  }
+  await runBatch(figures, { out, widths, themes, headed: flag("--headed") });
+  const pad = Math.max(...figures.map((f) => f.id.length));
+  let pass = 0;
+  let pngs = 0;
+  for (const fig of figures) {
+    if (fig.result.verdict === "PASS") pass++;
+    pngs += fig.pngs.length;
+    console.log(figureLine(fig, pad));
+  }
+  console.log(`${figures.length} figures · ${pass} pass · ${figures.length - pass} fail · PNGs: ${pngs} · report: ${path.join(out, "report.json")}`);
+  fs.mkdirSync(out, { recursive: true });
+  const report = {
+    tool: "visual-check",
+    widths,
+    themes,
+    base_url: lastBaseUrl ?? null,
+    figures: figures.map((f) => ({
+      id: f.id,
+      source: f.source,
+      verdict: f.result.verdict,
+      findings: f.result.findings,
+      labels: f.result.labels.map(({ i, text, kind, width, edge_px, stroke_px, target_u, ok }) =>
+        ({ i, text, kind, width, edge_px, stroke_px, target_u, ok })),
+      shaded: f.result.shaded,
+      font: f.result.font,
+      arcs: f.result.arcs,
+      pngs: f.pngs,
+    })),
+  };
+  fs.writeFileSync(path.join(out, "report.json"), JSON.stringify(report, null, 1));
+  process.exit(figures.length - pass ? 1 : 0);
+}
+
+// ── Mode 2: --session <id> — headed Chromium against the real workspace, then sign out + prove. ──
+function loadCredentials() {
+  // The ONLY place the env file is parsed — --session's sign-in needs the admin credentials.
+  const file = adminEnvFile();
+  const vars = file ? parseEnvFile(file) : {};
+  const email = vars.VIBHAGA_ADMIN_EMAIL, password = vars.VIBHAGA_ADMIN_PASSWORD;
+  if (!email || !password)
+    die(`--session needs VIBHAGA_ADMIN_EMAIL/VIBHAGA_ADMIN_PASSWORD in ${file ?? path.join(ADMIN, ".env.local")} (or VIBHAGA_ADMIN_ENV) — credentials are read at runtime and never printed`);
+  return { email, password };
+}
+/** Actor's user.id from the Supabase session — cookie chunks joined, base64- decoded.
+ *  Reads ONLY user.id; never a token value, never logged. */
+async function extractActorId(page) {
+  return page.evaluate(() => {
+    const decode = (raw) => {
+      try {
+        let v = raw;
+        try { v = decodeURIComponent(v); } catch (_) {}
+        if (v.startsWith("base64-")) v = atob(v.slice(7));
+        const j = JSON.parse(v);
+        return j?.user?.id ?? null;
+      } catch (_) { return null; }
+    };
+    const groups = {};
+    for (const part of document.cookie.split("; ")) {
+      const eq = part.indexOf("=");
+      if (eq < 0) continue;
+      const m = part.slice(0, eq).trim().match(/^(sb-.+-auth-token)(?:\.(\d+))?$/);
+      if (m) (groups[m[1]] ??= {})[m[2] === undefined ? 0 : +m[2]] = part.slice(eq + 1);
+    }
+    for (const g of Object.values(groups)) {
+      const joined = Object.keys(g).map(Number).sort((a, b) => a - b).map((i) => g[i]).join("");
+      const id = decode(joined);
+      if (id) return id;
+    }
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) ?? "";
+      if (!/auth-token/.test(k)) continue;
+      const id = decode(localStorage.getItem(k) ?? "");
+      if (id) return id;
+    }
+    return null;
+  });
+}
+
+async function sessionMode() {
+  const sessionId = opt("--session");
+  const out = path.resolve(opt("--out", path.join(os.tmpdir(), "visual-check-out")));
+  const outDir = path.join(out, "session");
+  fs.mkdirSync(outDir, { recursive: true });
+  const creds = loadCredentials();
+  const server = await ensureServer();
+  lastBaseUrl = server.baseUrl;
+  const { chromium } = await import(pathToFileURL(PLAYWRIGHT).href);
+  const browser = await chromium.launch({ headless: false }); // always headed
+  let exitCode = 0;
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "light" });
+    const page = await ctx.newPage();
+    await page.goto(`${server.baseUrl}/login`, { waitUntil: "domcontentloaded", timeout: 120_000 });
+    // SignInForm's inputs are CONTROLLED (`useState("")`) — a fill that lands before hydration is
+    // clobbered to "" on hydrate and the submit sends empty credentials ("Incorrect email or
+    // password."). Wait for networkidle, then probe hydration directly: a hydrated input carries
+    // React's __reactProps*/__reactFiber* expando; a server-rendered one does not. Fill with real
+    // keystrokes (pressSequentially), which React always tracks, then assert the DOM value held.
+    await page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => {});
+    const emailIn = page.getByLabel("Email");
+    const pwdIn = page.getByLabel("Password");
+    const hydrated = await emailIn.evaluate((el) =>
+      Object.keys(el).some((k) => k.startsWith("__reactProps") || k.startsWith("__reactFiber")),
+    ).catch(() => null);
+    console.log(`sign-in form hydrated: ${hydrated === null ? "?" : hydrated ? "yes" : "no"}`);
+    const fillField = async (locator, value) => {
+      await locator.click();
+      await locator.pressSequentially(value, { delay: 8 });
+      if ((await locator.inputValue()) === "") {       // React state ate the DOM value — retry once
+        await locator.fill(value);
+      }
+      return (await locator.inputValue()) !== "";
+    };
+    const emailOk = await fillField(emailIn, creds.email);
+    const pwdOk = await fillField(pwdIn, creds.password);
+    const fieldsFilled = emailOk && pwdOk;
+    console.log(`sign-in fields at submit: ${fieldsFilled ? "both non-empty" : "EMPTY — hydration clobbered the fill"}`);
+    // Diagnostics without values: watch the Supabase token call so a hung request is told apart
+    // from a credential rejection (its STATUS only — never a body or token), and catch a
+    // client-side throw in the submit handler (unhandled rejection → pageerror).
+    let authStatus = "no /auth/v1/token request seen";
+    let pageError = "";
+    page.on("response", (res) => {
+      if (/auth\/v1\/token/.test(res.url())) authStatus = `token request → HTTP ${res.status()}`;
+    });
+    page.on("requestfailed", (req) => {
+      if (/supabase|auth/.test(req.url())) authStatus = `request failed: ${req.url().replace(/\?.*$/, "")} (${req.failure()?.errorText})`;
+    });
+    page.on("pageerror", (e) => { pageError = `pageerror: ${e.message}`; });
+    await page.getByRole("button", { name: "Sign in" }).click();
+    const alert = page.getByRole("alert").filter({ hasText: "Incorrect email or password." });
+    const outcome = await Promise.race([
+      page.waitForURL((u) => !u.pathname.endsWith("/login"), { timeout: 60_000 }).then(() => "in"),
+      alert.waitFor({ state: "visible", timeout: 60_000 }).then(() => "bad"),
+    ]).catch(() => "timeout");
+    if (outcome !== "in")
+      throw new Error(`sign-in failed (fields at submit: ${fieldsFilled ? "non-empty" : "EMPTY"}; ${authStatus}${pageError ? "; " + pageError : ""}): ` +
+        `${(await alert.first().textContent().catch(() => null))?.trim() ?? "no redirect"}`);
+    // ── signed in ── everything below runs under a finally that ALWAYS signs out; the actor id
+    // is captured FIRST so a mid-loop failure still leaves a usable revocation proof.
+    let actorId = null;
+    let anyFail = false;
+    let fatal = null;
+    try {
+      actorId = await extractActorId(page);
+      if (!actorId) throw new Error("could not extract the actor's user id from the Supabase session (cookie/localStorage)");
+      await page.goto(`${server.baseUrl}/generate/${sessionId}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    for (const theme of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: theme });
+      await page.evaluate((t) => { try { localStorage.setItem("vibhaga_admin_theme", t); } catch (_) {} }, theme);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForFunction((t) => document.documentElement.dataset.theme === t, theme, { timeout: 30_000 });
+      await page.addScriptTag({ content: RENDER_SOURCE });
+      await page.waitForFunction(() => typeof window.__vc === "object", null, { timeout: 15_000 });
+      // The staged doc loads via TanStack Query — wait for the first card's preview trigger.
+      await page.getByRole("button", { name: /Preview as a student — question \d+/ })
+        .first().waitFor({ timeout: 60_000 });
+      const names = await page.getByRole("button", { name: /Preview as a student — question \d+/ })
+        .evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
+      for (const name of names) {
+        const n = Number(name.match(/question (\d+)/)[1]);
+        // exact: true — "question 1" substring-matches "question 10" otherwise
+        await page.getByRole("button", { name, exact: true }).click();
+        const region = page.getByRole("region", { name: `Preview — question ${n}, as a student reads it` });
+        await region.waitFor({ timeout: 15_000 });
+        const port = region.locator("[data-student-scrollport]");
+        await page.evaluate(() => document.fonts.ready.then(() => true));
+        await port.locator('[role="img"] svg').first().waitFor({ timeout: 10_000 }).catch(() => {});
+        // ── unclip ── the scrollport is height-clamped and scrollable, and an element shot only
+        // captures the VISIBLE box (the earlier PNGs were cut below the side labels with a black
+        // band beyond the viewport). Remove every clamp from the scrollport up to the region, and
+        // grow the viewport to fit (the preview region re-renders on each open, so no restore of
+        // styles is needed; the viewport is put back below).
+        await port.evaluate((el) => {
+          // scrollport → up to AND INCLUDING the preview region (role=region). NOT past it —
+          // ancestors above the overlay persist after the region unmounts and would break the
+          // next question's layout/click (observed: "element is outside of the viewport").
+          for (let node = el; node; node = node.parentElement) {
+            node.style.setProperty("max-height", "none", "important");
+            node.style.setProperty("height", "auto", "important");
+            node.style.setProperty("overflow", "visible", "important");
+            if (node.getAttribute("role") === "region") break;
+          }
+        });
+        const needH = await region.evaluate((el) => Math.ceil(el.getBoundingClientRect().bottom + 24));
+        const vp = page.viewportSize() ?? { width: 1440, height: 900 };
+        if (needH > vp.height) {
+          await page.setViewportSize({ width: 1440, height: Math.min(6000, needH) });
+          await page.evaluate(() => document.fonts.ready.then(() => true)); // layout settles
+        }
+        const png = path.join(outDir, `${theme}-Q${n}.png`);
+        await port.screenshot({ path: png });
+        // ── clip assert ── nothing may remain scrollable inside the shot, and every figure svg
+        // must lie inside the port's box. A clipped shot is a FAIL, not a best-effort PNG.
+        const clip = await port.evaluate((el) => {
+          const pr = el.getBoundingClientRect();
+          const rects = [...el.querySelectorAll("svg")].map((s) => s.getBoundingClientRect());
+          return {
+            noScroll: el.scrollHeight <= el.clientHeight + 1,
+            svgsInside: rects.every((r) => r.top >= pr.top - 1 && r.bottom <= pr.bottom + 1
+              && r.left >= pr.left - 1 && r.right <= pr.right + 1),
+            nSvg: rects.length,
+          };
+        });
+        const clipped = !(clip.noScroll && clip.svgsInside);
+        const measured = await port.evaluate((el) => window.__vc.measure(el));
+        const results = (measured ?? []).filter((m) => m.svg)
+          .map((m) => assess({ doc: null, claims: null, widths: [{ width: 375, pxPerUnit: m.pxPerUnit, labels: m.labels }] }));
+        const fails = results.flatMap((r) => r.findings.filter((f) => f.severity === "fail"));
+        if (fails.length || clipped) anyFail = true;
+        const verdict = clipped ? "CLIPPED FAIL" : fails.length ? "FAIL" : "PASS";
+        console.log(`Q${n}  ${verdict}  ${theme} · figures ${results.length} · findings ${fails.length}${fails.length ? " — " + fails.map((f) => f.message).join("; ") : ""}  → ${png}`);
+        if (needH > vp.height) await page.setViewportSize(vp); // put the viewport back
+        await region.getByRole("button", { name: "Close preview" }).click().catch(() => {});
+        const detached = await region.waitFor({ state: "detached", timeout: 5_000 })
+          .then(() => true).catch(() => false);
+        if (!detached) {
+          // The region didn't unmount — its unclamped inline styles could leak into the next
+          // question's shot. Reload the page (same theme) instead of trusting the close.
+          await page.reload({ waitUntil: "domcontentloaded" });
+          await page.waitForFunction((t) => document.documentElement.dataset.theme === t, theme, { timeout: 30_000 });
+          await page.addScriptTag({ content: RENDER_SOURCE });
+          await page.waitForFunction(() => typeof window.__vc === "object", null, { timeout: 15_000 });
+          await page.getByRole("button", { name: /Preview as a student — question \d+/ })
+            .first().waitFor({ timeout: 60_000 });
+        }
+      }
+    }
+  } catch (e) {
+    fatal = e;
+    console.error(`visual-check: --session aborted — ${e?.message ?? e} — still signing out`);
+  } finally {
+    // Sign out MUST happen once signed in — the Q3 revocation proof is meaningless on a live
+    // session. Button first; if that fails, expire the sb-* auth cookies + storage in-page and
+    // say so LOUDLY (a skipped sign-out must never pass silently).
+    try {
+      await page.getByRole("button", { name: "Sign out" }).first().click();
+      await page.waitForURL(/\/login/, { timeout: 15_000 });
+    } catch (_) {
+      try {
+        await page.evaluate(() => {
+          for (const c of document.cookie.split(";")) {
+            const n = c.split("=")[0].trim();
+            if (n.startsWith("sb-"))
+              document.cookie = `${n}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+          }
+          for (let i = localStorage.length - 1; i >= 0; i--) {
+            const k = localStorage.key(i) ?? "";
+            if (/auth|sb-/.test(k)) localStorage.removeItem(k);
+          }
+        });
+      } catch (_) { /* page may be gone — the loud line below still reports it */ }
+      console.error("visual-check: ⚠️ SIGN-OUT FAILED — the admin session may still be live; verify revocation with queries.sql Q3 on the Admin Auth project");
+    }
+    // The revocation proof runs whether or not the loop failed — never select token values.
+    if (actorId) {
+      const dbUrl = process.env.VIBHAGA_ADMIN_AUTH_DB_URL;
+      if (dbUrl) {
+        // psql gets NO URL on argv (a password in argv leaks into `ps`) — PG* vars carry it, and
+        // -f - feeds the SQL on stdin so `:'actor_id'` interpolates (psql -c does NOT).
+        let pgEnv, sql;
+        try {
+          pgEnv = pgEnvFromUrl(dbUrl);
+          sql = q3Block(fs.readFileSync(path.join(PLUGIN, "queries.sql"), "utf8"));
+        } catch (e) {
+          console.log(`revocation: ${e.message} — run queries.sql Q3 on the Admin Auth project with actor_id=${actorId}`);
+        }
+        if (pgEnv && sql) {
+          const r = spawnSync("psql", ["-v", `actor_id=${actorId}`, "-f", "-"], {
+            input: sql,
+            env: { ...process.env, ...pgEnv, PGOPTIONS: "-c default_transaction_read_only=on" },
+            encoding: "utf8",
+          });
+          if (r.error || r.status !== 0)
+            console.log(`revocation: psql failed — ${r.stderr?.trim() || r.error?.message} — run queries.sql Q3 on the Admin Auth project with actor_id=${actorId}`);
+          else console.log(`revocation: queries.sql Q3 on the Admin Auth project (actor_id=${actorId}):\n${r.stdout.trim()}`);
+        }
+      } else {
+        console.log(`revocation: PENDING — run queries.sql Q3 on the Admin Auth project with actor_id=${actorId}`);
+      }
+    } else {
+      console.log("revocation: UNKNOWN — no actor id was captured before the failure");
+    }
+  }
+  exitCode = fatal ? 1 : anyFail ? 1 : 0;
+  } finally {
+    await browser.close();
+    if (server.proc) server.proc.kill("SIGTERM");
+  }
+  return exitCode;
+}
+
+// ── --self-test: two synthetic figures through the real /diagtest pipeline ───────────────────────
+async function selfTest() {
+  // The self-test needs a servable /diagtest — a checkout with no env file is a SKIP, not a
+  // failure (existence check only; nothing here reads the env file). With --base-url the server
+  // is already up — no env needed.
+  const envFile = adminEnvFile();
+  if (!opt("--base-url") && !envFile) {
+    console.log(`SELF-TEST SKIP — ${ADMIN} has no env file (VIBHAGA_ADMIN_ENV / .env.local) for /diagtest`);
+    process.exit(0);
+  }
+  // A clean right-triangle: point labels offset clear of every stroke and edge. Capital labels are
+  // deliberately NOT arc-rule numerals (the regex excludes capitals — they are point names).
+  const clean = {
+    schema: "vibhaga.diagram", schemaVersion: 1, canvas: { width: 300, height: 260 },
+    defaults: { strokeWidth: 2, fontSize: 18 },
+    a11y: { title: "Synthetic right triangle for visual-check", description: "A synthetic right-angled triangle, vertices labelled, the right angle marked with a square. Fixture only." },
+    elements: [
+      { id: "AB", type: "line", points: [[60, 40], [60, 220]] },
+      { id: "BC", type: "line", points: [[60, 220], [240, 220]] },
+      { id: "AC", type: "line", points: [[60, 40], [240, 220]] },
+      { id: "rB", type: "angleMark", vertex: [60, 220], from: [60, 40], to: [240, 220], r: 16, variant: "right" },
+      { id: "pA", type: "point", at: [60, 40], r: 0, label: "A", labelOffset: [-28, -6] },
+      { id: "pB", type: "point", at: [60, 220], r: 0, label: "B", labelOffset: [-28, -2] },
+      { id: "pC", type: "point", at: [240, 220], r: 0, label: "C", labelOffset: [16, 4] },
+    ],
+  };
+  // Known defects: a KaTeX math label next to <text> point labels (font mix) and a text label
+  // pushed off the right edge of the canvas (edge).
+  const bad = {
+    ...clean,
+    a11y: { title: "Synthetic broken figure for visual-check", description: "A synthetic triangle with a deliberately mixed font label set and a label clipped by the canvas edge. Fixture only." },
+    elements: [
+      ...clean.elements,
+      { id: "mx", type: "math", at: [150, 120], latex: "x^2" },
+      { id: "edgeT", type: "text", at: [292, 60], value: "clip" },
+    ],
+  };
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "visual-check-selftest-"));
+  const figures = [
+    { id: "clean", doc: clean, source: "self-test", claims: null, outDir: path.join(outDir, "clean"), pngs: [], findings: [] },
+    { id: "defective", doc: bad, source: "self-test", claims: null, outDir: path.join(outDir, "bad"), pngs: [], findings: [] },
+  ];
+  for (const fig of figures) {
+    const r = lib.parseVddDocument(fig.doc);
+    if (r.ok) fig.parsed = r.value;
+    else { fig.invalid = r.errors; fig.findings.push({ rule: "parse", severity: "fail", message: "self-test doc failed parse" }); }
+  }
+  await runBatch(figures, { out: outDir, widths: [320, 375], themes: ["light", "dark"], headed: flag("--headed") });
+  const byId = Object.fromEntries(figures.map((f) => [f.id, f]));
+  let ok = true;
+  const t = (name, cond, extra = "") => { console.log(`${cond ? "PASS" : "FAIL"}  ${name}${extra ? " — " + extra : ""}`); if (!cond) ok = false; };
+  t("clean figure: PASS", byId.clean.result.verdict === "PASS",
+    byId.clean.result.findings.map((f) => f.message).join("; ") || "no findings");
+  t("defective figure: FAIL", byId.defective.result.verdict === "FAIL");
+  const badRules = new Set(byId.defective.result.findings.filter((f) => f.severity === "fail").map((f) => f.rule));
+  t("defective fires font", badRules.has("font"), byId.defective.result.font && `math ×${byId.defective.result.font.math} + text ×${byId.defective.result.font.text}`);
+  t("defective fires edge", badRules.has("edge"));
+  // cqw overlay font: computed px = fontSizeU·pxPerUnit — measure() must hand back CANVAS units
+  // (doc fontSize 18) at every width, not px that drift with the scale (320 vs 375 differ ~1.2×).
+  const mathRows = byId.defective.result.labels.filter((r) => r.kind === "math");
+  t("math label fontSizeU is canvas units at every width",
+    mathRows.length === 2 && mathRows.every((r) => Math.abs(r.fontSizeU - 18) < 1),
+    mathRows.map((r) => `${r.width}px→${r.fontSizeU}u`).join(", ") || "no math rows");
+  t("clean figure drew on both themes", byId.clean.pngs.length === 4);
+  console.log(ok ? "\nSELF-TEST PASS" : "\nSELF-TEST FAIL");
+  process.exit(ok ? 0 : 1);
+}
+
+async function main() {
+  if (flag("--self-test")) return selfTest();
+  if (opt("--session") !== undefined) process.exit(await sessionMode());
+  return batchMode();
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  main().catch((e) => die(e?.message ?? String(e)));

@@ -569,5 +569,38 @@ class CLI(unittest.TestCase):
             self.assertIn("not a number the stem states", r.stderr)
 
 
+class RenderedClearance(unittest.TestCase):
+    """The clearance model is rendered px on the 294 px plate (PLATE_INNER), not canvas units —
+    a canvas wider than the plate shrinks below 1 px/unit (rebuild Q4 measured 7.9 px at 320
+    while the estimate passed)."""
+
+    def test_wide_canvas_labels_clear_the_scaled_edge(self):
+        # number_line 0..8 at a big unit_px forces a canvas far wider than PLATE_INNER
+        b = vt.build_number_line(
+            figure_id="t1",
+            stem="A number line from 0 to 8, each unit divided into 10 equal parts.",
+            v0=0, v1=8, parts_per_unit=10, points={"P": 0.4, "Q": 3.7, "R": 7.9})
+        W = b.doc["canvas"]["width"]
+        self.assertGreater(W, vt.PLATE_INNER)           # the test only matters wide-of-plate
+        s = min(1.0, vt.PLATE_INNER / W)
+        for txt, x0, y0, x1, y1 in vt.label_boxes(b.doc["elements"]):
+            edge = min(x0, y0, W - x1, b.doc["canvas"]["height"] - y1) * s
+            self.assertGreaterEqual(
+                edge, vt.EDGE_PX,
+                f"label {txt!r} renders {edge:.1f} px from the canvas edge (< {vt.EDGE_PX})")
+
+    def test_cuboid_height_label_within_target_distance(self):
+        # visual-check's target rule: a label sits within 1.5 × fontSize of the edge it names —
+        # the cuboid's height label floated ~26 units off DA (rebuild Q8 review).
+        b = vt.build_cuboid(figure_id="t1", stem=CUBOID_52, length=5, width=3, height=2)
+        slh = next(e for e in b.doc["elements"] if e["id"] == "slH")
+        boxes = {t: (x0, y0, x1, y1) for t, x0, y0, x1, y1 in vt.label_boxes(b.doc["elements"])}
+        bx = boxes["2 cm"]
+        da = next(e["points"] for e in b.doc["elements"] if e["id"] == "DA")
+        # label box → the DA segment, canvas units — the same estimator the pre-flight uses
+        dist = vt._seg_rect_dist(da[0], da[1], bx)
+        self.assertLessEqual(dist, 1.5 * slh["fontSize"])
+
+
 if __name__ == "__main__":
     unittest.main()

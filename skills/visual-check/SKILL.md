@@ -1,64 +1,126 @@
 ---
 name: visual-check
-description: Drive Vibhaga-Admin in a headed browser to *see* a generated question the way a student and a reviewer will — sign in, open the playground batch's card and its student preview, take an element screenshot at 375 px, then SIGN OUT and prove the session is gone. Use after a `/generate` run has been uploaded to a playground job, when you need rendered evidence of a stem, a figure or an answer — not for authoring (that is the tools' job).
-argument-hint: "[playground job id or URL]"
+description: >-
+  Render VDD figures and whole student-preview questions through the REAL Admin app and MEASURE
+  them — labels vs canvas edge/stroke/the geometry they name, angle numerals vs their arcs,
+  claimed shaded cells vs painted fill, serif-vs-sans label mixes — then LOOK at one PNG per
+  figure. Mode 1 batches staged docs / VDD files through /diagtest headlessly; mode 2
+  (`--session <id>`) drives a headed browser through the playground student preview, signs out,
+  and proves the revocation. Use after authoring or templating a figure (before `validate`), and
+  after `doc put` when you need rendered evidence — not for authoring, that is the tools' job.
+argument-hint: "[staged.json | figure dir | figure.json …]  or  --session <playground-session-id>"
 ---
 
-# Visual check — look at the generated question before anyone signs off
+# visual-check — render it like a student sees it, then measure + look
 
-> **Replaces `drive-admin-onboarding-ui` for the generation pipeline** — extracted from
-> Vibhaga-Docs `.devin/skills/drive-admin-onboarding-ui` @08c09a9 (see docs/MIGRATION.md). There is no
-> paper to upload and no per-question authoring loop; what remains is *"render it and look"*. **W4
-> adds a one-command renderer** — until then this is the manual version.
+Two modes, one tool — `tools/visual-check.mjs` + the pure rules module `tools/visual-metrics.mjs`
+(unit-tested offline in `tests/test_visual_metrics.mjs`).
 
-## The rules that survive, in one breath
+## Mode 1 — batch render + measure (the command to run)
 
-- **Credentials come from `Vibhaga-Admin/.env.local`** (or `VIBHAGA_ADMIN_ENV`), read at runtime,
-  **never printed** — not in a command line, a log, a screenshot or a chat reply.
-- **Headed Chromium**, so the evidence is pixels a human can check — and light + dark where it
-  matters.
-- **A screenshot is not a rendered string.** Read the SVG/text in the DOM, not only the pixels.
+```bash
+node tools/visual-check.mjs <staged.json | dir | figure.json …> \
+    [--out DIR] [--widths 320,375,768] [--themes light,dark] \
+    [--base-url http://localhost:<port>] [--claims-dir DIR] [--admin PATH] [--headed]
+```
 
-## The drive
+- **Inputs** — any mix of: a staged doc JSON (collects every `diagram_dsl` at question /
+  sub-question / answer level as `Q<n>[.<label>][.ans<k>]`), a single VDD `.json`, or a directory
+  of them. Claim sets are optional: `<base>.claims.txt`, `<base>-claims.txt`, or
+  `--claims-dir/<id>.claims.txt`.
+- **What it renders** — the real Admin `/diagtest` page (real `globals.css`, real next/font
+  Inter + Noto Sans Sinhala, real `html[data-theme]` light/dark via `localStorage
+  vibhaga_admin_theme`) with an esbuild bundle of the real `DiagramRenderer` injected — same
+  bundle discipline as `vdd-check.mjs`. The figure sits in the StudentPreview figure-plate
+  classes minus `max-w-md`, so 768 px really is 768. KaTeX `math` overlays are measured too —
+  they are HTML, not `<text>` (T-QG-3).
+- **Server** — `--base-url` to reuse a running Admin dev server, or it spawns
+  `next dev` itself (needs an env file — `VIBHAGA_ADMIN_ENV` or `.env.local` — to EXIST;
+  this mode never reads it; `src/lib/env.ts` throws at module load without `NEXT_PUBLIC_*`, so
+  a 500 after spawn means the env file is incomplete). `--admin` = the Admin CHECKOUT
+  (`--admin` > `VIBHAGA_ADMIN` > `<plugin>/../Vibhaga-Admin`).
+- **Output** — one line per figure, then a summary; `<out>/<id>/<theme>-<w>.png` (default
+  `$TMPDIR/visual-check-out`) and `<out>/report.json` (the measured label↔edge / label↔stroke
+  distances — the W4 deliverable). Exit `1` any FAIL · `2` usage/env · `0` clean.
 
-1. **Sign in.** Email + password only — the Google button cannot be automated. A valid sign-in still
-   has to pass the `admins` allowlist server-side, so a `403` after a *successful* sign-in is a
-   permissions fact, not a bad password. Fields: `Email` / `Password`; submit reads **`Sign in`**;
-   failure is a `role="alert"` reading *"Incorrect email or password."*
-2. **Open the playground job** — `/onboard/<job-id>`. The cards are `role="group"` named
-   `Question N` (use `{ exact: true }` — non-exact matches several cards on one page).
-3. **Check what the card renders before trusting the preview.** A human cannot attest what the
-   screen does not display — confirm the read-only card shows every field the batch populated:
-   question text, **sub-part text and sub-part diagrams at every depth**, answers, lesson tags.
-   Screenshots of any dialog/overlay too — assert it renders in the right place, not just that it
-   opened.
-4. **Student preview at 375 px.** Open the question's student preview (the card's preview panel or
-   the student page `/q/<id>`) sized to a **375 px** phone viewport and take an **element
-   screenshot** of the question card — not a full-page shot: the element shot is what a reviewer
-   diffs. Read it: label collisions, clipped inline maths (`$…$` never wraps — see
-   `author-question-answers` §4.1c), a figure that renders as *"Diagram coming soon"*
-   (T-S6b-4 — it is not a loading state; the document failed `parseVdd`), Sinhala inside `\text{}`.
-   ⚠️ **On an answer figure, Reveal first** — the worked answer is behind the reveal, so a collapsed
-   card shows no answer `<svg>` and a check that stops at page load passes on a figure that never
-   renders.
-5. ⚠️ **The ~75-second rule.** A flag clear or a withhold is not student-visible for up to ~75 s
-   (Hyperdrive's read cache is not write-invalidated). Never confirm visibility through the student
-   app inside the first minute — verify with a direct `SELECT`, or wait. And never "force" it with
-   **Publish changes**: that destroys the answer sub-tree and re-raises the flag (T-S8-2/T-S8-6).
-6. **SIGN OUT — and prove it.** A `204` from `/auth/v1/logout` is **not** proof (**T4**). Re-query
-   `auth.sessions` and `auth.refresh_tokens` on the **Admin Auth project** (not the content DB) for
-   the actor's sessions and confirm zero remain, or revoke `scope=global` and re-query. Never print
-   token values while doing it.
-7. **Leave the browser.** One job, one tab, one actor — there is no lock or ETag on the staged doc;
-   a stale second tab's next save overwrites everything (`last-write-wins` by design). Watching is
-   safe; intervening from a stale tab is not.
+```
+Q7  FAIL  font: KaTeX math ×1 + text ×4 · labels 5 (min edge 4.7px, min stroke -2.5px) ·
+    target ok · arc — · shaded —  → <out>/Q7/
+9 figures · 2 pass · 7 fail · PNGs: 54 · report: <out>/report.json
+```
 
-## Which verb do I want — the only line you need
+### The five rules (visual-metrics.mjs — every width, rendered px)
 
-Wrong content live → **Unpublish** · your own unchecked content, not yet live → **Flag for review**
-then publish · unchecked content already live → **Withhold from students** · already flagged →
-**leave it, it is withheld** · a human checked it → **Mark reviewed** · wrong card flagged →
-**Remove flag** / **Clear flag** · the content itself must change → and only then → **re-publish**.
+| rule | fails when | claim-set downgrade |
+|---|---|---|
+| `edge` | label bbox < **8 px** from the canvas edge | `allow: label:"<text>"` → warn |
+| `stroke` | label bbox < **6 px** from a stroke's EDGE | same |
+| `target` | label sits > **1.5 × fontSize** from what it names (a `point` label → its own point, always; else the nearest paint). **Word labels (≥3-letter run, any script — pictograph rows, headers) are exempt.** | `allow: label:"<text>"` → warn |
+| `arc` | each angle numeral (`1`, `2`°, `x°`, `θ°`) resolves to its **owner arc** — the candidate whose drawn curve (sampled along the real span) is nearest among arcs whose span contains the label's polar angle — and fails if no near arc covers its direction, or if ≥2 numerals share one owner (`arc <id> carries N numerals`). Labelled angleMarks are candidates too (only their own renderer-placed label is exempt). ⚠️ a **bare side-length number near a wedge** (e.g. `60` next to an arc) can trip this — move the label or declare `allow: label:"60"` | `allow: label:"<text>"` → warn |
+| `shaded` | only with a `shaded N of M cells` claim + `grid R by C` anchors: painted fill inside the grid vs claimed N + 0.5×halves, tolerance 0.1 cell | — |
+| `font` | KaTeX `math` and `<text>` labels coexist, or two text fontFamilies | — |
 
-⚠️ **Never use `Mark reviewed` to undo a flag** — it stamps `verified_by`/`verified_at` and files a
-permanent audit row under your admin id. **Remove flag** exists precisely so you never have to.
+### `--self-test` — the live check after editing the tool
+
+`node tools/visual-check.mjs --self-test` renders two synthetic figures through `/diagtest`
+end-to-end (clean PASS; a defective one FAILs font+edge). **Not part of `check-suite.py`** — the
+offline suite runs with `VIBHAGA_ADMIN_ENV=/nonexistent` so nothing touches credentials; run this
+live check by hand after changing visual-check/visual-metrics. SKIPs cleanly when the checkout has
+no env file.
+
+## LOOK — the rule the metrics cannot replace
+
+**Open ONE PNG per figure once — the `light-375.png` — and log what you saw.** A PASS is "no rule
+fired", not "looks right". What the five rules **cannot** catch:
+
+- a label that clears every stroke but **names the wrong or an ambiguous edge** (e.g. a cuboid
+  depth label at a corner);
+- whether a marked arc **is the angle the stem means** (reflex vs interior choice);
+- **legibility** — size, contrast, cramped-but-clear spacing are judgements, not distances;
+- whether a pictograph icon **reads as the thing** it stands for;
+- label↔label collisions and anything else that is two elements *both* in tolerance.
+
+## Mode 2 — `--session <playground-session-id>` (headed, after `doc put`)
+
+```bash
+node tools/visual-check.mjs --session <id> [--admin PATH] [--out DIR]
+```
+
+Always headed Chromium (1440×900). **Credentials** come from `Vibhaga-Admin/.env.local`
+(`VIBHAGA_ADMIN_EMAIL`/`VIBHAGA_ADMIN_PASSWORD`, or `VIBHAGA_ADMIN_ENV`) — read at runtime, never
+printed, never on a command line, a log or a screenshot. (`--session` replaced the plan's
+`--admin <session>` — `--admin` is the plugin-wide checkout flag.)
+
+The drive: **sign in** (fields `Email`/`Password`, button `Sign in`; failure = `role=alert`
+*"Incorrect email or password."*) → `/generate/<id>` → per question click
+**`Preview as a student — question N`**, wait for the `Preview — question N, as a student reads it`
+region and its fonts/svg, **unclamp** the scrollport + ancestors (`max-height:none; height:auto;
+overflow:visible`) and grow the viewport to fit (an element shot captures only the visible box —
+a clipped figure + black band WAS shipped once), element-screenshot `[data-student-scrollport]` →
+`<out>/session/<theme>-Q<n>.png` — a shot that still leaves scrollable content or an svg outside
+the port is a **`CLIPPED` = FAIL** verdict — and run the same in-page label measurement + `assess` on every
+`<svg>` inside it (no claim set) — light AND dark. **Answer figures are already covered**: Web
+reveals answers behind `RevealAnswer`, but Admin's preview expands everything — there is no
+Reveal control to click, and the measurement walks every `<svg>` in the scrollport, answer
+figures included. Then read the actor's `user.id` out of the Supabase session **immediately
+after sign-in** (cookies — never a token), and whatever happens, **Sign out** runs under
+`finally` (a failed click is reported loudly and the session cookies are expired in-page).
+Prove the revocation: queries.sql **Q3** on the **Admin Auth** project — `VIBHAGA_ADMIN_AUTH_DB_URL`
+is parsed into `PG*` env vars for psql (never on argv; `-f -` on stdin so `:'actor_id'`
+interpolates, `-c` does NOT), read-only — or the printed `revocation: PENDING` line when the
+env is unset. Never select token values.
+
+### The rules that survive from the manual drive
+
+- **A screenshot is not a rendered string** — read the SVG/text in the DOM too, not only the
+  pixels.
+- **A 403 after a successful sign-in is a permissions fact**, not a bad password — the `admins`
+  allowlist is server-side.
+- **A 204 from `/auth/v1/logout` is not proof (T4)** — only the re-query counts.
+- ⚠️ **The ~75-second rule** — a flag clear/withhold is not student-visible for up to ~75 s
+  (Hyperdrive's read cache is not write-invalidated). Never confirm through the student app inside
+  the first minute; verify by `SELECT`, or wait. Never force it with **Publish changes** — that
+  destroys the answer sub-tree and re-raises the flag (T-S8-2/T-S8-6).
+- **One job, one tab, one actor** — no lock on the staged doc; a stale second tab's save
+  overwrites everything (`last-write-wins` by design). Watching is safe; intervening from a stale
+  tab is not.
