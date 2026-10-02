@@ -1,24 +1,24 @@
 ---
 name: generate
-description: Generate new practice questions FROM A LESSON (no source paper) through the Agent Question Playground — read the lesson's corpus Markdown through your own checkout (never an API), check what already exists for dedup and style, author stems / parts / constructed figures / answers with the S4–S8 skills, compile the batch with `tools/build-staged.py`, validate server-side until clean, then save and publish with `tools/playground-publish.py`, where every row lands FLAGGED and hidden from students until a human marks it reviewed, and prove what landed by direct SQL. Use when asked to generate, write, create or author questions for a lesson, topic or grade, to "fill a lesson with practice questions", or to run or resume a playground session. Not for onboarding an existing PDF paper — this plugin only generates.
+description: The orchestrator for generating new practice questions FROM A LESSON (no source paper) through the Agent Question Playground, as ONE ordered flow — scope cards → a one-line-per-question plan → the lead-authored `content.yaml` → figure templates → visual-check → validate → `doc put` → visual-check `--session` → publish FLAGGED with `tools/playground-publish.py` → SQL proof (queries.sql Q2 + Q3 via `tools/sql-proof.py`) → a fresh `qgen-critic` until SATISFIED → logbook line. Every row lands flagged and hidden from students until a human marks it reviewed. Use when asked to generate, write, create or author questions for a lesson, topic or grade, to "fill a lesson with practice questions", or to run or resume a playground session. Not for onboarding an existing PDF paper — this plugin only generates.
 argument-hint: "[grade] [lesson number or name] [how many questions]"
 ---
 
-# Generate questions from a lesson (playground)
+# Generate questions from a lesson — the orchestrator
 
-> Moved from Vibhaga-Docs `.devin/skills/generate-lesson-questions` @08c09a9; paper-only sections removed
-> (see docs/MIGRATION.md). W7 will rewrite this skill as the full orchestrator.
+> Moved from Vibhaga-Docs `.devin/skills/generate-lesson-questions` @08c09a9 (see docs/MIGRATION.md);
+> rewritten as the orchestrator in W7 (2026-10-02). The S4–S8 skills hold the *rules* of each step;
+> this file holds the *order*, who does each step, and the per-run checklist.
 >
-> Runs so far: two playground runs through the source skill (2026-09-27, 2026-09-29 — ids kept in the
-> private plan logbook). Their distilled lessons are already in the sections below: a lesson that teaches
-> angle types *without degrees* demands comparison-with-a-right-angle reasoning; measure label↔canvas-edge
-> clearance, not only label↔stroke; a constructed claim set must take its ratios from the **stem** (a drawn
-> 1.5:1 rectangle passed Audit A for a 5:2 stem — the stem-ratio check in `tools/audit-claim-set.py` now
-> refuses it).
+> Runs so far (ids are kept in the private plan logbook, never here): 2026-09-27 and 2026-09-29 through the
+> source skill; 2026-10-02 the W6 red-team batch (4 questions, planted errors — the critic caught both).
+> Distilled lessons are folded into the steps below: a lesson that teaches angle types *without degrees*
+> demands comparison-with-a-right-angle reasoning; measure label↔canvas-edge clearance, not only
+> label↔stroke; a constructed claim set takes its ratios from the **stem** (T-QG-2); the critic is
+> image-blind, so the PNG look is the lead's.
 
-Written for Phase 6 of
-[`plans/2026-09-25-agent-question-playground.md`](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/plans/2026-09-25-agent-question-playground.md). Cross-cutting traps live in
-[`docs/TRAPS.md`](../../docs/TRAPS.md).
+Plan: [`plans/2026-09-29-question-generation-plugin.md`](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/plans/2026-09-29-question-generation-plugin.md)
+(W7; the appendix R/M/H rubric). Cross-cutting traps: [`docs/TRAPS.md`](../../docs/TRAPS.md).
 
 > **Decision:** [`0018`](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/decisions/0018-agent-question-generation-playground.md) (paperless playground), on top of
 > [`0008`](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/decisions/0008-agent-driven-question-onboarding.md) PD-3, [`0009`](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/decisions/0009-review-flag-write-controls.md),
@@ -29,17 +29,25 @@ Written for Phase 6 of
 >
 > ⭐ **The flagged-only truth, said once:** every playground publish writes `needs_human_review = true`, whoever authored
 > it, agent or human admin (0018 PD-3 / OD-2). A published playground question is **not served to students** until a human
-> clicks "Mark reviewed" on the Admin `/generate` page. Nothing in this skill, and nothing the tool can do, lowers that
+> clicks "Mark reviewed" on the Admin `/generate` page. Nothing in this skill, and nothing the tools can do, lowers that
 > flag.
 
-**Tool:** [`tools/playground-publish.py`](../../tools/playground-publish.py). Run `--help` for the
-subcommands, and `--self-test` for the offline suite.
-**Chains:** [`author-question-text`](../author-question-text/SKILL.md) (S4) ·
-[`structure-question-parts`](../structure-question-parts/SKILL.md) (S5) ·
-[`read-figure-claim-set`](../read-figure-claim-set/SKILL.md) (S6a, §2.3 constructed channel) ·
-[`draw-and-verify-question-vdd`](../draw-and-verify-question-vdd/SKILL.md) (S6b) ·
-[`author-question-answers`](../author-question-answers/SKILL.md) (S8) ·
-the `qgen-critic` agent ([`agents/qgen-critic.md`](../../agents/qgen-critic.md)) — run by a separate agent after publish, before flags clear.
+**Tools (all existing, none forked):** `tools/build-staged.py` · `tools/vdd_templates.py` · `tools/audit-claim-set.py` ·
+`tools/vdd-check.mjs` · `tools/visual-check.mjs` · `tools/playground-publish.py` · `tools/sql-proof.py` (Q2/Q3) ·
+`tools/critic-read.py` (the critic runs it). **Rule skills:** [`scope-cards`](../scope-cards/SKILL.md) ·
+[`author-question-text`](../author-question-text/SKILL.md) (S4) · [`structure-question-parts`](../structure-question-parts/SKILL.md) (S5) ·
+[`figure-templates`](../figure-templates/SKILL.md) · [`read-figure-claim-set`](../read-figure-claim-set/SKILL.md) (S6a) ·
+[`draw-and-verify-question-vdd`](../draw-and-verify-question-vdd/SKILL.md) (S6b) · [`visual-check`](../visual-check/SKILL.md) ·
+[`author-question-answers`](../author-question-answers/SKILL.md) (S8) · the `qgen-critic` agent
+([`agents/qgen-critic.md`](../../agents/qgen-critic.md)).
+
+> **Why a checklist and not a `generate-run.py` driver (W7 decision, 2026-10-02).** Every mechanical stage already is
+> one command with its own refusals and exit code (`build-staged` refuses ambiguous specs; `playground-publish` owns six
+> guard-rails — scope echo, ledger-before-publish, signatures, flag, logout, read-backs). The lead-only steps (plan, spec,
+> PNG look, critic judgment) sit *between* them at five points, so a driver could only chain two- or three-command runs
+> while re-threading the session id, scope, ledger and ids that `playground-publish` already owns — the fork the plan
+> forbids. The two steps with no tool were the ones done by hand and got wrong: Q2/Q3 typed into `psql` (W4's critic
+> found a DB URL on psql's argv) and the publish ids file. Those got `tools/sql-proof.py` and `build-staged --ids-out`.
 
 ---
 
@@ -47,162 +55,187 @@ the `qgen-critic` agent ([`agents/qgen-critic.md`](../../agents/qgen-critic.md))
 
 1. **The lesson comes from your own checkout of `Vibhaga-Maths-Corpus`, never from the API.** There is no lesson-content
    endpoint (0018 PD-4), and there must not be one. Resolve the checkout via `VIBHAGA_CORPUS` or the sibling
-   `../Vibhaga-Maths-Corpus` of this plugin. Read `maths/grade-06/README.md` (for the grade in scope) first: only
-   lessons it lists as published are sources. **If the corpus has no published README for the requested grade, REFUSE
-   — do not guess the lesson list. A lesson also needs a scope card** in `maths/grade-NN/scope-cards/` (made by
-   [`scope-cards`](../scope-cards/SKILL.md)) — **a grade or lesson with no scope cards is refused.** Then read the
-   lesson file itself, including every figure's `**Description:**`. Never hand-edit the corpus.
-2. **Every question stays inside the lesson, the grade and the syllabus.** A question that needs a later lesson's idea is
-   out of scope, even if the maths is right. Tag it with that lesson's `lesson_id` from the live taxonomy (`lessons`
-   subcommand), never a guessed uuid.
-3. **Dedup before you author, against everything.** `questions list --lesson-id <id> --all` returns **every** row, drafts
-   included, flagged or not, papered or paperless (0018 PD-4). A stem that is the same exercise with the numbers changed
-   is a duplicate of the textbook's own exercise, or of an existing question. Change the *task*, not only the numbers.
-4. **Every staged question carries `ingestion_metadata.needs_human_review: true`, and no per-question `exam` key.** The
-   tool refuses both before a save (0014 PD-1 guard-rail 4; 0018 PD-6: scope lives on the session row).
-5. **Record ids before they matter (T9).** The session id goes into the ledger the moment `session create` returns. The
-   publish set goes in before the first publish request. There is no delete in v1 (0018 PD-8 / OD-5). An id you did not
-   record can only be recovered by a `source_batch_id` search, and only if you still know the session.
-6. **Prove rows by direct SQL, never only through the API.** Hyperdrive's query cache can be ~75 s stale (**T5**,
-   including its 2026-09-27 addendum). The tool's read-back 2 (T77 plus provenance) does this. Quote its totals line.
-7. **The tool never lowers a flag.** `clear-review` and `unflag-review` refuse by design: signing content off is a human
-   act in the headed UI (0014 PD-2, 0009). `unpublish` sets the row back to `draft`. It deletes nothing.
-8. **An archived session is read-only.** Every write gets `409 batch_archived` except the re-open itself
-   (`PATCH {status: "active"}`), and the tool refuses first. The tool has no re-open subcommand. Re-open on the Admin
-   `/generate` page if you really mean to continue it. Otherwise create a new session.
+   `../Vibhaga-Maths-Corpus` of this plugin. Read `maths/grade-NN/README.md` first: only lessons it lists as published
+   are sources. **No published README for the grade → REFUSE; do not guess the lesson list. A lesson also needs a scope
+   card** in `maths/grade-NN/scope-cards/` ([`scope-cards`](../scope-cards/SKILL.md)) — **a grade or lesson with no
+   scope cards is refused.** Never hand-edit the corpus.
+2. **Every question stays inside the lesson, the grade and the syllabus** — nothing on the card's `not_taught`, no
+   later-grade notation. Two or more lessons tagged ⇒ each is used by at least one part's solution (AGENTS rule 3).
+   Tag with the `lesson_id` from the live taxonomy (`lessons` subcommand), never a guessed uuid.
+3. **Dedup before you author, against everything.** `questions list --lesson-id <id> --all` returns **every** row,
+   drafts included, flagged or not, papered or paperless (0018 PD-4). The same exercise with the numbers changed is a
+   duplicate. Change the *task*, not only the numbers.
+4. **Every staged question carries `ingestion_metadata.needs_human_review: true`, and no `exam` key.** `build-staged`
+   writes the flag; `playground-publish` refuses both before a save (0014 PD-1 guard-rail 4; 0018 PD-6).
+5. **Record ids before they matter (T9).** The session id goes into the ledger the moment `session create` returns; the
+   publish set is written to the ledger before the first publish request (the tool does it). There is no delete for an
+   agent: Admin's "Delete permanently" is an owner act. An unrecorded id is recoverable only by `source_batch_id`.
+6. **Prove rows by direct SQL, never only through the API.** Hyperdrive's query cache can be ~75 s stale (**T5**).
+7. **No tool lowers a flag.** `clear-review` and `unflag-review` refuse by design: sign-off is a human act in the headed
+   UI (0014 PD-2, 0009). `unpublish` sets the row back to `draft`. It deletes nothing.
+8. **An archived session is read-only.** Every write gets `409 batch_archived` except the re-open
+   (`PATCH {status: "active"}`), which the tool does not offer. Re-open on Admin `/generate`, or create a new session.
+9. **The critic gets paths, never hints, never actor files (T25).** Keep every actor artefact where the critic is not
+   pointed (§2 layout).
 
 ## 1. Stable facts — and how to re-verify them
 
 | Fact | Where to re-verify |
 |---|---|
 | A "session" (API) is a `question_batches` row (DB). Its staged doc is R2 `playground/<id>/questions.json`. Published rows carry `source_batch_id = <id>` and `source_paper_id IS NULL`. | plan §Schema; `Vibhaga-DB/src/vibhaga_db/models.py` `QuestionBatch` |
-| Session create: the schema requires only `name` and `medium`. The server also enforces `grade` XOR `exam`, a catalogued `subject` for the scope (government exams have none), and that every `lesson_id` exists in scope. `lesson_ids` defaults to `[]` and is intent only (OD-4). The tool requires at least one lesson. | `openapi.admin.yaml` `PlaygroundSessionMeta` + POST description |
+| Session create: the schema requires only `name` and `medium`. The server also enforces `grade` XOR `exam`, a catalogued `subject` for the scope, and that every `lesson_id` exists in scope. `lesson_ids` is intent only (OD-4). The tool requires at least one lesson. | `openapi.admin.yaml` `PlaygroundSessionMeta` + POST description |
 | `PUT …/questions` is a whole-doc replace. A save may **raise** the flag but never lower it. A client `exam` is stripped. | `openapi.admin.yaml` PUT description; `Vibhaga-API/api/src/shared/staged-question.ts` |
-| `validate` errors: shape, duplicate `question_number`/ids, `is_multipart` agreement, the 2-level cap, invalid VDD, refused paints, a missing `a11y.title`, and nonexistent or out-of-scope lessons. A missing `a11y.description` is only a **warning**. | `openapi.admin.yaml` `/playground/validate`, `ValidateReport` |
+| `validate` errors: shape, duplicate `question_number`/ids, `is_multipart` agreement, the 2-level cap, invalid VDD, refused paints, a missing `a11y.title`, nonexistent or out-of-scope lessons. A missing `a11y.description` is only a **warning**. | `openapi.admin.yaml` `/playground/validate`, `ValidateReport` |
 | Publish forces the flag on every row and re-validates the chosen questions (`400 validation_failed`). `dry_run` returns `signatures_at_risk`. Omitting `question_ids` publishes **all**, so the tool always sends them. | `openapi.admin.yaml` `/sessions/{id}/publish` |
 | ⚠️ **The publish response does NOT write the raised flag back into the staged doc**; only the flag verbs mirror (`staged_doc_updated`). The tool re-PUTs the doc after each publish and reads it back (**T142**). | T142 |
-| Student read path: `SERVABLE` excludes flagged rows, draft rows **and** non-solvable rows (no verified answer), so a flagged question is absent from `/v1/questions`. Absence alone does not prove the flag; the SQL read-back does. | 0013 PD-3; `Vibhaga-API/api/openapi.yaml` `/v1/questions` |
-| `questions list` returns summaries: `stem_excerpt` is the first 240 characters of `question_text`, not the stem. | `openapi.admin.yaml` `PlaygroundQuestionSummary` |
+| Student read path: `SERVABLE` excludes flagged, draft **and** non-solvable rows (no verified answer), so a flagged question is absent from `/v1/questions`. Absence alone does not prove the flag; Q2 does. | 0013 PD-3; `Vibhaga-API/api/openapi.yaml` `/v1/questions` |
+| `questions list` returns summaries: `stem_excerpt` is the first 240 characters of `question_text`. | `openapi.admin.yaml` `PlaygroundQuestionSummary` |
+| `build-staged` ids are uuid5 of `id_seed` + `n` + the label path. Renumbering or relabelling after a publish mints NEW rows and orphans the published ones (no rename). | `tools/build-staged.py` docstring |
 
-## 2. The loop
+## 2. The flow
 
-Work in `wt/<topic>/` (umbrella worktree rule). Keep a run ledger there: the tool's `--ledger` JSON, plus your own
-notes. Every command below reads credentials from `Vibhaga-Admin/.env.local` at run time and never prints them.
-`T=tools/playground-publish.py` (run from the plugin root).
+### Who does what
 
-1. **Read the scope card, then the lesson.** From the corpus checkout, open the lesson's scope card first
-   (`maths/grade-NN/scope-cards/<NN>-<slug>.yaml` — [`scope-cards`](../scope-cards/SKILL.md) drafts and checks them).
-   The card *is* your scope statement: `sections` + `summary` + `vocabulary` + `not_taught` say what the lesson does
-   and does not teach; `worked_examples` + `exercises` are the don't-copy list; `figure_kinds` say which figures you
-   could reuse as a *kind* of figure; `difficulty_hooks` anchor the R/M/H rubric. **A grade or lesson with no scope
-   cards is refused** — never author from the lesson file alone. Then read the lesson file itself, including every
-   figure's `**Description:**`. Write the scope statement into your notes.
-   - **O/L work:** an O/L scope card is assembled from the grade-10 + grade-11 *scope cards* (not the lesson
-     files) via the O/L mapping in Vibhaga-Docs `lessons/ol/mathematics.md`, and an O/L question is tagged
-     with the O/L lesson ids (owner ruling 2026-09-29). Scope cards live in the PRIVATE corpus at
-     `maths/grade-NN/scope-cards/<NN>-<slug>.yaml` and `maths/ol/scope-cards/`; **O/L is refused until BOTH the
-     G10 and G11 card sets exist** (composition itself is plan OD-3 — the tool refuses). Never copy a scope card
-     into this public repo.
-2. **Find the taxonomy and what exists.**
-   - `python3 $T lessons --grade 6 --subject Mathematics` gives the `lesson_id`.
-   - `python3 $T questions list --lesson-id <id> --all --out existing.json` gives every row already tagged to the lesson.
-     The list gives 240-character excerpts. For any row that looks close to a planned question, read the full stem and
-     answers with `questions show <id>` before you judge it. Read for duplicates and for house style (Sinhala register,
-     markup, answer length).
-   - For a dedup signal the API cannot give (e.g. rows tagged with no lesson), use a direct `SELECT` on `questions`
-     filtered by scope, never a cached API read.
-3. **Plan 3–N questions** that cover *different* skills of the lesson. Write one line each in your notes: skill tested ·
-   why it is not a duplicate · whether it needs a figure.
-4. **Author each question** as a `content.yaml` spec, then compile it:
-   `python3 tools/build-staged.py content.yaml --out staged.json`. The spec keeps human authoring in YAML (lesson keys,
-   figure keys, bare part labels) and the builder emits the staged doc — deterministic uuid5 ids, `question_number` as a
-   JSON number, explicit `is_multipart`/`sort_order`, `text_sinhala` nulls, the flag on every question, no `exam`
-   anywhere — and refuses ambiguous input (see `tools/build-staged.py --help`). The item shape is the onboarding staged
-   doc minus `exam`:
-   - **Stem:** follow [`author-question-text`](../author-question-text/SKILL.md) §3 (markdown, `$…$`/`$$…$$`, never
-     Sinhala inside KaTeX `\text{}`) and §1a, which covers authoring a stem where nothing is printed. That is always
-     the case here. ⚠️ **The stem goes in `question_text`, in the session's medium.** For `medium=sinhala` that means the
-     Sinhala stem. Leave `question_text_sinhala` null: `0003` PD-C removed its box from the Admin UI, so no human can see
-     or repair it ([`author-question-text`](../author-question-text/SKILL.md) §0.6; no prod rows use it). Part text
-     goes in `sub_questions[].text`, also in the medium's language.
-   - **Structure:** follow [`structure-question-parts`](../structure-question-parts/SKILL.md) §0 and §2.
-     `build-staged.py` mints the uuids for you; parts go in `sub_questions`, depth capped at 2, labels bare (`a`, `i` —
-     the builder refuses `(a)`/`a)`/`a.`) and unique among siblings (two same-named parts collide on one id).
-     ⚠️ **Ids are keyed on `id_seed` + `n` + the label path** — after a first publish keep all three stable:
-     renumbering or relabelling mints NEW uuids and publish writes NEW rows that orphan the published ones
-     (there is no rename).
-   - **Figure** (only where the question needs one): if it matches one of the nine templates in
-     [`figure-templates`](../figure-templates/SKILL.md), `tools/vdd_templates.py` builds it and emits the
-     claim set itself — the stem's numbers drive the drawing and the claims (T-QG-2). Otherwise: a
-     playground figure is never printed, so the claim set is
-     `channel: constructed` ([`read-figure-claim-set`](../read-figure-claim-set/SKILL.md) §2.3) with a `stem:` header
-     carrying the stem text (the audit's stem-ratio check refuses a drawn ratio the stem does not justify). Its
-     `source:` names the frame, e.g. *"constructed; frame is the question's own canvas"*. ⚠️ **A question-side
-     constructed figure still needs at least one `derive` claim**, because `audit-claim-set.py` check 2c demands one on
-     every `constructed` set. §2.3 wrote `derive` for answer-side arithmetic. On the question side, `derive` records the
-     **construction arithmetic the figure is built from**: the arm direction of a 130° angle (`derive 180 - 50 = 130`),
-     or a side computed from a stated perimeter. Every element you add is `inferred`, with that reason. If a figure has
-     nothing derivable (a pure shape to name), do not invent a claim: drop the figure or put the question to the owner.
-     Audit it with `python3 tools/audit-claim-set.py`. Then draw it with
-     [`draw-and-verify-question-vdd`](../draw-and-verify-question-vdd/SKILL.md) §3 and verify it with §4 and §5.
-     `vdd-check.mjs` renders it through the real components at its default widths (320, 375 and 768 px, the student-facing
-     set), and angles and ratios are checked numerically against the claim set; label clearance to the canvas edge and
-     to strokes is measured in the same render. Then batch the figure (or the whole staged doc) through
-     `node tools/visual-check.mjs <file|dir>` — [`visual-check`](../visual-check/SKILL.md) renders through the real
-     `/diagtest` page (real font stack, KaTeX overlays, both themes) and measures every label; **LOOK at one
-     `light-375.png` per figure** — a PASS is not "looks right". A real `a11y.title` and
-     `a11y.description` are required: the API errors without the title and warns without the description. The
-     description must not give away the answer (**T125**).
-   - **Answers:** follow [`author-question-answers`](../author-question-answers/SKILL.md) §3 (independent derivation
-     plus a genuine second method), §4 (`approach` + `final_answer_latex` only; provenance goes to the ledger, never to
-     `approach`) and §5a (where the answer hangs decides whether it is an `answer_id` or a `sub_answer_id` — the builder
-     emits the right one per leaf). There is no marking scheme, so every answer is a D3 derivation.
-   - **Tags and flag:** `lesson_ids` resolve from your `lessons:` key map to real lesson uuids;
-     `ingestion_metadata: {"needs_human_review": true}` is written by the builder.
-5. **Create the session** (once):
-   `python3 $T session create --name "<what> — G6 <lesson> <date>" --scope grade=6,subject=Mathematics,medium=sinhala --lessons <lesson_id> --ledger ledger.json`.
-   Record the printed id in your notes as well.
-6. **Validate until clean:** `python3 $T validate <sid> --staged staged.json` (exit 0 means no errors). Fix every error.
-   Read every warning, and fix it unless your notes say why it stays.
-7. **Save:** `python3 $T doc put <sid> --staged staged.json --ledger ledger.json`. Then `doc get <sid> --out server.json`
-   and confirm the server array is the one you meant to save. For rendered evidence of what was saved,
-   `node tools/visual-check.mjs --session <sid>` — [`visual-check`](../visual-check/SKILL.md) mode 2: headed browser,
-   sign in, per-question student-preview element shots light+dark, sign out, revocation proof.
-8. **Publish, flagged:**
-   - `python3 $T publish <sid> --staged staged.json --scope grade=6,subject=Mathematics,medium=sinhala --ids-file ids.json --ledger ledger.json --dry-run --accept-signatures 0`.
-     This is the dry-run. Read `signatures_at_risk`: on a new session it is 0.
-   - Then run the same command without `--dry-run`. The tool:
-     - checks the session is active and that `--scope` equals the session row;
-     - checks that staged equals server and every question is flagged;
-     - re-validates;
-     - writes the ledger;
-     - publishes one id per request;
-     - re-PUTs the published and flagged doc after each publish (**T142**);
-     - reads the doc back, then runs T77 and the provenance SQL (read-back 2);
-     - logs out.
-   - Exit 0 is the only success. Exit 1 means a read-back mismatch: the run is failed until staged and live agree
-     (**T77**).
-9. **Close out:** every network subcommand ends by logging out and printing two revocation queries. After the last one,
-   run them against the **Admin Auth** project ([Vibhaga-Docs `AGENTS.md`](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/AGENTS.md) § Onboarding-tool verification). Leave the questions published and
-   flagged. A human clears them.
-10. **Critique (W6).** Spawn a **fresh** subagent with the `qgen-critic` profile
-    ([`agents/qgen-critic.md`](../../agents/qgen-critic.md)). Its inputs are exactly four: the scope card(s), the
-    lesson Markdown, the rows read by `tools/critic-read.py <sid>` (queries.sql Q4, SELECT-only) and visual-check's
-    `report.json`. Give it **paths only** — never `content.yaml`, claim sets, staged docs, your notes, and never a
-    hint about which items you doubt (a hinted critic is not independent, **T25**). Spawn prompt, filled in:
+| Step | Owner | Why |
+|---|---|---|
+| 1 scope statement · 2 dedup judgment · 3 plan | **lead** | judgment: what the lesson teaches, what counts as a copy |
+| 4 `content.yaml` — stems, parts, answers, figure specs (which template, which stem numbers) | **lead** | the content *is* the product; a delegated stem or answer is unreviewed authorship |
+| 5 template build, audit, vdd-check · 6 visual-check mode 1 · 7–9 session, validate, `doc put`, mode 2 · 10 publish · 11 proofs | mechanical (delegable: give exact commands and the run dir; ask for exit codes + the quoted lines) | each is one command whose exit code is the verdict |
+| 6b one `light-375.png` look per figure | **lead** | the five metric rules miss wrong-edge labels, legibility, the wrong arc (visual-check "LOOK") |
+| 12 critic spawn, finding triage, R/M/H comparison · 13 fix decisions · 14 logbook line | **lead** | independence and judgment; the critic is not told what you doubt |
+
+### Run layout (set once)
+
+```
+wt/<topic>/actor/     content.yaml · figures/ · specs/ · staged.json · ids.json · ledger.json · notes.md · RUN.md
+wt/<topic>/vc/        visual-check mode-1 output (report.json + PNGs) — the critic IS pointed here
+wt/<topic>/vc-session/ visual-check mode-2 output
+wt/<topic>/critic/    critic reports r1.md, r2.md … and its rows/ — never the actor dir
+```
+
+Run every command from the plugin root. `T=tools/playground-publish.py`, `A=wt/<topic>/actor` (absolute paths in
+practice). ⚠️ **Running the plugin from a worktree** (`wt/qgen-plugin-*`) breaks the sibling resolution: export
+`VIBHAGA_ADMIN`, `VIBHAGA_WEB` and `VIBHAGA_CORPUS` to the real checkouts, and `VIBHAGA_ADMIN_ENV` to
+`Vibhaga-Admin/.env.local` — markdown-gate, vdd-check and visual-check otherwise SKIP or fail to start, and pass the
+same two checkout paths in the critic's spawn prompt.
+
+### The steps
+
+1. **Read the scope card, then the lesson.** Open `maths/grade-NN/scope-cards/<NN>-<slug>.yaml` first. The card *is*
+   the scope statement: `sections` + `summary` + `vocabulary` + `not_taught` say what is and is not taught;
+   `worked_examples` + `exercises` are the don't-copy list; `figure_kinds` are reusable *kinds* of figure;
+   `difficulty_hooks` anchor R/M/H. Then read the lesson file whole, every figure `**Description:**` included. Write the
+   scope statement into `notes.md`.
+   - **O/L:** composed from the G10 + G11 *scope cards* via Vibhaga-Docs `lessons/ol/mathematics.md`, tagged with O/L
+     lesson ids (owner ruling 2026-09-29). **Refused until BOTH card sets exist** (plan OD-3). Never copy a card into
+     this public repo.
+2. **Taxonomy and what exists.** `python3 $T lessons --grade 6 --subject Mathematics` → the `lesson_id`.
+   `python3 $T questions list --lesson-id <id> --all --out $A/existing.json` → every row on the lesson; for any row close
+   to a plan line, `questions show <id>` for the full stem and answers. Read for duplicates and house style (register,
+   markup, answer length). queries.sql Q1 is the same list by direct SQL when you need it uncached (T5).
+   Record the row count and which stems you compared in `notes.md`.
+3. **Plan — one line per question** in `notes.md`, before any authoring:
+   `Q<n> · <skill / section> · <R/M/H per part> · not a duplicate because <…> · figure: <template | hand-draw | none>`.
+   Check the set against the plan appendix rubric (for "medium–hard": ≥3 parts each, ≤1 R part and only as (a), an H
+   part last, ≥60 % M/H and ≥30 % H) and against AGENTS rule 3 for every multi-lesson tag. A figure that has nothing
+   derivable (a pure shape to name) is dropped or put to the owner, never given an invented claim.
+4. **Author `content.yaml`** (the 2026-09-29 shape — `id_seed`, `lessons:` key map, `figures:` key map, `questions:`
+   with `n`, `lessons`, `stem`, `figure`, `parts[label, text, figure, approach, final]`; `build-staged.py` docstring):
+   - **Stem** — [`author-question-text`](../author-question-text/SKILL.md) §1a + §3: `$…$`/`$$…$$`, never Sinhala
+     inside KaTeX `\text{}`. The stem goes in `question_text` **in the session's medium**; `question_text_sinhala`
+     stays null (author-question-text §0.6). Part text in the medium too.
+   - **Structure** — [`structure-question-parts`](../structure-question-parts/SKILL.md) §0 + §2: bare unique labels,
+     depth ≤ 2. Choose `id_seed`, `n` and labels once — they are the row identity.
+   - **Answers** — [`author-question-answers`](../author-question-answers/SKILL.md) §3 (independent derivation + a
+     genuine second method), §4 (`approach` + `final` only; provenance goes to `notes.md`, never to `approach`), §5a.
+     Write both methods' results into `notes.md` per leaf.
+   - **Figure specs** — for each planned figure, one entry in `$A/specs/figures.json` per
+     [`figure-templates`](../figure-templates/SKILL.md) (the stem's own numbers; the builder refuses any it cannot find).
+     ⚠️ **`figure_id` = the figure's staged id** — `Q<n>` for a question figure, `Q<n>.<label>` for a part figure
+     (`Q3.b`) — and the `figures:` key in `content.yaml` points at `figures/<figure_id>.json`. visual-check finds a
+     staged figure's claim set only as `<figure_id>-claims.txt` under `--claims-dir`; any other name leaves it
+     claims-less (warned, not failed) and the shaded/grid checks silently skip.
+     No template fits → hand-draw: claim set first, `channel: constructed`, a `stem:` header and ≥1 `derive`
+     ([`read-figure-claim-set`](../read-figure-claim-set/SKILL.md) §2.3), then
+     [`draw-and-verify-question-vdd`](../draw-and-verify-question-vdd/SKILL.md) §3–§5. A real `a11y.title` and
+     `a11y.description`, and the description never states what is asked (**T125**).
+5. **Build figures, then the doc** (mechanical):
+   ```
+   python3 tools/vdd_templates.py build $A/specs/figures.json --out $A/figures/
+   python3 tools/audit-claim-set.py $A/figures/<id>-claims.txt                    # each: exit 0
+   node tools/vdd-check.mjs $A/figures/<id>.json --claims $A/figures/<id>-claims.txt --medium <medium> --json  # each: 0 findings
+   python3 tools/build-staged.py $A/content.yaml --out $A/staged.json --ids-out $A/ids.json
+   ```
+   A failing gate is fixed in the spec or the builder input, never by hand-editing an emitted file (T-QG-2).
+6. **visual-check mode 1** (mechanical) — `node tools/visual-check.mjs $A/staged.json --claims-dir $A/figures --out wt/<topic>/vc`
+   → exit 0, and no `no claim set` warning. **6b, lead:** open each figure's `wt/<topic>/vc/<id>/light-375.png` **once,
+   one per `read`**, and write one line per figure
+   into `notes.md` the moment it is seen (what it shows; anything wrong). A defect → back to step 4/5.
+7. **Create the session** (once): `python3 $T session create --name "<what> — G<g> <lesson> <date>" --scope grade=<g>,subject=Mathematics,medium=<medium> --lessons <ids> --ledger $A/ledger.json`.
+   Copy the printed id into `RUN.md` now.
+8. **Validate until clean:** `python3 $T validate <sid> --staged $A/staged.json` → exit 0. Fix every error; fix every
+   warning or write why it stays.
+9. **Save and see it:** `python3 $T doc put <sid> --staged $A/staged.json --ledger $A/ledger.json`, then
+   `doc get <sid> --out $A/server.json` and confirm it is the doc you meant. Then
+   `node tools/visual-check.mjs --session <sid> --out wt/<topic>/vc-session` (headed; signs in, shoots every question's
+   student preview light + dark, signs out, runs Q3) → exit 0, no `CLIPPED`.
+10. **Publish, flagged:**
+    `python3 $T publish <sid> --staged $A/staged.json --scope <same as step 7> --ids-file $A/ids.json --ledger $A/ledger.json --dry-run --accept-signatures 0`
+    — `signatures_at_risk` is 0 on a new session. Then the same without `--dry-run`. Exit 0 is the only success; quote
+    "published k/n", "read-back 1: staged doc confirms …", `t77: N question(s) · N comparisons · 0 mismatch(es)` and
+    "provenance: N id(s) · OK". Exit 1 = staged and live disagree; the run is failed until they agree (**T77**).
+11. **Prove it by SQL:** `python3 tools/sql-proof.py q2 <sid> --expected <N> --out $A/q2.json` → `q2: ok` (count,
+    flagged, published, paperless, scope, 0 signed, 0 unanswered leaves). After the **last** network subcommand,
+    `python3 tools/sql-proof.py q3 --actor <user id printed on logout> --out $A/q3.json` → `q3: ok` on the Admin Auth
+    project. `q3` exits 2 when no `VIBHAGA_ADMIN_AUTH_DB_URL` is provisioned (true on the owner's laptop on
+    2026-10-02): then run the Q3 `SELECT`, actor id substituted, through the Supabase MCP `execute_sql` on the **Admin
+    Auth** project, and record its row (`actor_exists`, `sessions`, `active_refresh_tokens`, `wrong_project`, `ok`) in `q3.json` by hand — same `ok` rule; never `PENDING` at done.
+    Leave the questions published and flagged.
+12. **Critique — a fresh `qgen-critic`** ([`agents/qgen-critic.md`](../../agents/qgen-critic.md)). Spawn it with
+    **paths only**, in exactly this shape:
     ```
     Critique playground batch <sid> per your profile. Paths: plugin <plugin checkout>; corpus <corpus checkout>;
-    content-DB env <Vibhaga-DB/.env>; visual-check output <dir with report.json>; write the report to
-    <report path>. [VIBHAGA_ADMIN=<Admin checkout> VIBHAGA_WEB=<Web checkout> — when the plugin is not a
-    sibling of them, e.g. a worktree.] [Chunk: questions <n..m>.] [Previous report: <path>.]
+    content-DB env <Vibhaga-DB/.env>; visual-check output <wt/<topic>/vc>; write the report to
+    <wt/<topic>/critic/rN.md>. [VIBHAGA_ADMIN=<Admin checkout> VIBHAGA_WEB=<Web checkout> — when the plugin is
+    not a sibling of them, e.g. a worktree.] [Chunk: questions <n..m>.] [Previous report: <path>.]
     ```
-    Keep the actor scratch in a directory the critic is not pointed at. Above 8 questions, chunk (profile §7).
-    The critic is **image-blind**: the `light-375.png` look per figure stays with you ([`visual-check`](../visual-check/SKILL.md)
-    "LOOK"), and its could-not-check list says so. Fix every BLOCKER/MAJOR/MINOR (re-author → validate → `doc put` →
-    publish flagged), then spawn a **new** critic with the previous report (profile §6) until it is SATISFIED.
-    Compare its R/M/H ratings with yours: a gap of more than one level on a part is a MINOR.
+    Never `content.yaml`, claim sets, staged docs, notes or a hint about which items you doubt (**T25**). Above 8
+    questions, spawn one critic per chunk of ≤ 8, in parallel (profile §7), and merge the reports yourself. The critic is
+    **image-blind**: its could-not-check list names the figure look, which step 6b already covered — say so in the
+    ledger, do not re-open the PNGs. Compare its R/M/H with your plan line: a gap of more than one level on a part is a
+    MINOR.
+13. **Fix and re-critique until SATISFIED.** Every BLOCKER/MAJOR/MINOR is fixed or written down as an owner question
+    (with the reason). A fix is: edit `content.yaml` (same `id_seed`, `n`, labels) → step 5 → 6 (+ 6b only for a figure
+    that changed) → 8 → 9 (`doc put`; mode 2 only if a figure or stem changed) → 10 → 11 (Q2 each time; Q3 again after the **last** republish,
+    for the actor that logout printed). Then a **new** critic with
+    the previous report (profile §6: carried / FIXED / OPEN / REGRESSED by hash). Never ask the same critic twice.
+14. **Logbook line** — one dated entry in the plan logbook (private Docs repo): session id, N questions / parts /
+    figures, the publish and Q2/Q3 lines, critic rounds and verdicts, owner questions, effort. Add a line under "Runs so
+    far" above — without ids.
+
+### Per-run checklist — `$A/RUN.md`, ticked as you go
+
+```
+- [ ] env: VIBHAGA_ADMIN / VIBHAGA_WEB / VIBHAGA_CORPUS / VIBHAGA_ADMIN_ENV set (worktree) or siblings confirmed
+- [ ] 1 scope statement in notes.md (card file + lesson file + sha256)
+- [ ] 2 dedup: existing.json rows = __ ; stems compared: __
+- [ ] 3 plan: N lines, rubric checked, rule 3 checked
+- [ ] 4 content.yaml + second-method results per leaf in notes.md
+- [ ] 5 audit 0 + vdd-check 0 per figure; build-staged exit 0; ids.json = N ids
+- [ ] 6 visual-check mode 1 exit 0 · 6b one look per figure logged (__ of __)
+- [ ] 7 session id: ________ (in ledger.json AND here — before any further write, T9)
+- [ ] 8 validate exit 0 · warnings: fixed / explained
+- [ ] 9 doc put + doc get match · visual-check --session exit 0
+- [ ] 10 dry-run signatures_at_risk = 0 · publish exit 0 · quoted lines in notes.md · ledger holds the publish set
+- [ ] 11 q2: ok · q3: ok (actor exists, 0 sessions, 0 active refresh tokens)
+- [ ] 12 critic r1 spawned with paths only · verdict ____
+- [ ] 13 rounds: r__ SATISFIED · every finding FIXED or an owner question · Q2 + Q3 ok after the last republish
+- [ ] 14 logbook line written · "Runs so far" line added
+```
 
 ## 3. What makes a generated question fit
+
+The critic grades every part against this table (profile §3) — keep it and the profile in step.
 
 | Check | Fails when |
 |---|---|
@@ -218,33 +251,36 @@ notes. Every command below reads credentials from `Vibhaga-Admin/.env.local` at 
 - **T142: published, flagged, and the doc says otherwise.** The Phase 5 page showed a flagged question as green
   "Published" after a reload, because the publish response never wrote the OD-2 flag into the staged doc. A hand-rolled
   curl publish repeats this silently. Use the tool, which re-PUTs the doc and reads it back.
-- **T5: the API list said it was there.** A questions list read within ~75 s of a write can be stale. Proof is direct
-  SQL.
+- **T5: the API list said it was there.** A questions list read within ~75 s of a write can be stale. Proof is SQL.
 - **T9: the ids are the undo.** Without the ledger, an unpublish needs someone to find the rows by `source_batch_id`
   first. With it, one command does the job.
 - **T77: staged and live disagree.** Publish reads the **server** doc, not your file. The tool refuses a publish while
   your file differs from the server doc (run `doc put` first), and T77 compares staged against live afterwards.
+  **T-QG-4:** T77 once false-failed a clean publish because its read side knew only `answers[]`; fixed — a T77 failure
+  is real until shown otherwise.
+- **T-QG-2: the claim set agreed with itself.** A hand-drawn 1.5:1 cuboid passed for a 5:2 stem. Templates take the
+  stem's numbers; never retype a drawn number into a spec.
+- **T25: the hinted critic.** A critic told what to look for is not independent. Paths only, actor dir out of reach.
 
-## 5. Verify (definition of done, per session)
+## 5. Verify (definition of done, per run)
 
-1. The notes contain the scope statement (§2 step 1), the dedup evidence (`existing.json` row count and the stems you
-   compared) and one line per question (§2 step 3).
-2. `validate` exits 0 on the final staged doc. Every warning is fixed or explained.
-3. Every figure has a `channel: constructed` claim set with a `stem:` header, `tools/audit-claim-set.py` passes, and
-   `tools/vdd-check.mjs` passes at its default widths.
-4. `publish` exits 0. Quote its "published k/n" line, the "read-back 1: staged doc confirms …" line, T77's
-   `t77: N question(s) · N comparisons · 0 mismatch(es)` line, and the "provenance: N id(s) · OK" line
-   (`source_batch_id` = session, `source_paper_id` NULL, flag true, status published). All must be clean.
-5. One direct `SELECT` confirms `verified_by IS NULL` on every answer and sub-answer of the session. Also confirm the
-   rows are absent from the student `GET /v1/questions` for the lesson. That is supporting evidence only (see §1: the
-   student API also hides non-solvable rows).
-6. The revocation counts are 0 and 0 on the Admin Auth project, for the actor that exists there.
-7. A fresh `qgen-critic` subagent (§2 step 10) reported SATISFIED, and every BLOCKER, MAJOR and MINOR
-   finding on the way is fixed (republish flagged) or recorded as an owner question.
-8. The ledger (session id, question ids) is written into the run's logbook entry.
+1. `RUN.md` is fully ticked; `notes.md` holds the scope statement, the dedup evidence, one plan line per question and
+   one look line per figure.
+2. `validate` exits 0 on the final staged doc; every warning is fixed or explained.
+3. Every figure: `channel: constructed` claim set with a `stem:` header, `audit-claim-set.py` exit 0, `vdd-check.mjs`
+   0 findings, visual-check mode 1 and `--session` exit 0.
+4. `publish` exits 0 with the four quoted lines of step 10 clean.
+5. `sql-proof.py q2` prints `q2: ok` for the final publish (this is the `verified_by IS NULL` proof); absence from the
+   student `GET /v1/questions` is supporting evidence only (§1).
+6. `sql-proof.py q3` prints `q3: ok` on the Admin Auth project for the actor that exists there.
+7. The last fresh `qgen-critic` reported SATISFIED; every BLOCKER, MAJOR and MINOR on the way is FIXED (republished
+   flagged) or recorded as an owner question.
+8. The ledger (session id, question ids) is in the run's logbook entry.
 
 ## 6. Keep this skill alive
 
 The route table in §1 was diffed against `openapi.admin.yaml` on 2026-09-27. When the playground contract changes (new
 verb, delete, or a publish that mirrors the flag itself), update §1, §2 and the tool together, and retire T142 if the
-server starts writing the flag. Add each run's line under "Runs so far" — without session ids in this public repo.
+server starts writing the flag. When a tool's flags change, update the step that calls it. When §3 changes, change
+`agents/qgen-critic.md` §3 in the same PR. Add each run's line under "Runs so far" — without session ids in this public
+repo.
