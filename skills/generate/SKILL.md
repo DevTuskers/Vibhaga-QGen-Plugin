@@ -152,8 +152,9 @@ same two checkout paths in the critic's spawn prompt.
    - **Figure specs** — for each planned figure, one entry in `$A/specs/figures.json` per
      [`figure-templates`](../figure-templates/SKILL.md) (the stem's own numbers; the builder refuses any it cannot find).
      ⚠️ **`figure_id` = the figure's staged id** — `Q<n>` for a question figure, `Q<n>.<label>` for a part figure
-     (`Q3.b`) — and the `figures:` key in `content.yaml` points at `figures/<figure_id>.json`. visual-check finds a
-     staged figure's claim set only as `<figure_id>-claims.txt` under `--claims-dir`; any other name leaves it
+     (`Q3.b`); an answer figure is `….ans<k>` — and the `figures:` key in `content.yaml` points at
+     `figures/<figure_id>.json`. visual-check finds a staged figure's claim set as `<figure_id>-claims.txt` (or
+     `.claims.txt`) under `--claims-dir`; any other name leaves it
      claims-less (warned, not failed) and the shaded/grid checks silently skip.
      No template fits → hand-draw: claim set first, `channel: constructed`, a `stem:` header and ≥1 `derive`
      ([`read-figure-claim-set`](../read-figure-claim-set/SKILL.md) §2.3), then
