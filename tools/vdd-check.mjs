@@ -78,7 +78,9 @@ fs.mkdirSync(CACHE, { recursive: true });
 // renders with. Recreate it every run: a link made under a different VIBHAGA_ADMIN keeps pointing at
 // that checkout's node_modules and silently resolves the wrong (or a missing) package.
 const NM = path.join(CACHE, "node_modules");
-if (fs.existsSync(NM)) fs.rmSync(NM);
+// rmSync, not existsSync+rmSync: a DANGLING symlink (a VIBHAGA_ADMIN path removed since the last
+// run) reads as "missing" to existsSync and the re-create then EEXISTs.
+try { if (fs.lstatSync(NM).isSymbolicLink()) fs.unlinkSync(NM); else fs.rmSync(NM, { recursive: true, force: true }); } catch (e) { if (e.code !== "ENOENT") throw e; }
 fs.symlinkSync(path.join(ADMIN, "node_modules"), NM, "dir");
 const SRC = path.join(ADMIN, "src/components/diagram");
 // The schema + paint grammar moved to the installed @vibhaga/shared package (2026-09-26; Admin's

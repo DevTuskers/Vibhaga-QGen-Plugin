@@ -53,7 +53,16 @@ CHAR_EM = 0.62               # measured label advance; the renderer measured 0.5
 LABEL_GAP = 18.0             # angleMark label gap (DiagramRenderer)
 EDGE_PX, STROKE_PX = 8.0, 6.0   # vdd-check rule: rendered px to canvas edge / to stroke edge
 SLACK_EDGE, SLACK_STROKE = 1.0, 2.0   # the estimator errs — require the render limits plus slack
-RENDER_CONTENT = 296.0       # the narrowest render surface: 320 px box minus 2×12 padding
+# The narrowest render surface is the StudentPreview figure plate at 320 px: its content box is
+# 320 − 2×12 px padding − 2×1 px border = 294 px (measured: svg width = 294 on /diagtest). A canvas
+# wider than that renders BELOW 1 px per unit — clearance thresholds scale by 1/s, s = min(1,
+# PLATE_INNER / canvas_width); canvases narrower than it render ≥1 px/unit but get no credit for it.
+PLATE_INNER = 294.0
+# DOM getBBox on a `dominantBaseline="middle"` <text> returns the font's ~1.22em line box, biased
+# UP — measured on Inter (2026-10-01, capital "P" at size 18): −0.674·size above centre,
+# +0.543·size below. The old ±size/2 estimate under-measures the top by ~3 units and real renders
+# failed the edge rule while the estimate passed (rebuild Q4: 7.9 px at 320).
+MID_UP, MID_DOWN = 0.70, 0.58
 
 COMPASS = {"N": -90.0, "NE": -45.0, "E": 0.0, "SE": 45.0,
            "S": 90.0, "SW": 135.0, "W": 180.0, "NW": -135.0}
@@ -126,6 +135,14 @@ _SINHALA_MARK = re.compile(
 SINHALA_CLUSTER_EM = 0.80
 
 
+def _label_half_along(text: str, size: float, nx: float, ny: float) -> float:
+    """Half-extent of a middle/middle text label's box along the unit direction (nx,ny) —
+    needed to place a label off a stroke by its NEAR side. The DOM box is asymmetric
+    (MID_UP/MID_DOWN): a label pushed DOWN (ny>0) faces the figure with its taller top."""
+    w = _label_width(text, size)
+    return w * abs(nx) / 2 + (MID_UP if ny > 0 else MID_DOWN) * size * abs(ny)
+
+
 def _label_width(text: str, size: float) -> float:
     # width ≈ size · Σ em per VISIBLE glyph — Sinhala marks ride on their base cluster
     return size * sum(
@@ -195,14 +212,14 @@ def label_boxes(elements: list[dict], font_size: float = FS) -> list[tuple[str, 
                 elif baseline == "alphabetic":
                     y0, y1 = ay - size * 0.72, ay + size * 0.28
                 else:
-                    y0, y1 = ay - size / 2, ay + size / 2
+                    y0, y1 = ay - size * MID_UP, ay + size * MID_DOWN
                 out.append((line_, x, y0, x + w, y1))
         elif t == "point" and el.get("label"):
             size = font_size                      # the point label ignores el.fontSize — always defaults
             ox, oy = el.get("labelOffset", [8, -8])
             w = _label_width(el["label"], size)
-            out.append((el["label"], el["at"][0] + ox, el["at"][1] + oy - size / 2,
-                        el["at"][0] + ox + w, el["at"][1] + oy + size / 2))
+            out.append((el["label"], el["at"][0] + ox, el["at"][1] + oy - size * MID_UP,
+                        el["at"][0] + ox + w, el["at"][1] + oy + size * MID_DOWN))
         elif t == "angleMark" and el.get("label"):
             size = font_size * 0.9
             r = el["r"] * (math.sqrt(2) if el.get("variant") == "right" else 1)
@@ -212,7 +229,7 @@ def label_boxes(elements: list[dict], font_size: float = FS) -> list[tuple[str, 
             cx, cy = el["vertex"][0] + d * math.cos(math.radians(bis)), \
                      el["vertex"][1] + d * math.sin(math.radians(bis))
             w = _label_width(el["label"], size)
-            out.append((el["label"], cx - w / 2, cy - size / 2, cx + w / 2, cy + size / 2))
+            out.append((el["label"], cx - w / 2, cy - size * MID_UP, cx + w / 2, cy + size * MID_DOWN))
         elif t == "math":
             # KaTeX is an HTML overlay, not <text> — vdd-check cannot measure it, so templates
             # never put a claim-set label on one; still bound it for the canvas fit.
@@ -342,8 +359,10 @@ def _clearance_units(px: float, span_x: float) -> float:
     """How many CANVAS units still render as `px` on the tightest surface once a figure of
     content width `span_x` is fitted — builders use it to size label gaps on wide canvases."""
     edge = EDGE_PX + SLACK_EDGE
-    margin = max(MARGIN, edge * (span_x + 60.0) / (RENDER_CONTENT - 2 * edge))
-    return px * (span_x + 2 * margin + 60.0) / RENDER_CONTENT
+    margin = max(MARGIN, edge * (span_x + 60.0) / (PLATE_INNER - 2 * edge))
+    # clearance in units = px / s with s = min(1, PLATE_INNER/(span+2m+60)) — a canvas narrower
+    # than the plate renders ABOVE 1 px/unit but earns no credit for it (never under `px` units).
+    return px * max(1.0, (span_x + 2 * margin + 60.0) / PLATE_INNER)
 
 
 def _check_label_texts(elements: list[dict], extra: list[str], medium: str) -> None:
@@ -421,21 +440,22 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
     # the margin must still clear the edge after the render scales down to the narrowest
     # surface — a fixed 12 units drops under 8 rendered px once the canvas widens (critic R3
     # finding 3: number line 0–10+ refused). Solve edge ≥ EDGE_PX + SLACK_EDGE on the TIGHTER
-    # card scale:  margin·296/(span + 2·margin + 60) ≥ 9  ⇒  margin ≥ (9·span + 540)/278.
+    # card scale:  margin·294/(span + 2·margin + 60) ≥ 9  ⇒  margin ≥ (9·span + 540)/276.
     span_x, span_y = maxx - minx, maxy - miny
     margin = max(MARGIN, (RENDER_EDGE := EDGE_PX + SLACK_EDGE) *
-                 (span_x + 60.0) / (RENDER_CONTENT - 2 * RENDER_EDGE) + 0.05)
+                 (span_x + 60.0) / (PLATE_INNER - 2 * RENDER_EDGE) + 0.05)
     dx, dy = margin - minx, margin - miny
     _translate(elements, dx, dy)
     anchors = {k: (vc.r2(v[0] + dx), vc.r2(v[1] + dy)) for k, v in anchors.items()}
     W, H = math.ceil(maxx - minx + 2 * margin), math.ceil(maxy - miny + 2 * margin)
 
-    # 2. clearance pre-flight — rendered px at the NARROWEST surface (296 px content wide).
-    # Edge distance is bound by OUR margin on the student surface (scale 296/W). Stroke
-    # distance is also measured on the CARD surface, where normalizeVdd refits the canvas
-    # ~55–60 units wider (empirical) — model the tighter card scale for stroke clearance.
-    scale_edge = RENDER_CONTENT / W
-    scale_stroke = RENDER_CONTENT / (W + 60.0)
+    # 2. clearance pre-flight — rendered px at the NARROWEST surface (the 294 px plate inner
+    # width — PLATE_INNER). Edge distance is bound by OUR margin on the student surface
+    # (s = min(1, 294/W)). Stroke distance is also measured on the CARD surface, where
+    # normalizeVdd refits the canvas ~55–60 units wider (empirical) — model the tighter card
+    # scale for stroke clearance. The min(1,·) caps keep a narrow canvas from claiming >1 px/unit.
+    scale_edge = min(1.0, PLATE_INNER / W)
+    scale_stroke = min(1.0, PLATE_INNER / (W + 60.0))
     boxes = [(_s, x0 + dx, y0 + dy, x1 + dx, y1 + dy) for _s, x0, y0, x1, y1 in boxes]
     strokes = [((a[0] + dx, a[1] + dy), (b[0] + dx, b[1] + dy), w) for a, b, w in strokes]
     for txt, x0, y0, x1, y1 in boxes:
@@ -905,7 +925,7 @@ def build_rays_from_point(*, figure_id, stem, ask=None, title=None, description=
         reflex, not its own angle). So the label sits INSIDE its own arc, or between it and
         the next larger arc covering that direction (no larger arc → unbounded outward)."""
         w_ = _label_width(text_, FS)
-        half = max(w_, FS) / 2 + 6.0     # box half-extent + a clear gap to any arc line
+        half = max(w_, FS * (MID_UP + MID_DOWN)) / 2 + 6.0  # box half-extent + a clear arc gap
         for th in [near_bis, near_bis - 12, near_bis + 12, near_bis - 24, near_bis + 24]:
             cap = min((rj for sj, dj, rj in arcs if rj > own_r and _covers(sj, dj, th)),
                       default=math.inf)
@@ -914,7 +934,7 @@ def build_rays_from_point(*, figure_id, stem, ask=None, title=None, description=
                 if not in_band:
                     continue
                 px, py = vc.polar(O, d, th)
-                box = (px - w_ / 2, py - FS / 2, px + w_ / 2, py + FS / 2)
+                box = (px - w_ / 2, py - FS * MID_UP, px + w_ / 2, py + FS * MID_DOWN)
                 if min(_seg_rect_dist(a, b, box) - w2 / 2
                        for a, b, w2 in stroke_segments(elements)) >= 11.0:
                     return px, py
@@ -944,7 +964,7 @@ def build_rays_from_point(*, figure_id, stem, ask=None, title=None, description=
         bis = gap_lo + gap_w / 2
         for d in _arange(12.0, ray_len + 42.0, 2.0):
             px, py = vc.polar(O, d, bis)
-            box = (px, py - FS / 2, px + w_lab, py + FS / 2)
+            box = (px, py - FS * MID_UP, px + w_lab, py + FS * MID_DOWN)
             worst = min(_seg_rect_dist(a, b, box) - w2 / 2
                         for a, b, w2 in stroke_segments(elements))
             if worst >= 11.0:
@@ -1026,7 +1046,9 @@ def build_number_line(*, figure_id, stem, ask=None, title=None, description=None
         if abs(v - round(v)) < 1e-9:                        # an integer: major tick + numeral
             elements.append(vc.line((x, axis_y - 11), (x, axis_y + 11), id=f"tk{i}", width=2))
             if (i // parts_per_unit) % num_step == 0:
-                elements.append(vc.text((x, axis_y + 36), f"{round(v):g}", id=f"num{i}", size=16))
+                # 40 = tick bottom (11) + the DOM label box's taller TOP extent (MID_UP·16)
+                # + clearance — measured middle-baseline boxes reach 0.7·size above the anchor
+                elements.append(vc.text((x, axis_y + 40), f"{round(v):g}", id=f"num{i}", size=16))
         elif parts_per_unit % 2 == 0 and abs(v - math.floor(v) - 0.5) < 1e-9:
             elements.append(vc.line((x, axis_y - 7), (x, axis_y + 7), id=f"tk{i}", width=1.5))
         else:
@@ -1039,7 +1061,7 @@ def build_number_line(*, figure_id, stem, ask=None, title=None, description=None
     # 6 px + slack ON THE RENDER — on a wide canvas that is more canvas units than a fixed
     # offset provides, so size the lift from the figure's own width
     est_span = span_v * unit_px + 2 * overhang + 12
-    mark_off = 21.0 + _clearance_units(STROKE_PX + SLACK_STROKE, est_span)
+    mark_off = 21.0 + FS * (MID_DOWN - 0.5) + _clearance_units(STROKE_PX + SLACK_STROKE, est_span)
     for n, v in marks.items():
         anchors[n] = (x_of(v), axis_y)
         elements.append({"id": f"dot{n}", "type": "point", "at": vc.P((x_of(v), axis_y)), "r": 3,
@@ -1109,8 +1131,8 @@ def build_pictograph(*, figure_id, stem, ask=None, title=None, description=None,
     # from the figure's own width estimate (same reasoning as the edge margin)
     row_w = max(int(c // per_symbol) * gap + (r if abs(c / per_symbol -
               round(c / per_symbol)) > 1e-9 else 0.0) for _, c in rows)
-    x0 = label_w + r + _clearance_units(STROKE_PX + SLACK_STROKE,
-                                        label_w + row_w + 2 * MARGIN + 60)
+    x0 = label_w + r + _clearance_units(STROKE_PX + SLACK_STROKE + 1.0,
+                                        label_w + row_w + 2 * MARGIN + 60)  # +1 = circle half-stroke
     y0, step = 0.0, 42.0
     elements: list[dict] = []
     anchors: dict[str, XY] = {}
@@ -1133,7 +1155,7 @@ def build_pictograph(*, figure_id, stem, ask=None, title=None, description=None,
     elements.append({"id": "sep", "type": "line", "stroke": {"color": "#d1d5db", "width": 1},
                      "points": [[0.0, vc.r2(sep_y)],
                                 [x0 + (widest_cols - 1) * gap + r + 4, vc.r2(sep_y)]]})
-    key_y = sep_y + 25
+    key_y = sep_y + 29   # the DOM label box reaches 0.70·size above centre — leave real room
     elements.append(vc.circle((x0, key_y), r, id="key"))
     elements.append(vc.text((x0 + gap, key_y), f"= {per_symbol:g}", id="keyt",
                             align="start", size=16))
@@ -1208,13 +1230,13 @@ def build_rectangle_points(*, figure_id, stem, ask=None, title=None, description
         elements += vc.right_angle_mask(corners[c], corners[nbrs[0]], corners[nbrs[1]], size=14)
     # vertex labels: offsets pushed diagonally OUT of the corners — a capital at fontSize 18 is
     # ~11 px wide and 18 tall, and the box must clear BOTH sides meeting at the corner
-    offs = {"A": (-22, -20), "B": (12, -20), "C": (12, 20), "D": (-24, 20)}
+    offs = {"A": (-22, -24), "B": (12, -24), "C": (12, 24), "D": (-24, 24)}
     for n, v in pts.items():
         if n in offs:
             off = offs[n]
         else:   # a point on a side — push the label outward
-            off = [(0, -24) if v[1] == 0 else (0, 22) if v[1] == H_ else
-                   (-24, 0) if v[0] == 0 else (24, 0)][0]
+            off = [(0, -28) if v[1] == 0 else (0, 26) if v[1] == H_ else
+                   (-28, 0) if v[0] == 0 else (28, 0)][0]
         elements.append({"id": f"lbl{n}", "type": "point", "at": vc.P(v), "r": 0,
                          "label": n, "labelOffset": list(off)})
     claims: list[tuple[str, str, str]] = []
@@ -1314,7 +1336,7 @@ def build_house_pentagon(*, figure_id, stem, ask=None, title=None, description=N
             nx, ny = -nx, -ny           # outward
         # the label box must clear the side by ~12 units — the centre sits clearance +
         # the box's half-extent along the outward normal away (width is the DISPLAY text)
-        half = (_label_width(texts[k], 16) * abs(nx) + 16 * abs(ny)) / 2
+        half = _label_half_along(texts[k], 16, nx, ny)
         lx, ly = mid[0] + nx * (12 + half), mid[1] + ny * (12 + half)
         # a letter label ("x m") stays plain text — VDD `text` has no italic (fontFamily is
         # sans/serif/mono only) and a KaTeX `math` label would be a serif face among sans
@@ -1390,7 +1412,9 @@ def build_cuboid(*, figure_id, stem, ask=None, title=None, description=None, med
         elements.append(el)
     elements.append(vc.text((vc.lerp(D, C, 0.5)[0], vc.lerp(D, C, 0.5)[1] + 24),
                             f"{length:g} {unit}", id="slL", size=16))
-    elements.append(vc.text(((A[0] + D[0]) / 2 - 26, (A[1] + D[1]) / 2), f"{height:g} {unit}",
+    # height label beside DA — visual-check's target rule wants a label within 1.5 × fontSize of
+    # the edge it names (16u → ≤24u); 16u off keeps ≥6 rendered px of stroke clearance.
+    elements.append(vc.text(((A[0] + D[0]) / 2 - 16, (A[1] + D[1]) / 2), f"{height:g} {unit}",
                             id="slH", align="end", size=16))
     # the width label sits on the OUTWARD normal of the bottom depth edge CG's midpoint —
     # beside FG it reads as naming a height edge, and inside the silhouette it reads as a
@@ -1399,7 +1423,7 @@ def build_cuboid(*, figure_id, stem, ask=None, title=None, description=None, med
     dcg = math.hypot(dx, dy)
     nx, ny = -dy / dcg, dx / dcg
     wlab = _label_width(f"{width:g} {unit}", 16)
-    off = 12 + (wlab * abs(nx) + 16 * abs(ny)) / 2
+    off = 12 + _label_half_along(f"{width:g} {unit}", 16, nx, ny)
     elements.append(vc.text((g_mid[0] + nx * off, g_mid[1] + ny * off),
                             f"{width:g} {unit}", id="slW", size=16))
     claims: list[tuple[str, str, str]] = []

@@ -49,8 +49,10 @@ Every builder is keyword-only; every spec also takes `figure_id`, `stem`, `mediu
 (`"english"`, `"sinhala"`), `ask` (`[["a","text"],…]`), `title`, `description`.
 `finish` fits a canvas (the margin grows with the span so the tightest render keeps ≥9 px edge clearance),
 runs the **label-clearance pre-flight** (every label ≥6 rendered px to stroke edges, ≥8 px
-to the canvas edge at the narrowest render width, using the real renderer's align/baseline
-semantics), then emits the claim set.
+to the canvas edge — measured in RENDERED px on the narrowest plate, `PLATE_INNER` = 294 px =
+320 − 2×12 pad − 2×1 border, thresholds scaling by `1/s` with `s = min(1, 294/canvas_width)`;
+label boxes model the real DOM `getBBox` — a `dominantBaseline="middle"` text's box is ~1.22 em
+biased UP, `MID_UP`/`MID_DOWN` in the file), then emits the claim set.
 
 ## Numbers and the stem
 
@@ -94,6 +96,12 @@ Then **look at one render PNG per figure once** (`render-q8/render-375.png`): th
 the truth — a label on a stroke or outside its angle is only visible by sight. If the render
 fails a label clearance, fix the template input or the builder — never hand-edit the emitted
 files (the claim set and the drawing would drift again).
+
+Then run the batch render — `node tools/visual-check.mjs out/` —
+[`visual-check`](../visual-check/SKILL.md) puts every figure through the real `/diagtest` page
+(the real `--font-sans` stack + KaTeX overlays + dark theme that vdd-check's bare harness lacks)
+and measures labels against its five rules; it is the live check before the figure joins a
+staged doc.
 
 `python3 tools/vdd_templates.py --self-test` builds all nine from synthetic stems and runs
 the audit on each — it's wired into `check-suite.py` Part B.

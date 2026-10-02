@@ -729,3 +729,30 @@ loop that passed 1.5 vs 5:2). Cited by `figure-templates` and `generate` §4.
 
 *Source: this plugin — the 2026-09-29 cuboid incident; the audit change landed in W0 (`audit-claim-set.py`
 check 2d) and the templates in W3.*
+
+---
+
+## T-QG-3 — The label metric that never saw the math label: KaTeX overlays are HTML, not `<text>`
+
+**Looked true:** a five-sided figure with four `<text>` side labels and one `math` label passed
+every gate — `vdd-check` reported its label metrics clean, the render audit passed, so the figure
+was signed off.
+**Actually:** two independent blind spots hid the same defect. (1) DiagramRenderer draws a `math`
+element as a **KaTeX HTML overlay** inside the figure's `[role="img"]` container — not an SVG
+`<text>`, not a `<foreignObject>` — so vdd-check's label metric (a `svg.querySelectorAll("text")`
+walk) never measured it at all. (2) vdd-check renders in a bare harness with no `--font-sans`
+variable, while DiagramRenderer's text stack is `var(--font-sans, …)` — so a **serif KaTeX face
+sitting among sans `<text>` labels**, and a math label drawn **−2.5 px into a stroke**, both
+passed every gate. Measured on the 2026-09-29 house-pentagon figure (described synthetically —
+no stem text, no ids): `font mix: KaTeX math ×1 + text ×4` plus the math label's centre inside a
+slant edge. The same render also showed text labels clipped to 4.7 px from the canvas edge and
+sitting 1.3 px off strokes — invisible to every check that ran.
+**The check:** `tools/visual-check.mjs` renders through the real Admin `/diagtest` page — real
+`globals.css`, real next/font (Inter + Noto Sans Sinhala resolve `--font-sans`), real
+`html[data-theme]` — and its in-page measurement collects *both* `<text>` runs and `.katex`
+overlays, converting overlay client-rects through `svg.getScreenCTM().inverse()`. Rules:
+`font` (any math+text mix or two text faces → FAIL), `stroke` (a math label's bbox is measured
+against strokes like any other label). Cited by `visual-check`.
+
+*Source: this plugin — W4, 2026-09-30; the stored production figure failed on first real render
+through `/diagtest`.*
