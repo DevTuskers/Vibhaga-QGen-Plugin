@@ -64,7 +64,7 @@ PLATE_INNER = 294.0
 # failed the edge rule while the estimate passed (rebuild Q4: 7.9 px at 320).
 MID_UP, MID_DOWN = 0.70, 0.58
 # …but a lone point label reaches only ~0.50·size below its dominant-baseline middle anchor —
-# measured on the rendered DOM box (2026-10-08, Inter capital "P"/"Q" at 18: point→box distance
+# measured on the rendered DOM box (2026-10-02, Inter capital "P"/"Q" at 18: point→box distance
 # mark_off − 9.0, i.e. +0.50·size; DiagramRenderer's own label box uses ±0.5·size). Modelled at
 # 0.53 to keep a small pad over the measurement. A descender glyph (gjpqy…) reaches ~MID_DOWN.
 POINT_LABEL_DOWN = 0.53
@@ -1024,7 +1024,6 @@ def build_rays_from_point(*, figure_id, stem, ask=None, title=None, description=
 # 60 63 66 … 90 and lands on no round ten
 _NICE_STEPS = sorted({m * 10 ** e for e in range(4) for m in (1, 2, 5)}
                      | {25 * 10 ** e for e in range(3)})
-
 
 
 def build_number_line(*, figure_id, stem, ask=None, title=None, description=None, medium="english",

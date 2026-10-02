@@ -73,6 +73,10 @@ biased UP, `MID_UP`/`MID_DOWN` in the file), then emits the claim set.
   `--medium sinhala` to `vdd-check` (its rule 3 is medium-conditional — L239). Sinhala in a
   `math.latex` label is **always** refused: KaTeX cannot shape it. The pre-flight refuses
   `$`/backtick in any label regardless of medium.
+- **The spec's `description` (a11y) must not narrate what a part asks the student to read off
+  the figure** — which or how many cells are shaded, a marked point's value. Say "some cells
+  are shaded" instead (T125). A W8 critic caught a shaded-grid description that handed over
+  the count.
 
 ## Workflow
 
