@@ -164,7 +164,7 @@ same two checkout paths in the critic's spawn prompt.
    ```
    python3 tools/vdd_templates.py build $A/specs/figures.json --out $A/figures/
    python3 tools/audit-claim-set.py $A/figures/<id>-claims.txt                    # each: exit 0
-   node tools/vdd-check.mjs $A/figures/<id>.json --claims $A/figures/<id>-claims.txt --medium <medium> --json  # each: 0 findings
+   node tools/vdd-check.mjs $A/figures/<id>.json --claims $A/figures/<id>-claims.txt --medium <medium>  # each: 0 findings
    python3 tools/build-staged.py $A/content.yaml --out $A/staged.json --ids-out $A/ids.json
    ```
    A failing gate is fixed in the spec or the builder input, never by hand-editing an emitted file (T-QG-2).

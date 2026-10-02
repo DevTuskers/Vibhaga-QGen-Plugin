@@ -170,6 +170,21 @@ class PerTemplateClaims(unittest.TestCase):
             self.assertIn(f"stage {n} shows {c} dots", b.claims)
         self.assertEqual(len([e for e in b.doc["elements"] if e["type"] == "circle"]), 20)
 
+    def test_dot_pattern_budget_line_over_32_elements(self):
+        # 5 square stages = 55 dots + 5 labels = 60 elements > the 32-element budget —
+        # the claim set must carry the justification (vdd-check honours a `budget:` line)
+        b = vt.build_dot_pattern(figure_id="t1", stem="The first 5 figures are shown.",
+                                 stages=5, kind="square")
+        n = len(b.doc["elements"])
+        self.assertEqual(n, 60)
+        self.assertRegex(b.claims, rf"(?m)^budget:\s+{n}$")
+        self.assertRegex(b.claims, rf"(?m)^  {n} elements — one circle per dot")
+        # a small pattern under the budget stays silent
+        small = vt.build_dot_pattern(figure_id="t1", stem="The first 3 figures are shown.",
+                                     stages=3, kind="triangle")
+        self.assertNotIn("budget:", small.claims)
+        self.assertIn("departures: (none)", small.claims)
+
 
 class RedTeam(unittest.TestCase):
     """The 2026-09-29 cuboid incident (T-QG-2): a drawn-ratio claim that the ANCHORS agree
@@ -568,6 +583,38 @@ class CLI(unittest.TestCase):
             self.assertEqual(r.returncode, 2)
             self.assertIn("not a number the stem states", r.stderr)
 
+    def test_build_refusal_names_the_figure_id(self):
+        # a bare "dot_pattern: label …" in a multi-spec build left the reader guessing
+        # which figure died — the CLI names the failing spec's figure_id
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "spec.json"
+            spec.write_text(json.dumps([
+                {"template": "cuboid", "figure_id": "ok1", "stem": CUBOID_52,
+                 "length": 5, "width": 3, "height": 2},
+                {"template": "cuboid", "figure_id": "bad7", "stem": "no numbers",
+                 "length": 5, "width": 3, "height": 2}]))
+            r = subprocess.run([sys.executable, str(TOOLS / "vdd_templates.py"),
+                                "build", str(spec), "--out", tmp],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("bad7:", r.stderr)
+
+    def test_pointless_figure_still_writes_the_anchors_trio(self):
+        # dot_pattern/pictograph have no named points — write_figure omits an empty
+        # anchors dict, so the CLI printed a path that never landed (W8 dogfood)
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "spec.json"
+            spec.write_text(json.dumps([{"template": "dot_pattern", "figure_id": "t2",
+                                         "stem": "The first 2 figures are shown.",
+                                         "stages": 2}]))
+            r = subprocess.run([sys.executable, str(TOOLS / "vdd_templates.py"),
+                                "build", str(spec), "--out", tmp],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            for suffix in ("t2.json", "t2.anchors.json", "t2-claims.txt"):
+                self.assertTrue((Path(tmp) / suffix).exists(), suffix)
+            self.assertEqual(json.loads((Path(tmp) / "t2.anchors.json").read_text()), {})
+
 
 class RenderedClearance(unittest.TestCase):
     """The clearance model is rendered px on the 294 px plate (PLATE_INNER), not canvas units —
@@ -588,6 +635,23 @@ class RenderedClearance(unittest.TestCase):
             self.assertGreaterEqual(
                 edge, vt.EDGE_PX,
                 f"label {txt!r} renders {edge:.1f} px from the canvas edge (< {vt.EDGE_PX})")
+
+    def test_dot_pattern_stage_labels_clear_at_every_size(self):
+        # W8 dogfood: stages=5 square at default dx/gap was refused — '(1)' rendered
+        # ~6.8 px from the dots (< 8). The label drop is now sized from the figure's
+        # own span; every kind × stages 1..8 at defaults must pass the pre-flight.
+        for kind in ("triangle", "square", "rectangle"):
+            for stages in range(1, 9):
+                with self.subTest(kind=kind, stages=stages):
+                    b = vt.build_dot_pattern(
+                        figure_id=f"t{stages}",
+                        stem=f"The first {stages} figures of a dot pattern are shown.",
+                        stages=stages, kind=kind)
+                    lbl = next(e for e in b.doc["elements"] if e["id"] == f"lbl{stages}")
+                    dots = [e for e in b.doc["elements"]
+                            if e["type"] == "circle" and e["id"].startswith(f"t{stages}r")]
+                    self.assertGreater(lbl["at"][1],
+                                       max(d["center"][1] for d in dots))
 
     def test_cuboid_height_label_within_target_distance(self):
         # visual-check's target rule: a label sits within 1.5 × fontSize of the edge it names —

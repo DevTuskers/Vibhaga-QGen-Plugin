@@ -90,6 +90,11 @@ class Built:
         anch = out / f"{self.figure_id}.anchors.json"
         cl = out / f"{self.figure_id}-claims.txt"
         vc.write_figure(str(fig), self.doc, anchors=self.anchors)   # writes <id>.anchors.json itself
+        if not anch.exists():
+            # write_figure skips an empty anchors dict (a figure with no named points —
+            # dot_pattern, pictograph); every template still emits the trio so the
+            # printed list is always true
+            anch.write_text("{}\n", encoding="utf-8")
         cl.write_text(self.claims, encoding="utf-8")
         return {"figure": fig, "anchors": anch, "claims": cl}
 
@@ -1490,6 +1495,16 @@ def build_dot_pattern(*, figure_id, stem, ask=None, title=None, description=None
             "rectangle": lambda n: f"{n} * {n + 1}"}[kind]
     elements: list[dict] = []
     anchors: dict[str, XY] = {}
+    # the stage label must clear the lowest dot row's stroke by 6 px + slack ON THE
+    # RENDER — the fixed 22-unit drop shrinks under the narrow-surface scale once the
+    # stages row runs wider than the plate, so widen it when the figure's own span
+    # demands (number_line's mark_off and pictograph's x0 size gaps the same way;
+    # +1 ≈ the dot circle's half-stroke)
+    est_span = (sum((((n + 1) if kind == "rectangle" else n) - 1) * dx + gap
+                    for n in range(1, stages + 1))
+                - gap + 2 * dot_r + _label_width(f"({stages})", 13))
+    lab_drop = dot_r + max(22.0, MID_UP * 13.0 +
+                           _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, est_span))
     x = 0.0
     for n in range(1, stages + 1):
         cols_n = n if kind != "rectangle" else n + 1
@@ -1503,7 +1518,7 @@ def build_dot_pattern(*, figure_id, stem, ask=None, title=None, description=None
                 elements.append(vc.circle(
                     (cx + (d_ - (dots_in_row - 1) / 2) * dx, base - (n - 1 - r_) * dy), dot_r,
                     fill=vc.INK, id=f"t{n}r{r_}d{d_}"))
-        elements.append(vc.text((cx, base + dot_r + 22), f"({n})", id=f"lbl{n}", size=13))
+        elements.append(vc.text((cx, base + lab_drop), f"({n})", id=f"lbl{n}", size=13))
         x += block_w + gap
     claims: list[tuple[str, str, str]] = []
 
@@ -1520,13 +1535,18 @@ def build_dot_pattern(*, figure_id, stem, ask=None, title=None, description=None
     amb = None if _has_stem(nums, stages) else \
         [f"K1 - the stage count {stages} is a construction choice — the stem does not state it "
          f"as a number (stem numbers {', '.join(f'{v:g}' for v in nums)})"]
+    elements_n = len(elements)
     return finish(kind="dot_pattern", figure_id=figure_id, stem=stem, elements=elements,
                   anchors=anchors, points=[], segments=[], claims=claims, ask=ask,
                   title=title or f"A dot pattern of {stages} stages",
                   description=description or (
                       f"The first {stages} figures of a dot pattern shown side by side; the dot "
                       f"counts are {kind} numbers."),
-                  scale="dots are uniform — the count is the content", ambiguous=amb, medium=medium)
+                  scale="dots are uniform — the count is the content", ambiguous=amb,
+                  budget=elements_n if elements_n > 32 else None,
+                  departures=([f"{elements_n} elements — one circle per dot is the honest "
+                               "drawing (S6b §3.4)"] if elements_n > 32 else None),
+                  medium=medium)
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -1649,18 +1669,21 @@ def main() -> int:
         specs = json.loads(spec_path.read_text(encoding="utf-8"))
         if isinstance(specs, dict):
             specs = [specs]
-        try:
-            for spec in specs:
-                spec = dict(spec)
-                kind = spec.pop("template")
+        for spec in specs:
+            spec = dict(spec)
+            kind = spec.pop("template")
+            try:
                 b = BUILDERS[kind](**spec)
-                paths = b.write(out)
-                print(f"{kind:<17} {paths['figure']}")
-                print(f"{'':17} {paths['anchors']}")
-                print(f"{'':17} {paths['claims']}")
-        except TemplateError as e:
-            print(f"TemplateError: {e}", file=sys.stderr)
-            return 2
+            except TemplateError as e:
+                # name the spec — in a multi-figure build a bare "dot_pattern: label …"
+                # leaves the reader to guess which figure refused
+                print(f"TemplateError: {spec.get('figure_id', '<no figure_id>')}: {e}",
+                      file=sys.stderr)
+                return 2
+            paths = b.write(out)
+            print(f"{kind:<17} {paths['figure']}")
+            print(f"{'':17} {paths['anchors']}")
+            print(f"{'':17} {paths['claims']}")
         return 0
     print(__doc__)
     return 2
