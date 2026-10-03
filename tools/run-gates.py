@@ -25,7 +25,8 @@ forked or re-implemented and no gate is lowered:
   ship:   1. validate · 2. doc put --ledger · 3. doc get → compare questions against
              staged.json by question_id key-by-key (server-added `published`/`published_at`
              and the renormalised `sort_order` ignored; a server-only id is a WARN, not a fail)
-          4. visual-check --session --claims-dir figures (only with --session-check) ·
+          4. visual-check --session --staged staged.json --claims-dir figures
+             (only with --session-check) ·
              5. publish --dry-run --accept-signatures N · 6. publish --accept-signatures N ·
              7. sql-proof.py q2 --expected (default: len(ids.json))
 
@@ -397,12 +398,14 @@ def cmd_ship(args, runner=run_cmd, log=print) -> int:
                     "server doc differs from staged.json (matched by question_id, ignoring "
                     "published/published_at/sort_order):\n" + "\n".join(diffs))
 
-    # 4. optional --session visual check — the run's claim sets go with it so `allow:` and
-    #    departures apply exactly as in mode 1
+    # 4. optional --session visual check — the local staged.json IS the server doc (doc get
+    #    just proved it), and the run's claim sets go with it so `allow:`/departures apply
+    #    exactly as in mode 1
     if args.session_check:
         vc_out = args.vc_session_out or str(run.parent / "vc-session")
         rc, out = runner([str(NODE_BIN), str(TOOLS / "visual-check.mjs"), "--session", sid,
-                          "--claims-dir", str(run / "figures"), "--out", vc_out])
+                          "--staged", str(staged), "--claims-dir", str(run / "figures"),
+                          "--out", vc_out])
         gates["visual-check-session"] = rc
         shown = quote(out, r"CLIPPED|revocation:|q3:", log=log)
         if rc:

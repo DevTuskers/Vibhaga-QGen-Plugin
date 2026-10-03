@@ -527,7 +527,9 @@ class ShipTest(unittest.TestCase):
                 rc = rg.cmd_ship(ship_args(run, session_check=True), runner=stub2)
             self.assertEqual(rc, 0)
             sess = next(" ".join(c) for c in stub2.calls if "--session" in c)
-            # the run's claim sets go to the live preview too — allow:/departures apply there
+            # the local staged.json IS the server doc (doc get just proved it), and the run's
+            # claim sets go to the live preview too — allow:/departures apply there
+            self.assertIn(f"--staged {run / 'staged.json'}", sess)
             self.assertIn(f"--claims-dir {run / 'figures'}", sess)
 
 

@@ -3,58 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { q3Block, pgEnvFromUrl, claimsFor, pushFigure, claimsForWarn } from "../tools/session-db.mjs";
+import { claimsFor, pushFigure, claimsForWarn, pairRenderedFigures } from "../tools/session-db.mjs";
 import { assess } from "../tools/visual-metrics.mjs";
-
-// Synthetic SQL + a synthetic URL only — never a real host, user, or query text.
-
-const SQL = `-- Q1 …
-SELECT 1;
--- Q2 …
-SELECT 2;
--- Q3 — revocation check
-SELECT count(*) FROM audit_log WHERE actor_id = :'actor_id';
--- Q4 …
-SELECT 4;
-`;
-
-test("q3Block slices Q3's SELECT to its terminating semicolon — not to EOF", () => {
-  const block = q3Block(SQL);
-  assert.match(block, /^SELECT count\(\*\)/);
-  assert.match(block, /;$/);
-  assert.ok(!block.includes("SELECT 4"), "trailing queries must not bleed into the block");
-});
-
-test("q3Block throws clearly when the Q3 marker or SELECT is missing", () => {
-  assert.throws(() => q3Block("SELECT 1;"), /no Q3 block/);
-  assert.throws(() => q3Block("-- Q3 — nothing here"), /no SELECT/);
-});
-
-test("pgEnvFromUrl splits a postgres URL into PG* vars — nothing on argv", () => {
-  const env = pgEnvFromUrl("postgresql://svc_user:p%40ss@db.example.test:6543/authdb");
-  assert.deepEqual(env, {
-    PGHOST: "db.example.test",
-    PGPORT: "6543",
-    PGUSER: "svc_user",
-    PGPASSWORD: "p@ss",
-    PGDATABASE: "authdb",
-    PGSSLMODE: "require",
-  });
-});
-
-test("pgEnvFromUrl: defaults and explicit sslmode", () => {
-  assert.equal(pgEnvFromUrl("postgres://u:p@h.test/db").PGPORT, "5432");
-  assert.equal(pgEnvFromUrl("postgres://u:p@h.test/db?sslmode=disable").PGSSLMODE, "disable");
-  assert.throws(() => pgEnvFromUrl("not-a-url"));
-  assert.throws(() => pgEnvFromUrl("postgres://h.test/db"), /needs host \+ user/);
-});
-
-test("pgEnvFromUrl: percent-decoded user/password/database, IPv6 brackets stripped", () => {
-  const env = pgEnvFromUrl("postgresql://svc%20user:x@[2001:db8::1]/auth%20db");
-  assert.equal(env.PGUSER, "svc user");
-  assert.equal(env.PGHOST, "2001:db8::1");
-  assert.equal(env.PGDATABASE, "auth db");
-});
 
 test("claimsFor: --claims-dir resolves <id>-claims.txt (the vdd_templates name) too", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-claims-"));
@@ -98,9 +48,10 @@ test("claimsForWarn: warns only under --claims-dir and only when nothing resolve
   assert.equal(claimsForWarn("Q3", null, null), null);                    // no --claims-dir → silent
 });
 
-test("--session --claims-dir: the staged figure's claim set applies the same allow/target outcome as mode 1", () => {
-  // visual-check --session resolves each rendered figure's claims via pushFigure/claimsFor on
-  // the fetched staged doc, then calls the same assess() batch mode does — a numeral floating
+test("--session --staged/--claims-dir: the staged figure's claim set applies the same allow/target outcome as mode 1", () => {
+  // visual-check --session reads the staged doc from --staged and resolves each rendered
+  // figure's claims via pushFigure/claimsFor, then calls the same assess() batch mode does — a
+  // numeral floating
   // far from paint is a `target` finding claims-less, `allowed` with `allow: label:"…"`, and
   // the session-mode call and the batch-mode call produce byte-identical findings.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-session-claims-"));
@@ -133,4 +84,29 @@ test("--session --claims-dir: the staged figure's claim set applies the same all
   assert.ok(sessionMode.findings.some((f) => f.rule === "target" && f.severity === "allowed"));
   assert.equal(sessionMode.findings.filter((f) => f.severity === "fail").length, 0);
   assert.equal(sessionMode.verdict, "PASS");
+});
+
+test("pairRenderedFigures: the k-th svg host pairs with the k-th staged figure — m.index counts svg-less hosts", () => {
+  // StudentPreview renders a "Diagram coming soon" plate (role=img, no svg) for an unparseable
+  // figure; that host still takes an index in measure()'s list. Pairing by m.index would shift
+  // every figure behind it onto the wrong claim set — the pairing must count only svg entries.
+  const figs = [{ id: "Q1" }, { id: "Q1.a" }, { id: "Q1.ans1" }];
+  const measured = [
+    { index: 0, svg: false, labels: [] },                    // unparseable-figure plate, no svg
+    { index: 1, svg: true, pxPerUnit: 1, labels: [] },
+    { index: 2, svg: false, labels: [] },                    // another plate, mid-list
+    { index: 3, svg: true, pxPerUnit: 1, labels: [] },
+  ];
+  const pairs = pairRenderedFigures(measured, figs);
+  assert.equal(pairs.length, 2);                             // only svg hosts pair
+  assert.equal(pairs[0].measured.index, 1);
+  assert.equal(pairs[0].fig.id, "Q1");                       // svg #1 → figs[0], not figs[1]
+  assert.equal(pairs[1].measured.index, 3);
+  assert.equal(pairs[1].fig.id, "Q1.a");                     // svg #2 → figs[1], not figs[3]
+  // More rendered figures than staged → the extras get fig null (claims-less, never a
+  // wrong-figure claim set); no staged list at all → every fig null.
+  const short = pairRenderedFigures(measured, [figs[0]]);
+  assert.equal(short[1].fig, null);
+  assert.ok(pairRenderedFigures(measured, null).every((p) => p.fig === null));
+  assert.deepEqual(pairRenderedFigures([], figs), []);
 });

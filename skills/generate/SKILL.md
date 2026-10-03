@@ -205,10 +205,11 @@ same two checkout paths in the critic's spawn prompt.
    warning or write why it stays.
 9. **Save and see it:** `python3 $T doc put <sid> --staged $A/staged.json --ledger $A/ledger.json`, then
    `doc get <sid> --out $A/server.json` and confirm it is the doc you meant. Then
-   `node tools/visual-check.mjs --session <sid> --claims-dir $A/figures --out wt/<topic>/vc-session` (headed; signs in, shoots every question's
-   student preview light + dark, signs out, runs Q3) → exit 0, no `CLIPPED`. `--claims-dir` matters: it
-   fetches the staged doc in-page and assesses each rendered figure against ITS claim set —
-   `allow:`/`departures:` apply in the live preview exactly as in mode 1.
+   `node tools/visual-check.mjs --session <sid> --staged $A/staged.json --claims-dir $A/figures --out wt/<topic>/vc-session` (headed; signs in, shoots every question's
+   student preview light + dark, signs out, runs Q3) → exit 0, no `CLIPPED`. `--staged` + `--claims-dir`
+   matter: the local staged.json IS the server doc (doc get just proved it), so each rendered figure
+   assesses against ITS claim set — `allow:`/`departures:` apply in the live preview exactly as in
+   mode 1.
 10. **Publish, flagged:**
     `python3 $T publish <sid> --staged $A/staged.json --scope <same as step 7> --ids-file $A/ids.json --ledger $A/ledger.json --dry-run --accept-signatures 0`
     — `signatures_at_risk` is 0 on a new session. Then the same without `--dry-run` — keep

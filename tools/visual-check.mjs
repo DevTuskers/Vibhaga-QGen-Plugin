@@ -8,7 +8,7 @@
  *                                          [--base-url URL] [--claims-dir DIR] [--headed]
  *                                          [--admin PATH]
  *     node tools/visual-check.mjs --session <playground-session-id> [--out DIR] [--base-url URL]
- *                                          [--claims-dir DIR] [--admin PATH]
+ *                                          [--staged FILE] [--claims-dir DIR] [--admin PATH]
  *                                          (always headed — signs in, then out)
  *     node tools/visual-check.mjs --self-test
  *
@@ -26,10 +26,11 @@
  * A figure's claim set (optional): sibling `<base>.claims.txt` or `<base>-claims.txt`, else
  * `<claims-dir>/<id>.claims.txt` or `<claims-dir>/<id>-claims.txt` via `--claims-dir` (the second
  * name is what vdd_templates.py emits: figure id `Q3` → `Q3-claims.txt`). In `--session` mode
- * `--claims-dir` fetches the session's staged doc in-page (same-origin admin proxy, bearer read
- * from the sb-* session entry — it never leaves the browser) so each rendered figure assesses
- * against ITS claim set exactly as mode 1 does; rendered figures pair with the doc's figures in
- * document order per question.
+ * `--staged FILE` reads the run's staged doc from disk (run-gates ship has already proven
+ * `doc get` == staged.json, so the local file IS the server doc — nothing is scraped from the
+ * page) and pairs each rendered figure with the doc's figures in document order per question;
+ * `--claims-dir` then resolves each pair's claim set so `allow:`/departures apply exactly as in
+ * mode 1. `--claims-dir` without `--staged` is a usage error — claims need the staged ids.
  *
  * Server: `--base-url` is used as-is (must answer `GET /diagtest` 200); otherwise
  * `node_modules/.bin/next dev -p <free port>` is spawned in the Admin checkout and waited on for up
@@ -61,13 +62,13 @@ import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
 import { assess } from "./visual-metrics.mjs";
-import { pushFigure, claimsForWarn } from "./session-db.mjs";
+import { pushFigure, claimsForWarn, pairRenderedFigures } from "./session-db.mjs";
 import { contactSheetHtml } from "./contact-sheet.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN = path.resolve(HERE, "..");
 const args = process.argv.slice(2);
-const VALUE_OPTS = new Set(["--out", "--widths", "--themes", "--base-url", "--claims-dir", "--admin", "--session"]);
+const VALUE_OPTS = new Set(["--out", "--widths", "--themes", "--base-url", "--claims-dir", "--admin", "--session", "--staged"]);
 const positional = [];
 for (let i = 0; i < args.length; i++) {
   if (VALUE_OPTS.has(args[i])) { i++; continue; }
@@ -411,8 +412,8 @@ async function ensureServer() {
 const isVdd = (o) => o && typeof o === "object" && o.schema === "vibhaga.diagram";
 const isStaged = (o) => o && typeof o === "object" && Array.isArray(o.questions);
 
-// The staged-doc walk is shared: mode 1 reads the doc from a file, --session fetches it from
-// the workspace — either way each diagram_dsl becomes a figure whose claim set resolves by the
+// The staged-doc walk is shared: mode 1 reads the doc from a positional input, --session from
+// --staged — either way each diagram_dsl becomes a figure whose claim set resolves by the
 // staged id (`Q<n>`, `Q<n>.<label>`, `Q<n>.ans<k>`) under --claims-dir.
 function collectFromStaged(figures, seen, staged, source, claimsDir) {
   const push = (id, doc, _src, fileBase = null) =>
@@ -460,15 +461,19 @@ function collectFigures(inputs, claimsDir) {
   }
   return figures;
 }
+// ⚠️ the walk order IS the pairing order for --session: it must emit each question's figures in
+// the order StudentPreview renders them — question figure, then parts (each part: its figure,
+// its sub-answers' figures, then nested sub-questions), then the whole-question answers LAST.
+// Answers-before-parts here would mis-pair every part figure behind them.
 function walkStagedDoc(staged, source, push, walkSubs) {
   (staged.questions ?? []).forEach((q, i) => {
     if (!q || typeof q !== "object") return;
     const id = `Q${q.question_number ?? i + 1}`;
     if (q.diagram_dsl) push(id, q.diagram_dsl, source, null);
+    walkSubs(q.sub_questions, id, source);
     (Array.isArray(q.answers) ? q.answers : []).forEach((a, k) => {
       if (a?.diagram_dsl) push(`${id}.ans${k + 1}`, a.diagram_dsl, source, null);
     });
-    walkSubs(q.sub_questions, id, source);
   });
 }
 
@@ -596,7 +601,7 @@ function figureLine(fig, pad) {
 }
 
 async function batchMode() {
-  if (!positional.length && !flag("--self-test")) die(`usage: visual-check.mjs <inputs…> [--out DIR] [--widths 320,375,768] [--themes light,dark] [--base-url URL] [--claims-dir DIR] [--headed] [--admin PATH]\n       visual-check.mjs --session <id>   (⚠️ --session, not --admin — --admin PATH is the Admin CHECKOUT)\n       visual-check.mjs --self-test`);
+  if (!positional.length && !flag("--self-test")) die(`usage: visual-check.mjs <inputs…> [--out DIR] [--widths 320,375,768] [--themes light,dark] [--base-url URL] [--claims-dir DIR] [--headed] [--admin PATH]\n       visual-check.mjs --session <id> [--staged FILE] [--claims-dir DIR]   (⚠️ --session, not --admin — --admin PATH is the Admin CHECKOUT)\n       visual-check.mjs --self-test`);
   const out = path.resolve(opt("--out", path.join(os.tmpdir(), "visual-check-out")));
   const widths = opt("--widths", "320,375,768").split(",").map(Number);
   if (!widths.length || widths.some((w) => !(w > 0))) die(`bad --widths: ${opt("--widths")}`);
@@ -704,8 +709,38 @@ async function extractActorId(page) {
 async function sessionMode() {
   const sessionId = opt("--session");
   const out = path.resolve(opt("--out", path.join(os.tmpdir(), "visual-check-out")));
+  const stagedFile = opt("--staged") ? path.resolve(opt("--staged")) : null;
   const claimsDir = opt("--claims-dir") ? path.resolve(opt("--claims-dir")) : null;
+  if (claimsDir && !stagedFile)
+    die("--claims-dir needs --staged FILE — the staged doc supplies each rendered figure's id; claims resolve against it (run-gates ship passes --staged <run>/staged.json --claims-dir <run>/figures)");
+  if (stagedFile && !fs.existsSync(stagedFile)) die(`--staged ${stagedFile} does not exist`);
   if (claimsDir && !fs.existsSync(claimsDir)) die(`--claims-dir ${claimsDir} does not exist`);
+  // --staged: the run's staged doc read from disk — ship's doc-get step has already proven it
+  // IS the server doc, so nothing is fetched from the page. Each diagram_dsl becomes a figure
+  // keyed by staged id; the rendered↔staged pairing is positional per question (see
+  // pairRenderedFigures), so this map is built once, up front, and a bad file dies before the
+  // browser ever opens.
+  const figsByQ = new Map();               // question number → staged figures, doc order
+  if (stagedFile) {
+    let staged;
+    try { staged = JSON.parse(fs.readFileSync(stagedFile, "utf8")); }
+    catch (e) { die(`--staged ${stagedFile}: not JSON — ${e.message}`); }
+    if (!isStaged(staged)) die(`--staged ${stagedFile}: not a staged doc (no questions[])`);
+    const figs = [];
+    collectFromStaged(figs, new Map(), staged, stagedFile, claimsDir);
+    for (const f of figs) {
+      const r = lib.parseVddDocument(f.doc);
+      f.parsed = r.ok ? r.value : f.doc;
+      const w = claimsForWarn(f.baseId ?? f.id, claimsDir, f.claims);
+      if (w) console.log(w);
+      const m = (f.baseId ?? f.id).match(/^Q(\d+)/);
+      if (m) {
+        const k = +m[1];
+        if (!figsByQ.has(k)) figsByQ.set(k, []);
+        figsByQ.get(k).push(f);
+      }
+    }
+  }
   const outDir = path.join(out, "session");
   fs.mkdirSync(outDir, { recursive: true });
   const creds = loadCredentials();
@@ -773,66 +808,6 @@ async function sessionMode() {
       actorId = await extractActorId(page);
       if (!actorId) throw new Error("could not extract the actor's user id from the Supabase session (cookie/localStorage)");
       await page.goto(`${server.baseUrl}/generate/${sessionId}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
-      // --claims-dir: the session's staged doc supplies each rendered figure's id (and claim
-      // set) — fetched in-page through the same same-origin /api/admin proxy the app uses; the
-      // bearer token is read from the sb-* session entry inside the page and never leaves it.
-      const figsByQ = new Map();               // question number → staged figures, doc order
-      if (claimsDir) {
-        const got = await page.evaluate(async (sid) => {
-          const dec = (raw) => {
-            try {
-              let v = raw;
-              try { v = decodeURIComponent(v); } catch (_) {}
-              if (v.startsWith("base64-")) v = atob(v.slice(7));
-              return JSON.parse(v);
-            } catch (_) { return null; }
-          };
-          const token = (() => {
-            const groups = {};
-            for (const part of document.cookie.split("; ")) {
-              const eq = part.indexOf("=");
-              if (eq < 0) continue;
-              const m = part.slice(0, eq).trim().match(/^(sb-.+-auth-token)(?:\.(\d+))?$/);
-              if (m) (groups[m[1]] ??= {})[m[2] === undefined ? 0 : +m[2]] = part.slice(eq + 1);
-            }
-            for (const g of Object.values(groups)) {
-              const joined = Object.keys(g).map(Number).sort((a, b) => a - b).map((i) => g[i]).join("");
-              const j = dec(joined);
-              if (j?.access_token) return j.access_token;
-            }
-            for (let i = 0; i < localStorage.length; i++) {
-              const k = localStorage.key(i) ?? "";
-              if (!/auth-token/.test(k)) continue;
-              const j = dec(localStorage.getItem(k) ?? "");
-              if (j?.access_token) return j.access_token;
-            }
-            return null;
-          })();
-          if (!token) return { error: "no session token readable" };
-          const res = await fetch(`/api/admin/playground/sessions/${sid}/questions`,
-            { headers: { authorization: `Bearer ${token}` } });
-          return res.ok ? { doc: await res.json() } : { error: `HTTP ${res.status}` };
-        }, sessionId);
-        if (got?.doc && Array.isArray(got.doc.questions)) {
-          const figs = [];
-          collectFromStaged(figs, new Map(), got.doc, "the session doc", claimsDir);
-          for (const f of figs) {
-            const r = lib.parseVddDocument(f.doc);
-            f.parsed = r.ok ? r.value : f.doc;
-            const w = claimsForWarn(f.baseId ?? f.id, claimsDir, f.claims);
-            if (w) console.log(w);
-            const m = (f.baseId ?? f.id).match(/^Q(\d+)/);
-            if (m) {
-              const k = +m[1];
-              if (!figsByQ.has(k)) figsByQ.set(k, []);
-              figsByQ.get(k).push(f);
-            }
-          }
-        } else {
-          console.log(`WARN --claims-dir: could not read the session's staged doc `
-            + `(${got?.error ?? "no questions"}) — figures assess claims-less`);
-        }
-      }
     for (const theme of ["light", "dark"]) {
       await page.emulateMedia({ colorScheme: theme });
       await page.evaluate((t) => { try { localStorage.setItem("vibhaga_admin_theme", t); } catch (_) {} }, theme);
@@ -892,18 +867,16 @@ async function sessionMode() {
         });
         const clipped = !(clip.noScroll && clip.svgsInside);
         const measured = await port.evaluate((el) => window.__vc.measure(el));
-        // --claims-dir: pair each rendered figure with the staged doc's figure in document
-        // order (the preview renders a question's figures in that order) — the same claims
-        // then drive assess() exactly as in mode 1.
-        const qFigs = claimsDir ? (figsByQ.get(n) ?? []) : null;
-        if (qFigs && qFigs.length !== (measured ?? []).filter((m) => m.svg).length)
-          console.log(`  WARN Q${n}: ${qFigs.length} staged figure(s) but ${(measured ?? []).filter((m) => m.svg).length} rendered — claims resolved by position`);
-        const results = (measured ?? []).filter((m) => m.svg)
-          .map((m) => {
-            const fig = qFigs?.[m.index] ?? null;
-            return assess({ doc: fig?.parsed ?? null, claims: fig?.claims?.text ?? null,
-                            widths: [{ width: 375, pxPerUnit: m.pxPerUnit, labels: m.labels }] });
-          });
+        // --staged: pair each rendered figure with the staged doc's figure by position among
+        // the svg-bearing hosts (m.index counts svg-less plates too — see pairRenderedFigures);
+        // the same claims then drive assess() exactly as in mode 1.
+        const qFigs = stagedFile ? (figsByQ.get(n) ?? []) : null;
+        const pairs = pairRenderedFigures(measured, qFigs);
+        if (qFigs && qFigs.length !== pairs.length)
+          console.log(`  WARN Q${n}: ${qFigs.length} staged figure(s) but ${pairs.length} rendered — claims resolved by position`);
+        const results = pairs.map(({ measured: m, fig }) =>
+          assess({ doc: fig?.parsed ?? null, claims: fig?.claims?.text ?? null,
+                   widths: [{ width: 375, pxPerUnit: m.pxPerUnit, labels: m.labels }] }));
         const fails = results.flatMap((r) => r.findings.filter((f) => f.severity === "fail"));
         if (fails.length || clipped) anyFail = true;
         const verdict = clipped ? "CLIPPED FAIL" : fails.length ? "FAIL" : "PASS";
