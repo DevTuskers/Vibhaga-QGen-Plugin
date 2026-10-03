@@ -147,11 +147,16 @@ word **clean** in its row, not a blank.
 ## 6. Re-run after fixes (post-publish reconcile)
 
 After the actor republishes, a **fresh** critic is spawned with the previous report as an extra
-input (it is critic output, not actor output). Re-run `critic-read.py` and compare its
-`hashes.txt` (sha256 of each exact Q4b line) with the previous report's `Hashes`:
+input (it is critic output, not actor output). `critic-read.py --previous` does the diff itself:
+pass the previous round's report dir (its `hashes.txt`) or a `Q<n> <sha256>` file — `fields.json`
+and `figures.txt` then cover only **changed-or-new** questions, `carried.txt` lists the unchanged
+`Q<n> <hash>` lines, and stdout prints `changed: […] · carried: […] · gone: […]`.
+`critic-read.py hashes <sid>` prints the hash lines alone when only the diff is wanted.
 
 - **changed hash** → critique that question in full again;
-- **same hash** → carry its previous verdict forward, marked `carried (unchanged)`;
+- **same hash** → the question is in `carried.txt`: copy its verdict lines verbatim from the
+  previous report, each marked `CARRIED (<hash>)` — the hash must equal the one `carried.txt`
+  holds, so a carried verdict can never ride along on a question that changed;
 - a question **missing** or **new** since the last report → say so at the top;
 - every previous finding gets a status: `FIXED` (with the new stored string) · `OPEN` · `REGRESSED`.
 

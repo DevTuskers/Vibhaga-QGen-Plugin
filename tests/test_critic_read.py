@@ -302,5 +302,76 @@ class EndToEnd(unittest.TestCase):
         self.assertNotIn("db.invalid.test", argv_text)
 
 
+class HashesMode(EndToEnd):
+    """`hashes <sid>` (W9-H1) — the hashes.txt computation alone, through the same Q4b read."""
+
+    def test_hashes_prints_and_writes(self):
+        self.write_canned(q4b=FIXTURE.read_text(encoding="utf-8"))
+        rc, out, err = self.run_main("hashes", BID)
+        self.assertEqual(rc, 0, err)
+        want = f"Q1 {hashlib.sha256(FIXTURE.read_text().splitlines()[0].encode()).hexdigest()}"
+        self.assertEqual(out.strip(), want)
+        # --out writes the same lines
+        rc, out, _ = self.run_main("hashes", BID, "--out", str(self.out / "h.txt"))
+        self.assertEqual(rc, 0)
+        self.assertEqual((self.out / "h.txt").read_text().strip(), want)
+
+    def test_hashes_non_uuid_and_empty_batch(self):
+        rc, _, err = self.run_main("hashes", "not-a-uuid")
+        self.assertEqual(rc, 2)
+        self.assertIn("not a uuid", err)
+        self.write_canned(q4b="")
+        rc, _, err = self.run_main("hashes", BID)
+        self.assertEqual(rc, 1)
+        self.assertIn("no questions", err)
+
+
+class PreviousMode(EndToEnd):
+    """`--previous` (W9-H2) — changed-only fields/figures + carried.txt + the printed line."""
+
+    def prev_dir(self, entries):
+        d = self.out / "prev"
+        d.mkdir(parents=True)
+        (d / "hashes.txt").write_text("".join(f"{q} {h}\n" for q, h in entries), encoding="utf-8")
+        return d
+
+    def fixture_hash(self):
+        return hashlib.sha256(FIXTURE.read_text().splitlines()[0].encode()).hexdigest()
+
+    def test_unchanged_question_is_carried(self):
+        self.write_canned(
+            q4a=json.dumps({"batch_id": BID}) + "\n",
+            q4b=FIXTURE.read_text(encoding="utf-8"), q4c="")
+        prev = self.prev_dir([("Q1", self.fixture_hash()), ("Q9", "0" * 64)])
+        rc, out, _ = self.run_main(BID, "--out", str(self.out), "--previous", str(prev))
+        self.assertEqual(rc, 0)
+        self.assertIn("changed: [] · carried: ['Q1'] · gone: ['Q9']", out)
+        self.assertEqual(json.loads((self.out / "fields.json").read_text()), [])
+        self.assertEqual((self.out / "figures.txt").read_text(), "")
+        self.assertEqual((self.out / "carried.txt").read_text().strip(),
+                         f"Q1 {self.fixture_hash()}")
+
+    def test_changed_question_gets_fields(self):
+        self.write_canned(
+            q4a=json.dumps({"batch_id": BID}) + "\n",
+            q4b=FIXTURE.read_text(encoding="utf-8"), q4c="")
+        prev = self.prev_dir([("Q1", "f" * 64)])
+        rc, out, _ = self.run_main(BID, "--out", str(self.out), "--previous", str(prev))
+        self.assertEqual(rc, 0)
+        self.assertIn("changed: ['Q1'] · carried: []", out)
+        self.assertEqual(len(json.loads((self.out / "fields.json").read_text())), 15)
+        self.assertIn("Q1\t-", (self.out / "figures.txt").read_text())
+
+    def test_previous_accepts_a_hashes_file_and_bad_lines_die(self):
+        self.write_canned(
+            q4a=json.dumps({"batch_id": BID}) + "\n",
+            q4b=FIXTURE.read_text(encoding="utf-8"), q4c="")
+        f = Path(self.tmp.name) / "old.txt"
+        f.write_text("not a hashes line\n", encoding="utf-8")
+        rc, _, err = self.run_main(BID, "--out", str(self.out), "--previous", str(f))
+        self.assertEqual(rc, 2)
+        self.assertIn("bad line", err)
+
+
 if __name__ == "__main__":
     unittest.main()

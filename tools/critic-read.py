@@ -2,6 +2,15 @@
 """critic-read.py — the qgen-critic's ONE-COMMAND read of a playground batch (W6).
 
     python3 tools/critic-read.py <batch_id> --out DIR [--db-env PATH] [--queries PATH]
+                              [--previous DIR-or-FILE]
+    python3 tools/critic-read.py hashes <batch_id> [--out FILE] [--db-env PATH] [--queries PATH]
+
+`hashes` (W9-H1) prints the `Q<n> <sha256 of the exact q4b line>` lines hashes.txt would hold —
+nothing else is written unless --out is given — so two critic rounds can be diffed without
+re-opening actor files. `--previous` (W9-H2) takes the earlier round's report dir (its
+hashes.txt) or a hashes file: fields.json + figures.txt then cover only CHANGED-or-NEW
+questions, the unchanged ones land in `carried.txt` (`Q<n> <hash>` each), and stdout prints
+`changed: […] · carried: […] · gone: […]`.
 
 Slices the Q4a/Q4b/Q4c blocks out of `queries.sql` (from each `-- Q4x` header comment line to the
 terminating `;` of its statement — a `;` inside a `-- ` comment line does not terminate), asserts
@@ -266,6 +275,61 @@ def question_artefacts(q: dict) -> tuple[list[dict], list[str], int]:
 
 
 # -----------------------------------------------------------------------------------------------
+def load_previous(spec: str) -> dict[str, str]:
+    """`--previous` — a report dir holding hashes.txt, or a `Q<n> <sha256>` file directly."""
+    p = Path(spec)
+    f = p / "hashes.txt" if p.is_dir() else p
+    if not f.is_file():
+        die(f"--previous {spec}: {'no hashes.txt in that directory' if p.is_dir() else 'not a file'}")
+    out: dict[str, str] = {}
+    for line in f.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^(Q\d+)\s+([0-9a-f]{64})\s*$", line.strip())
+        if not m:
+            die(f"--previous {f}: bad line {line!r} — want `Q<n> <sha256>`")
+        out[m.group(1)] = m.group(2)
+    return out
+
+
+def qnum(qid: str) -> int:
+    return int(qid[1:]) if qid[1:].isdigit() else 10**9
+
+
+def cmd_hashes(argv: list[str]) -> int:
+    """`hashes <sid>` — the hashes.txt computation only: read Q4b, hash each line, print."""
+    ap = argparse.ArgumentParser(
+        prog="critic-read.py hashes",
+        description="Print `Q<n> <sha256 of its Q4b line>` per question — exactly the hashes.txt "
+                    "computation — so two critic rounds can be diffed without a report dir.")
+    ap.add_argument("batch_id")
+    ap.add_argument("--out", help="also write the lines to FILE")
+    ap.add_argument("--db-env", help="a dotenv file to read DATABASE_URL from (wins over the env var)")
+    ap.add_argument("--queries", default=str(QUERIES), help="queries.sql path (default: the plugin's)")
+    a = ap.parse_args(argv)
+    if not UUID_RE.match(a.batch_id):
+        die(f"batch_id {a.batch_id!r} is not a uuid")
+    block = slice_block(Path(a.queries).read_text(encoding="utf-8"), "Q4b")
+    assert_single_select(block, "Q4b")
+    pg = pg_env_from_url(resolve_db_url(a.db_env))
+    lines = run_block(pg, a.batch_id, block, "q4b")
+    if not lines:
+        die(f"session {a.batch_id} has no questions — q4b returned 0 rows", 1)
+    out = []
+    for i, line in enumerate(lines):
+        try:
+            q = json.loads(line)
+        except json.JSONDecodeError as e:
+            die(f"q4b line {i + 1} is not JSON: {e}", 1)
+        out.append(f"Q{q.get('question_number')} {hashlib.sha256(line.encode('utf-8')).hexdigest()}")
+    text = "\n".join(out)
+    print(text)
+    if a.out:
+        p = Path(a.out)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text + "\n", encoding="utf-8")
+    return 0
+
+
+# -----------------------------------------------------------------------------------------------
 def self_test() -> int:
     """Offline smoke (the check-suite entry): slice the three Q4 blocks out of the REAL queries.sql
     and assert each is a single read-only SELECT — plus one pg_env_from_url round-trip. No DB."""
@@ -300,6 +364,8 @@ def main(argv: list[str] | None = None) -> int:
         argv = sys.argv[1:]
     if argv[:1] == ["--self-test"]:
         return self_test()
+    if argv[:1] == ["hashes"]:
+        return cmd_hashes(argv[1:])
     ap = argparse.ArgumentParser(prog="critic-read.py",
                                  description="Read one playground batch for the qgen-critic: Q4a/b/c "
                                              "read-only via psql, plus fields/hashes/figures artefacts.")
@@ -307,6 +373,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", required=True, help="output directory for q4a.json, q4b/q4c.jsonl, …")
     ap.add_argument("--db-env", help="a dotenv file to read DATABASE_URL from (wins over DATABASE_URL in the environment)")
     ap.add_argument("--queries", default=str(QUERIES), help="queries.sql path (default: the plugin's)")
+    ap.add_argument("--previous", help="the previous round's report dir (its hashes.txt) or a "
+                                       "`Q<n> <sha256>` file — fields.json/figures.txt then cover "
+                                       "only changed-or-new questions, the rest land in carried.txt")
     a = ap.parse_args(argv)
 
     if not UUID_RE.match(a.batch_id):
@@ -349,16 +418,40 @@ def main(argv: list[str] | None = None) -> int:
     (out_dir / "q4c.jsonl").write_text(("\n".join(q4c_lines) + "\n") if q4c_lines else "",
                                      encoding="utf-8")
 
-    fields: list[dict] = []
-    figs: list[str] = []
     parts_total = 0
     hashes: list[str] = []
+    per_q: list[tuple[str, list, list]] = []
     for q, line in zip(questions, q4b_lines):
         f, g, nparts = question_artefacts(q)
-        fields += f
-        figs += g
+        qid = f"Q{q.get('question_number')}"
+        per_q.append((qid, f, g))
         parts_total += nparts
-        hashes.append(f"Q{q.get('question_number')} {hashlib.sha256(line.encode('utf-8')).hexdigest()}")
+        hashes.append(f"{qid} {hashlib.sha256(line.encode('utf-8')).hexdigest()}")
+
+    fields: list[dict] = []
+    figs: list[str] = []
+    if a.previous:
+        # --previous: fields/figures cover only changed-or-new questions; the unchanged are
+        # carried by hash into carried.txt — the critic re-derives only what moved (§6).
+        prev = load_previous(a.previous)
+        cur = dict(h.split(" ", 1) for h in hashes)
+        changed = sorted((q for q in cur if prev.get(q) != cur[q]), key=qnum)
+        carried = sorted((q for q in cur if prev.get(q) == cur[q]), key=qnum)
+        gone = sorted((q for q in prev if q not in cur), key=qnum)
+        for qid, f, g in per_q:
+            if qid in set(changed):
+                fields += f
+                figs += g
+        (out_dir / "carried.txt").write_text(
+            ("\n".join(f"{q} {cur[q]}" for q in carried) + "\n") if carried else "",
+            encoding="utf-8")
+        print(f"changed: {changed} · carried: {carried}"
+              + (f" · gone: {gone}" if gone else ""))
+    else:
+        for _qid, f, g in per_q:
+            fields += f
+            figs += g
+
     (out_dir / "fields.json").write_text(json.dumps(fields, ensure_ascii=False, indent=1) + "\n",
                                          encoding="utf-8")
     (out_dir / "hashes.txt").write_text("\n".join(hashes) + "\n", encoding="utf-8")
