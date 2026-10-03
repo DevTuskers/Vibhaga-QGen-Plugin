@@ -325,6 +325,7 @@ def run_tests() -> None:
     run("scope-cards --self-test", [sys.executable, "tools/scope-cards.py", "--self-test"], env)
     run("vdd_templates --self-test", [sys.executable, "tools/vdd_templates.py", "--self-test"], env)
     run("critic-read --self-test", [sys.executable, "tools/critic-read.py", "--self-test"], env)
+    run("blueprint --self-test", [sys.executable, "tools/blueprint.py", "--self-test"], env)
 
     if have_web and have_admin:
         run("markdown-gate --self-test", ["node", "tools/markdown-gate.mjs", "--self-test"], env)

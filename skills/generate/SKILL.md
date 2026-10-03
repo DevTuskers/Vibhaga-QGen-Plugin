@@ -185,6 +185,13 @@ same two checkout paths in the critic's spawn prompt.
      ([`read-figure-claim-set`](../read-figure-claim-set/SKILL.md) §2.3), then
      [`draw-and-verify-question-vdd`](../draw-and-verify-question-vdd/SKILL.md) §3–§5. A real `a11y.title` and
      `a11y.description`, and the description never states what is asked (**T125**).
+   - **Blueprints** — when one stem should be re-rolled with different numbers (a parameterised question the
+     owner wants re-drawn per session), author it once as a blueprint YAML and instantiate it:
+     `python3 tools/blueprint.py instantiate <file> --seed N --n Q [--spec-out $A/specs/figures.json]` prints a
+     `questions:` item to paste in (it carries `blueprint_id`/`blueprint_seed` provenance — actor-only keys
+     build-staged validates and never emits). **At most one variant per blueprint per batch** — a second
+     question with the same `blueprint_id` is refused (**T-QG-8**). The emitted item is an ordinary question
+     afterwards: every gate and the critic see it like any other.
 5. **Build figures, then the doc** (mechanical) — one command runs the whole segment:
    `python3 tools/run-gates.py build $A --medium <medium> --card <lesson-key>=<NN> --grade <g>` — stops at the
    first failing stage with its last ~15 lines, prints one `Q<n> audit ok · vdd-check ok · vc PASS WxH` line per
@@ -268,6 +275,8 @@ same two checkout paths in the critic's spawn prompt.
     (`python3 tools/precritic-lint.py $A --card <key>=<NN> --grade <g>`) after any `content.yaml` edit. Fix every
     FAIL (`not_taught` probe found in a stem/part/approach/final) and look at each WARN (a11y `description`
     carrying a figure's readable number — T125; the vocabulary heuristic) before the critic sees the batch.
+    `--existing` may WARN a blueprint variant against a row from another session — expected: across sessions
+    variants count as distinct (owner ruling 2026-10-03; within a batch build-staged already refused, T-QG-8).
 13. **Critique — a fresh `qgen-critic`** ([`agents/qgen-critic.md`](../../agents/qgen-critic.md)). Spawn it with
     **paths only**, in exactly this shape:
     ```
@@ -343,6 +352,9 @@ The critic grades every part against this table (profile §3) — keep it and th
 - **T-QG-2: the claim set agreed with itself.** A hand-drawn 1.5:1 cuboid passed for a 5:2 stem. Templates take the
   stem's numbers; never retype a drawn number into a spec.
 - **T25: the hinted critic.** A critic told what to look for is not independent. Paths only, actor dir out of reach.
+- **T-QG-8: two variants of one blueprint in a batch read as one question to a student** — same stem, same
+  figure kind, only the numbers differ. `build-staged` refuses a second question carrying a batch-mate's
+  `blueprint_id`; roll the next variant in a later session.
 
 ## 5. Verify (definition of done, per run)
 

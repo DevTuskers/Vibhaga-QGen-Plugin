@@ -1,0 +1,25 @@
+# Synthetic blueprint fixture — English filler, no real lesson text (this is a public repo).
+# A rectangle perimeter question: two params, one where, one derived, a rectangle_points figure.
+blueprint:
+  id: rect-perimeter              # ^[a-z0-9][a-z0-9-]*$
+  params:                         # names ^[a-z][a-z0-9_]+$
+    ln: {range: [6, 20], step: 2} # inclusive ints; step default 1
+    wd: {choices: [3, 4, 5]}      # numbers only
+  where: ["ln > wd + 1"]          # every accepted draw satisfies all of these
+  derived:                        # name -> expression over params/earlier derived; ordered
+    per: "2 * (ln + wd)"
+  figure:                         # one specs/figures.json entry, slots allowed
+    template: rectangle_points
+    length: "{ln}"                # a whole-slot string becomes the typed number
+    width: "{wd}"
+    description: "A rectangle drawn {ln} by {wd}."
+  question:                       # a normal content.yaml question minus `n`
+    lessons: [L07]
+    stem: "A rectangle is ${ln}\\,\\text{cm}$ by ${wd}\\,\\text{cm}$."
+    parts:
+      - label: a
+        text: "Find its perimeter."
+        approach: "$2({ln}+{wd})$"
+        final: "${per}\\,\\text{cm}$"
+        check: "{ln} + {ln} + {wd} + {wd} == {per}"
+        level: M
