@@ -967,6 +967,33 @@ class MembershipTemplates(unittest.TestCase):
         with self.assertRaises(vt.TemplateError):
             self._b("circle_points", points={"p": {"where": "in"}})
 
+    def test_circle_points_malformed_specs_are_template_errors(self):
+        """A bare string spec or a non-numeric deg must refuse with a reason,
+        never a raw AttributeError/ValueError."""
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._b("circle_points", points={"P": "in"})
+        self.assertIn("dict", str(cm.exception))
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._b("circle_points", points={"P": {"where": "on", "deg": "east"}})
+        self.assertIn("deg", str(cm.exception))
+        with self.assertRaises(vt.TemplateError):
+            self._b("two_circles_points", points={"P": "L"})
+
+    def test_circle_points_pinned_degs_keep_their_spacing(self):
+        """A pinned deg follows the same separation rules as auto-placed on-dots —
+        coincident/near-coincident pins refuse naming the real cause."""
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._b("circle_points", points={"P": {"where": "on", "deg": 30},
+                                             "Q": {"where": "on", "deg": 30}})
+        self.assertIn("within 18°", str(cm.exception))
+        with self.assertRaises(vt.TemplateError):
+            self._b("circle_points", points={"P": {"where": "on", "deg": 0},
+                                             "Q": {"where": "on", "deg": 5}})
+        # but two clearly-spread pins still build
+        b = self._b("circle_points", points={"P": {"where": "on", "deg": 0},
+                                             "Q": {"where": "on", "deg": 90}})
+        self.assertTrue(b.doc["elements"])
+
     def test_two_circles_regions_and_lens(self):
         b = self._b("two_circles_points",
                     points={"P": {"in": ["L"]}, "Q": {"in": ["L", "R"]},
@@ -1004,7 +1031,8 @@ class MembershipTemplates(unittest.TestCase):
         b = self._b("circles_in_circle", n_in=6, n_out=5)
         els = {e["id"]: e for e in b.doc["elements"]}
         big = els["big"]
-        centres = [e for k, e in els.items() if k != "big"]
+        centres = [e for e in els.values()
+                   if e["type"] == "circle" and e["id"] != "big"]
         self.assertEqual(len(centres), 11)
         for e in centres:
             d = math.hypot(e["center"][0] - big["center"][0],
@@ -1026,6 +1054,11 @@ class MembershipTemplates(unittest.TestCase):
             self._b("circles_in_circle", n_in=0, n_out=0)
         with self.assertRaises(vt.TemplateError):
             self._b("circles_in_circle", n_in=-1, n_out=2)
+
+    def test_circles_in_circle_one_small_circle_is_singular(self):
+        b = self._b("circles_in_circle", n_in=1, n_out=0)
+        self.assertIn("a small circle", b.doc["a11y"]["description"])
+        self.assertNotIn("several", b.doc["a11y"]["description"])
 
     def test_abacus_rods_beads_and_sum(self):
         b = self._b("abacus", place_values=[1000, 100, 10, 1], beads=[3, 0, 5, 7])
@@ -1070,6 +1103,13 @@ class MembershipTemplates(unittest.TestCase):
         for bd in beads:
             self.assertEqual(bd.get("fill", {}).get("color"), vt.vc.INK)
 
+    def test_abacus_single_rod_builds(self):
+        """A 1-rod abacus is taller than wide — the base bar widens to keep the
+        canvas inside the 2:1 aspect rule instead of refusing outright."""
+        b = self._b("abacus", place_values=[1], beads=[9])
+        c = b.doc["canvas"]
+        self.assertLessEqual(c["height"] / c["width"], 2.0)
+
     def test_sorting_rings_layout_and_claims(self):
         b = self._b("sorting_rings",
                     groups=[["Even", ["2", "8", "14"]], ["Odd", ["3", "9"]]])
@@ -1086,7 +1126,7 @@ class MembershipTemplates(unittest.TestCase):
             d = math.hypot(cd["width"] / 2, abs(cy - ring["center"][1]) + cd["height"] / 2)
             self.assertLessEqual(d, ring["r"] - 7.9)
         self.assertIn('label "Even" names ring1', b.claims)
-        self.assertIn('label "14" names it13', b.claims)
+        self.assertIn('label "14" names it1_3', b.claims)   # claim target == element id
         self.assertIn("derive 3 + 2 = 5", b.claims)
 
     def test_sorting_rings_refuses(self):
@@ -1109,6 +1149,27 @@ class MembershipTemplates(unittest.TestCase):
         for e in texts:
             self.assertIn(e.get("fontSize"), (None, vt.FS))
 
+    def test_sorting_rings_self_test_canvas_stays_narrow(self):
+        """R1 fix: a wide unit canvas scales the default-size card text down to
+        ~12 px at 375 — the 2-ring self-test layout must stay ≤ ~360 units wide."""
+        b = self._b("sorting_rings",
+                    groups=[["Even", ["2", "8", "14"]], ["Odd", ["3", "9"]]])
+        self.assertLessEqual(b.doc["canvas"]["width"], 360)
+
+    def test_sorting_rings_three_groups_go_two_plus_one(self):
+        """Three rings side by side widen the canvas until FS text shrinks —
+        the third ring drops to a second row centred under the pair."""
+        b = self._b("sorting_rings",
+                    groups=[["A", ["1"]], ["B", ["2"]], ["C", ["3", "4"]]])
+        rings = {e["id"]: e for e in b.doc["elements"]
+                 if e["id"].startswith("ring")}
+        self.assertEqual(len(rings), 3)
+        self.assertEqual(rings["ring1"]["center"][1], rings["ring2"]["center"][1])
+        self.assertGreater(rings["ring3"]["center"][1], rings["ring1"]["center"][1])
+        r1, r2 = rings["ring1"], rings["ring2"]
+        mid = (r1["center"][0] - r1["r"] + r2["center"][0] + r2["r"]) / 2
+        self.assertAlmostEqual(rings["ring3"]["center"][0], mid, places=1)
+
     def test_shape_row_kinds_letters_and_rows(self):
         b = self._b("shape_row",
                     shapes=[["A", "circle"], ["B", "square"], ["C", "triangle"],
@@ -1122,9 +1183,25 @@ class MembershipTemplates(unittest.TestCase):
         self.assertGreater(math.hypot(lbl["at"][0] - circ["center"][0],
                                       lbl["at"][1] - circ["center"][1]), circ["r"])
         self.assertGreater(lbl["at"][1], circ["center"][1])
-        self.assertIn("circle centre H radius 34", b.claims)   # A's centre anchor
+        self.assertIn("circle centre H through A J", b.claims)   # A's centre + outline
+        self.assertIn("circle centre I through G K", b.claims)   # small_circle's
         self.assertIn('describe "D is an oval', b.claims)
         self.assertIn("derive 4 + 3 = 7", b.claims)
+
+    def test_shape_row_letter_anchors_sit_on_drawn_geometry(self):
+        """vdd-check's coverage rule sees vertices/corner-pairs/centres only — a
+        letter anchor on a circle's outline needs an r:0 marker point, and the
+        rect kinds draw as polygons so the bottom edge counts as geometry."""
+        b = self._b("shape_row", shapes=[["A", "circle"], ["B", "square"],
+                                         ["E", "rectangle"], ["G", "small_circle"]])
+        sh = {e["id"]: e["type"] for e in b.doc["elements"]
+              if e["id"].startswith("sh")}
+        self.assertEqual(sh["shB"], "polygon")
+        self.assertEqual(sh["shE"], "polygon")
+        marks = {tuple(e["at"]) for e in b.doc["elements"]
+                 if e["type"] == "point" and e["r"] == 0}
+        self.assertIn(tuple(b.anchors["A"]), marks)
+        self.assertIn(tuple(b.anchors["G"]), marks)
 
     def test_shape_row_refuses(self):
         with self.assertRaises(vt.TemplateError):
@@ -1159,12 +1236,12 @@ class ByteIdentity(unittest.TestCase):
         "selftest-rect": "18af540590a9ef7abc046ad8c7700a13d149195b7781dc9f3d6dac5ad0cbea0a",
         "selftest-shade": "208fef9855980d20d4b8ba21d3af491e46c6174029102596dec707439cea88e2",
         # W10c — generated when the six membership/collection templates landed
-        "selftest-cpts": "50962ab15121a4b924b1b7e9ccdd0410e9ae4e1dca9d705f9f54ec9ea93e641a",
-        "selftest-2cpts": "5fa4326b9eacf9305aad16dab97e5f337065db4d1c4913060d207a1b171ce4a3",
-        "selftest-cin": "8c937c7528a26ab0f40968a83f598546e7afb7cb656014416549ab246c2b7383",
-        "selftest-abacus": "572e5a1390eebed8e8cf6dbffe623e635839972edf93dbabba66cba0b25f4675",
-        "selftest-rings": "d4c07de7ae9ab9c24585c12c4579695c427d9e26306c55e4a0c8025610e62c9b",
-        "selftest-shapes": "d42573f3abb65967d506d6bf18dcc9e7b5b266d06ed19d831ab220b2c737f5c3",
+        "selftest-cpts": "11f9d6867c10f2defebae506fc2a6535fdf75de38e5a7218db8516fe61cf06d4",
+        "selftest-2cpts": "e777f14a60ec4d3ec39458b874fe88d970b369171a0328e6e13d04a4d4194e7d",
+        "selftest-cin": "d3045254e44a6c4be98724846129b8f2ccdf7d00edfc1d0fdb97a0288108ff47",
+        "selftest-abacus": "e373396ae5831ac3b59e197ee58d303bf0b8f5825efd4c0d440d55c4f4512f0e",
+        "selftest-rings": "6e0ffc326d1bd899b702a9a1eea4a9c5ce0927258f7155c083bdf6a7f8edbc07",
+        "selftest-shapes": "825776c0f58e258aa549bcfe497af6d7f379b06b579bbd68c87aaa934041a1c1",
     }
 
     def test_self_test_outputs_unchanged(self):

@@ -71,5 +71,55 @@ class StemRatioCheckTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
 
+class CircleThroughGrammarTests(unittest.TestCase):
+    """`circle centre X through` takes one to three on-outline anchors — the
+    spelling vdd-check evaluates from two up (the W10c builders emit it)."""
+
+    BASE = """figure:   t — t
+source:   constructed; frame is the figure's own canvas, 80 x 80, y down
+channel:  constructed
+stem:     A circle with 2 anchors on its outline.
+ask:      a  the circle
+points:   Z A B C D
+segments:
+anchors:
+  Z 40 40
+  A 40 10
+  B 40 70
+  C 10 40
+  D 70 40
+claims:
+{claims}  K8  derive 1 + 1 = 2 | inferred | the anchor count
+  K9  none tickMark parallelMark angleMark arrow dashed shaded | inferred | t
+load-bearing:
+  a -> K1
+unreadable: (none)
+ambiguous:  (none)
+"""
+
+    def run_claims(self, claims):
+        import tempfile
+        body = "".join(f"  K{i + 1}  {c} | inferred | t\n"
+                       for i, c in enumerate(claims))
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+            f.write(self.BASE.format(claims=body))
+            name = f.name
+        return subprocess.run([sys.executable, str(TOOL), name],
+                              capture_output=True, text=True)
+
+    def test_one_two_and_three_throughs_pass(self):
+        for claim in ("circle centre Z through A",
+                      "circle centre Z through A B",
+                      "circle centre Z through A B C"):
+            r = self.run_claims([claim])
+            self.assertEqual(r.returncode, 0, claim + "\n" + r.stdout + r.stderr)
+
+    def test_four_throughs_and_repeats_fail(self):
+        r = self.run_claims(["circle centre Z through A B C D"])
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = self.run_claims(["circle centre Z through A A"])
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

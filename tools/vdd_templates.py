@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""vdd_templates.py — the fifteen figure TEMPLATES of the vibhaga-qgen plugin (W3, W10c).
+"""vdd_templates.py — the fifteen figure TEMPLATES of the vibhaga-qgen plugin.
 
 A template turns a question's STEM NUMBERS into a finished figure — a VDD document, an
 anchors sidecar and a `channel: constructed` claim set — in one `Built` object:
@@ -2082,6 +2082,10 @@ def _named_dots(kind: str, points) -> list[str]:
     for nm in points:
         if not isinstance(nm, str) or not re.fullmatch(r"[A-Z]", nm):
             raise TemplateError(f"{kind}: point names are single capitals — got {nm!r}")
+        spec = points[nm]
+        if spec is not None and not isinstance(spec, dict):
+            raise TemplateError(f"{kind}: {nm}'s spec must be a dict of placement keys "
+                                f"— got {spec!r}")
     return list(points)
 
 
@@ -2110,6 +2114,32 @@ def _spread_deg(i: int) -> float:
     return (-90.0 + 137.508 * i) % 360.0
 
 
+def _outline_marks(kind: str, anchors: dict, elements: list, centre: XY, r: float,
+                   have: list[str], avoid: list, taken=frozenset()) -> list[str]:
+    """Anchor names ON a circle's outline for a `circle centre X through …` claim —
+    vdd-check evaluates that spelling only with ≥2 through-points, so real
+    on-outline anchors (an `on` dot, a letter's bottom point) lead and invisible
+    `point` markers (r 0 — the coverage check counts an element's coordinates)
+    fill the shortfall on a fixed deg fan ≥24 units from `avoid` positions.
+    `taken` reserves names minted later (shape letters, centre names)."""
+    names = list(have)[:3]                       # the claim grammar tops out at three
+    while len(names) < 2:
+        nm = _unused_letters(set(anchors) | set(taken), 1)[0]
+        for deg in _ON_DEG_CANDS:
+            p = vc.polar(centre, r, deg)
+            if all(math.hypot(p[0] - o[0], p[1] - o[1]) >= 24.0 for o in avoid):
+                anchors[nm] = p
+                elements.append({"id": f"a{nm}", "type": "point",
+                                 "at": vc.P(p), "r": 0})
+                avoid.append(p)
+                names.append(nm)
+                break
+        else:
+            raise TemplateError(f"{kind}: no clear spot left on the outline for a "
+                                "through-anchor — drop a dot")
+    return names
+
+
 # ────────────────────────────────────────────────────────────────────────────────
 # 10. circle_points — one circle with dots inside it, on its outline or outside it
 # ────────────────────────────────────────────────────────────────────────────────
@@ -2135,6 +2165,11 @@ def build_circle_points(*, figure_id, stem, ask=None, title=None, description=No
         if spec.get("deg") is not None and where != "on":
             raise TemplateError(f"circle_points: {nm} carries deg but is {where!r} — "
                                 "deg pins an 'on' dot only")
+        deg = spec.get("deg")
+        if deg is not None and (not isinstance(deg, (int, float))
+                                or isinstance(deg, bool)):
+            raise TemplateError(f"circle_points: {nm}'s deg must be a number of "
+                                f"degrees — got {deg!r}")
         specs[nm] = spec
     elements = [vc.circle(centre, r, id="circ")]
     anchors: dict[str, XY] = {}
@@ -2146,7 +2181,6 @@ def build_circle_points(*, figure_id, stem, ask=None, title=None, description=No
 
     cname = "Z" if "Z" not in names else _unused_letters(set(names), 1)[0]
     anchors[cname] = centre
-    add(f"circle centre {cname} radius {r:g}", "inferred", "the one circle's centre")
 
     placed: list[XY] = []
     used_degs: list[float] = []
@@ -2158,8 +2192,20 @@ def build_circle_points(*, figure_id, stem, ask=None, title=None, description=No
         if spec["where"] != "on":
             continue
         if spec.get("deg") is not None:
-            p = on_circle_point(centre, r, float(spec["deg"]))
-            used_degs.append(float(spec["deg"]))
+            deg = float(spec["deg"])
+            # a pinned deg gets the same separation rules as an auto-placed one —
+            # otherwise deg=0 + deg=5 draws two near-coincident dots and the failure
+            # only surfaces later as a mis-labelled "no clear spot" refusal
+            if not _deg_clear(deg, used_degs):
+                raise TemplateError(
+                    f"circle_points: {nm} pins deg {deg:g} — within 18° of another "
+                    "on-outline dot; spread the pinned angles")
+            p = on_circle_point(centre, r, deg)
+            if any(math.hypot(p[0] - o[0], p[1] - o[1]) < 30.0 for o in placed):
+                raise TemplateError(
+                    f"circle_points: {nm} at deg {deg:g} lands under 30 units from "
+                    "another dot — pick a clearer angle")
+            used_degs.append(deg)
         else:
             p = None
             for cand in _ON_DEG_CANDS:
@@ -2209,6 +2255,11 @@ def build_circle_points(*, figure_id, stem, ask=None, title=None, description=No
         if labelled:
             elements.append(_float_label(f"lb{nm}", glyphs[i], p))
             add(f'label "{glyphs[i]}" names {nm}', "stem", f"the label on dot {nm}")
+    through = _outline_marks("circle_points", anchors, elements, centre, r,
+                             [nm for nm in names if specs[nm]["where"] == "on"],
+                             placed)
+    add(f"circle centre {cname} through {' '.join(through)}", "inferred",
+        "the one circle's outline anchors")
     add(f"derive {n_in} + {len(used_degs)} + {n_out} = {len(names)}", "inferred",
         "inside + on + outside counts make the dot total")
     add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
@@ -2216,11 +2267,14 @@ def build_circle_points(*, figure_id, stem, ask=None, title=None, description=No
     lays = [w for w in ("in", "on", "out") if any(specs[nm]["where"] == w for nm in names)]
     desc_bits = {"in": "inside it", "on": "on its outline", "out": "outside it"}
     return finish(kind="circle_points", figure_id=figure_id, stem=stem, elements=elements,
-                  anchors=anchors, points=names + [cname], segments=[], claims=claims,
+                  anchors=anchors, points=list(anchors), segments=[], claims=claims,
                   ask=ask, title=title or "A circle with dots",
                   description=description or (
-                      "A circle with several dots "
-                      + ", ".join(desc_bits[w] for w in lays) + "."),
+                      ("One circle fills the figure on its own, with a single dot "
+                       + desc_bits[specs[names[0]]["where"]] + "; nothing else is drawn.")
+                      if len(names) == 1 else
+                      "One circle fills the figure, and several dots are placed in "
+                      "and around it — " + ", ".join(desc_bits[w] for w in lays) + "."),
                   scale="the circle's size is a canvas choice — only in/on/out matters",
                   medium=medium)
 
@@ -2275,9 +2329,6 @@ def build_two_circles_points(*, figure_id, stem, ask=None, title=None, descripti
     def add(pred, ev, note=""):
         claims.append((pred, ev, note))
         return f"K{len(claims)}"
-
-    add(f"circle centre L radius {r:g}", "inferred", "the left circle's centre")
-    add(f"circle centre R radius {r:g}", "inferred", "the right circle's centre")
 
     placed: list[XY] = []
     pos: dict[str, XY] = {}
@@ -2352,17 +2403,24 @@ def build_two_circles_points(*, figure_id, stem, ask=None, title=None, descripti
             n_in += 1
         else:
             n_out += 1
+    for cn, cx in (("L", cL), ("R", cR)):
+        through = _outline_marks("two_circles_points", anchors, elements, cx, r,
+                                 [nm for nm in names if specs[nm][1] == cn], placed)
+        add(f"circle centre {cn} through {' '.join(through)}", "inferred",
+            f"the {'left' if cn == 'L' else 'right'} circle's outline anchors")
     add(f"derive {n_in} + {n_on} + {n_out} = {len(names)}", "inferred",
         "inside + on + outside counts make the dot total")
     add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
         "two circles and dots only")
     return finish(kind="two_circles_points", figure_id=figure_id, stem=stem,
-                  elements=elements, anchors=anchors, points=names + ["L", "R"],
+                  elements=elements, anchors=anchors, points=list(anchors),
                   segments=[], claims=claims, ask=ask,
                   title=title or "Two overlapping circles with dots",
                   description=description or
-                  "Two overlapping circles side by side with several dots in and around "
-                  "them.",
+                  ("Two overlapping circles are drawn side by side, with a single dot "
+                   "placed inside one outline, on it or around them." if len(names) == 1
+                   else "Two overlapping circles are drawn side by side, with several "
+                   "dots placed inside their outlines, on them and around them."),
                   scale="the overlap is a canvas choice — only the dots' membership "
                         "matters",
                   medium=medium)
@@ -2409,7 +2467,11 @@ def build_circles_in_circle(*, figure_id, stem, ask=None, title=None, descriptio
         claims.append((pred, ev, note))
         return f"K{len(claims)}"
 
-    add(f"circle centre Z radius {R:g}", "inferred", "the big circle's centre")
+    anchors: dict[str, XY] = {"Z": centre}
+    through = _outline_marks("circles_in_circle", anchors, elements, centre, R,
+                             [], placed)
+    add(f"circle centre Z through {' '.join(through)}", "inferred",
+        "the big circle's outline anchors")
     if n_in:
         add(f'describe "{n_in} small circles lie inside the big circle"', "inferred",
             "count the inner rings")
@@ -2421,12 +2483,14 @@ def build_circles_in_circle(*, figure_id, stem, ask=None, title=None, descriptio
     add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
         "circles only — nothing is labelled")
     bits = [w for w, n in (("inside it", n_in), ("outside it", n_out)) if n]
+    noun = "a small circle" if n_in + n_out == 1 else "several small circles"
     return finish(kind="circles_in_circle", figure_id=figure_id, stem=stem,
-                  elements=elements, anchors={"Z": centre}, points=["Z"], segments=[],
+                  elements=elements, anchors=anchors, points=list(anchors), segments=[],
                   claims=claims, ask=ask,
                   title=title or "Small circles in and out of a big circle",
                   description=description or
-                  "A large circle with several small circles " + " and ".join(bits) + ".",
+                  f"A large circle with {noun} " + " and ".join(bits) +
+                  " — nothing touches the big circle's outline.",
                   scale="the big circle's size is a canvas choice — only in/out counts",
                   medium=medium)
 
@@ -2475,11 +2539,15 @@ def build_abacus(*, figure_id, stem, ask=None, title=None, description=None,
         spacing = new
     rod_h = 9 * (2 * bead_r + 3.0) + 24.0          # room for nine beads on a rod
     base_y = rod_h                                 # local coords; finish() translates
+    xs = [i * spacing for i in range(len(place_values))]
+    # a 1–2 rod abacus is taller than wide — the rod height is fixed by nine beads,
+    # so a short abacus widens its base bar to keep the canvas inside the 2:1 rule
+    bar_half = max(26.0, (rod_h + 60.0) / 4.0 - (xs[-1] - xs[0]) / 2.0)
+    span = max(span, (xs[-1] - xs[0]) + 2 * bar_half)
     lab_y = base_y + 1.5 + _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, span) \
         + lab_size * MID_UP                        # box top a fixed gap under the bar
-    xs = [i * spacing for i in range(len(place_values))]
-    elements = [vc.line((xs[0] - 26.0, base_y), (xs[-1] + 26.0, base_y), id="base",
-                        width=3.0)]
+    elements = [vc.line((xs[0] - bar_half, base_y), (xs[-1] + bar_half, base_y),
+                        id="base", width=3.0)]
     for i, x in enumerate(xs):
         elements.append(vc.line((x, base_y), (x, base_y - rod_h + 12.0), id=f"rod{i + 1}",
                                 width=2.0))
@@ -2509,8 +2577,8 @@ def build_abacus(*, figure_id, stem, ask=None, title=None, description=None,
                   title=title or "An abacus showing a number",
                   description=description or
                   f"An abacus with {len(place_values)} rods standing on a base bar; "
-                  "each rod is labelled with its place value and carries a stack of "
-                  "beads.",
+                  "each rod is labelled with its place value and may carry a stack "
+                  "of beads.",
                   scale="bead size and rod spacing are a canvas choice — only the "
                         "counts matter",
                   budget=len(elements) if len(elements) > 32 else None,
@@ -2521,11 +2589,13 @@ def build_abacus(*, figure_id, stem, ask=None, title=None, description=None,
 # 14. sorting_rings — labelled rings, each holding a column of item cards
 # ────────────────────────────────────────────────────────────────────────────────
 def build_sorting_rings(*, figure_id, stem, ask=None, title=None, description=None,
-                        medium="english", groups=None, ring_gap=32.0):
-    """Two or three sorting rings side by side. `groups` = [(name, [items…])]: each
-    item is a numeral/word drawn on a thin stroke-only rect card, the cards stack
-    vertically inside the ring (≥6 units apart, ≥8 from the ring stroke) and the
-    group's name prints above the ring. Ring radius grows to fit its card column."""
+                        medium="english", groups=None, ring_gap=16.0):
+    """Two or three sorting rings. `groups` = [(name, [items…])]: each item is a
+    numeral/word drawn at the default font size on a thin stroke-only rect card,
+    the cards stack vertically inside the ring (≥6 units apart, ≥8 from the ring
+    stroke) and the group's name prints above the ring. Ring radius grows to fit
+    its card column; three groups lay out 2 + 1 — a 3-wide row widens the canvas
+    until card text renders too small at 375 px."""
     vc.reset_ids()
     if not isinstance(groups, (list, tuple)) or not (2 <= len(groups) <= 3):
         raise TemplateError("sorting_rings: groups must be a list of 2 or 3 "
@@ -2551,18 +2621,30 @@ def build_sorting_rings(*, figure_id, stem, ask=None, title=None, description=No
     # card text and ring names carry NO size override — they render at the
     # renderer's default (FS) and the cards/rings grow to fit, not vice versa
     it_size = name_size = FS
-    # pad from label-box to card edge must stay ≥8 rendered px — estimate the span,
-    # size the cards/rings, then refine the pad once against the real span
-    pad = _clearance_units(STROKE_PX + SLACK_STROKE + 2.0, 620.0)
-    for _ in range(3):
+    name_h = name_size * (MID_UP + MID_DOWN)
+    rows = ([[0, 1], [2]] if len(norm) == 3 else [list(range(len(norm)))])
+    # centre each item's label BOX in its card — the box reaches higher than it
+    # hangs (MID_UP > MID_DOWN), so the anchor shifts down by the half-delta and
+    # every card edge gets the same pad
+    box_dy = it_size * (MID_UP - MID_DOWN) / 2.0
+    # pad = ≥8 rendered px label-box to card stroke — the pre-flight measures to
+    # the stroke's centreline minus its half-width, hence +1.1. The span feeds the
+    # scale and the pad feeds the span, so iterate to a fixpoint — and feed the
+    # CONTENT span (the +margins+fudge belongs to _clearance_units' own model;
+    # double-counting them here inflated pad ~19 units and the canvas to 423).
+    pad = _clearance_units(STROKE_PX + SLACK_STROKE, 320.0) + 1.1
+    for _ in range(8):
         card_h = it_size * (MID_UP + MID_DOWN) + 2 * pad
         card_ws = [max(_label_width(x, it_size) for x in items) + 2 * pad
                    for _, items in norm]
         stack_hs = [len(items) * card_h + (len(items) - 1) * 6.0 for _, items in norm]
-        radii = [math.hypot(w / 2.0, h / 2.0) + 10.0 for w, h in zip(card_ws, stack_hs)]
-        span = 2 * sum(radii) + ring_gap * (len(norm) - 1) + 2 * MARGIN + 60.0
-        new_pad = _clearance_units(STROKE_PX + SLACK_STROKE + 2.0, span)
-        if abs(new_pad - pad) < 0.5:
+        radii = [math.hypot(w / 2.0, h / 2.0) + 8.0 for w, h in zip(card_ws, stack_hs)]
+        span = sum(2 * radii[i] for i in rows[0]) + ring_gap * (len(rows[0]) - 1)
+        if len(rows) == 2:
+            span = max(span, 2 * radii[rows[1][0]])
+        new_pad = _clearance_units(STROKE_PX + SLACK_STROKE, span) + 1.1
+        if abs(new_pad - pad) < 0.05:
+            pad = new_pad
             break
         pad = new_pad
     elements: list[dict] = []
@@ -2572,23 +2654,36 @@ def build_sorting_rings(*, figure_id, stem, ask=None, title=None, description=No
         claims.append((pred, ev, note))
         return f"K{len(claims)}"
 
-    cur = 0.0
     name_drop = name_size * MID_DOWN + _clearance_units(STROKE_PX + SLACK_STROKE + 2.0,
                                                         span) + 1.0
+    cxs: dict[int, float] = {}
+    cys: dict[int, float] = {}
+    x = 0.0
+    for i in rows[0]:
+        cxs[i] = x + radii[i]
+        cys[i] = 0.0
+        x += 2 * radii[i] + ring_gap
+    row0_r = x - ring_gap                          # right edge of the first row
+    if len(rows) == 2:
+        i = rows[1][0]
+        cxs[i] = row0_r / 2.0
+        # the lone ring's name must still clear the first row's deepest bottom
+        cys[i] = (max(radii[j] for j in rows[0])
+                  + _clearance_units(STROKE_PX + SLACK_STROKE + 0.5, span)
+                  + name_drop + name_size * MID_UP + radii[i])
     for i, ((gname, items), card_w, stack_h, ring_r) in enumerate(
             zip(norm, card_ws, stack_hs, radii)):
-        cx = cur + ring_r
-        cur += 2 * ring_r + ring_gap
-        elements.append(vc.circle((cx, 0.0), ring_r, id=f"ring{i + 1}"))
-        elements.append(vc.text((cx, -ring_r - name_drop), gname, id=f"nm{i + 1}"))
-        top = -stack_h / 2.0
+        cx, cy0 = cxs[i], cys[i]
+        elements.append(vc.circle((cx, cy0), ring_r, id=f"ring{i + 1}"))
+        elements.append(vc.text((cx, cy0 - ring_r - name_drop), gname, id=f"nm{i + 1}"))
+        top = cy0 - stack_h / 2.0
         for j, item in enumerate(items):
             cy = top + j * (card_h + 6.0) + card_h / 2.0
             elements.append({"id": f"cd{i + 1}_{j + 1}", "type": "rect",
                              "x": vc.r2(cx - card_w / 2.0), "y": vc.r2(cy - card_h / 2.0),
                              "width": vc.r2(card_w), "height": vc.r2(card_h)})
-            elements.append(vc.text((cx, cy), item, id=f"it{i + 1}_{j + 1}"))
-            add(f'label "{item}" names it{i + 1}{j + 1}', "inferred", "an item card")
+            elements.append(vc.text((cx, cy + box_dy), item, id=f"it{i + 1}_{j + 1}"))
+            add(f'label "{item}" names it{i + 1}_{j + 1}', "inferred", "an item card")
         add(f'label "{gname}" names ring{i + 1}', "inferred", "the ring's label")
         add(f'describe "ring {i + 1} holds the {gname} cards — '
             f'{len(items)} items"', "inferred", "what the ring contains")
@@ -2670,12 +2765,16 @@ def build_shape_row(*, figure_id, stem, ask=None, title=None, description=None,
             elements.append(vc.circle((cx, cy), 22.0, id=f"sh{letter}"))
             bottom = (cx, cy + 22.0)
         elif kind == "square":
-            elements.append({"id": f"sh{letter}", "type": "rect", "x": vc.r2(cx - 29.0),
-                             "y": vc.r2(cy - 29.0), "width": 58.0, "height": 58.0})
+            # a 4-corner polygon draws exactly like a rect but the coverage check
+            # counts its EDGES — the letter's bottom anchor sits on one
+            elements.append(vc.polygon([(cx - 29.0, cy - 29.0), (cx + 29.0, cy - 29.0),
+                                        (cx + 29.0, cy + 29.0), (cx - 29.0, cy + 29.0)],
+                                       id=f"sh{letter}"))
             bottom = (cx, cy + 29.0)
         elif kind == "rectangle":
-            elements.append({"id": f"sh{letter}", "type": "rect", "x": vc.r2(cx - 38.0),
-                             "y": vc.r2(cy - 22.0), "width": 76.0, "height": 44.0})
+            elements.append(vc.polygon([(cx - 38.0, cy - 22.0), (cx + 38.0, cy - 22.0),
+                                        (cx + 38.0, cy + 22.0), (cx - 38.0, cy + 22.0)],
+                                       id=f"sh{letter}"))
             bottom = (cx, cy + 22.0)
         elif kind == "triangle":
             elements.append(vc.polygon([(cx, cy - 30.0), (cx - 32.0, cy + 24.0),
@@ -2694,11 +2793,21 @@ def build_shape_row(*, figure_id, stem, ask=None, title=None, description=None,
             bottom = (cx, cy + 17.0)
         anchors[letter] = bottom
         if kind in ("circle", "small_circle"):
+            # a circle's outline is invisible to the coverage check (it sees the
+            # centre only) — mark the letter's bottom anchor with an r:0 point
+            elements.append({"id": f"a{letter}", "type": "point",
+                             "at": vc.P(bottom), "r": 0})
             cname = centre_pool.pop(0)
+            rad = 34.0 if kind == "circle" else 22.0
+            # mint the second through-anchor before the centre lands in `anchors` —
+            # every outline point is exactly `rad` from it, under the 24-unit floor —
+            # but `taken` reserves the centre's own name so the aux can't steal it
+            through = _outline_marks("shape_row", anchors, elements, (cx, cy), rad,
+                                     [letter], list(anchors.values()),
+                                     taken={cname} | set(letters) | set(centre_pool))
             anchors[cname] = (cx, cy)
-            add(f"circle centre {cname} radius "
-                f"{34.0 if kind == 'circle' else 22.0:g}", "inferred",
-                f"the centre of circle {letter}")
+            add(f"circle centre {cname} through {' '.join(through)}", "inferred",
+                f"the outline of circle {letter}")
         elements.append(_float_label(f"lb{letter}", letter, bottom, gap=10.0, size=16))
         add(f'label "{letter}" names {letter}', "stem", f"the letter under the {kind}")
         add(f'describe "{letter} is {_SHAPE_DESCS[kind]}"', "inferred", "the shape's kind")
@@ -2711,7 +2820,10 @@ def build_shape_row(*, figure_id, stem, ask=None, title=None, description=None,
                   anchors=anchors, points=list(anchors), segments=[], claims=claims,
                   ask=ask, title=title or "A row of shapes",
                   description=description or
-                  "Shapes laid out in rows of three; each has a letter label below it.",
+                  ("Shapes laid out in a single row" if len(shapes) <= 3 else
+                   "Shapes laid out in rows of three") +
+                  "; each shape has a letter label below it — every outline is "
+                  "plain, unshaded and unmarked.",
                   scale="shape sizes are uniform icons — only the kinds matter",
                   medium=medium)
 
