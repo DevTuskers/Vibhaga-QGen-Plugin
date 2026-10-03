@@ -136,9 +136,12 @@ same two checkout paths in the critic's spawn prompt.
 ### The steps
 
 1. **Read the scope card, then the lesson.** `python3 tools/scope-cards.py brief <NN> --grade <g>` prints the
-   ~80-line brief for the card — sections, vocabulary, worked examples, exercises, activities, `figure_kinds` and the
-   whole curated block. The card *is* the scope statement: `sections` + `summary` + `vocabulary` + `not_taught` say
-   what is and is not taught; `worked_examples` + `exercises` are the don't-copy list; `figure_kinds` are reusable
+   ~80-line brief for the card — sections, vocabulary, the `phrases` term bank, worked examples, exercises,
+   activities, `figure_kinds` and the whole curated block. The card *is* the scope statement: `sections` + `summary`
+   + `vocabulary` + `not_taught` say what is and is not taught; `phrases` is the mined bank of the lesson's own
+   language (emphasis terms, section-title words, recurring words — grade-wide document frequency keeps the
+   lesson-common filler out) — write stems in it, and expect `precritic-lint.py` to warn when a tagged question
+   uses none of it; `worked_examples` + `exercises` are the don't-copy list; `figure_kinds` are reusable
    *kinds* of figure; `difficulty_hooks` anchor R/M/H. Then open the lesson file **only at the sections and anchors
    the plan uses** — `grep -n` the card's `source.file` for the section headings and each figure's
    `**Description:**` — never read it whole. Write the scope statement into `notes.md`.

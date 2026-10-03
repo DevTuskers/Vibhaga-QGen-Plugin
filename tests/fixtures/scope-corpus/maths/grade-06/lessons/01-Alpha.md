@@ -35,12 +35,14 @@ An intro paragraph with **alpha term** and a second **shared term** at the café
 
 **Source:** fixture, PDF p. 1.
 
-**Description:** A drawing described in filler English.
+**Description:** A drawing described in filler English with a **desc-only term**.
 
 **Source text:**
 
 - A
 - B
+- A **figure-only term** here.
+- **නිදසුන 2 recap.**
 
 **Concepts:** alpha, drawing
 
@@ -72,6 +74,17 @@ An example sentence with a zebra in it.
 
 - (1) Do the first drill.
 - (2) Do the second drill.
+
+<a id="fx-01-p001-u014"></a>
+
+### 1.2 Mosaic patterns
+
+<a id="fx-01-p001-u015"></a>
+
+A paired mosaic line — paired tiles, paired counts and paired edges keep the pairing clear.
+Teachers note **place value 10**, an **edge case rule.** plus **pi** and **42**, a
+<span data-source-color="#2266aa">coloured phrase</span> and a **නිදසුන 9 drill** label.
+The zigzag fold, the zigzag cut, the zigzag edge and the zigzag corner.
 
 <a id="fx-01-p001-u012"></a>
 

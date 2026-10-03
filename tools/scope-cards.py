@@ -8,8 +8,12 @@ anchors). The card has three parts:
 
   top matter   grade / subject / medium / lesson_number / titles / syllabus_refs / term / periods
                + `source: {file, sha256}` — pinned to the lesson file's current sha
-  generated    tool-owned — sections, vocabulary, worked examples, exercises, activities, figure
-               kinds/counts, summary. `draft` rewrites it every time; a hand edit fails `check`.
+  generated    tool-owned — sections, vocabulary, phrases, worked examples, exercises,
+               activities, figure kinds/counts, summary. `draft` rewrites it every time; a hand
+               edit fails `check`. `phrases` is a mined term bank (emphasis spans, section-title
+               words, recurring prose words) filtered by per-word document frequency across the
+               WHOLE grade — draft/check build that context from every included lesson, so a
+               `--lessons` subset stays byte-identical. precritic-lint reads it for check (c).
   curated      agent-written — status, not_taught (with probes grounded in absence), prerequisites,
                difficulty_hooks. `draft` preserves an existing `curated:` block unchanged.
 
@@ -22,7 +26,8 @@ Usage:
     scope-cards.py --self-test
 
 `brief` (W9-D) prints a ~80-line reading brief per card — header with both titles and the card +
-lesson sha256 prefixes, sections, ≤20 deduped vocabulary terms, worked-example excerpts (80 chars),
+lesson sha256 prefixes, sections, ≤20 deduped vocabulary terms, ≤30 phrases, worked-example
+excerpts (80 chars),
 exercise item lists (≤6 items at 70 chars, `… +k more` beyond), activities, figure_kinds and the
 whole `curated:` block.
 A card argument is a path, or a lesson number NN resolved with `--grade` as
@@ -46,6 +51,7 @@ import shutil
 import sys
 import tempfile
 import unicodedata
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -62,6 +68,10 @@ KW_FIGURE = "රූපය"             # figure caption marker: **N රූපය
 EXCERPT_EXAMPLE = 200
 EXCERPT_ITEM = 140
 VOCAB_MAX = 60
+PHRASES_MAX = 40        # generated.phrases cap
+PHRASES_RECUR_MAX = 20  # at most this many recurring-word phrases per card
+RECUR_MIN = 4           # a word must occur this often in ONE lesson to be a recurring phrase
+TERM_MAX_WORDS = 6      # an emphasis term longer than this is a sentence, not a term
 
 ANCHOR_RE = re.compile(r'^\s*<a id="([^"]+)"\s*/?>\s*(?:</a>)?\s*$')
 HEADING_RE = re.compile(r'^(#{1,6})\s+(.*?)\s*$')
@@ -80,6 +90,16 @@ ASCII_WORD_RE = re.compile(r'^[a-z ]+$')
 NUMPARA_RE = re.compile(r'^\(\d+\)|^\d+[.)]\s')
 SECNUM_RE = re.compile(r'^\s*(\d+(?:\s*\.\s*\d+)*)(?:\s+|$)')
 NOISE_RE = re.compile(r'[\d\W_]+')
+# phrase/vocabulary mining reads `body`/`heading` elements — plus, for the emphasis-span pass
+# only, each figure/table element's `**Source text:**` bullet lines (real lessons print terms
+# there and nowhere else — e.g. the quotient/remainder bolds of G6 lesson 03). Everything else in
+# a figure/table block stays out: the `#### Figure —`/`#### Table —` heading, `**Description:**`,
+# `**Concepts:**`, `**Source:**` and table cells. Recurring-word counts and DF stay prose-only.
+TOKEN_RE = re.compile(r'[\u0D80-\u0DFF\u200d]+|[A-Za-z]+')  # Sinhala block + ZWJ runs, or ASCII letters
+COLOR_SPAN_RE = re.compile(r'<span[^>]*\bdata-source-color="[^"]*"[^>]*>(.*?)</span>')
+MATH_RUN_RE = re.compile(r'\$[^$]*\$')
+TAG_INNER_RE = re.compile(r'<[^>]+>')
+EDGE_PUNCT = " \t.,;:!?()[]{}'\"–—-/$~"
 LESSON_FILE_RE = re.compile(r'^(\d+)-.*\.md$')
 SAME_GRADE_RE = re.compile(r'^grade-(\d+)/(\d+)$')
 PRIOR_GRADE_RE = re.compile(r'^grade-(\d+):(.+)$')
@@ -155,11 +175,13 @@ def split_frontmatter(text: str) -> tuple[str | None, str]:
     return None, text
 
 
-def consume_block(lines: list[str], i: int) -> tuple[list[str], int]:
+def consume_block(lines: list[str], i: int) -> tuple[list[str], list[str], int]:
     """Consume a `#### Figure —`/`#### Table —` block starting at line i (the heading line).
-    Returns (concepts, next_index). The block ends at the first line that is not part of the
-    figure/table structure — usually the next heading or body prose after **Concepts:**."""
+    Returns (concepts, source_text, next_index) — `source_text` is the raw text of each
+    `**Source text:**` bullet, in order. The block ends at the first line that is not part of
+    the figure/table structure — usually the next heading or body prose after **Concepts:**."""
     concepts: list[str] = []
+    source_text: list[str] = []
     in_source_text = False
     in_html_table = False
     j = i + 1
@@ -195,10 +217,11 @@ def consume_block(lines: list[str], i: int) -> tuple[list[str], int]:
             j += 1
             continue
         if in_source_text and BULLET_RE.match(line.strip()):
+            source_text.append(BULLET_RE.sub("", line.strip(), count=1))
             j += 1
             continue
         break
-    return concepts, j
+    return concepts, source_text, j
 
 
 def parse_elements(body: str) -> list[dict]:
@@ -223,9 +246,9 @@ def parse_elements(body: str) -> list[dict]:
             level, text = len(h.group(1)), h.group(2).strip()
             fm = FIGTBL_RE.match(text)
             if fm:
-                concepts, i = consume_block(lines, i)
+                concepts, source_text, i = consume_block(lines, i)
                 elems.append({"kind": fm.group(1).lower(), "anchor": last_anchor,
-                              "concepts": concepts})
+                              "concepts": concepts, "source_text": source_text})
                 continue
             elems.append({"kind": "heading", "level": level, "text": text,
                           "anchor": last_anchor})
@@ -341,24 +364,187 @@ def summary_items(elems: list[dict], start: int, level: int) -> list[str]:
     return [clean(x) for x in items]
 
 
-def collect_vocabulary(body: str) -> list[str]:
-    """Bold **terms** as printed, first-seen order, deduped — minus the corpus's structural
-    markers, step/figure labels, pure digits/punctuation, and anything over VOCAB_MAX chars."""
-    out, seen = [], set()
-    for m in BOLD_RE.finditer(body):
-        term = m.group(1).strip()
-        if not term or term in seen or term in DROP_MARKERS or len(term) > VOCAB_MAX:
-            continue
-        if re.match(r"^" + KW_STEP + r"\s*\d", term) or re.match(r"^\d+\s*" + KW_FIGURE, term):
-            continue
-        if NOISE_RE.fullmatch(term):
-            continue
-        seen.add(term)
-        out.append(term)
+def letter_count(s: str) -> int:
+    """Letter codepoints only — Sinhala independent vowels (U+0D85–U+0D96) and consonants
+    (U+0D9A–U+0DC6), plus ASCII letters. Dependent vowel signs, the virama (U+0DCA), ZWJ,
+    digits and punctuation do not count."""
+    return sum(1 for ch in s
+               if "\u0d85" <= ch <= "\u0d96" or "\u0d9a" <= ch <= "\u0dc6"
+               or "a" <= ch <= "z" or "A" <= ch <= "Z")
+
+
+def tokenize(text: str) -> list[str]:
+    """Word tokens for phrase mining — Sinhala(+ZWJ) runs or ASCII-letter runs; edge ZWJ
+    stripped, ASCII tokens lowercased (Sinhala has no case)."""
+    out = []
+    for tok in TOKEN_RE.findall(text):
+        tok = tok.strip("\u200d")
+        if tok:
+            out.append(ascii_lower(tok))
     return out
 
 
-def build_generated(body: str, elems: list[dict]) -> dict:
+def has_sinhala(s: str) -> bool:
+    """Any Sinhala letter — the independent-vowel/consonant ranges letter_count counts."""
+    return any("\u0d85" <= c <= "\u0d96" or "\u0d9a" <= c <= "\u0dc6" for c in s)
+
+
+def enough_letters(term: str, kind: str = "term") -> bool:
+    """The minimum real letters for a mined term, by kind — now that letter_count counts
+    consonants (a vowel sign is not a letter), a strict ≥3 floor loses real 2-consonant
+    Sinhala lesson terms. A 'term' (vocabulary, emphasis/recurring phrases, precritic-lint's
+    card terms) needs ≥2 letters when it contains any Sinhala — still dropping a 1-consonant
+    conjunction — and ≥3 when pure ASCII. A 'section' word (section-title tokens) needs
+    ≥3 Sinhala / ≥4 ASCII."""
+    if has_sinhala(term):
+        need = 3 if kind == "section" else 2
+    else:
+        need = 4 if kind == "section" else 3
+    return letter_count(term) >= need
+
+
+def is_digit_token(w: str) -> bool:
+    """A standalone digit token — `10`, `10.` or `3.5` — as opposed to a word containing
+    digits."""
+    return re.fullmatch(r"\d+(?:[.,]\d+)?", w.strip(EDGE_PUNCT)) is not None
+
+
+STRUCT_KEYWORDS = (KW_EXAMPLE, KW_EXERCISE, KW_ACTIVITY, KW_STEP, KW_FIGURE, KW_SUMMARY)
+
+
+def starts_with_keyword(t: str) -> bool:
+    """t opens with a structural keyword AS A WORD — the keyword followed by end-of-string,
+    whitespace, a digit or punctuation. A word that merely starts with the keyword's letters
+    (e.g. an inflected form continuing into a vowel sign) is a term, not a label."""
+    for kw in STRUCT_KEYWORDS:
+        if t.startswith(kw):
+            rest = t[len(kw):]
+            if not rest or rest[0].isspace() or rest[0].isdigit() \
+                    or unicodedata.category(rest[0]).startswith("P"):
+                return True
+    return False
+
+
+def clean_term(s: str) -> "str | None":
+    """One emphasis term → its printed form, or None when it is furniture or noise. Strips
+    inner `**`, `$…$` math runs and HTML tags, leading glyph bullets, and edge punctuation/
+    spaces; collapses whitespace. Drops: empty or noise-only terms, structural labels (a term
+    starting with a structural keyword AS A WORD — example/exercise/activity/step/figure/
+    summary — or a DROP_MARKERS string), anything failing enough_letters (a Sinhala-bearing
+    term needs ≥2 letters, a pure-ASCII one ≥3), over 6 words, or over VOCAB_MAX chars."""
+    t = s.replace("**", "")
+    t = MATH_RUN_RE.sub(" ", t)
+    t = TAG_INNER_RE.sub(" ", t)
+    t = GLYPH_BULLET_RE.sub("", t)
+    t = " ".join(t.split())
+    if not t:
+        return None
+    t = t.strip(EDGE_PUNCT)
+    t = " ".join(t.split())
+    if not t or NOISE_RE.fullmatch(t):
+        return None
+    if t in DROP_MARKERS or f"{t}:" in DROP_MARKERS:
+        return None
+    if starts_with_keyword(t):
+        return None
+    if not enough_letters(t) or len(t.split()) > TERM_MAX_WORDS or len(t) > VOCAB_MAX:
+        return None
+    return t
+
+
+def prose_texts(elems: list[dict]) -> list[str]:
+    """The raw text of `body`/`heading` elements — the stream recurring-word counts (c) and
+    grade document frequency read. Figure/table block lines (captions, Source-text bullets,
+    descriptions) are consumed into figure/table elements by parse_elements and never reach
+    this stream."""
+    return [el["text"] for el in elems if el["kind"] in ("body", "heading")]
+
+
+def emphasis_texts(elems: list[dict]) -> list[str]:
+    """The stream the emphasis-span pass (vocabulary + phrases(a)) reads: body/heading text
+    PLUS each figure/table element's Source-text bullet lines, in document order — terms
+    printed only inside a figure's `**Source text:**` list are still lesson vocabulary.
+    The rest of a figure/table block is not mined."""
+    out = []
+    for el in elems:
+        if el["kind"] in ("body", "heading"):
+            out.append(el["text"])
+        elif el["kind"] in ("figure", "table"):
+            out.extend(el["source_text"])
+    return out
+
+
+def collect_vocabulary(elems: list[dict]) -> list[str]:
+    """Bold **terms** as printed — prose + figure/table Source-text bullets — each through
+    clean_term, first-seen order, NFC-deduped. Digits inside a term are kept
+    (`place value 10` stays)."""
+    out, seen = [], set()
+    for text in emphasis_texts(elems):
+        for m in BOLD_RE.finditer(text):
+            term = clean_term(m.group(1))
+            if term is None:
+                continue
+            key = nfc(term)
+            if key not in seen:
+                seen.add(key)
+                out.append(term)
+    return out
+
+
+def collect_phrases(elems: list[dict], sections: list[dict], ctx: dict) -> list[str]:
+    """`generated.phrases` — the card's mined term bank, in this order:
+
+      a. emphasis terms — bold AND coloured `<span data-source-color>` spans in the emphasis
+         stream (prose + figure/table Source-text bullets), through clean_term, then with
+         standalone digit tokens removed (the result re-checked by clean_term);
+         first-seen order;
+      b. section-title tokens passing enough_letters(…, "section") — Sinhala ≥3 / ASCII ≥4
+         letters — and document frequency ≤ half the grade's lessons (min 1);
+      c. prose-stream tokens (after `clean`) occurring ≥ RECUR_MIN times in this lesson,
+         passing enough_letters — Sinhala ≥2 / ASCII ≥3 — document frequency ≤ max(1, ⌊N/4⌋)
+         — count desc then first-seen, at most PHRASES_RECUR_MAX.
+
+    NFC-deduped, capped at PHRASES_MAX. DF = the count of the grade's lessons whose prose-stream
+    token set contains the word — high-DF words are the conjunctions and lesson-common words a
+    stopword list would drop, and no Sinhala word list may live in this public repo."""
+    df, n_lessons = ctx["df"], ctx["n"]
+    out, seen = [], set()
+
+    def push(term: str) -> None:
+        key = nfc(term)
+        if key not in seen:
+            seen.add(key)
+            out.append(term)
+
+    for text in emphasis_texts(elems):
+        spans = sorted([*BOLD_RE.finditer(text), *COLOR_SPAN_RE.finditer(text)],
+                       key=lambda m: m.start())
+        for m in spans:
+            t = clean_term(m.group(1))
+            if t is None:
+                continue
+            t = clean_term(" ".join(w for w in t.split() if not is_digit_token(w)))
+            if t is not None:
+                push(t)
+
+    cap_title = max(1, int(0.5 * n_lessons))
+    for s in sections:
+        for tok in tokenize(str(s.get("title") or "")):
+            if enough_letters(tok, "section") and df.get(tok, 0) <= cap_title:
+                push(tok)
+
+    cap_recur = max(1, int(0.25 * n_lessons))
+    toks = tokenize(clean(" ".join(prose_texts(elems))))
+    counts = Counter(toks)
+    cands = [t for t in dict.fromkeys(toks)
+             if counts[t] >= RECUR_MIN and enough_letters(t) and df.get(t, 0) <= cap_recur]
+    cands.sort(key=lambda t: -counts[t])   # stable — ties keep first-seen order
+    for t in cands[:PHRASES_RECUR_MAX]:
+        push(t)
+    return out[:PHRASES_MAX]
+
+
+def build_generated(elems: list[dict], ctx: dict) -> dict:
     sections, wexs, exs, acts = [], [], [], []
     figure_kinds: dict[str, int] = {}
     figures = tables = 0
@@ -404,7 +590,8 @@ def build_generated(body: str, elems: list[dict]) -> dict:
 
     return {
         "sections": sections,
-        "vocabulary": collect_vocabulary(body),
+        "vocabulary": collect_vocabulary(elems),
+        "phrases": collect_phrases(elems, sections, ctx),
         "worked_examples": wexs,
         "exercises": exs,
         "activities": acts,
@@ -418,7 +605,20 @@ def build_generated(body: str, elems: list[dict]) -> dict:
 # -------------------------------------------------------------------------------------------------
 # Card build
 # -------------------------------------------------------------------------------------------------
-def build_card(lesson_path: Path) -> dict:
+def build_context(files: dict[int, Path]) -> dict:
+    """Grade context for `generated.phrases` — per-word document frequency (the count of
+    included lessons whose cleaned prose-stream token set contains the word) plus N, the
+    lesson count. Built once per draft/check from EVERY included lesson, so a `--lessons`
+    subset yields byte-identical cards."""
+    df: dict[str, int] = {}
+    for p in files.values():
+        _, body = split_frontmatter(p.read_text(encoding="utf-8"))
+        for tok in set(tokenize(clean(" ".join(prose_texts(parse_elements(body)))))):
+            df[tok] = df.get(tok, 0) + 1
+    return {"df": df, "n": len(files)}
+
+
+def build_card(lesson_path: Path, ctx: dict) -> dict:
     yaml = import_yaml()
     text = lesson_path.read_text(encoding="utf-8")
     fm_text, body = split_frontmatter(text)
@@ -438,7 +638,7 @@ def build_card(lesson_path: Path) -> dict:
         "term": fm.get("term"),
         "periods": fm.get("periods"),
         "source": {"file": f"lessons/{lesson_path.name}", "sha256": sha256_file(lesson_path)},
-        "generated": build_generated(body, elems),
+        "generated": build_generated(elems, ctx),
     }
 
 
@@ -562,10 +762,11 @@ def cmd_draft(args) -> int:
     cards = gd / "scope-cards"
     cards.mkdir(exist_ok=True)
     yaml = import_yaml()
+    ctx = build_context({n: files[n] for n in included})   # every included lesson, not just sel
     written = unchanged = 0
     for nn in sel:
         lp = files[nn]
-        card = build_card(lp)
+        card = build_card(lp, ctx)
         out = cards / f"{lp.stem}.yaml"
         curated = None
         if out.is_file():
@@ -712,7 +913,7 @@ def curated_problems(curated: dict, lesson_text_nfc: str, card_lesson: int,
 
 
 def check_card(cpath: Path, lesson_path: Path, grade: int, lesson_number: int,
-               cards: Path, lesson_text_nfc: str) -> list[str]:
+               cards: Path, lesson_text_nfc: str, ctx: dict) -> list[str]:
     yaml = import_yaml()
     try:
         data = yaml.safe_load(cpath.read_text(encoding="utf-8"))
@@ -725,9 +926,10 @@ def check_card(cpath: Path, lesson_path: Path, grade: int, lesson_number: int,
     if not probs:
         if data["source"]["sha256"] != sha256_file(lesson_path):
             probs.append("source.sha256 is stale — the lesson file changed since the card was drafted")
-        if data["generated"] != build_card(lesson_path)["generated"]:
+        if data["generated"] != build_card(lesson_path, ctx)["generated"]:
             probs.append("generated differs from what draft would emit — re-run draft "
-                         "(generated is tool-owned)")
+                         "(generated is tool-owned; phrases depend on every lesson in the "
+                         "grade)")
         probs += curated_problems(data["curated"], lesson_text_nfc, lesson_number, grade, cards)
     return probs
 
@@ -738,6 +940,7 @@ def cmd_check(args) -> int:
         refuse_ol(corpus)
     gd, included, files = require_grade(corpus, args.grade)
     cards = gd / "scope-cards"
+    ctx = build_context({n: files[n] for n in included})
     n_cards = n_ok = n_fail = 0
     for nn in included:
         lp = files[nn]
@@ -750,7 +953,7 @@ def cmd_check(args) -> int:
             print(f"{nn:02d}-<no card> FAIL: no scope card for lessons/{lp.name}")
             continue
         lesson_text = probe_norm(lp.read_text(encoding="utf-8"))
-        probs = check_card(cpath, lp, args.grade, nn, cards, lesson_text)
+        probs = check_card(cpath, lp, args.grade, nn, cards, lesson_text, ctx)
         if probs:
             n_fail += 1
             print(f"{cpath.name} FAIL: " + " · ".join(probs))
@@ -772,6 +975,7 @@ def cmd_check(args) -> int:
 # brief — the generate step-1 read (W9-D): ~80 lines per card, everything the plan needs at a glance.
 # -------------------------------------------------------------------------------------------------
 BRIEF_VOCAB_MAX = 20
+BRIEF_PHRASES_MAX = 30
 BRIEF_ITEMS_MAX = 6
 
 
@@ -822,6 +1026,13 @@ def brief_card(cpath: Path) -> list[str]:
     more = len(vocab) - BRIEF_VOCAB_MAX
     lines.append(f"vocabulary ({len(vocab)}): {', '.join(vocab[:BRIEF_VOCAB_MAX])}"
                  + (f" … +{more}" if more > 0 else ""))
+    phr = [str(t) for t in (gen.get("phrases") or [])]
+    if phr:
+        lines.append(f"phrases ({len(phr)}): {', '.join(phr[:BRIEF_PHRASES_MAX])}"
+                     + (f" … +{len(phr) - BRIEF_PHRASES_MAX}"
+                        if len(phr) > BRIEF_PHRASES_MAX else ""))
+    else:
+        lines.append("phrases (0): (none — re-draft the card)")
     lines.append("worked examples:")
     for w in gen.get("worked_examples") or []:
         lines.append(f"  {w.get('heading')} — {clip(clean(w.get('excerpt') or ''), 80)}")

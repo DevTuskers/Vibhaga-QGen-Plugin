@@ -27,6 +27,8 @@ syllabus_refs:
 
 Prose with **gamma term** and **shared term** again.
 
+Paired drills: paired rows, paired cells and paired marks.
+
 <a id="fx-02-p001-u004"></a>
 
 #### Table — A small grid
