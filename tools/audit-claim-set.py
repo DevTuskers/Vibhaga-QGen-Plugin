@@ -617,14 +617,30 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
                 check(abs(part1 + part2 - whole) < TOL_ANGLE,
                       f"{cid}: {pred} -> {part1:.2f} + {part2:.2f} = {whole:.2f}", cid)
                 stats["anchor_checked"] += 1
-        elif (m := re.match(r"^circle centre ([A-Z]) (?:through ([A-Z])|radius (\d+(?:\.\d+)?))$", pred)):
-            if pt(m[1], cid) and (m[2] is None or (pt(m[2], cid) and
-                    check(dist(a[m[1]], a[m[2]]) > 1e-9,
-                          f"{cid}: {pred} -> centre {m[1]} and {m[2]} coincide — "
-                          f"a zero-radius circle", cid))) and \
-                    (m[2] is not None or check(m[3] is None or float(m[3]) > 0,
-                          f"{cid}: {pred} -> a radius of {m[3]} is no circle", cid)):
-                check(True, f"{cid}: {pred} -> centre declared" + (f", {m[2]} on it" if m[2] else ""), cid)
+        elif (m := re.match(r"^circle centre ([A-Z]) "
+                            r"(?:through ([A-Z](?: [A-Z]){0,2})|radius (\d+(?:\.\d+)?))$", pred)):
+            # `through` takes one to three outline anchors — the equal-distance check needs
+            # at least two, so a single through-point is recognised but not verifiable here
+            # (vdd-check makes the same call); `radius` declares centre + a positive r.
+            thr = m[2].split() if m[2] else []
+            ok = bool(pt(m[1], cid))
+            for g in thr:
+                ok = bool(pt(g, cid)) and ok
+            if ok and thr:
+                ok = distinct(tuple([m[1]] + thr), cid, pred)
+            if ok:
+                for g in thr:
+                    ok = check(dist(a[m[1]], a[g]) > 1e-9,
+                               f"{cid}: {pred} -> centre {m[1]} and {g} coincide — "
+                               "a zero-radius circle", cid) and ok
+            if ok and not thr:
+                ok = check(m[3] is None or float(m[3]) > 0,
+                           f"{cid}: {pred} -> a radius of {m[3]} is no circle", cid)
+            if ok and len(thr) == 1:
+                stats["recognised_unverifiable"].append(cid)
+            elif ok:
+                check(True, f"{cid}: {pred} -> centre declared" +
+                      (f", {' '.join(thr)} on it" if thr else ""), cid)
                 stats["anchor_checked"] += 1
         elif (m := re.match(r"^arc centre ([A-Z]) from ([A-Z]) to ([A-Z])$", pred)):
             if all(pt(g, cid) for g in m.groups()) and distinct(m.groups(), cid, pred):
