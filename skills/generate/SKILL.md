@@ -12,7 +12,8 @@ argument-hint: "[grade] [lesson number or name] [how many questions]"
 >
 > Runs so far (ids are kept in the private plan logbook, never here): 2026-09-27 and 2026-09-29 through the
 > source skill; 2026-10-02 the W6 red-team batch (4 questions, planted errors — the critic caught both);
-> 2026-10-02 W8 dogfood (G6, 10 questions, 8 template figures, 2 critic rounds → SATISFIED).
+> 2026-10-02 W8 dogfood (G6, 10 questions, 8 template figures, 2 critic rounds → SATISFIED);
+> 2026-10-03 first run on the W9 tools (G6, 10 questions, 8 figures — 7 hand-drawn through finish(), 1 template; 2 critic rounds → SATISFIED).
 > Distilled lessons are folded into the steps below: a lesson that teaches angle types *without degrees*
 > demands comparison-with-a-right-angle reasoning; measure label↔canvas-edge clearance, not only
 > label↔stroke; a constructed claim set takes its ratios from the **stem** (T-QG-2); the critic is
@@ -174,10 +175,13 @@ same two checkout paths in the critic's spawn prompt.
    first failing stage with its last ~15 lines, prints one `Q<n> audit ok · vdd-check ok · vc PASS WxH` line per
    figure, and writes `$A/gates.json`. (Drop `--card` and the pre-critic lint is skipped — say so.) What it runs:
    ```
-   python3 tools/vdd_templates.py build $A/specs/figures.json --out $A/figures/
-   python3 tools/audit-claim-set.py $A/figures/<id>-claims.txt                    # each: exit 0
-   node tools/vdd-check.mjs $A/figures/<id>.json --claims $A/figures/<id>-claims.txt --medium <medium>  # each: 0 findings
+   python3 tools/vdd_templates.py build $A/specs/figures.json --out $A/figures/   # skipped when the file is absent/[]
+   python3 tools/audit-claim-set.py <id>-claims.txt                    # each: exit 0 — EVERY figure:
+   node tools/vdd-check.mjs <id>.json --claims <id>-claims.txt --medium <medium>  # specs ∪ content.yaml's
+                                                                   # figures: files (hand-drawn ones too);
+                                                                   # a missing <id>-claims.txt fails here
    python3 tools/build-staged.py $A/content.yaml --out $A/staged.json --ids-out $A/ids.json
+   node tools/markdown-gate.mjs --fields $A/fields.json              # every text field; any BLOCKED fails (T-QG-7)
    node tools/visual-check.mjs $A/staged.json --claims-dir $A/figures --out wt/<topic>/vc   # mode 1, incl. contact sheet
    python3 tools/precritic-lint.py $A --card <key>=<NN> --grade <g>                          # when --card was passed
    ```
@@ -201,8 +205,10 @@ same two checkout paths in the critic's spawn prompt.
    warning or write why it stays.
 9. **Save and see it:** `python3 $T doc put <sid> --staged $A/staged.json --ledger $A/ledger.json`, then
    `doc get <sid> --out $A/server.json` and confirm it is the doc you meant. Then
-   `node tools/visual-check.mjs --session <sid> --out wt/<topic>/vc-session` (headed; signs in, shoots every question's
-   student preview light + dark, signs out, runs Q3) → exit 0, no `CLIPPED`.
+   `node tools/visual-check.mjs --session <sid> --claims-dir $A/figures --out wt/<topic>/vc-session` (headed; signs in, shoots every question's
+   student preview light + dark, signs out, runs Q3) → exit 0, no `CLIPPED`. `--claims-dir` matters: it
+   fetches the staged doc in-page and assesses each rendered figure against ITS claim set —
+   `allow:`/`departures:` apply in the live preview exactly as in mode 1.
 10. **Publish, flagged:**
     `python3 $T publish <sid> --staged $A/staged.json --scope <same as step 7> --ids-file $A/ids.json --ledger $A/ledger.json --dry-run --accept-signatures 0`
     — `signatures_at_risk` is 0 on a new session. Then the same without `--dry-run` — keep
@@ -277,7 +283,7 @@ same two checkout paths in the critic's spawn prompt.
 - [ ] 2 dedup: existing.json rows = __ ; stems compared: __
 - [ ] 3 plan: N lines, rubric checked, rule 3 checked
 - [ ] 4 content.yaml + second-method results per leaf in notes.md
-- [ ] 5 run-gates build exit 0 — gates.json: audit + vdd-check per figure, staged.json, ids.json = N ids, mode 1, lint
+- [ ] 5 run-gates build exit 0 — gates.json: audit + vdd-check per figure (hand-drawn too), staged.json, ids.json = N ids, markdown-gate 0 BLOCKED, mode 1, lint
 - [ ] 6 contact-light-375.png logged — one line per figure (__ of __)
 - [ ] 7 session id: ________ (in ledger.json AND here — before any further write, T9)
 - [ ] 8–11 run-gates ship exit 0: validate clean · doc get matches staged · --session no CLIPPED · signatures_at_risk 0

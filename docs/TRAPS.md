@@ -35,6 +35,7 @@ a stale cache, an unrecorded id, a flag that lives on the row but not the doc.
 | T-QG-4 | a drift check whose READ side knows a narrower shape than the write path reports a clean publish as failed |
 | T-QG-5 | a width-invariant rule measured per width can straddle its own threshold — a label row says `ok:false` while the figure verdict says PASS |
 | T-QG-6 | a reader role with SELECT on `auth.*` sees ZERO rows under policy-less RLS — a revocation count reads "revoked" while sessions are live |
+| T-QG-7 | a gate that is never wired into the chain cannot fail it — a `$$…$$` on one line passed build, validate, publish and both visual checks; only the critic's standalone markdown-gate saw it |
 
 ---
 ## T4 — A `204` from `/auth/v1/logout` is not proof of revocation
@@ -810,3 +811,19 @@ counts-only SECURITY DEFINER function owned by postgres (one-time setup: generat
 reader gets USAGE on schema `qgen` + EXECUTE, never a grant on `auth.*` — and never BYPASSRLS.
 
 *Source: this plugin — W9, 2026-10-03.*
+
+## T-QG-7 — The gate chain that never ran the markdown gate
+
+**Looked true:** build green, validate clean, `--session` previews clean, published — the doc
+was fine.
+**Actually:** a display-math run written `$$…$$` on ONE line mid-paragraph round-trips to
+`$…$` under the renderer's parser and flags `displayMathInline` — and NONE of build, validate,
+publish, or either visual-check ever ran `markdown-gate.mjs`. Only the critic's standalone
+`--fields` invocation caught it, one round in.
+**The check:** run-gates `build` now runs the gate itself — it writes `<run>/fields.json` (the
+same field set `run-gate.sh`'s `fields_py` produces: stems + sinhala, part texts, every
+approach/final) and any `BLOCKED` field stops the chain before publish ever sees it. Shape that
+passes: `$$` and `$$` on their OWN lines around the math. A gate that lives only in the critic's
+hands is a story for TRAPS, not a safeguard.
+
+*Source: this plugin — W9 run, 2026-10-03.*

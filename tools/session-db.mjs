@@ -1,7 +1,8 @@
 // Offline-testable helpers for `visual-check.mjs` — separated so the unit tests can import them
-// without touching the Admin checkout, esbuild, or a browser: q3Block/pgEnvFromUrl feed
-// `--session`'s revocation proof; claimsFor/pushFigure/claimsForWarn carry the claim-set lookup
-// and its dedup + missing-claims decisions. No secrets: the URL is only ever parsed into PG*
+// without touching the Admin checkout, esbuild, or a browser: q3Block/pgEnvFromUrl are the
+// reference implementations the sql-proof.py / playground-publish.py post-logout Q3 proof ports;
+// claimsFor/pushFigure/claimsForWarn carry the claim-set lookup and its dedup + missing-claims
+// decisions (modes 1 AND --session). No secrets: the URL is only ever parsed into PG*
 // environment variables for the psql child process, never placed on its command line (argv leaks
 // into `ps`) and never printed.
 import fs from "node:fs";

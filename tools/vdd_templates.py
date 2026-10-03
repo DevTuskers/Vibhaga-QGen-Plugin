@@ -921,6 +921,7 @@ def build_shaded_grid(*, figure_id, stem, ask=None, title=None, description=None
         "full cells plus half cells over two — the shaded area in squares")
     add("none tickMark parallelMark angleMark arrow dashed", "inferred", "a filled grid only")
     segs = [f"{a}{b}" for a, b in zip(gnames, gnames[1:] + gnames[:1])]
+    elements_n = len(elements)
     return finish(kind="shaded_grid", figure_id=figure_id, stem=stem, elements=elements,
                   anchors=anchors, points=gnames, segments=segs, claims=claims, ask=ask,
                   title=title or f"A {cols} by {rows} rectangle of squares, some shaded",
@@ -928,7 +929,11 @@ def build_shaded_grid(*, figure_id, stem, ask=None, title=None, description=None
                       f"A rectangle of {cols * rows} equal squares ({cols} by {rows}); "
                       f"{len(full)} fully shaded and {len(half)} cut by a diagonal with one "
                       f"half shaded."),
-                  scale="to scale — every cell is one unit square", medium=medium)
+                  scale="to scale — every cell is one unit square",
+                  budget=elements_n if elements_n > 32 else None,
+                  departures=([f"{elements_n} elements — one rect per shaded cell plus one line "
+                               "per interior grid line is the honest drawing (S6b §3.4)"]
+                              if elements_n > 32 else None), medium=medium)
 
 
 # ────────────────────────────────────────────────────────────────────────────────

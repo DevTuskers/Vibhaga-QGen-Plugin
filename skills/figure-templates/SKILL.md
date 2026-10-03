@@ -31,7 +31,34 @@ geometry is computed from those numbers, and the claim set is emitted by the sam
   `TemplateError` (`length=1.5 is not a number the stem states`). Fix the spec — pass the
   stem's value — or drop the figure. Do not retype the drawn number into a spec.
 
-## Catalogue
+## Hand-drawing through `finish()`
+
+When no template fits, still build through `vdd_templates.finish()` — never emit the three
+files by hand. The run's `handdraw.py` builds the element list with `vdd_cookbook.py`
+helpers and calls
+
+```python
+vt.finish(kind="<nearest kind>", figure_id="Q5", stem=stem, elements=el, anchors=anchors,
+          points=[...], segments=[...], claims=claims, ask=ask,
+          title=…, description=…, scale="…", medium="sinhala")
+```
+
+so the canvas fit, the label-clearance pre-flight and the claim-set emission are the
+templates' own — `finish()` writes `<id>.json`, `<id>.anchors.json`, `<id>-claims.txt` in
+one step and `run-gates build` audits the result exactly like a template figure (a missing
+`<id>-claims.txt` fails the stage). Hard-won rules:
+
+- a `label` claim's target is one token: give every label a **distinct** token per glyph
+  (`label "3502" names card_a1`) — reusing a target (`names ringA` on six numerals) is one
+  glyph-one-target and the audit counts it;
+- `circle centre X radius r` is the checkable circle form — `centre X through P` cannot be
+  evaluated and reads as an advisory forever;
+- dots are filled `circle` elements + separate `text` labels;
+- a numeral floating inside a region, far from any paint, fails visual-check's `target`
+  rule (mode 1 and `--session` alike — `allow:` can declare it, but the honest figure puts
+  the numeral in a thin stroke-only `rect` "card" so the paint it belongs to is near);
+- `budget:` + `departures:` (see `finish()` kwargs) is the honest escape when an element
+  count legitimately tops 32 — never trim elements to squeeze under it.
 
 | template | you pass | stem-checked | the claim set emits | limits |
 |---|---|---|---|---|

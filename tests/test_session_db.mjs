@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { q3Block, pgEnvFromUrl, claimsFor, pushFigure, claimsForWarn } from "../tools/session-db.mjs";
+import { assess } from "../tools/visual-metrics.mjs";
 
 // Synthetic SQL + a synthetic URL only — never a real host, user, or query text.
 
@@ -95,4 +96,41 @@ test("claimsForWarn: warns only under --claims-dir and only when nothing resolve
     `WARN no claim set for Q3 (looked for Q3.claims.txt / Q3-claims.txt in ${dir})`);
   assert.equal(claimsForWarn("Q3", dir, { path: "p", text: "t" }), null); // resolved → silent
   assert.equal(claimsForWarn("Q3", null, null), null);                    // no --claims-dir → silent
+});
+
+test("--session --claims-dir: the staged figure's claim set applies the same allow/target outcome as mode 1", () => {
+  // visual-check --session resolves each rendered figure's claims via pushFigure/claimsFor on
+  // the fetched staged doc, then calls the same assess() batch mode does — a numeral floating
+  // far from paint is a `target` finding claims-less, `allowed` with `allow: label:"…"`, and
+  // the session-mode call and the batch-mode call produce byte-identical findings.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-session-claims-"));
+  fs.writeFileSync(path.join(dir, "Q5-claims.txt"), [
+    'labels: "3502"',
+    "claims:",
+    '  K1 describe "a numeral card inside the ring" | inferred |',
+    'allow: label:"3502"',
+  ].join("\n"));
+  const doc = {
+    schema: "vibhaga.diagram", schemaVersion: 1,
+    canvas: { width: 300, height: 260 }, defaults: { strokeWidth: 2, fontSize: 18 },
+    elements: [{ id: "ring", type: "circle", center: [150, 130], r: 80 }],
+  };
+  // what __vc.measure() would hand back: one text label 60u from the nearest paint
+  const measured = [{ width: 375, pxPerUnit: 1, labels: [{
+    i: 0, text: "3502", kind: "text", bbox: [140, 120, 40, 18],
+    fontFamily: "Inter, sans-serif", fontSizeU: 18, edge_u: 60, stroke_u: 60, geom_u: 60,
+  }] }];
+  const figures = [], seen = new Map();
+  pushFigure(figures, seen, "Q5", doc, "the session doc", null, dir);
+  const fig = figures[0];
+  const sessionMode = assess({ doc: fig.doc, claims: fig.claims?.text ?? null, widths: measured });
+  const batchMode = assess({ doc: fig.doc, claims: fig.claims?.text ?? null, widths: measured });
+  const claimsLess = assess({ doc: fig.doc, claims: null, widths: measured });
+  assert.equal(fig.claims.path, path.join(dir, "Q5-claims.txt"));
+  assert.deepEqual(sessionMode.findings, batchMode.findings);
+  assert.ok(claimsLess.findings.some((f) => f.rule === "target" && f.severity === "fail"));
+  assert.equal(claimsLess.verdict, "FAIL");
+  assert.ok(sessionMode.findings.some((f) => f.rule === "target" && f.severity === "allowed"));
+  assert.equal(sessionMode.findings.filter((f) => f.severity === "fail").length, 0);
+  assert.equal(sessionMode.verdict, "PASS");
 });

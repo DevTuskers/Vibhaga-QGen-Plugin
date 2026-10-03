@@ -11,18 +11,23 @@
 This tool ONLY chains the existing tools as subprocesses with their own flags — nothing is
 forked or re-implemented and no gate is lowered:
 
-  build:  1. vdd_templates.py build specs/figures.json → figures/
-          2. per figure id: audit-claim-set.py <id>-claims.txt · vdd-check.mjs <id>.json
-             --claims … --medium M
+  build:  1. vdd_templates.py build specs/figures.json → figures/ (skipped when the file is
+             absent or [] — every figure is then hand-drawn)
+          2. per figure id — ids from specs/figures.json ∪ the basenames of every file in
+             content.yaml's `figures:` map, so HAND-DRAWN figures are gated exactly like
+             template-built ones: audit-claim-set.py <id>-claims.txt · vdd-check.mjs <id>.json
+             --claims … --medium M (a figure file or claim set missing fails the stage)
           3. build-staged.py content.yaml --out staged.json --ids-out ids.json
-          4. visual-check.mjs staged.json --claims-dir figures --out DIR (default ../vc)
-          5. precritic-lint.py (only when --card is given — else a skipped line)
+          4. markdown-gate.mjs --fields <run>/fields.json — the fields list is the same set
+             run-gate.sh's fields_py produces; any BLOCKED field fails the stage
+          5. visual-check.mjs staged.json --claims-dir figures --out DIR (default ../vc)
+          6. precritic-lint.py (only when --card is given — else a skipped line)
   ship:   1. validate · 2. doc put --ledger · 3. doc get → compare questions against
              staged.json by question_id key-by-key (server-added `published`/`published_at`
              and the renormalised `sort_order` ignored; a server-only id is a WARN, not a fail)
-          4. visual-check --session (only with --session-check) · 5. publish --dry-run
-             --accept-signatures N · 6. publish --accept-signatures N ·
-          7. sql-proof.py q2 --expected (default: len(ids.json))
+          4. visual-check --session --claims-dir figures (only with --session-check) ·
+             5. publish --dry-run --accept-signatures N · 6. publish --accept-signatures N ·
+             7. sql-proof.py q2 --expected (default: len(ids.json))
 
 Each chain STOPS at the first failing stage, prints that stage's exit code plus its last
 ~15 output lines, and propagates the exit code (so a NOT-ok Q3 inside publish exits 5
@@ -44,6 +49,8 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+
+import yaml
 
 TOOLS = Path(__file__).resolve().parent
 PROG = "run-gates"
@@ -99,6 +106,88 @@ def quote(out: str, *patterns: str, log=print) -> tuple[str, ...]:
     return tuple(shown)
 
 
+def _load_content(path: Path) -> dict:
+    """content.yaml / .yml / .json — same file build-staged.py reads."""
+    text = path.read_text(encoding="utf-8")
+    if path.suffix == ".json":
+        return json.loads(text)
+    return yaml.safe_load(text) or {}
+
+
+def _fig_sort(fid: str):
+    m = re.match(r"^([A-Za-z]*?)(\d+)", str(fid))
+    return (m.group(1), int(m.group(2)), str(fid)) if m else (str(fid), 0, str(fid))
+
+
+def figure_ids(run: Path, specs_path: Path, content: dict) -> tuple[list, list[tuple]]:
+    """The two figure sources of a run dir, as (spec_ids, hand_figures).
+
+    spec_ids: figure_ids from specs/figures.json (via precritic-lint's shared normaliser) —
+    template-built, <run>/figures/<id>.json emitted by stage 1.
+    hand_figures: [(fid, fig_path, claims_path)] from content.yaml's `figures:` map — fid is the
+    basename minus .json (the staged id convention: `figures/Q5.json` → Q5, which is also the
+    name vdd_templates.finish() uses for its claim set), claims beside the figure file.
+    """
+    spec_ids: list[str] = []
+    if specs_path.is_file():
+        specs = pl.figure_specs(json.loads(specs_path.read_text(encoding="utf-8")))
+        spec_ids = [s.get("figure_id") for s in specs
+                    if isinstance(s, dict) and s.get("figure_id")]
+        if specs and not spec_ids:
+            die("specs/figures.json is non-empty but yielded no figure ids — "
+                "nothing would be audited or vdd-checked")
+    hand = []
+    for key, val in ((content.get("figures") or {}).items()):
+        rel = val if isinstance(val, str) else (val or {}).get("file")
+        if not isinstance(rel, str) or not rel:
+            die(f"content.yaml figures:{key}: not a figure path (want 'figures/<id>.json')")
+        fpath = run / rel
+        fid = Path(rel).stem
+        hand.append((fid, fpath, fpath.with_name(f"{fid}-claims.txt")))
+    return spec_ids, hand
+
+
+def staged_fields(staged: dict) -> list[dict]:
+    """[{id, field, text}] over a staged doc — the same field set run-gate.sh's fields_py
+    produces for the markdown gate: question_text(+_sinhala), every answer's
+    approach/final_answer_latex (the `answers[]` list AND the singular `sub_answer`), and
+    per-part text(+text_sinhala), recursing sub_questions (sq/sa at depth 1, sq2/sa2 below)."""
+    out: list[dict] = []
+
+    def add(i, f, t):
+        if isinstance(t, str) and t.strip():
+            out.append({"id": i, "field": f, "text": t})
+
+    def answers(node):
+        yield from node.get("answers") or []
+        sa = node.get("sub_answer")
+        if isinstance(sa, dict):
+            yield sa
+
+    for q in staged.get("questions") or []:
+        qn = f"Q{q.get('question_number')}"
+        add(qn, "question_text", q.get("question_text"))
+        add(qn, "question_text_sinhala", q.get("question_text_sinhala"))
+        for a in answers(q):
+            aid = a.get("answer_id") or a.get("sub_answer_id")
+            add(qn, f"a:{aid}:approach", a.get("approach"))
+            add(qn, f"a:{aid}:final", a.get("final_answer_latex"))
+
+        def parts(lst, path, depth):
+            sq, sa_ = ("sq", "sa") if depth == 1 else ("sq2", "sa2")
+            for p in lst or []:
+                pid = f"{path}/{p.get('label')}"
+                add(pid, f"{sq}:{p.get('sub_question_id')}:text", p.get("text"))
+                add(pid, f"{sq}:{p.get('sub_question_id')}:text_sinhala", p.get("text_sinhala"))
+                for a in answers(p):
+                    aid = a.get("sub_answer_id") or a.get("answer_id")
+                    add(pid, f"{sa_}:{aid}:approach", a.get("approach"))
+                    add(pid, f"{sa_}:{aid}:final", a.get("final_answer_latex"))
+                parts(p.get("sub_questions"), pid, depth + 1)
+        parts(q.get("sub_questions"), qn, 1)
+    return out
+
+
 # ----------------------------------------------------------------------------- build
 def cmd_build(args, runner=run_cmd, log=print) -> int:
     run = Path(args.run)
@@ -111,28 +200,43 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     content = next((run / n for n in ("content.yaml", "content.yml", "content.json")
                     if (run / n).is_file()), None)
     staged, ids, ledger = run / "staged.json", run / "ids.json", run / "ledger.json"
-    if not specs_path.is_file():
-        die(f"no specs/figures.json in {run}")
     if content is None:
         die(f"no content.yaml in {run}")
-    specs = pl.figure_specs(json.loads(specs_path.read_text(encoding="utf-8")))
-    fig_ids = [s.get("figure_id") for s in specs if isinstance(s, dict) and s.get("figure_id")]
-    if specs and not fig_ids:
-        die("specs/figures.json is non-empty but yielded no figure ids — "
-            "nothing would be audited or vdd-checked")
+    spec_ids, hand = figure_ids(run, specs_path, _load_content(content))
+    # the audit/vdd-check set = specs ∪ content.yaml figures (hand-drawn figures are gated
+    # exactly like template-built ones), each id once, sorted for a stable report
+    fig_ids = sorted(set(spec_ids) | {fid for fid, _, _ in hand}, key=_fig_sort)
+    if not fig_ids:
+        die("no figures to gate — specs/figures.json is absent/empty and content.yaml "
+            "declares no figures: nothing would be audited or vdd-checked")
+    hand_by_id = {fid: (fig, claims) for fid, fig, claims in hand}
     gates: dict = {}
     per_fig: dict[str, dict] = {f: {} for f in fig_ids}
 
-    # 1. template build
-    rc, out = runner([sys.executable, str(TOOLS / "vdd_templates.py"), "build",
-                      str(specs_path), "--out", str(figs_dir)])
-    gates["templates"] = rc
-    if rc:
-        return fail(gates, run, "templates", rc, out)
+    # 1. template build — only when there are specs (an all-hand-drawn run has none)
+    if specs_path.is_file() and spec_ids:
+        rc, out = runner([sys.executable, str(TOOLS / "vdd_templates.py"), "build",
+                          str(specs_path), "--out", str(figs_dir)])
+        gates["templates"] = rc
+        if rc:
+            return fail(gates, run, "templates", rc, out)
+    else:
+        gates["templates"] = 0
+        log("templates: skipped — no specs/figures.json (or it is empty); "
+            "every figure is hand-drawn")
 
-    # 2. per-figure audit + vdd-check
+    # 2. per-figure audit + vdd-check — template-built AND hand-drawn alike; a figure file or
+    #    its claim set missing fails the stage (hand figures get theirs from
+    #    vdd_templates.finish(), which writes <id>-claims.txt beside the .json)
     for fid in fig_ids:
-        claims, fig = figs_dir / f"{fid}-claims.txt", figs_dir / f"{fid}.json"
+        fig, claims = hand_by_id.get(fid, (figs_dir / f"{fid}.json",
+                                           figs_dir / f"{fid}-claims.txt"))
+        missing = [str(p) for p in (fig, claims) if not p.is_file()]
+        if missing:
+            gates[f"audit:{fid}"] = 1
+            return fail(gates, run, f"audit:{fid}", 1,
+                        f"{fid}: missing {', '.join(missing)} — every figure needs its .json "
+                        f"and <id>-claims.txt before the gates run")
         rc, out = runner([sys.executable, str(TOOLS / "audit-claim-set.py"), str(claims)])
         gates[f"audit:{fid}"] = rc
         per_fig[fid]["audit"] = rc
@@ -152,7 +256,22 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     if rc:
         return fail(gates, run, "build-staged", rc, out)
 
-    # 4. visual-check mode 1
+    # 4. markdown gate over every text field of the staged doc — the fields list is written
+    #    to <run>/fields.json so the same gate can be re-run standalone
+    fields = staged_fields(json.loads(staged.read_text(encoding="utf-8")))
+    fields_path = run / "fields.json"
+    fields_path.write_text(json.dumps(fields, ensure_ascii=False, indent=1) + "\n",
+                           encoding="utf-8")
+    rc, out = runner([str(NODE_BIN), str(TOOLS / "markdown-gate.mjs"),
+                      "--fields", str(fields_path)])
+    gates["markdown-gate"] = rc
+    if rc:
+        shown = quote(out, r"\[block\]|BLOCKED", log=log)
+        return fail(gates, run, "markdown-gate", rc, out, shown)
+    m = re.search(r"\d+ fields · \d+ BLOCKED", out)
+    log(f"  markdown-gate: {m.group(0) if m else f'{len(fields)} fields · 0 BLOCKED'}")
+
+    # 5. visual-check mode 1
     vc_out = Path(args.vc_out) if args.vc_out else run.parent / "vc"
     rc, vc_out_text = runner([str(NODE_BIN), str(TOOLS / "visual-check.mjs"), str(staged),
                               "--claims-dir", str(figs_dir), "--out", str(vc_out)])
@@ -278,13 +397,14 @@ def cmd_ship(args, runner=run_cmd, log=print) -> int:
                     "server doc differs from staged.json (matched by question_id, ignoring "
                     "published/published_at/sort_order):\n" + "\n".join(diffs))
 
-    # 4. optional --session visual check
+    # 4. optional --session visual check — the run's claim sets go with it so `allow:` and
+    #    departures apply exactly as in mode 1
     if args.session_check:
         vc_out = args.vc_session_out or str(run.parent / "vc-session")
         rc, out = runner([str(NODE_BIN), str(TOOLS / "visual-check.mjs"), "--session", sid,
-                          "--out", vc_out])
+                          "--claims-dir", str(run / "figures"), "--out", vc_out])
         gates["visual-check-session"] = rc
-        shown = quote(out, r"CLIPPED|revocation:", log=log)
+        shown = quote(out, r"CLIPPED|revocation:|q3:", log=log)
         if rc:
             return fail(gates, run, "visual-check-session", rc, out, shown)
     else:
@@ -323,7 +443,7 @@ def main(argv: list[str] | None = None) -> int:
                                  description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("build", help="the offline chain: templates → audit+vdd-check → "
-                       "build-staged → visual-check → precritic-lint")
+                       "build-staged → markdown-gate → visual-check → precritic-lint")
     b.add_argument("run")
     b.add_argument("--medium", required=True, choices=["sinhala", "english", "tamil"])
     b.add_argument("--vc-out", help="visual-check output dir (default: <run>/../vc)")
