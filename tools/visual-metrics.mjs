@@ -522,7 +522,8 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
   // ── aspect — a figure much taller than wide renders taller than a 375 px phone screen ────────
   // Same bound as the build-time MAX_ASPECT in vdd_templates.py and vdd-check's canvas rule; the
   // render preserves the canvas ratio, so measure it wherever the plate was measured (prefer the
-  // 375 record — the phone-width plate — else the widest, else the doc's canvas).
+  // 375 record — the phone-width plate — else the least-quantised plate (max pxPerUnit), else the
+  // doc's canvas).
   let aspect = null;
   {
     const w375 =

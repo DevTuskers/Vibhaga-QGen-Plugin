@@ -523,8 +523,14 @@ async function runBatch(figures, { out, widths, themes, headed }) {
     }
     if (items.length) {
       const sheetPath = path.join(out, "contact-light-375.png");
-      const page = await browser.newPage();
+      // Start tiny: body.scrollWidth floors at the viewport, so a small initial viewport lets the
+      // 2-tile grid overflow and reveals its real width — the fullPage shot then has no 1280×720
+      // floor of whitespace under a small batch.
+      const page = await browser.newPage({ viewport: { width: 100, height: 100 } });
       await page.setContent(contactSheetHtml(items));
+      await page.waitForFunction(() => [...document.images].every((i) => i.complete));
+      const w = await page.evaluate(() => document.body.scrollWidth);
+      await page.setViewportSize({ width: w, height: 100 });
       await page.screenshot({ path: sheetPath, fullPage: true });
       await page.close();
       const b = fs.readFileSync(sheetPath);

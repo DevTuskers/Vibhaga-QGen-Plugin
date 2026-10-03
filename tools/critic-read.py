@@ -275,18 +275,34 @@ def question_artefacts(q: dict) -> tuple[list[dict], list[str], int]:
 
 
 # -----------------------------------------------------------------------------------------------
-def load_previous(spec: str) -> dict[str, str]:
-    """`--previous` — a report dir holding hashes.txt, or a `Q<n> <sha256>` file directly."""
+HASHES_HEADER = "# critic-read hashes v1"   # the provenance stamp --previous insists on
+
+
+def load_previous(spec: str, batch_id: str) -> dict[str, str]:
+    """`--previous` — a report dir holding hashes.txt, or a critic-read `hashes --out` file.
+    The file must open with `# critic-read hashes v1 sid=<uuid>` naming THIS batch: carrying by
+    hash is fail-safe only when the file really is the previous round's own read — a forged or
+    hand-written `Q<n> <sha>` file, or a different session's, is refused."""
     p = Path(spec)
     f = p / "hashes.txt" if p.is_dir() else p
     if not f.is_file():
         die(f"--previous {spec}: {'no hashes.txt in that directory' if p.is_dir() else 'not a file'}")
+    lines = f.read_text(encoding="utf-8").splitlines()
+    m = re.match(rf"^{re.escape(HASHES_HEADER)}\s+sid=(\S+)\s*$", lines[0].strip() if lines else "")
+    if not m:
+        die(f"--previous {f}: not a critic-read hashes file — the first line must be "
+            f"`{HASHES_HEADER} sid=<uuid>`")
+    if m.group(1) != batch_id:
+        die(f"--previous {f}: sid {m.group(1)} ≠ this batch {batch_id}")
     out: dict[str, str] = {}
-    for line in f.read_text(encoding="utf-8").splitlines():
-        m = re.match(r"^(Q\d+)\s+([0-9a-f]{64})\s*$", line.strip())
-        if not m:
+    for line in lines[1:]:
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        mm = re.match(r"^(Q\d+)\s+([0-9a-f]{64})\s*$", s)
+        if not mm:
             die(f"--previous {f}: bad line {line!r} — want `Q<n> <sha256>`")
-        out[m.group(1)] = m.group(2)
+        out[mm.group(1)] = mm.group(2)
     return out
 
 
@@ -312,7 +328,7 @@ def cmd_hashes(argv: list[str]) -> int:
     pg = pg_env_from_url(resolve_db_url(a.db_env))
     lines = run_block(pg, a.batch_id, block, "q4b")
     if not lines:
-        die(f"session {a.batch_id} has no questions — q4b returned 0 rows", 1)
+        die(f"batch {a.batch_id} has no questions — q4b returned 0 rows", 1)
     out = []
     for i, line in enumerate(lines):
         try:
@@ -320,9 +336,9 @@ def cmd_hashes(argv: list[str]) -> int:
         except json.JSONDecodeError as e:
             die(f"q4b line {i + 1} is not JSON: {e}", 1)
         out.append(f"Q{q.get('question_number')} {hashlib.sha256(line.encode('utf-8')).hexdigest()}")
-    text = "\n".join(out)
-    print(text)
-    if a.out:
+    text = f"{HASHES_HEADER} sid={a.batch_id}\n" + "\n".join(out)
+    print(text)                                 # a comment line — ignorable, but a redirected
+    if a.out:                                   # stdout is then a valid --previous file
         p = Path(a.out)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text + "\n", encoding="utf-8")
@@ -405,7 +421,7 @@ def main(argv: list[str] | None = None) -> int:
 
     q4b_lines = run_block(pg, a.batch_id, blocks["q4b"], "q4b")
     if not q4b_lines:
-        die(f"session {a.batch_id} has no questions — q4b returned 0 rows", 1)
+        die(f"batch {a.batch_id} has no questions — q4b returned 0 rows", 1)
     (out_dir / "q4b.jsonl").write_text("\n".join(q4b_lines) + "\n", encoding="utf-8")
     questions = []
     for i, line in enumerate(q4b_lines):
@@ -433,7 +449,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.previous:
         # --previous: fields/figures cover only changed-or-new questions; the unchanged are
         # carried by hash into carried.txt — the critic re-derives only what moved (§6).
-        prev = load_previous(a.previous)
+        prev = load_previous(a.previous, a.batch_id)
         cur = dict(h.split(" ", 1) for h in hashes)
         changed = sorted((q for q in cur if prev.get(q) != cur[q]), key=qnum)
         carried = sorted((q for q in cur if prev.get(q) == cur[q]), key=qnum)
@@ -454,7 +470,8 @@ def main(argv: list[str] | None = None) -> int:
 
     (out_dir / "fields.json").write_text(json.dumps(fields, ensure_ascii=False, indent=1) + "\n",
                                          encoding="utf-8")
-    (out_dir / "hashes.txt").write_text("\n".join(hashes) + "\n", encoding="utf-8")
+    (out_dir / "hashes.txt").write_text(
+        f"{HASHES_HEADER} sid={a.batch_id}\n" + "\n".join(hashes) + "\n", encoding="utf-8")
     (out_dir / "figures.txt").write_text(("\n".join(figs) + "\n") if figs else "", encoding="utf-8")
 
     print(f"{PROG}: {len(questions)} question(s) · {parts_total} part(s) · {len(figs)} figure(s) · "

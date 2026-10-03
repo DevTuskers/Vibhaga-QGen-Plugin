@@ -189,10 +189,29 @@ class EndToEnd(unittest.TestCase):
         rc, _, err = self.run_main("q3", "--actor", ACTOR,
                                    extra={"FAKE_PSQL_EXIT": "2", "FAKE_PSQL_ERR": canned})
         self.assertEqual(rc, 1)
-        self.assertIn('FATAL:  password authentication failed for user "proof"', err)
+        self.assertIn('FATAL:  password authentication failed for user "<user>"', err)
         self.assertIn("LINE 1: SELECT bogus", err)
         self.assertIn("^", err)
         self.assertNotIn("s3cret", err)
+        self.assertNotIn('"proof"', err)
+
+    def test_psql_failure_redacts_host_ip_and_user(self):
+        # a connection failure echoes the server host + resolved IP — they must be blanked
+        canned = ('psql: error: connection to server at "db.abc123.supabase.example.test" '
+                  '(203.0.113.7), port 6543 failed: Connection refused\n'
+                  'psql: error: could not translate host name "auth.invalid.test" to address\n'
+                  'FATAL:  password authentication failed for user "proof"\n')
+        rc, _, err = self.run_main("q3", "--actor", ACTOR,
+                                   extra={"FAKE_PSQL_EXIT": "2", "FAKE_PSQL_ERR": canned})
+        self.assertEqual(rc, 1)
+        self.assertNotIn("db.abc123.supabase.example.test", err)
+        self.assertNotIn("auth.invalid.test", err)   # the URL's own host is redacted too
+        self.assertNotIn("203.0.113.7", err)
+        self.assertNotIn('"proof"', err)
+        self.assertIn("<host>", err)
+        self.assertIn("<ip>", err)
+        self.assertIn('user "<user>"', err)
+        self.assertIn("Connection refused", err)     # the error wording survives
 
     def test_psql_permission_denied_schema_auth_adds_the_grant_hint(self):
         canned = ("ERROR:  permission denied for schema auth\n"

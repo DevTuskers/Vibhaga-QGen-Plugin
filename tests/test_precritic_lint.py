@@ -57,6 +57,13 @@ claims:
 CLAIMS_LINE = """\
 claims:
   K1  axis AB from 730 to 750 | stem | endpoints
+  K2  at 745 @P | inferred | the marked point
+"""
+
+# the same `at` claim in the written-file dialect — @anchor resolved to coordinates
+CLAIMS_LINE_COORDS = """\
+claims:
+  K1  axis AB from 730 to 750 | stem | endpoints
   K2  at 745 380.00 62.94 | inferred | the marked point
 """
 
@@ -171,6 +178,31 @@ class PrecriticLintTest(unittest.TestCase):
             self.assertIn("'745'", r.stdout)          # the `at` value
             self.assertNotIn("'730'", r.stdout)       # axis endpoints are not `at` values
             self.assertIn("'4'", r.stdout)            # the pictograph row's item count
+
+    def test_at_claim_in_the_coordinate_dialect_warns(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run(tmp)
+            write(run / "specs" / "figures.json",
+                  '[{"template": "number_line", "figure_id": "Q1", '
+                  '"description": "A line marked from 730 to 750 with P at 745."}]')
+            write(run / "figures" / "Q1-claims.txt", CLAIMS_LINE_COORDS)
+            r = lint(run, tmp)
+            self.assertIn("'745'", r.stdout)
+            self.assertNotIn("'730'", r.stdout)
+
+    def test_pictograph_prose_at_does_not_read_as_a_point(self):
+        # "… items at 2 per symbol" prose must NOT register 2 as a readable `at` value
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run(tmp)
+            write(run / "specs" / "figures.json",
+                  '[{"template": "pictograph", "figure_id": "Q1", '
+                  '"description": "A pictograph with a key of 2."}]')
+            write(run / "figures" / "Q1-claims.txt",
+                  'claims:\n  K1  describe "pens at 2 per box" | inferred | prose\n')
+            r = lint(run, tmp)
+            self.assertNotIn("WARN Q1 description", r.stdout)
 
     def test_missing_specs_file_skips_check_b(self):
         with tempfile.TemporaryDirectory() as td:

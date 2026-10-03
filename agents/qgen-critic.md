@@ -148,9 +148,13 @@ word **clean** in its row, not a blank.
 
 After the actor republishes, a **fresh** critic is spawned with the previous report as an extra
 input (it is critic output, not actor output). `critic-read.py --previous` does the diff itself:
-pass the previous round's report dir (its `hashes.txt`) or a `Q<n> <sha256>` file — `fields.json`
-and `figures.txt` then cover only **changed-or-new** questions, `carried.txt` lists the unchanged
-`Q<n> <hash>` lines, and stdout prints `changed: […] · carried: […] · gone: […]`.
+pass the previous round's report dir (its `hashes.txt`) or a `hashes --out` file — either must be
+critic-read's own output: it opens with a `# critic-read hashes v1 sid=<uuid>` header naming the
+same batch, and anything without it (a hand-written `Q<n> <sha256>` file, or a different session's
+hashes) is refused, because carrying by hash is fail-safe only when the file really is the previous
+round's read. `fields.json` and `figures.txt` then cover only **changed-or-new** questions,
+`carried.txt` lists the unchanged `Q<n> <hash>` lines, and stdout prints
+`changed: […] · carried: […] · gone: […]`.
 `critic-read.py hashes <sid>` prints the hash lines alone when only the diff is wanted.
 
 - **changed hash** → critique that question in full again;

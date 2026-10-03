@@ -18,7 +18,8 @@ forked or re-implemented and no gate is lowered:
           4. visual-check.mjs staged.json --claims-dir figures --out DIR (default ../vc)
           5. precritic-lint.py (only when --card is given — else a skipped line)
   ship:   1. validate · 2. doc put --ledger · 3. doc get → compare questions against
-             staged.json key-by-key (server-added `published`/`published_at` ignored)
+             staged.json by question_id key-by-key (server-added `published`/`published_at`
+             and the renormalised `sort_order` ignored; a server-only id is a WARN, not a fail)
           4. visual-check --session (only with --session-check) · 5. publish --dry-run
              --accept-signatures N · 6. publish --accept-signatures N ·
           7. sql-proof.py q2 --expected (default: len(ids.json))
@@ -63,12 +64,15 @@ def run_cmd(argv: list[str]) -> tuple[int, str]:
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
-def fail(gates: dict, run: Path, stage: str, rc: int, out: str) -> int:
+def fail(gates: dict, run: Path, stage: str, rc: int, out: str,
+         shown: tuple[str, ...] = ()) -> int:
     gates[stage] = rc
     write_gates(run, gates)
     print(f"stage {stage}: exit {rc} — stopping")
+    skip = set(shown)                               # lines quote() already echoed are not reprinted
     for line in out.strip().splitlines()[-TAIL:]:
-        print(f"  {line}")
+        if line.strip() not in skip:
+            print(f"  {line}")
     return rc
 
 
@@ -77,16 +81,22 @@ def write_gates(run: Path, gates: dict) -> None:
                                     encoding="utf-8")
 
 
-def quote(out: str, *patterns: str, log=print) -> None:
-    """Echo the lines of `out` matching any pattern (the tool's own words, verbatim)."""
+def quote(out: str, *patterns: str, log=print) -> tuple[str, ...]:
+    """Echo the lines of `out` matching any pattern (the tool's own words, verbatim). Returns the
+    echoed lines so a later fail() tail never re-prints what the stage already streamed."""
+    shown = []
     for line in out.splitlines():
         if any(re.search(p, line) for p in patterns):
             log(f"  {line.strip()}")
+            shown.append(line.strip())
+    return tuple(shown)
 
 
 # ----------------------------------------------------------------------------- build
 def cmd_build(args, runner=run_cmd, log=print) -> int:
     run = Path(args.run)
+    if args.card and args.grade is None:
+        die("--card needs --grade N (cards resolve under maths/grade-NN/scope-cards/)")
     if not run.is_dir():
         die(f"no run dir {run}")
     specs_path = run / "specs" / "figures.json"
@@ -142,10 +152,8 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     if rc:
         return fail(gates, run, "visual-check", rc, vc_out_text)
 
-    # 5. pre-critic lint — only when cards are bound
+    # 5. pre-critic lint — only when cards are bound (--card ⇒ --grade checked up front)
     if args.card:
-        if args.grade is None:
-            die("--card needs --grade N (cards resolve under maths/grade-NN/scope-cards/)")
         argv = [sys.executable, str(TOOLS / "precritic-lint.py"), str(run),
                 "--grade", str(args.grade)]
         for c in args.card:
@@ -154,9 +162,9 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
             argv += ["--cards-dir", args.cards_dir]
         rc, out = runner(argv)
         gates["precritic-lint"] = rc
-        quote(out, r"FAIL|WARN", log=log)
+        shown = quote(out, r"FAIL|WARN", log=log)
         if rc:
-            return fail(gates, run, "precritic-lint", rc, out)
+            return fail(gates, run, "precritic-lint", rc, out, shown)
     else:
         log("precritic-lint: skipped — no --card given")
 
@@ -174,25 +182,34 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
 
 
 # ----------------------------------------------------------------------------- ship
-def doc_diff(staged_path: Path, server_path: Path) -> list[str]:
-    """staged questions vs server questions, key-by-key, ignoring the server-added
-    `published`/`published_at` mirrors the write-back stamps in. Returns the differing keys."""
-    strip = {"published", "published_at"}
+def doc_diff(staged_path: Path, server_path: Path) -> tuple[list[str], list[str]]:
+    """staged questions vs server questions matched by `question_id`, key-by-key, ignoring the
+    server-added `published`/`published_at` stamps. `doc put` merges into the server array (server
+    order kept, sort_order renormalised), so position and sort_order are never the match key.
+    Returns (diffs, extras): a staged id missing on the server or differing → a diff; a server-only
+    id (`kept_unlisted`) is an extra — the caller prints it as a WARN, it is not a failure."""
+    strip = {"published", "published_at", "sort_order"}
     want = json.loads(staged_path.read_text(encoding="utf-8")).get("questions")
     got = json.loads(server_path.read_text(encoding="utf-8")).get("questions")
     if not isinstance(want, list) or not isinstance(got, list):
-        return ["<doc shape: questions is not a list>"]
-    diffs = []
-    for i, (w, g) in enumerate(zip(want, got)):
+        return ["<doc shape: questions is not a list>"], []
+    got_by_id = {g.get("question_id"): g for g in got if isinstance(g, dict)}
+    diffs: list[str] = []
+    for w in want:
+        wid, qn = w.get("question_id"), w.get("question_number", "?")
+        g = got_by_id.get(wid)
+        if g is None:
+            diffs.append(f"Q{qn} ({wid}): missing on the server")
+            continue
         w2 = {k: v for k, v in w.items() if k not in strip}
         g2 = {k: v for k, v in g.items() if k not in strip}
         if w2 != g2:
-            qn = w.get("question_number", i)
             keys = sorted({k for k in set(w2) | set(g2) if w2.get(k) != g2.get(k)})
             diffs.append(f"Q{qn}: {keys}")
-    if len(want) != len(got):
-        diffs.append(f"question count {len(got)} != staged {len(want)}")
-    return diffs
+    want_ids = {w.get("question_id") for w in want}
+    extras = [f"Q{g.get('question_number', '?')} ({g.get('question_id')})"
+              for g in got if g.get("question_id") not in want_ids]
+    return diffs, extras
 
 
 def cmd_ship(args, runner=run_cmd, log=print) -> int:
@@ -215,31 +232,33 @@ def cmd_ship(args, runner=run_cmd, log=print) -> int:
     # 1. validate — warnings are quoted, errors stop
     rc, out = runner([sys.executable, str(PUBLISH), "validate", sid, "--staged", str(staged)])
     gates["validate"] = rc
-    quote(out, r"^\s*(validate:|.*warn|.*error)", log=log)
+    shown = quote(out, r"^\s*(validate:|.*warn|.*error)", log=log)
     if rc:
-        return fail(gates, run, "validate", rc, out)
+        return fail(gates, run, "validate", rc, out, shown)
 
     # 2. doc put
     rc, out = runner([sys.executable, str(PUBLISH), "doc", "put", sid,
                       "--staged", str(staged), "--ledger", str(ledger)])
     gates["doc-put"] = rc
-    quote(out, r"doc put:", log=log)
+    shown = quote(out, r"doc put:", log=log)
     if rc:
-        return fail(gates, run, "doc-put", rc, out)
+        return fail(gates, run, "doc-put", rc, out, shown)
 
     # 3. doc get → compare against staged
     server_path = run / "server.json"
     rc, out = runner([sys.executable, str(PUBLISH), "doc", "get", sid, "--out", str(server_path)])
     gates["doc-get"] = rc
-    quote(out, r"doc get:", log=log)
+    shown = quote(out, r"doc get:", log=log)
     if rc:
-        return fail(gates, run, "doc-get", rc, out)
-    diffs = doc_diff(staged, server_path)
+        return fail(gates, run, "doc-get", rc, out, shown)
+    diffs, extras = doc_diff(staged, server_path)
+    for e in extras:
+        log(f"  WARN server holds {e} not in staged.json (kept_unlisted) — not a failure")
     gates["doc-diff"] = 0 if not diffs else 1
     if diffs:
         return fail(gates, run, "doc-diff", 1,
-                    "server doc differs from staged.json (ignoring published/published_at):\n"
-                    + "\n".join(diffs))
+                    "server doc differs from staged.json (matched by question_id, ignoring "
+                    "published/published_at/sort_order):\n" + "\n".join(diffs))
 
     # 4. optional --session visual check
     if args.session_check:
@@ -247,9 +266,9 @@ def cmd_ship(args, runner=run_cmd, log=print) -> int:
         rc, out = runner([str(NODE_BIN), str(TOOLS / "visual-check.mjs"), "--session", sid,
                           "--out", vc_out])
         gates["visual-check-session"] = rc
-        quote(out, r"CLIPPED|revocation:", log=log)
+        shown = quote(out, r"CLIPPED|revocation:", log=log)
         if rc:
-            return fail(gates, run, "visual-check-session", rc, out)
+            return fail(gates, run, "visual-check-session", rc, out, shown)
     else:
         log("visual-check --session: skipped — no --session-check")
 
@@ -259,22 +278,22 @@ def cmd_ship(args, runner=run_cmd, log=print) -> int:
             "--accept-signatures", str(args.accept_signatures)]
     rc, out = runner(base + ["--dry-run"])
     gates["publish-dry-run"] = rc
-    quote(out, r"dry-run:", log=log)
+    shown = quote(out, r"dry-run:", log=log)
     if rc:
-        return fail(gates, run, "publish-dry-run", rc, out)
+        return fail(gates, run, "publish-dry-run", rc, out, shown)
     rc, out = runner(base)
     gates["publish"] = rc
-    quote(out, r"published \d|read-back 1:|t77:|provenance:|q3:|logout", log=log)
+    shown = quote(out, r"published \d|read-back 1:|t77:|provenance:|q3:|logout", log=log)
     if rc:
-        return fail(gates, run, "publish", rc, out)
+        return fail(gates, run, "publish", rc, out, shown)
 
     # 7. the Q2 proof
     rc, out = runner([sys.executable, str(SQLPROOF), "q2", sid,
                       "--expected", str(expected)])
     gates["q2"] = rc
-    quote(out, r"^q2:", log=log)
+    shown = quote(out, r"^q2:", log=log)
     if rc:
-        return fail(gates, run, "q2", rc, out)
+        return fail(gates, run, "q2", rc, out, shown)
 
     log("ship: ok")
     write_gates(run, gates)

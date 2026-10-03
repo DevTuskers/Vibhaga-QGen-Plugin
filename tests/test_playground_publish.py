@@ -502,11 +502,14 @@ class FinishQ3(unittest.TestCase):
             self.assertEqual(self.finish(), 5)
         self.assertIn("psql failed", self.logs[-1])
 
-    def test_no_actor_id_skips_the_proof(self):
+    def test_no_actor_id_is_silent(self):
+        # a write refused BEFORE any grant leaves no session to revoke — print nothing at all
         self.api.user_id = None
-        with mock.patch.object(tool.sqlp, "find_auth_url", return_value=("postgres://x@invalid.test/db", "test")):
+        with mock.patch.object(tool.sqlp, "find_auth_url",
+                               return_value=("postgres://x@invalid.test/db", "test")) as fau:
             self.assertEqual(self.finish(), 0)
-        self.assertIn("no signed-in actor", self.logs[-1])
+        self.assertFalse(any(l.startswith("q3:") for l in self.logs))
+        fau.assert_not_called()                        # never even resolves the URL
 
     def test_main_returns_5_when_q3_fails_after_a_write(self):
         env_file = self.root / "env.local"
@@ -523,6 +526,30 @@ class FinishQ3(unittest.TestCase):
              mock.patch.object(tool.sqlp, "run_proof", return_value=dict(self.Q3_BAD)), \
              mock.patch("sys.argv", argv), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(tool.main(), 5)
+
+    def test_refused_write_after_a_grant_still_runs_q3(self):
+        # `doc put` refused post-grant (a staged row without the flag) — the Refuse exit wins,
+        # but the session was signed in, so the revocation is still proven
+        env_file = self.root / "env.local"
+        env_file.write_text("\n".join(f"{k}={v}" for k, v in tool._pub.FAKE_ENV.items()))
+        staged = self.root / "staged.json"
+        staged.write_text(json.dumps({"questions": [
+            {"question_id": "00000000-0000-4000-8000-000000000001",
+             "ingestion_metadata": {"needs_human_review": False}}]}))
+        api = tool.PlaygroundApi(dict(tool._pub.FAKE_ENV),
+                               transport=tool.FakePlayground({SID: session_row()}, {SID: []}),
+                               log=lambda l: None)
+        argv = ["x", "doc", "put", SID, "--staged", str(staged),
+                "--ledger", str(self.ledger_path), "--env", str(env_file)]
+        with mock.patch.object(tool, "PlaygroundApi", return_value=api), \
+             mock.patch.object(tool.sqlp, "find_auth_url",
+                               return_value=("postgres://x@invalid.test/db", "test")), \
+             mock.patch.object(tool.sqlp, "run_proof",
+                               return_value=dict(self.Q3_OK)) as rp, \
+             mock.patch("sys.argv", argv), contextlib.redirect_stdout(io.StringIO()):
+            rc = tool.main()
+        self.assertEqual(rc, 3)                       # the refusal's own exit code
+        rp.assert_called_once()                       # and the revocation proof still ran
 
     def test_main_read_only_subcommand_never_runs_q3(self):
         env_file = self.root / "env.local"

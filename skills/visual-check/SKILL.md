@@ -52,7 +52,7 @@ node tools/visual-check.mjs <staged.json | dir | figure.json …> \
 ```
 Q7  FAIL  font: KaTeX math ×1 + text ×4 · labels 5 (min edge 4.7px, min stroke -2.5px) ·
     target ok · arc — · shaded — · aspect ok · 375×131  → <out>/Q7/
-9 figures · 2 pass · 7 fail · PNGs: 54 · contact sheet: <out>/contact-light-375.png (384×800) · report: <out>/report.json
+9 figures · 2 pass · 7 fail · PNGs: 54 · report: <out>/report.json · contact: <out>/contact-light-375.png 384×800
 ```
 
 ### The six rules (visual-metrics.mjs — every width, rendered px)

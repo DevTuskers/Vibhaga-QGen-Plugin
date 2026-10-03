@@ -351,14 +351,15 @@ def q3_after_logout(api: PlaygroundApi, *, sid: str | None, ledger: Path | None,
     """Guard-rail 6b — after a WRITE subcommand's global logout, prove the revocation on the
     ADMIN AUTH project: queries.sql Q3 run through sql-proof's own resolver + runner (imported,
     never copied). Returns 0 when the proof is ok or cannot run here (PENDING); 5 when it ran
-    and failed — psql error included, that is a NOT-ok not a skip."""
+    and failed — psql error included, that is a NOT-ok not a skip. A write refused BEFORE any
+    grant was obtained (no actor id) prints nothing — there is no session to revoke; a write
+    refused AFTER a grant still gets its proof."""
     uid = api.user_id
+    if not uid or not sqlp.UUID_RE.match(uid):
+        return 0                                    # never completed a grant — nothing to prove
     url, src = sqlp.find_auth_url(None, env_path)
     if not url:
-        log(f"q3: PENDING — no VIBHAGA_ADMIN_AUTH_DB_URL; run tools/sql-proof.py q3 --actor {uid or '<actor user_id>'}")
-        return 0
-    if not uid or not sqlp.UUID_RE.match(uid):
-        log("q3: skipped — no signed-in actor id (the command never completed a grant)")
+        log(f"q3: PENDING — no VIBHAGA_ADMIN_AUTH_DB_URL; run tools/sql-proof.py q3 --actor {uid}")
         return 0
     print(f"{sqlp.PROG}: auth DB URL from {src}", file=sys.stderr)
     block = sqlp.slice_proof(sqlp.QUERIES.read_text(encoding="utf-8"), "Q3")
@@ -375,11 +376,14 @@ def q3_after_logout(api: PlaygroundApi, *, sid: str | None, ledger: Path | None,
         bad = sqlp.failing_q3(counts)
         log("q3: ok" if ok else f"q3: NOT ok — {', '.join(bad) if bad else 'ok=f'}")
     if ledger is not None and sid:
-        led, ent = ledger_entry(ledger, sid)
-        ent["q3"] = {"counts": counts, "ok": ok,
-                     "checked_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                     "actor": uid}
-        save_ledger(ledger, led)
+        try:                                        # a ledger write failure must not mask the
+            led, ent = ledger_entry(ledger, sid)    # proof's exit code (warn, never raise)
+            ent["q3"] = {"counts": counts, "ok": ok,
+                         "checked_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                         "actor": uid}
+            save_ledger(ledger, led)
+        except Exception as e:
+            log(f"q3: ledger write failed ({e}) — the proof result above stands")
     return 0 if ok else 5
 
 

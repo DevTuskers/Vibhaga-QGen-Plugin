@@ -23,7 +23,8 @@ Usage:
 
 `brief` (W9-D) prints a ~80-line reading brief per card — header with both titles and the card +
 lesson sha256 prefixes, sections, ≤20 deduped vocabulary terms, worked-example excerpts (80 chars),
-exercise item lists (≤12 items at 70 chars), activities, figure_kinds and the whole `curated:` block.
+exercise item lists (≤6 items at 70 chars, `… +k more` beyond), activities, figure_kinds and the
+whole `curated:` block.
 A card argument is a path, or a lesson number NN resolved with `--grade` as
 `maths/grade-NN/scope-cards/NN-*.yaml` under the corpus. `brief` is a pure read — it never writes.
 
@@ -771,7 +772,7 @@ def cmd_check(args) -> int:
 # brief — the generate step-1 read (W9-D): ~80 lines per card, everything the plan needs at a glance.
 # -------------------------------------------------------------------------------------------------
 BRIEF_VOCAB_MAX = 20
-BRIEF_ITEMS_MAX = 12
+BRIEF_ITEMS_MAX = 6
 
 
 def resolve_card_arg(spec: str, args) -> Path:
@@ -831,7 +832,7 @@ def brief_card(cpath: Path) -> list[str]:
         for it in items[:BRIEF_ITEMS_MAX]:
             lines.append(f"    · {clip(clean(it), 70)}")
         if len(items) > BRIEF_ITEMS_MAX:
-            lines.append(f"    · … {len(items) - BRIEF_ITEMS_MAX} more")
+            lines.append(f"    · … +{len(items) - BRIEF_ITEMS_MAX} more")
     lines.append("activities:")
     for a in gen.get("activities") or []:
         lines.append(f"  {a.get('heading')} — {clip(clean(a.get('excerpt') or ''), 70)}")
@@ -919,6 +920,9 @@ def main(argv=None) -> int:
         die("a command is required: draft | check | brief")
     if args.command == "brief":
         return cmd_brief(args)          # --grade needed only by the bare-NN card form
+    if args.cards:
+        die(f"{args.command} takes no card arguments — stray positional(s) "
+            f"{', '.join(args.cards)} (did you mean `brief`?)")
     if args.grade is None:
         die("--grade N is required for draft/check")
     if args.command == "draft":

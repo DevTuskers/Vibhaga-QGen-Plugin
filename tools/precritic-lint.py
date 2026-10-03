@@ -51,9 +51,11 @@ PROG = "precritic-lint"
 
 # claim-set lines that carry a value the student reads off the figure (item G-b)
 READABLE_RES = (
-    # the claim file carries `@anchor` resolved to coordinates: `at 30 216.12 62.94` — requiring
-    # the two trailing numbers keeps a prose `at 2 per symbol` (pictograph describe) from matching
-    (re.compile(r"\bat\s+(-?\d+(?:\.\d+)?)\s+-?\d+(?:\.\d+)?\s+-?\d+(?:\.\d+)?"), (1,)),
+    # `at` comes in two dialects: the builder source writes `at 745 @P` (anchor form) and the
+    # written -claims.txt resolves it to coordinates `at 30 216.12 62.94`. The @anchor / trailing
+    # two numbers keep a prose `at 2 per symbol` (pictograph describe) from matching.
+    (re.compile(r"\bat\s+(-?\d+(?:\.\d+)?)\s+@\w+"), (1,)),                       # `at v @P`
+    (re.compile(r"\bat\s+(-?\d+(?:\.\d+)?)\s+-?\d+(?:\.\d+)?\s+-?\d+(?:\.\d+)?"), (1,)),  # `at v x y`
     (re.compile(r"\bshaded\s+(\d+(?:\.\d+)?)\s+of\s+\d+\s+cells"), (1,)),   # shaded_grid n of m
     (re.compile(r"\bstage\s+\d+\s+shows\s+(\d+(?:\.\d+)?)\s+dots"), (1,)),  # dot_pattern d
     (re.compile(r"\bshows\s+(\d+(?:\.\d+)?)\s+symbols\s+—\s+(\d+(?:\.\d+)?)\s+items"), (1, 2)),

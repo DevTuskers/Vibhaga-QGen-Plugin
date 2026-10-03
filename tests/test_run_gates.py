@@ -165,9 +165,11 @@ class BuildTest(unittest.TestCase):
     def test_card_without_grade_is_usage_error(self):
         with tempfile.TemporaryDirectory() as td:
             run = make_run(Path(td))
+            stub = StubRunner()
             with self.assertRaises(SystemExit) as e:
-                rg.cmd_build(build_args(run, card=["L07=7"]), runner=StubRunner())
+                rg.cmd_build(build_args(run, card=["L07=7"]), runner=stub)
             self.assertEqual(e.exception.code, 2)
+            self.assertEqual(stub.calls, [])          # refused before any stage ran
 
     def test_precritic_fail_stops_and_propagates(self):
         with tempfile.TemporaryDirectory() as td:
@@ -239,6 +241,36 @@ class ShipTest(unittest.TestCase):
             self.assertEqual(rc, 1)
             self.assertIn("Q2", out2.getvalue())
             self.assertFalse(any(" publish " in f" {' '.join(c)} " for c in stub2.calls))
+
+    def test_doc_diff_matches_by_id_reorder_and_server_extra_warns(self):
+        # doc put merges INTO the server array — order is meaningless and kept_unlisted rows
+        # stay; a reordered server doc + one extra question must be a WARN, not a failure
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            stub = StubRunner()
+            staged_qs = json.loads((run / "staged.json").read_text())["questions"]
+            extra = {"question_id": "00000000-0000-4000-8000-000000000099",
+                     "question_number": 9, "stem": "server only"}
+            stub.doc_get_questions = [extra] + list(reversed(staged_qs))
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_ship(ship_args(run), runner=stub)
+            self.assertEqual(rc, 0, out.getvalue())
+            self.assertIn("WARN server holds Q9", out.getvalue())
+            self.assertIn("kept_unlisted", out.getvalue())
+
+    def test_doc_diff_missing_on_server_fails_before_publish(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            stub = StubRunner()
+            stub.doc_get_questions = [
+                {"question_id": ID1, "question_number": 1, "stem": "one"}]
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_ship(ship_args(run), runner=stub)
+            self.assertEqual(rc, 1)
+            self.assertIn("missing on the server", out.getvalue())
+            self.assertFalse(any(" publish " in f" {' '.join(c)} " for c in stub.calls))
 
     def test_publish_q3_not_ok_propagates_exit_5(self):
         with tempfile.TemporaryDirectory() as td:

@@ -115,6 +115,29 @@ def resolve_auth_url(auth_env: str | None) -> str:
     die(src if auth_env else f"no VIBHAGA_ADMIN_AUTH_DB_URL — {src}")
 
 
+# psql connection errors echo the server's host and resolved IP (`connection to server at
+# "db.<ref>.example.co" (1.2.3.4) …`, `could not translate host name "…"`) — and these lines are
+# printed into transcripts, so every echoed stderr line passes through redact() first.
+DNS_RE = re.compile(r"(?<![\w.])(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b")        # a dotted DNS name
+IPV4_RE = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
+IPV6_RE = re.compile(r"\b(?:[0-9A-Fa-f]{0,4}:){2,}[0-9A-Fa-f:]*")
+USER_RE = re.compile(r'user\s+"[^"]*"')
+
+
+def redact(line: str, host: str | None = None) -> str:
+    """Blank anything that could identify the DB before a psql stderr line is echoed: the URL's
+    own host, any DNS name containing "supabase" (a dotted name like `auth.users` survives —
+    identifiers are not hosts), IP literals, and `user "<name>"`. The error wording itself —
+    ERROR:/FATAL:/permission denied — is what we keep."""
+    if host:
+        line = line.replace(host, "<host>")
+    line = DNS_RE.sub(lambda m: "<host>" if "supabase" in m.group(0).lower() else m.group(0),
+                      line)
+    line = IPV4_RE.sub("<ip>", line)
+    line = IPV6_RE.sub("<ip>", line)
+    return USER_RE.sub('user "<user>"', line)
+
+
 def run_proof(pg: dict[str, str], block: str, variables: list[tuple[str, str]], tag: str) -> dict:
     """One proof block through psql, read-only, SQL on stdin, PG* env only. Returns the row as
     {column: coerced value}; exits 1 on a psql failure or a header+row it cannot map."""
@@ -129,11 +152,13 @@ def run_proof(pg: dict[str, str], block: str, variables: list[tuple[str, str]], 
     except FileNotFoundError:
         die("psql is not on PATH")
     if proc.returncode != 0:
-        # psql stderr carries no URL and no password — safe to echo. Lead with the ERROR:/FATAL:
+        # psql stderr carries no URL and no password, but a connection failure DOES carry the
+        # host and its IP — every echoed line is redact()ed first. Lead with the ERROR:/FATAL:
         # line (psql prefixes it "psql: error:" so it may sit mid-line), then up to the last 3
         # stderr lines — the owner once saw only `^`, the caret under a psql position marker.
-        err = [l.rstrip() for l in proc.stderr.splitlines() if l.strip()]
-        flagged = next((l.strip() for l in err if re.search(r"(ERROR|FATAL):", l)), None)
+        err = [redact(l.strip(), pg.get("PGHOST"))
+               for l in proc.stderr.splitlines() if l.strip()]
+        flagged = next((l for l in err if re.search(r"(ERROR|FATAL):", l)), None)
         tail = err[-3:]
         shown = ([flagged] if flagged and flagged not in tail else []) + tail
         print(f"{PROG}: psql failed on {tag} (exit {proc.returncode})"

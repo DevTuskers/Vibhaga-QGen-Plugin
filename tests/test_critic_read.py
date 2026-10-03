@@ -286,8 +286,10 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(json.loads(q4c_lines[0])["question_number"], 7)
         self.assertEqual(len(json.loads((self.out / "fields.json").read_text(encoding="utf-8"))), 15)
         line = FIXTURE.read_text(encoding="utf-8").splitlines()[0]
-        self.assertEqual((self.out / "hashes.txt").read_text(encoding="utf-8").strip(),
-                         f"Q1 {hashlib.sha256(line.encode('utf-8')).hexdigest()}")
+        self.assertEqual(
+            (self.out / "hashes.txt").read_text(encoding="utf-8").splitlines(),
+            [f"# critic-read hashes v1 sid={BID}",
+             f"Q1 {hashlib.sha256(line.encode('utf-8')).hexdigest()}"])
         self.assertEqual((self.out / "figures.txt").read_text(encoding="utf-8").splitlines(),
                          ["Q1\t-", "Q1.ans2\t00000000-0000-4000-8000-000000000102",
                           "Q1.a\t-", "Q1.b.ans2\t00000000-0000-4000-8000-000000000203"])
@@ -309,12 +311,13 @@ class HashesMode(EndToEnd):
         self.write_canned(q4b=FIXTURE.read_text(encoding="utf-8"))
         rc, out, err = self.run_main("hashes", BID)
         self.assertEqual(rc, 0, err)
-        want = f"Q1 {hashlib.sha256(FIXTURE.read_text().splitlines()[0].encode()).hexdigest()}"
-        self.assertEqual(out.strip(), want)
-        # --out writes the same lines
+        want = [f"# critic-read hashes v1 sid={BID}",
+                f"Q1 {hashlib.sha256(FIXTURE.read_text().splitlines()[0].encode()).hexdigest()}"]
+        self.assertEqual(out.strip().splitlines(), want)
+        # --out writes the same lines — a valid --previous file by provenance
         rc, out, _ = self.run_main("hashes", BID, "--out", str(self.out / "h.txt"))
         self.assertEqual(rc, 0)
-        self.assertEqual((self.out / "h.txt").read_text().strip(), want)
+        self.assertEqual((self.out / "h.txt").read_text().strip().splitlines(), want)
 
     def test_hashes_non_uuid_and_empty_batch(self):
         rc, _, err = self.run_main("hashes", "not-a-uuid")
@@ -329,10 +332,12 @@ class HashesMode(EndToEnd):
 class PreviousMode(EndToEnd):
     """`--previous` (W9-H2) — changed-only fields/figures + carried.txt + the printed line."""
 
-    def prev_dir(self, entries):
+    def prev_dir(self, entries, sid=BID):
         d = self.out / "prev"
         d.mkdir(parents=True)
-        (d / "hashes.txt").write_text("".join(f"{q} {h}\n" for q, h in entries), encoding="utf-8")
+        (d / "hashes.txt").write_text(
+            f"# critic-read hashes v1 sid={sid}\n"
+            + "".join(f"{q} {h}\n" for q, h in entries), encoding="utf-8")
         return d
 
     def fixture_hash(self):
@@ -367,10 +372,33 @@ class PreviousMode(EndToEnd):
             q4a=json.dumps({"batch_id": BID}) + "\n",
             q4b=FIXTURE.read_text(encoding="utf-8"), q4c="")
         f = Path(self.tmp.name) / "old.txt"
-        f.write_text("not a hashes line\n", encoding="utf-8")
+        f.write_text(f"# critic-read hashes v1 sid={BID}\nnot a hashes line\n",
+                     encoding="utf-8")
         rc, _, err = self.run_main(BID, "--out", str(self.out), "--previous", str(f))
         self.assertEqual(rc, 2)
         self.assertIn("bad line", err)
+
+    def test_previous_refuses_a_file_with_no_header(self):
+        # a bare `Q<n> <sha256>` file — even one whose hash matches the current batch — must not
+        # mark a question carried: only critic-read's own output (header line) counts
+        self.write_canned(
+            q4a=json.dumps({"batch_id": BID}) + "\n",
+            q4b=FIXTURE.read_text(encoding="utf-8"), q4c="")
+        f = Path(self.tmp.name) / "forged.txt"
+        f.write_text(f"Q1 {self.fixture_hash()}\n", encoding="utf-8")
+        rc, _, err = self.run_main(BID, "--out", str(self.out), "--previous", str(f))
+        self.assertEqual(rc, 2)
+        self.assertIn("not a critic-read hashes file", err)
+
+    def test_previous_refuses_a_different_sessions_hashes(self):
+        self.write_canned(
+            q4a=json.dumps({"batch_id": BID}) + "\n",
+            q4b=FIXTURE.read_text(encoding="utf-8"), q4c="")
+        prev = self.prev_dir([("Q1", self.fixture_hash())],
+                             sid="00000000-0000-4000-8000-0000000000aa")
+        rc, _, err = self.run_main(BID, "--out", str(self.out), "--previous", str(prev))
+        self.assertEqual(rc, 2)
+        self.assertIn("≠ this batch", err)
 
 
 if __name__ == "__main__":
