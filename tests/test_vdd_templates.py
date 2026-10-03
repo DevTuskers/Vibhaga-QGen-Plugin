@@ -925,6 +925,195 @@ class RegionPoints(unittest.TestCase):
         self.assertIn("inside the main circle", inside)
 
 
+class MembershipTemplates(unittest.TestCase):
+    """W10c — the six region/collection templates built on finish() + region_point."""
+
+    STEM = "A synthetic stem for the figure. (a) Say something."
+
+    def _b(self, kind, **kw):
+        return vt.BUILDERS[kind](figure_id="mt1", stem=self.STEM,
+                                 ask=[["a", "x"]], **kw)
+
+    def test_circle_points_membership_and_placement(self):
+        b = self._b("circle_points",
+                    points={"P": {"where": "in"}, "Q": {"where": "on", "deg": 30},
+                            "R": {"where": "out"}})
+        circ = next(e for e in b.doc["elements"] if e["id"] == "circ")
+        c, r = circ["center"], circ["r"]
+        pts = {e["id"]: e for e in b.doc["elements"] if e["type"] == "point"}
+        self.assertLess(math.hypot(pts["ptP"]["at"][0] - c[0],
+                                   pts["ptP"]["at"][1] - c[1]), r)
+        self.assertAlmostEqual(math.hypot(pts["ptQ"]["at"][0] - c[0],
+                                          pts["ptQ"]["at"][1] - c[1]), r, places=2)
+        self.assertGreater(math.hypot(pts["ptR"]["at"][0] - c[0],
+                                      pts["ptR"]["at"][1] - c[1]), r)
+        self.assertIn('describe "Q lies on the circle"', b.claims)
+        self.assertIn("derive 1 + 1 + 1 = 3", b.claims)
+        self.assertIn('label "P" names P', b.claims)
+        # every dot label is a floater the placer moved — none sits at its anchor
+        lbl = next(e for e in b.doc["elements"] if e["id"] == "lbP")
+        self.assertNotEqual(lbl["at"], b.anchors["P"])
+
+    def test_circle_points_stones_have_no_labels(self):
+        b = self._b("circle_points", labelled=False,
+                    points={"P": {"where": "in"}, "Q": {"where": "out"}})
+        self.assertFalse([e for e in b.doc["elements"] if e["type"] == "text"])
+        self.assertNotIn("label ", b.claims)
+
+    def test_circle_points_refuses(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._b("circle_points", points={"P": {"where": "beside"}})
+        self.assertIn("where", str(cm.exception))
+        with self.assertRaises(vt.TemplateError):
+            self._b("circle_points", points={"p": {"where": "in"}})
+
+    def test_two_circles_regions_and_lens(self):
+        b = self._b("two_circles_points",
+                    points={"P": {"in": ["L"]}, "Q": {"in": ["L", "R"]},
+                            "S": {"in": ["R"]}, "T": {"in": []},
+                            "U": {"on": "L", "in": ["R"]}},
+                    overlap=0.45)
+        l = next(e for e in b.doc["elements"] if e["id"] == "cL")
+        rr = next(e for e in b.doc["elements"] if e["id"] == "cR")
+        d = math.hypot(rr["center"][0] - l["center"][0], rr["center"][1] - l["center"][1])
+        self.assertAlmostEqual(d, 2 * 100.0 * (1 - 0.45))
+        pts = {e["id"]: e for e in b.doc["elements"] if e["type"] == "point"}
+        dl = lambda e: math.hypot(e["at"][0] - l["center"][0], e["at"][1] - l["center"][1])
+        dr = lambda e: math.hypot(e["at"][0] - rr["center"][0], e["at"][1] - rr["center"][1])
+        self.assertLess(dl(pts["ptP"]), l["r"])
+        self.assertGreater(dr(pts["ptP"]), rr["r"])
+        self.assertLess(dl(pts["ptQ"]), l["r"])
+        self.assertLess(dr(pts["ptQ"]), rr["r"])
+        self.assertGreater(dl(pts["ptT"]), l["r"])
+        self.assertGreater(dr(pts["ptT"]), rr["r"])
+        self.assertAlmostEqual(dl(pts["ptU"]), l["r"], places=5)
+        self.assertLess(dr(pts["ptU"]), rr["r"])
+        self.assertIn('describe "U lies on the left circle and inside the right circle"',
+                      b.claims)
+        self.assertIn("derive 3 + 1 + 1 = 5", b.claims)
+
+    def test_two_circles_reserved_and_contradiction(self):
+        with self.assertRaises(vt.TemplateError):
+            self._b("two_circles_points", points={"L": {"in": ["L"]}})
+        with self.assertRaises(vt.TemplateError):
+            self._b("two_circles_points", points={"P": {"on": "L", "in": ["L"]}})
+        with self.assertRaises(vt.TemplateError):
+            self._b("two_circles_points", overlap=1.0, points={"P": {"in": ["L"]}})
+
+    def test_circles_in_circle_spacing(self):
+        b = self._b("circles_in_circle", n_in=6, n_out=5)
+        els = {e["id"]: e for e in b.doc["elements"]}
+        big = els["big"]
+        centres = [e for k, e in els.items() if k != "big"]
+        self.assertEqual(len(centres), 11)
+        for e in centres:
+            d = math.hypot(e["center"][0] - big["center"][0],
+                           e["center"][1] - big["center"][1])
+            if e["id"].startswith("in"):
+                self.assertLessEqual(d, big["r"] - e["r"] - 9.9)
+            else:
+                self.assertGreaterEqual(d, big["r"] + e["r"] + 9.9)
+        for i, e in enumerate(centres):
+            for f in centres[i + 1:]:
+                self.assertGreaterEqual(
+                    math.hypot(e["center"][0] - f["center"][0],
+                               e["center"][1] - f["center"][1]),
+                    e["r"] + f["r"] + 9.9)
+        self.assertIn("derive 6 + 5 = 11", b.claims)
+
+    def test_circles_in_circle_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            self._b("circles_in_circle", n_in=0, n_out=0)
+        with self.assertRaises(vt.TemplateError):
+            self._b("circles_in_circle", n_in=-1, n_out=2)
+
+    def test_abacus_rods_beads_and_sum(self):
+        b = self._b("abacus", place_values=[1000, 100, 10, 1], beads=[3, 0, 5, 7])
+        rods = [e for e in b.doc["elements"] if e["id"].startswith("rod")]
+        self.assertEqual(len(rods), 4)
+        beads = [e for e in b.doc["elements"] if e["type"] == "circle"]
+        self.assertEqual(len(beads), 15)
+        self.assertIn("derive 3 * 1000 + 0 * 100 + 5 * 10 + 7 * 1 = 3057", b.claims)
+        for i, v in enumerate((1000, 100, 10, 1)):
+            self.assertIn(f'label "{v}" names rod{i + 1}', b.claims)
+        # beads thread on their rod — every bead centre sits on a rod line
+        xs = {e["id"]: e["points"][0][0] for e in rods}
+        for bd in beads:
+            rod = "rod" + bd["id"][1]
+            self.assertAlmostEqual(bd["center"][0], xs[rod])
+
+    def test_abacus_refuses(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._b("abacus", place_values=[10, 1], beads=[10, 2])
+        self.assertIn("never holds ten", str(cm.exception))
+        with self.assertRaises(vt.TemplateError):
+            self._b("abacus", place_values=[10, 1], beads=[1])
+        with self.assertRaises(vt.TemplateError):
+            self._b("abacus", place_values=[10, 10], beads=[1, 2])
+
+    def test_sorting_rings_layout_and_claims(self):
+        b = self._b("sorting_rings",
+                    groups=[["Even", ["2", "8", "14"]], ["Odd", ["3", "9"]]])
+        rings = [e for e in b.doc["elements"] if e["id"].startswith("ring")]
+        self.assertEqual(len(rings), 2)
+        cards = [e for e in b.doc["elements"] if e["id"].startswith("cd")]
+        self.assertEqual(len(cards), 5)
+        # every card lies fully inside its ring with ≥8 units to spare
+        for cd in cards:
+            ring = rings[0] if cd["id"].startswith("cd1") else rings[1]
+            cx, cy = cd["x"] + cd["width"] / 2, cd["y"] + cd["height"] / 2
+            # the farthest corner of the card from the ring's centre (cards share cx)
+            self.assertAlmostEqual(cx, ring["center"][0])
+            d = math.hypot(cd["width"] / 2, abs(cy - ring["center"][1]) + cd["height"] / 2)
+            self.assertLessEqual(d, ring["r"] - 7.9)
+        self.assertIn('label "Even" names ring1', b.claims)
+        self.assertIn('label "14" names it13', b.claims)
+        self.assertIn("derive 3 + 2 = 5", b.claims)
+
+    def test_sorting_rings_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            self._b("sorting_rings", groups=[["A", ["1"]]])
+        with self.assertRaises(vt.TemplateError):
+            self._b("sorting_rings",
+                    groups=[["A", ["1"]], ["B", ["2"]], ["C", ["3"]], ["D", ["4"]]])
+        with self.assertRaises(vt.TemplateError):
+            self._b("sorting_rings", groups=[["A", ["1", "1"]], ["B", ["2"]]])
+
+    def test_shape_row_kinds_letters_and_rows(self):
+        b = self._b("shape_row",
+                    shapes=[["A", "circle"], ["B", "square"], ["C", "triangle"],
+                            ["D", "oval"], ["E", "rectangle"], ["F", "semicircle"],
+                            ["G", "small_circle"]])
+        # three per row — second row sits lower
+        self.assertGreater(b.anchors["D"][1], b.anchors["A"][1])
+        # each letter's label floated to a spot outside its own shape, below-ish
+        lbl = next(e for e in b.doc["elements"] if e["id"] == "lbA")
+        circ = next(e for e in b.doc["elements"] if e["id"] == "shA")
+        self.assertGreater(math.hypot(lbl["at"][0] - circ["center"][0],
+                                      lbl["at"][1] - circ["center"][1]), circ["r"])
+        self.assertGreater(lbl["at"][1], circ["center"][1])
+        self.assertIn("circle centre H radius 34", b.claims)   # A's centre anchor
+        self.assertIn('describe "D is an oval', b.claims)
+        self.assertIn("derive 4 + 3 = 7", b.claims)
+
+    def test_shape_row_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            self._b("shape_row", shapes=[["A", "hexagon"]])
+        with self.assertRaises(vt.TemplateError):
+            self._b("shape_row", shapes=[["A", "circle"], ["A", "square"]])
+        with self.assertRaises(vt.TemplateError):
+            self._b("shape_row", shapes=[["a", "circle"]])
+
+    def test_deterministic_ids_across_repeated_builds(self):
+        """vc's module id counter made a second in-process build emit different ids —
+        every builder now resets at entry, so repeat builds are byte-identical."""
+        kw = dict(points={"P": {"where": "in"}, "Q": {"where": "out"}})
+        b1 = self._b("circle_points", **kw)
+        b2 = self._b("circle_points", **kw)
+        self.assertEqual(json.dumps(b1.doc, sort_keys=True),
+                         json.dumps(b2.doc, sort_keys=True))
+
+
 class ByteIdentity(unittest.TestCase):
     """The floating-label machinery must not change any existing template's bytes —
     sha256 over each self-test spec's three emitted files, captured on origin/main."""
@@ -939,6 +1128,13 @@ class ByteIdentity(unittest.TestCase):
         "selftest-rays": "606bb0917cb0316a0b89f910ccc14c2c4305a9ca065af4f42b4d49f65b4a59ab",
         "selftest-rect": "18af540590a9ef7abc046ad8c7700a13d149195b7781dc9f3d6dac5ad0cbea0a",
         "selftest-shade": "208fef9855980d20d4b8ba21d3af491e46c6174029102596dec707439cea88e2",
+        # W10c — generated when the six membership/collection templates landed
+        "selftest-cpts": "50962ab15121a4b924b1b7e9ccdd0410e9ae4e1dca9d705f9f54ec9ea93e641a",
+        "selftest-2cpts": "5fa4326b9eacf9305aad16dab97e5f337065db4d1c4913060d207a1b171ce4a3",
+        "selftest-cin": "8c937c7528a26ab0f40968a83f598546e7afb7cb656014416549ab246c2b7383",
+        "selftest-abacus": "2af911fa1ea14c70c26559bf3a30732c71025edd83b90c75635b5826b5850e22",
+        "selftest-rings": "b6c3ef522dd27569269a6151c746ad11330e7bf5bfb706f5175053053eedcaee",
+        "selftest-shapes": "d42573f3abb65967d506d6bf18dcc9e7b5b266d06ed19d831ab220b2c737f5c3",
     }
 
     def test_self_test_outputs_unchanged(self):

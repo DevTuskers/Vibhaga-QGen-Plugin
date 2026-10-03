@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""vdd_templates.py — the nine figure TEMPLATES of the vibhaga-qgen plugin (W3).
+"""vdd_templates.py — the fifteen figure TEMPLATES of the vibhaga-qgen plugin (W3, W10c).
 
 A template turns a question's STEM NUMBERS into a finished figure — a VDD document, an
 anchors sidecar and a `channel: constructed` claim set — in one `Built` object:
@@ -1056,6 +1056,7 @@ def membership_claims(name: str, point: XY, circles: dict[str, tuple[XY, float]]
 def build_grid_polygon(*, figure_id, stem, ask=None, title=None, description=None, medium="english",
                        cell, vertices, cols=None, rows=None, cell_px=30.0,
                        vertex_labels=False, shade=True):
+    vc.reset_ids()
     require_stem(stem, cell=cell)
     verts = [tuple(map(float, v)) for v in vertices]
     if len(verts) < 3:
@@ -1194,6 +1195,7 @@ def build_grid_polygon(*, figure_id, stem, ask=None, title=None, description=Non
 # ────────────────────────────────────────────────────────────────────────────────
 def build_shaded_grid(*, figure_id, stem, ask=None, title=None, description=None, medium="english",
                       cols, rows, full=(), half=(), cell_px=40.0):
+    vc.reset_ids()
     nums = stem_numbers(stem)
     if not (_has_stem(nums, cols) and _has_stem(nums, rows) or _has_stem(nums, cols * rows)):
         raise TemplateError(
@@ -1274,6 +1276,7 @@ def build_shaded_grid(*, figure_id, stem, ask=None, title=None, description=None
 def build_rays_from_point(*, figure_id, stem, ask=None, title=None, description=None, medium="english",
                           rays: dict, centre="O", ray_len=110.0, north_arrow=True,
                           north_label="N", angles=(), arc_r=34.0):
+    vc.reset_ids()
     nums = stem_numbers(stem)
     bearings: dict[str, float] = {}
     for name, b in rays.items():
@@ -1450,6 +1453,7 @@ _NICE_STEPS = sorted({m * 10 ** e for e in range(4) for m in (1, 2, 5)}
 
 def build_number_line(*, figure_id, stem, ask=None, title=None, description=None, medium="english",
                       v0, v1, parts_per_unit, points=None, unit_px=None, overhang=30.0):
+    vc.reset_ids()
     require_stem(stem, v0=v0, v1=v1, parts_per_unit=parts_per_unit)
     if not (v1 > v0 and isinstance(parts_per_unit, int) and parts_per_unit >= 1):
         raise TemplateError("number_line: need v1 > v0 and a positive integer parts_per_unit")
@@ -1559,6 +1563,7 @@ def build_number_line(*, figure_id, stem, ask=None, title=None, description=None
 # ────────────────────────────────────────────────────────────────────────────────
 def build_pictograph(*, figure_id, stem, ask=None, title=None, description=None, medium="english",
                      per_symbol, rows, r=11.0, gap=28.0):
+    vc.reset_ids()
     require_stem(stem, per_symbol=per_symbol)
     if not rows:
         raise TemplateError("pictograph: at least one row")
@@ -1646,6 +1651,7 @@ def build_pictograph(*, figure_id, stem, ask=None, title=None, description=None,
 def build_rectangle_points(*, figure_id, stem, ask=None, title=None, description=None, medium="english",
                            length=None, width=None, aspect=(4, 3), on_points=None,
                            extra_segments=(), masks=None, base_px=208.0):
+    vc.reset_ids()
     nums = stem_numbers(stem)
     if length is not None and width is not None:
         require_stem(stem, length=length, width=width)
@@ -1758,6 +1764,7 @@ def build_house_pentagon(*, figure_id, stem, ask=None, title=None, description=N
     restates its value ("8 m") is content the figure itself asserts; a side drawn with a
     non-numeric label ("x m") cannot restate its value, so THAT value must come from the
     stem (require_stem) — the question's only other ground truth."""
+    vc.reset_ids()
     labels = labels or {}
     nums = stem_numbers(stem)
     sides = {"AB": AB, "BC": BC, "CP": CP, "PD": PD, "DA": DA}
@@ -1852,6 +1859,7 @@ def build_house_pentagon(*, figure_id, stem, ask=None, title=None, description=N
 def build_cuboid(*, figure_id, stem, ask=None, title=None, description=None, medium="english",
                  length, width, height, unit="cm", unit_px=None,
                  depth_angle=35.0, depth_scale=0.5):
+    vc.reset_ids()
     # the hidden-edge set {DH,GH,EH} and the label placement assume depth runs UP-RIGHT —
     # an angle outside (0°,90°) or a non-positive scale would draw something else silently
     if not (0 < depth_angle < 90):
@@ -1981,6 +1989,7 @@ def build_cuboid(*, figure_id, stem, ask=None, title=None, description=None, med
 # ────────────────────────────────────────────────────────────────────────────────
 def build_dot_pattern(*, figure_id, stem, ask=None, title=None, description=None, medium="english",
                       stages, kind="triangle", dot_r=5.0, dx=26.0, dy=22.5, gap=36.0):
+    vc.reset_ids()
     if kind not in ("triangle", "square", "rectangle"):
         raise TemplateError(f"dot_pattern: kind {kind!r} — one of triangle, square, rectangle")
     if not (isinstance(stages, int) and 1 <= stages <= 8):
@@ -2049,12 +2058,658 @@ def build_dot_pattern(*, figure_id, stem, ask=None, title=None, description=None
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# CLI + self-test
+# W10c — membership/collection figures. Dots in/on/out of circles, rings sorting
+# items, abacus rods, a row of named shapes. Every label is either placed by
+# finish()'s `_near` float or sits at a position the builder computes — the caller
+# never picks label coordinates.
 # ────────────────────────────────────────────────────────────────────────────────
+def _float_label(id_: str, glyph: str, near: XY, gap: float | None = None,
+                 size: float | None = None) -> dict:
+    """A `text` element that finish() places itself — `_near` is the anchor it labels
+    (element coords; `at` is ignored). `glyph` is the printed value."""
+    el = vc.text(list(near), glyph, id=id_, size=size)
+    el["_near"] = [vc.r2(near[0]), vc.r2(near[1])]
+    if gap is not None:
+        el["_gap"] = gap
+    return el
+
+
+def _named_dots(kind: str, points) -> list[str]:
+    """Validate a region figure's `points` dict (name -> spec) and return the names
+    in order. Names are the claim-set's point names — single capitals."""
+    if not isinstance(points, dict) or not points:
+        raise TemplateError(f"{kind}: `points` must be a non-empty dict of name -> spec")
+    for nm in points:
+        if not isinstance(nm, str) or not re.fullmatch(r"[A-Z]", nm):
+            raise TemplateError(f"{kind}: point names are single capitals — got {nm!r}")
+    return list(points)
+
+
+def _distinct_glyphs(kind: str, glyphs: list[str]) -> None:
+    """Every drawn label binds exactly one claim — two glyphs that print alike make the
+    binding ambiguous, so refuse them up front."""
+    if len(set(glyphs)) != len(glyphs):
+        dup = next(g for g in glyphs if glyphs.count(g) > 1)
+        raise TemplateError(f"{kind}: two labels print {dup!r} — glyphs must be distinct")
+
+
+# deterministic candidate angles for a dot ON an outline (deg, 0° = east, y down)
+_ON_DEG_CANDS = (-90.0, 90.0, 0.0, 180.0, -45.0, 45.0, -135.0, 135.0,
+                 -30.0, 30.0, -60.0, 60.0, -120.0, 120.0, -150.0, 150.0,
+                 -15.0, 15.0, -75.0, 75.0, -105.0, 105.0, -165.0, 165.0)
+
+
+def _deg_clear(deg: float, used: list[float], min_deg: float = 18.0) -> bool:
+    d = lambda a, b: abs((a - b + 180.0) % 360.0 - 180.0)
+    return all(d(deg, u) >= min_deg for u in used)
+
+
+def _spread_deg(i: int) -> float:
+    """The i-th direction on a golden-angle spiral — seeds that spread instead of
+    clustering when several dots share a region."""
+    return (-90.0 + 137.508 * i) % 360.0
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# 10. circle_points — one circle with dots inside it, on its outline or outside it
+# ────────────────────────────────────────────────────────────────────────────────
+def build_circle_points(*, figure_id, stem, ask=None, title=None, description=None,
+                        medium="english", points, r=100.0, labelled=True, dot_r=4.2):
+    """A circle holding named dots. `points` = {name: {"where": "in"|"on"|"out",
+    "label": glyph-or-None, "deg": angle-or-None}} — `deg` pins an on-outline dot,
+    otherwise on-dots spread by a fixed pattern; in/out dots go through region_point
+    on golden-angle seeds (min_sep 34, margin 18). labelled=False draws stones — dots
+    with no labels."""
+    vc.reset_ids()
+    names = _named_dots("circle_points", points)
+    if not (isinstance(r, (int, float)) and r >= 40.0):
+        raise TemplateError("circle_points: radius r must be at least 40 units")
+    centre = (0.0, 0.0)
+    circles = {"main": (centre, float(r))}
+    specs = {}
+    for nm in names:
+        spec = points[nm] or {}
+        where = spec.get("where")
+        if where not in ("in", "on", "out"):
+            raise TemplateError(f"circle_points: {nm} has where={where!r} — 'in', 'on' or 'out'")
+        if spec.get("deg") is not None and where != "on":
+            raise TemplateError(f"circle_points: {nm} carries deg but is {where!r} — "
+                                "deg pins an 'on' dot only")
+        specs[nm] = spec
+    elements = [vc.circle(centre, r, id="circ")]
+    anchors: dict[str, XY] = {}
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    cname = "Z" if "Z" not in names else _unused_letters(set(names), 1)[0]
+    anchors[cname] = centre
+    add(f"circle centre {cname} radius {r:g}", "inferred", "the one circle's centre")
+
+    placed: list[XY] = []
+    used_degs: list[float] = []
+    pos: dict[str, XY] = {}
+    # on-outline dots pin their angles first, so the region search for in/out dots
+    # can avoid them
+    for nm in names:
+        spec = specs[nm]
+        if spec["where"] != "on":
+            continue
+        if spec.get("deg") is not None:
+            p = on_circle_point(centre, r, float(spec["deg"]))
+            used_degs.append(float(spec["deg"]))
+        else:
+            p = None
+            for cand in _ON_DEG_CANDS:
+                if not _deg_clear(cand, used_degs):
+                    continue
+                q = on_circle_point(centre, r, cand)
+                if all(math.hypot(q[0] - o[0], q[1] - o[1]) >= 30.0 for o in placed):
+                    p = q
+                    used_degs.append(cand)
+                    break
+            if p is None:
+                raise TemplateError("circle_points: no clear angle left on the outline for "
+                                    f"{nm} — pass deg= or drop a dot")
+        pos[nm] = p
+        placed.append(p)
+    in_i = out_i = 0
+    n_in = sum(1 for s in specs.values() if s["where"] == "in")
+    n_out = sum(1 for s in specs.values() if s["where"] == "out")
+    for nm in names:
+        spec = specs[nm]
+        if spec["where"] == "on":
+            continue
+        if spec["where"] == "in":
+            rad = (r - 30.0) * math.sqrt((in_i + 0.5) / n_in)
+            prefer = vc.polar(centre, max(rad, 0.0), _spread_deg(in_i))
+            p = region_point(circles, inside=["main"], outside=[], prefer=prefer,
+                             margin=18.0, avoid=placed, min_sep=34.0)
+            in_i += 1
+        else:
+            prefer = vc.polar(centre, r + 55.0, _spread_deg(out_i + 1) + 45.0)
+            p = region_point(circles, inside=[], outside=["main"], prefer=prefer,
+                             margin=18.0, avoid=placed, min_sep=34.0)
+            out_i += 1
+        pos[nm] = p
+        placed.append(p)
+
+    glyphs = [str(specs[nm].get("label") or nm) for nm in names]
+    if labelled:
+        _distinct_glyphs("circle_points", glyphs)
+    word = {"in": "inside", "on": "on", "out": "outside"}
+    for i, nm in enumerate(names):
+        p = pos[nm]
+        anchors[nm] = p
+        elements.append({"id": f"pt{nm}", "type": "point", "at": vc.P(p), "r": dot_r})
+        add(f'describe "{nm} lies {word[specs[nm]["where"]]} the circle"', "inferred",
+            "the dot's drawn position")
+        if labelled:
+            elements.append(_float_label(f"lb{nm}", glyphs[i], p))
+            add(f'label "{glyphs[i]}" names {nm}', "stem", f"the label on dot {nm}")
+    add(f"derive {n_in} + {len(used_degs)} + {n_out} = {len(names)}", "inferred",
+        "inside + on + outside counts make the dot total")
+    add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
+        "a circle and dots only")
+    lays = [w for w in ("in", "on", "out") if any(specs[nm]["where"] == w for nm in names)]
+    desc_bits = {"in": "inside it", "on": "on its outline", "out": "outside it"}
+    return finish(kind="circle_points", figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=anchors, points=names + [cname], segments=[], claims=claims,
+                  ask=ask, title=title or "A circle with dots",
+                  description=description or (
+                      "A circle with several dots "
+                      + ", ".join(desc_bits[w] for w in lays) + "."),
+                  scale="the circle's size is a canvas choice — only in/on/out matters",
+                  medium=medium)
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# 11. two_circles_points — two overlapping circles with dots in their regions
+# ────────────────────────────────────────────────────────────────────────────────
+def build_two_circles_points(*, figure_id, stem, ask=None, title=None, description=None,
+                             medium="english", points, r=100.0, overlap=0.45, dot_r=4.2):
+    """Two overlapping circles L (left) and R (right), centre distance 2r(1-overlap).
+    `points` = {name: {"in": ["L"|"R", ...], "on": "L"|"R"|None, "label": glyph-or-None}} —
+    `in` lists the circles whose interior holds the dot; `on` pins it to that circle's
+    outline while `in` still governs the OTHER circle (on L inside R = on the overlap
+    arc). Free dots go through region_point (margin 18, min_sep 34); outline dots pick
+    the first clear angle toward or away from the other centre."""
+    vc.reset_ids()
+    names = _named_dots("two_circles_points", points)
+    for reserved in ("L", "R"):
+        if reserved in names:
+            raise TemplateError(f"two_circles_points: {reserved} names the "
+                                f"{'left' if reserved == 'L' else 'right'} circle's centre — "
+                                "pick another point name")
+    if not (isinstance(overlap, (int, float)) and 0.0 < overlap < 1.0):
+        raise TemplateError(f"two_circles_points: overlap {overlap!r} must be in (0, 1) — "
+                            "the circles must overlap")
+    if not (isinstance(r, (int, float)) and r >= 40.0):
+        raise TemplateError("two_circles_points: radius r must be at least 40 units")
+    d = 2.0 * r * (1.0 - overlap)
+    cL, cR = (0.0, 0.0), (d, 0.0)
+    circles = {"left": (cL, float(r)), "right": (cR, float(r))}
+    specs = {}
+    for nm in names:
+        spec = points[nm] or {}
+        inside = spec.get("in") or []
+        on = spec.get("on")
+        if not isinstance(inside, list) or any(s not in ("L", "R") for s in inside):
+            raise TemplateError(f"two_circles_points: {nm}'s `in` must be a list drawn from "
+                                "'L' and 'R'")
+        if len(set(inside)) != len(inside):
+            raise TemplateError(f"two_circles_points: {nm}'s `in` repeats a circle")
+        if on not in ("L", "R", None):
+            raise TemplateError(f"two_circles_points: {nm}'s `on` must be 'L', 'R' or absent")
+        if on is not None and on in inside:
+            raise TemplateError(f"two_circles_points: {nm} is ON the {on} circle — it cannot "
+                                "also be IN it; `in` governs the other circle")
+        specs[nm] = (list(inside), on)
+
+    elements = [vc.circle(cL, r, id="cL"), vc.circle(cR, r, id="cR")]
+    anchors: dict[str, XY] = {"L": cL, "R": cR}
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    add(f"circle centre L radius {r:g}", "inferred", "the left circle's centre")
+    add(f"circle centre R radius {r:g}", "inferred", "the right circle's centre")
+
+    placed: list[XY] = []
+    pos: dict[str, XY] = {}
+
+    def outline_spot(nm: str, inside: list, on: str) -> XY:
+        c_on = cL if on == "L" else cR
+        c_other = cR if on == "L" else cL
+        inside_other = ("R" if on == "L" else "L") in inside
+        # the arc of `on`'s outline inside the other circle faces its centre; outside
+        # faces away
+        base = (0.0 if inside_other else 180.0) if on == "L" \
+            else (180.0 if inside_other else 0.0)
+        for k in range(13):
+            for sign in ((0,) if k == 0 else (1, -1)):
+                p = vc.polar(c_on, r, base + sign * 15.0 * k)
+                d_other = math.hypot(p[0] - c_other[0], p[1] - c_other[1])
+                if inside_other and d_other > r - 12.0:
+                    continue
+                if not inside_other and d_other < r + 12.0:
+                    continue
+                if any(math.hypot(p[0] - o[0], p[1] - o[1]) < 30.0 for o in placed):
+                    continue
+                return p
+        raise TemplateError(
+            f"two_circles_points: {nm} has no clear spot on the {on} outline "
+            f"{'inside' if inside_other else 'outside'} the other circle — "
+            "widen overlap or drop a dot")
+
+    def region_prefer(inside: list, i: int) -> XY:
+        if inside == ["L", "R"]:
+            base = (d / 2.0, 0.0)
+        elif inside == ["L"]:
+            base = vc.polar(cL, 0.45 * r, 180.0)
+        elif inside == ["R"]:
+            base = vc.polar(cR, 0.45 * r, 0.0)
+        else:
+            base = (d / 2.0, r + 55.0)   # below the pair
+        return vc.polar(base, 0.0 if i == 0 else 20.0 + 14.0 * i, _spread_deg(i))
+
+    for nm in names:
+        inside, on = specs[nm]
+        if on:
+            pos[nm] = outline_spot(nm, inside, on)
+            placed.append(pos[nm])
+    i_free = 0
+    for nm in names:
+        inside, on = specs[nm]
+        if on:
+            continue
+        in_names = ["left" if s == "L" else "right" for s in inside]
+        out_names = [n for n in ("left", "right") if n not in in_names]
+        pos[nm] = region_point(circles, inside=in_names, outside=out_names,
+                               prefer=region_prefer(inside, i_free),
+                               margin=18.0, avoid=placed, min_sep=34.0)
+        i_free += 1
+        placed.append(pos[nm])
+
+    glyphs = [str(points[nm].get("label") or nm) for nm in names]
+    _distinct_glyphs("two_circles_points", glyphs)
+    n_on = n_in = n_out = 0
+    for i, nm in enumerate(names):
+        inside, on = specs[nm]
+        p = pos[nm]
+        anchors[nm] = p
+        elements.append({"id": f"pt{nm}", "type": "point", "at": vc.P(p), "r": dot_r})
+        claims += membership_claims(nm, p, circles)
+        elements.append(_float_label(f"lb{nm}", glyphs[i], p))
+        add(f'label "{glyphs[i]}" names {nm}', "stem", f"the label on dot {nm}")
+        if on:
+            n_on += 1
+        elif inside:
+            n_in += 1
+        else:
+            n_out += 1
+    add(f"derive {n_in} + {n_on} + {n_out} = {len(names)}", "inferred",
+        "inside + on + outside counts make the dot total")
+    add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
+        "two circles and dots only")
+    return finish(kind="two_circles_points", figure_id=figure_id, stem=stem,
+                  elements=elements, anchors=anchors, points=names + ["L", "R"],
+                  segments=[], claims=claims, ask=ask,
+                  title=title or "Two overlapping circles with dots",
+                  description=description or
+                  "Two overlapping circles side by side with several dots in and around "
+                  "them.",
+                  scale="the overlap is a canvas choice — only the dots' membership "
+                        "matters",
+                  medium=medium)
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# 12. circles_in_circle — small circles inside and outside a big circle
+# ────────────────────────────────────────────────────────────────────────────────
+def build_circles_in_circle(*, figure_id, stem, ask=None, title=None, description=None,
+                            medium="english", n_in=None, n_out=None, R=120.0, r=16.0):
+    """A big circle with n_in small equal circles fully inside it and n_out fully
+    outside it — none touching: every small circle is ≥10 units clear of the big
+    stroke and of every other small circle. Inside centres land on golden-angle seeds
+    via region_point; outside centres prefer a ring 42 units past the outline."""
+    vc.reset_ids()
+    for nm_, v in (("n_in", n_in), ("n_out", n_out)):
+        if not isinstance(v, int) or isinstance(v, bool) or v < 0:
+            raise TemplateError(f"circles_in_circle: {nm_} must be an int ≥ 0 — got {v!r}")
+    if n_in + n_out < 1:
+        raise TemplateError("circles_in_circle: at least one small circle")
+    if not (r > 0 and R > r + 26.0):
+        raise TemplateError("circles_in_circle: need R > r + 26 so a small circle fits "
+                            f"inside with 10 units to spare (R={R:g}, r={r:g})")
+    centre = (0.0, 0.0)
+    circles = {"big": (centre, float(R))}
+    elements = [vc.circle(centre, R, id="big")]
+    placed: list[XY] = []
+    for i in range(n_in):
+        rad = (R - r - 14.0) * math.sqrt(i / max(n_in, 1))
+        prefer = vc.polar(centre, rad, _spread_deg(i))
+        p = region_point(circles, inside=["big"], outside=[], prefer=prefer,
+                         margin=r + 10.0, avoid=placed, min_sep=2 * r + 10.0)
+        elements.append(vc.circle(p, r, id=f"in{i + 1}"))
+        placed.append(p)
+    for j in range(n_out):
+        prefer = vc.polar(centre, R + r + 42.0, (-90.0 + j * 360.0 / n_out) % 360.0)
+        p = region_point(circles, inside=[], outside=["big"], prefer=prefer,
+                         margin=r + 10.0, avoid=placed, min_sep=2 * r + 10.0)
+        elements.append(vc.circle(p, r, id=f"out{j + 1}"))
+        placed.append(p)
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    add(f"circle centre Z radius {R:g}", "inferred", "the big circle's centre")
+    if n_in:
+        add(f'describe "{n_in} small circles lie inside the big circle"', "inferred",
+            "count the inner rings")
+    if n_out:
+        add(f'describe "{n_out} small circles lie outside the big circle"', "inferred",
+            "count the outer rings")
+    add(f"derive {n_in} + {n_out} = {n_in + n_out}", "inferred",
+        "inside + outside counts make the small-circle total")
+    add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
+        "circles only — nothing is labelled")
+    bits = [w for w, n in (("inside it", n_in), ("outside it", n_out)) if n]
+    return finish(kind="circles_in_circle", figure_id=figure_id, stem=stem,
+                  elements=elements, anchors={"Z": centre}, points=["Z"], segments=[],
+                  claims=claims, ask=ask,
+                  title=title or "Small circles in and out of a big circle",
+                  description=description or
+                  "A large circle with several small circles " + " and ".join(bits) + ".",
+                  scale="the big circle's size is a canvas choice — only in/out counts",
+                  medium=medium)
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# 13. abacus — place-value rods with beads, value labels below
+# ────────────────────────────────────────────────────────────────────────────────
+def build_abacus(*, figure_id, stem, ask=None, title=None, description=None,
+                 medium="english", place_values=None, beads=None, bead_r=7.5):
+    """A spike abacus: one vertical rod per place value (left to right, e.g.
+    [10000, 1000, 100, 10, 1]), `beads[i]` beads threaded on rod i (0–9 — the lesson's
+    own rule that a rod never carries ten), a base bar under the rods and the value
+    printed below each rod (floating labels — their `_near` sits just under the bar).
+    The derive claim sums beads × place value to the number shown."""
+    vc.reset_ids()
+    if not isinstance(place_values, (list, tuple)) or not place_values:
+        raise TemplateError("abacus: place_values must be a non-empty list")
+    if not isinstance(beads, (list, tuple)) or len(beads) != len(place_values):
+        raise TemplateError("abacus: beads must be a list parallel to place_values")
+    seen_v = set()
+    for v in place_values:
+        if not isinstance(v, (int, float)) or isinstance(v, bool) or v <= 0:
+            raise TemplateError(f"abacus: place value {v!r} must be a positive number")
+        if v in seen_v:
+            raise TemplateError(f"abacus: place value {v:g} is repeated — two rods would "
+                                "print the same label")
+        seen_v.add(v)
+    for i, b in enumerate(beads):
+        if not isinstance(b, int) or isinstance(b, bool) or b < 0:
+            raise TemplateError(f"abacus: rod {i + 1}'s bead count {b!r} must be an int ≥ 0")
+        if b > 9:
+            raise TemplateError(f"abacus: rod {i + 1} carries {b} beads — a place-value rod "
+                                "never holds ten (the lesson's own rule)")
+    lab_size = 15.0
+    est_span = len(place_values) * 90.0 + 120.0
+    max_lab = max(_label_width(f"{v:g}", lab_size) for v in place_values)
+    spacing = max(64.0, max_lab + _clearance_units(6.0, est_span))
+    rod_h = 9 * (2 * bead_r + 3.0) + 24.0          # room for nine beads on a rod
+    base_y = rod_h                                 # local coords; finish() translates
+    xs = [i * spacing for i in range(len(place_values))]
+    elements = [vc.line((xs[0] - 26.0, base_y), (xs[-1] + 26.0, base_y), id="base",
+                        width=3.0)]
+    for i, x in enumerate(xs):
+        elements.append(vc.line((x, base_y), (x, base_y - rod_h + 12.0), id=f"rod{i + 1}",
+                                width=2.0))
+        for j in range(beads[i]):
+            elements.append(vc.circle((x, base_y - 10.0 - bead_r - j * (2 * bead_r + 3.0)),
+                                      bead_r, id=f"b{i + 1}_{j + 1}"))
+        elements.append(_float_label(f"lv{i + 1}", f"{place_values[i]:g}",
+                                     (x, base_y + 4.0), gap=6.0, size=lab_size))
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    total = 0
+    for i, (v, b) in enumerate(zip(place_values, beads)):
+        add(f'label "{v:g}" names rod{i + 1}', "inferred", "the rod's place value")
+        add(f'describe "the {v:g} rod holds {b} bead{"s" if b != 1 else ""}"', "inferred",
+            "count the beads on the rod")
+        total += b * v
+    add("derive " + " + ".join(f"{b:g} * {v:g}" for v, b in zip(place_values, beads))
+        + f" = {total:g}", "inferred", "beads times place value, summed over the rods")
+    add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
+        "rods, beads and a base bar only")
+    return finish(kind="abacus", figure_id=figure_id, stem=stem, elements=elements,
+                  anchors={}, points=[], segments=[], claims=claims, ask=ask,
+                  title=title or "An abacus showing a number",
+                  description=description or
+                  f"An abacus with {len(place_values)} rods standing on a base bar; "
+                  "each rod is labelled with its place value and carries a stack of "
+                  "beads.",
+                  scale="bead size and rod spacing are a canvas choice — only the "
+                        "counts matter",
+                  budget=len(elements) if len(elements) > 32 else None,
+                  medium=medium)
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# 14. sorting_rings — labelled rings, each holding a column of item cards
+# ────────────────────────────────────────────────────────────────────────────────
+def build_sorting_rings(*, figure_id, stem, ask=None, title=None, description=None,
+                        medium="english", groups=None, ring_gap=32.0):
+    """Two or three sorting rings side by side. `groups` = [(name, [items…])]: each
+    item is a numeral/word drawn on a thin stroke-only rect card, the cards stack
+    vertically inside the ring (≥6 units apart, ≥8 from the ring stroke) and the
+    group's name prints above the ring. Ring radius grows to fit its card column."""
+    vc.reset_ids()
+    if not isinstance(groups, (list, tuple)) or not (2 <= len(groups) <= 3):
+        raise TemplateError("sorting_rings: groups must be a list of 2 or 3 "
+                            "(name, items) pairs")
+    names_seen: set[str] = set()
+    glyphs: list[str] = []
+    norm: list[tuple[str, list[str]]] = []
+    for g in groups:
+        if not isinstance(g, (list, tuple)) or len(g) != 2:
+            raise TemplateError("sorting_rings: each group is a (name, items) pair")
+        gname, items = str(g[0]), [str(x) for x in (g[1] or [])]
+        if not gname.strip():
+            raise TemplateError("sorting_rings: a group name is empty")
+        if gname in names_seen:
+            raise TemplateError(f"sorting_rings: group name {gname!r} is repeated")
+        if not items:
+            raise TemplateError(f"sorting_rings: group {gname!r} has no items")
+        names_seen.add(gname)
+        glyphs.append(gname)
+        glyphs += items
+        norm.append((gname, items))
+    _distinct_glyphs("sorting_rings", glyphs)
+    it_size, name_size = 15.0, 16.0
+    # pad from label-box to card edge must stay ≥8 rendered px — estimate the span,
+    # size the cards/rings, then refine the pad once against the real span
+    pad = _clearance_units(STROKE_PX + SLACK_STROKE + 2.0, 620.0)
+    for _ in range(3):
+        card_h = it_size * (MID_UP + MID_DOWN) + 2 * pad
+        card_ws = [max(_label_width(x, it_size) for x in items) + 2 * pad
+                   for _, items in norm]
+        stack_hs = [len(items) * card_h + (len(items) - 1) * 6.0 for _, items in norm]
+        radii = [math.hypot(w / 2.0, h / 2.0) + 10.0 for w, h in zip(card_ws, stack_hs)]
+        span = 2 * sum(radii) + ring_gap * (len(norm) - 1) + 2 * MARGIN + 60.0
+        new_pad = _clearance_units(STROKE_PX + SLACK_STROKE + 2.0, span)
+        if abs(new_pad - pad) < 0.5:
+            break
+        pad = new_pad
+    elements: list[dict] = []
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    cur = 0.0
+    name_drop = name_size * MID_DOWN + _clearance_units(STROKE_PX + SLACK_STROKE + 2.0,
+                                                        span) + 1.0
+    for i, ((gname, items), card_w, stack_h, ring_r) in enumerate(
+            zip(norm, card_ws, stack_hs, radii)):
+        cx = cur + ring_r
+        cur += 2 * ring_r + ring_gap
+        elements.append(vc.circle((cx, 0.0), ring_r, id=f"ring{i + 1}"))
+        elements.append(vc.text((cx, -ring_r - name_drop), gname, id=f"nm{i + 1}",
+                                size=name_size))
+        top = -stack_h / 2.0
+        for j, item in enumerate(items):
+            cy = top + j * (card_h + 6.0) + card_h / 2.0
+            elements.append({"id": f"cd{i + 1}_{j + 1}", "type": "rect",
+                             "x": vc.r2(cx - card_w / 2.0), "y": vc.r2(cy - card_h / 2.0),
+                             "width": vc.r2(card_w), "height": vc.r2(card_h)})
+            elements.append(vc.text((cx, cy), item, id=f"it{i + 1}_{j + 1}",
+                                    size=it_size))
+            add(f'label "{item}" names it{i + 1}{j + 1}', "inferred", "an item card")
+        add(f'label "{gname}" names ring{i + 1}', "inferred", "the ring's label")
+        add(f'describe "ring {i + 1} holds the {gname} cards — '
+            f'{len(items)} items"', "inferred", "what the ring contains")
+    add("derive " + " + ".join(str(len(items)) for _, items in norm)
+        + f" = {sum(len(items) for _, items in norm)}", "inferred",
+        "the rings' card counts make the item total")
+    add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
+        "rings and cards only")
+    return finish(kind="sorting_rings", figure_id=figure_id, stem=stem, elements=elements,
+                  anchors={}, points=[], segments=[], claims=claims, ask=ask,
+                  title=title or "Sorting rings",
+                  description=description or
+                  f"{len(norm)} rings side by side; each has a name above it and a "
+                  "column of labelled cards stacked inside.",
+                  scale="ring size follows its cards — only the grouping matters",
+                  medium=medium)
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# 15. shape_row — a row of named shapes, three per row, a letter under each
+# ────────────────────────────────────────────────────────────────────────────────
+SHAPE_KINDS = ("circle", "small_circle", "square", "rectangle", "triangle",
+               "oval", "semicircle")
+# curved-outline kinds vs straight-sided kinds — feeds the derive partition
+_CURVED_KINDS = {"circle", "small_circle", "oval", "semicircle"}
+_SHAPE_DESCS = {
+    "circle": "a circle — a curved outline with no corners",
+    "small_circle": "a small circle — a curved outline with no corners",
+    "square": "a square — four equal sides and four corners",
+    "rectangle": "a rectangle — four sides and four corners",
+    "triangle": "a triangle — three sides and three corners",
+    "oval": "an oval — a curved outline with no corners",
+    "semicircle": "a semicircle — one straight side and one curved edge",
+}
+
+
+def build_shape_row(*, figure_id, stem, ask=None, title=None, description=None,
+                    medium="english", shapes=None, cell_w=120.0, row_h=132.0):
+    """A row of shapes, three to a row, each tagged by a capital letter floating
+    below it (`_near` = the shape's bottom point — on its outline, so the label lands
+    outside). `shapes` = [(letter, kind)] with kind in SHAPE_KINDS. Ovals and
+    semicircles are many-point polygons so the outline is a real closed region."""
+    vc.reset_ids()
+    if not isinstance(shapes, (list, tuple)) or not shapes:
+        raise TemplateError("shape_row: shapes must be a non-empty list of "
+                            "(letter, kind) pairs")
+    letters: list[str] = []
+    for s in shapes:
+        if not isinstance(s, (list, tuple)) or len(s) != 2:
+            raise TemplateError("shape_row: each shape is a (letter, kind) pair")
+        letter, kind = s
+        if not isinstance(letter, str) or not re.fullmatch(r"[A-Z]", letter):
+            raise TemplateError(f"shape_row: letter {letter!r} is not a single capital")
+        if kind not in SHAPE_KINDS:
+            raise TemplateError(f"shape_row: kind {kind!r} is not one of "
+                                f"{', '.join(SHAPE_KINDS)}")
+        if letter in letters:
+            raise TemplateError(f"shape_row: letter {letter!r} is used twice")
+        letters.append(letter)
+    centre_pool = _unused_letters(set(letters),
+                                  sum(1 for _, k in shapes if k in ("circle",
+                                                                    "small_circle")))
+    elements: list[dict] = []
+    anchors: dict[str, XY] = {}
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    for i, (letter, kind) in enumerate(shapes):
+        col, row = i % 3, i // 3
+        cx = col * cell_w + cell_w / 2.0
+        cy = row * row_h + 56.0
+        if kind == "circle":
+            elements.append(vc.circle((cx, cy), 34.0, id=f"sh{letter}"))
+            bottom = (cx, cy + 34.0)
+        elif kind == "small_circle":
+            elements.append(vc.circle((cx, cy), 22.0, id=f"sh{letter}"))
+            bottom = (cx, cy + 22.0)
+        elif kind == "square":
+            elements.append({"id": f"sh{letter}", "type": "rect", "x": vc.r2(cx - 29.0),
+                             "y": vc.r2(cy - 29.0), "width": 58.0, "height": 58.0})
+            bottom = (cx, cy + 29.0)
+        elif kind == "rectangle":
+            elements.append({"id": f"sh{letter}", "type": "rect", "x": vc.r2(cx - 38.0),
+                             "y": vc.r2(cy - 22.0), "width": 76.0, "height": 44.0})
+            bottom = (cx, cy + 22.0)
+        elif kind == "triangle":
+            elements.append(vc.polygon([(cx, cy - 30.0), (cx - 32.0, cy + 24.0),
+                                        (cx + 32.0, cy + 24.0)], id=f"sh{letter}"))
+            bottom = (cx, cy + 24.0)
+        elif kind == "oval":
+            elements.append(vc.polygon(
+                [(cx + 44.0 * math.cos(math.radians(k * 360.0 / 28)),
+                  cy + 27.0 * math.sin(math.radians(k * 360.0 / 28)))
+                 for k in range(28)], id=f"sh{letter}"))
+            bottom = (cx, cy + 27.0)
+        else:   # semicircle — arc over the top, diameter flat on the bottom
+            elements.append(vc.polygon(
+                [vc.polar((cx, cy + 17.0), 34.0, dg) for dg in range(180, 361, 12)],
+                id=f"sh{letter}"))
+            bottom = (cx, cy + 17.0)
+        anchors[letter] = bottom
+        if kind in ("circle", "small_circle"):
+            cname = centre_pool.pop(0)
+            anchors[cname] = (cx, cy)
+            add(f"circle centre {cname} radius "
+                f"{34.0 if kind == 'circle' else 22.0:g}", "inferred",
+                f"the centre of circle {letter}")
+        elements.append(_float_label(f"lb{letter}", letter, bottom, gap=10.0, size=16))
+        add(f'label "{letter}" names {letter}', "stem", f"the letter under the {kind}")
+        add(f'describe "{letter} is {_SHAPE_DESCS[kind]}"', "inferred", "the shape's kind")
+    n_curved = sum(1 for _, k in shapes if k in _CURVED_KINDS)
+    add(f"derive {n_curved} + {len(shapes) - n_curved} = {len(shapes)}", "inferred",
+        "curved + straight-sided shapes make the total")
+    add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
+        "plain outlines and letters only")
+    return finish(kind="shape_row", figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=anchors, points=list(anchors), segments=[], claims=claims,
+                  ask=ask, title=title or "A row of shapes",
+                  description=description or
+                  "Shapes laid out in rows of three; each has a letter label below it.",
+                  scale="shape sizes are uniform icons — only the kinds matter",
+                  medium=medium)
+
+
 BUILDERS = {fn.__name__[6:]: fn for fn in
             (build_grid_polygon, build_shaded_grid, build_rays_from_point, build_number_line,
              build_pictograph, build_rectangle_points, build_house_pentagon, build_cuboid,
-             build_dot_pattern)}
+             build_dot_pattern, build_circle_points, build_two_circles_points,
+             build_circles_in_circle, build_abacus, build_sorting_rings, build_shape_row)}
 
 CATALOGUE = """
 template            stem-checked numbers                          inputs
@@ -2067,6 +2722,12 @@ rectangle_points    length,width if given (else declared freedom) on_points={E:(
 house_pentagon      sides a label cannot restate (e.g. "x m")     AB,BC,DA,CP,PD, unit, labels={CP:"x m"}
 cuboid              length, width, height                         unit, depth_angle=35, depth_scale=0.5
 dot_pattern         stages, only if the stem states it            kind=triangle|square|rectangle
+circle_points       none — counts are figure content              points={P:{"where":"in"|"on"|"out","label"?,"deg"?}}, r, labelled=False for stones
+two_circles_points  none — counts are figure content              points={P:{"in":["L","R"],"on":"L"|"R"|null,"label"?}}, r, overlap
+circles_in_circle   none — counts are figure content              n_in, n_out, R, r — small circles never touch the big one or each other
+abacus              none — printed values are figure content      place_values=[10000,…,1], beads=[b per rod 0–9] — >9 refuses
+sorting_rings       none — item texts are figure content          groups=[(name,[items])] 2–3 rings; cards stack inside each ring
+shape_row           none — shape kinds are figure content         shapes=[(letter,kind)] kind in circle small_circle square rectangle triangle oval semicircle — 3 per row
 """.strip()
 
 SELF_TEST = [
@@ -2118,6 +2779,37 @@ SELF_TEST = [
              "numbers. (a) Write the dot counts of the 5th and 6th figures.",
      "ask": [["a", "the next counts"]],
      "stages": 4, "kind": "triangle"},
+    {"template": "circle_points", "figure_id": "selftest-cpts",
+     "stem": "The circle has centre Z. Points P, Q, R, S and T are marked. (a) Say which "
+             "points lie inside the circle, on it and outside it.",
+     "ask": [["a", "where each point lies"]],
+     "points": {"P": {"where": "in"}, "Q": {"where": "in"}, "R": {"where": "on", "deg": 35},
+                "S": {"where": "out"}, "T": {"where": "out"}}},
+    {"template": "two_circles_points", "figure_id": "selftest-2cpts",
+     "stem": "The figure shows two overlapping circles. Points P, Q, R and S are marked. "
+             "(a) Say which circle each marked point lies in.",
+     "ask": [["a", "where each point lies"]],
+     "points": {"P": {"in": ["L"]}, "Q": {"in": ["L", "R"]}, "S": {"in": ["R"]},
+                "T": {"on": "L", "in": ["R"]}}},
+    {"template": "circles_in_circle", "figure_id": "selftest-cin",
+     "stem": "The figure shows a big circle with small rings around and inside it. "
+             "(a) Count the small circles inside the big circle and outside it.",
+     "ask": [["a", "the counts"]],
+     "n_in": 5, "n_out": 4},
+    {"template": "abacus", "figure_id": "selftest-abacus",
+     "stem": "The abacus shows a four-digit number. (a) Write the number it shows.",
+     "ask": [["a", "the number shown"]],
+     "place_values": [1000, 100, 10, 1], "beads": [3, 0, 5, 7]},
+    {"template": "sorting_rings", "figure_id": "selftest-rings",
+     "stem": "Sort the number cards into the rings. (a) Say which cards go in each ring.",
+     "ask": [["a", "the ring of each card"]],
+     "groups": [["Even", ["2", "8", "14"]], ["Odd", ["3", "9"]]]},
+    {"template": "shape_row", "figure_id": "selftest-shapes",
+     "stem": "The shapes A to F are shown. (a) Name each shape. (b) Say which shapes have "
+             "a curved outline.",
+     "ask": [["a", "the shape names"], ["b", "the curved ones"]],
+     "shapes": [["A", "circle"], ["B", "square"], ["C", "triangle"], ["D", "oval"],
+                ["E", "rectangle"], ["F", "semicircle"]]},
 ]
 
 
@@ -2171,6 +2863,7 @@ def main() -> int:
         for spec in specs:
             spec = dict(spec)
             kind = spec.pop("template")
+            vc.reset_ids()          # deterministic element ids even inside one process
             try:
                 b = BUILDERS[kind](**spec)
             except TemplateError as e:
