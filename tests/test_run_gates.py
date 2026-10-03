@@ -275,6 +275,68 @@ class BuildTest(unittest.TestCase):
             self.assertFalse(any("vdd_templates" in " ".join(c) for c in stub.calls))
             self.assertTrue(any("Q7-claims.txt" in " ".join(c) for c in stub.calls))
 
+    def test_figure_file_stem_must_match_its_staged_id(self):
+        # visual-check resolves <id>-claims.txt by the STAGED id (Q3, Q3.a) — a file named
+        # anything else audits under its basename but then assesses claims-less in both modes.
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "specs" / "figures.json").write_text("[]", encoding="utf-8")
+            (run / "figures").mkdir(exist_ok=True)
+            (run / "figures" / "pic.json").write_text("{}", encoding="utf-8")
+            (run / "figures" / "pic-claims.txt").write_text("claims:\n", encoding="utf-8")
+            (run / "content.yaml").write_text(
+                "id_seed: t\nfigures: {F1: figures/pic.json}\nquestions:\n"
+                "  - {n: 3, stem: s, lessons: [L1], figure: F1, approach: a, final: f}\n",
+                encoding="utf-8")
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run), runner=StubRunner())
+            self.assertEqual(rc, 1)
+            self.assertIn("figure F1 file pic.json is used at Q3 — name it Q3.json "
+                          "so visual-check finds its claim set", out.getvalue())
+            self.assertEqual(json.loads((run / "gates.json").read_text())["audit:pic"], 1)
+            # naming the file after its staged id clears the check — same run, renamed
+            (run / "figures" / "pic.json").rename(run / "figures" / "Q3.json")
+            (run / "figures" / "pic-claims.txt").rename(run / "figures" / "Q3-claims.txt")
+            (run / "content.yaml").write_text(
+                "id_seed: t\nfigures: {F1: figures/Q3.json}\nquestions:\n"
+                "  - {n: 3, stem: s, lessons: [L1], figure: F1, approach: a, final: f}\n",
+                encoding="utf-8")
+            with redirect_stdout(io.StringIO()):
+                rc = rg.cmd_build(build_args(run), runner=StubRunner())
+            self.assertEqual(rc, 0)
+
+    def test_figure_file_stem_must_match_its_staged_id_parts(self):
+        # same check at part depth: a part's figure is staged as Q<n>.<label[.label…]>
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "specs" / "figures.json").write_text("[]", encoding="utf-8")
+            (run / "figures").mkdir(exist_ok=True)
+            (run / "figures" / "pic.json").write_text("{}", encoding="utf-8")
+            (run / "figures" / "pic-claims.txt").write_text("claims:\n", encoding="utf-8")
+            (run / "content.yaml").write_text(
+                "id_seed: t\nfigures: {F2: figures/pic.json}\nquestions:\n"
+                "  - {n: 3, stem: s, lessons: [L1], parts:\n"
+                "     [{label: a, text: t, figure: F2, approach: x, final: y}]}\n",
+                encoding="utf-8")
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run), runner=StubRunner())
+            self.assertEqual(rc, 1)
+            self.assertIn("used at Q3.a — name it Q3.a.json", out.getvalue())
+
+    def test_figures_map_dict_value_dies_like_build_staged(self):
+        # build-staged accepts only {key: path-string} — stage 2 must refuse the dict shape
+        # too, not carry a usage error later into the chain
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "content.yaml").write_text(
+                "id_seed: t\nfigures: {H7: {file: figures/Q7.json}}\nquestions: []\n",
+                encoding="utf-8")
+            with self.assertRaises(SystemExit) as cm:
+                rg.cmd_build(build_args(run), runner=StubRunner())
+            self.assertEqual(cm.exception.code, 2)
+
     def test_markdown_gate_blocks_stop_the_build(self):
         with tempfile.TemporaryDirectory() as td:
             run = make_run(Path(td))
@@ -527,8 +589,18 @@ class ShipTest(unittest.TestCase):
                 rc = rg.cmd_ship(ship_args(run, session_check=True), runner=stub2)
             self.assertEqual(rc, 0)
             sess = next(" ".join(c) for c in stub2.calls if "--session" in c)
-            # the local staged.json IS the server doc (doc get just proved it), and the run's
-            # claim sets go to the live preview too — allow:/departures apply there
+            # no <run>/figures dir → the pre-change bare argv; an absent dir makes
+            # visual-check die, and a figure-less run has no claim sets to pair anyway
+            self.assertNotIn("--claims-dir", sess)
+            self.assertNotIn("--staged", sess)
+            # with figures/ present, the local staged.json IS the server doc (doc get just
+            # proved it) and the claim sets go to the live preview — allow:/departures apply
+            (run / "figures").mkdir()
+            stub3 = StubRunner()
+            with redirect_stdout(io.StringIO()):
+                rc = rg.cmd_ship(ship_args(run, session_check=True), runner=stub3)
+            self.assertEqual(rc, 0)
+            sess = next(" ".join(c) for c in stub3.calls if "--session" in c)
             self.assertIn(f"--staged {run / 'staged.json'}", sess)
             self.assertIn(f"--claims-dir {run / 'figures'}", sess)
 

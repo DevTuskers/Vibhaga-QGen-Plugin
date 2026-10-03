@@ -60,3 +60,40 @@ export function pairRenderedFigures(measured, stagedFigs) {
   return (measured ?? []).filter((m) => m?.svg)
     .map((m, k) => ({ measured: m, fig: stagedFigs?.[k] ?? null }));
 }
+
+/**
+ * Group collectFromStaged's figures by question number for --session pairing, in the walk's
+ * document order. ⚠️ A figure with `renders === false` (the caller marks it when the doc fails
+ * parseVddDocument or parses to zero elements — StudentPreview draws a `<p>` note, NO svg host)
+ * takes no pairing slot and lands in `skipped` instead; counted, it would shift every figure
+ * behind it in that question onto the wrong claim set. → {byQ: Map<q, fig[]>, skipped: [{q,id,why}]}
+ */
+export function groupStagedFigures(figs) {
+  const byQ = new Map();
+  const skipped = [];
+  for (const f of figs) {
+    const id = f.baseId ?? f.id;
+    const m = id.match(/^Q(\d+)/);
+    if (!m) continue;
+    const q = +m[1];
+    if (f.renders === false) { skipped.push({ q, id, why: f.why ?? "does not parse" }); continue; }
+    if (!byQ.has(q)) byQ.set(q, []);
+    byQ.get(q).push(f);
+  }
+  return { byQ, skipped };
+}
+
+/**
+ * The argv for --session's post-logout Q3 proof. `authEnv` is the env FILE the URL was read
+ * from — sql-proof.py resolves VIBHAGA_ADMIN_AUTH_DB_URL via env → VIBHAGA_ADMIN_ENV → the
+ * admin checkout's own .env.local path, which is NOT necessarily the file visual-check's
+ * resolver found it in (a non-sibling --admin/VIBHAGA_ADMIN checkout), so the file goes along
+ * as `--auth-env` and one resolution feeds both. null when the URL came from the process env —
+ * sql-proof inherits it anyway. actorId on argv matches the ship-chain behaviour; the URL
+ * itself never goes on argv.
+ */
+export function sqlProofQ3Argv(pluginDir, actorId, authEnv = null) {
+  const argv = [path.join(pluginDir, "tools", "sql-proof.py"), "q3", "--actor", actorId];
+  if (authEnv) argv.push("--auth-env", authEnv);
+  return argv;
+}

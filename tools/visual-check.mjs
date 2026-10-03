@@ -62,7 +62,7 @@ import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
 import { assess } from "./visual-metrics.mjs";
-import { pushFigure, claimsForWarn, pairRenderedFigures } from "./session-db.mjs";
+import { pushFigure, claimsForWarn, pairRenderedFigures, groupStagedFigures, sqlProofQ3Argv } from "./session-db.mjs";
 import { contactSheetHtml } from "./contact-sheet.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -731,15 +731,18 @@ async function sessionMode() {
     for (const f of figs) {
       const r = lib.parseVddDocument(f.doc);
       f.parsed = r.ok ? r.value : f.doc;
+      // StudentPreview renders an unparseable or element-less diagram as a <p> note — NO
+      // [role="img"] host, no svg — so it must not take a pairing slot, or one broken figure
+      // shifts every figure behind it onto the wrong claim set (a false PASS).
+      if (!r.ok) { f.renders = false; f.why = "does not parse"; }
+      else if (!(r.value.elements ?? []).length) { f.renders = false; f.why = "has no elements"; }
       const w = claimsForWarn(f.baseId ?? f.id, claimsDir, f.claims);
       if (w) console.log(w);
-      const m = (f.baseId ?? f.id).match(/^Q(\d+)/);
-      if (m) {
-        const k = +m[1];
-        if (!figsByQ.has(k)) figsByQ.set(k, []);
-        figsByQ.get(k).push(f);
-      }
     }
+    const { byQ, skipped } = groupStagedFigures(figs);
+    for (const s of skipped)
+      console.log(`  WARN Q${s.q}: staged figure ${s.id} ${s.why} — not rendered, not paired`);
+    for (const [k, v] of byQ) figsByQ.set(k, v);
   }
   const outDir = path.join(out, "session");
   fs.mkdirSync(outDir, { recursive: true });
@@ -931,11 +934,15 @@ async function sessionMode() {
     // printed and never placed on argv.
     if (actorId) {
       const envFile = adminEnvFile();
+      const fromEnv = !!process.env.VIBHAGA_ADMIN_AUTH_DB_URL;
       const authUrl = process.env.VIBHAGA_ADMIN_AUTH_DB_URL
         ?? (envFile ? parseEnvFile(envFile).VIBHAGA_ADMIN_AUTH_DB_URL : null);
       if (authUrl) {
+        // authEnv when the URL came from the FILE: sql-proof's own resolver would not find
+        // this file when --admin/VIBHAGA_ADMIN points at a non-sibling checkout — one
+        // resolution feeds both (see sqlProofQ3Argv).
         const r = spawnSync(process.env.PYTHON ?? "python3",
-          [path.join(PLUGIN, "tools", "sql-proof.py"), "q3", "--actor", actorId],
+          sqlProofQ3Argv(PLUGIN, actorId, fromEnv ? null : envFile),
           { encoding: "utf8" });
         const text = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
         if (text) console.log(text.split("\n").map((l) => `  ${l}`).join("\n"));

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { claimsFor, pushFigure, claimsForWarn, pairRenderedFigures } from "../tools/session-db.mjs";
+import { claimsFor, pushFigure, claimsForWarn, pairRenderedFigures, groupStagedFigures, sqlProofQ3Argv } from "../tools/session-db.mjs";
 import { assess } from "../tools/visual-metrics.mjs";
 
 test("claimsFor: --claims-dir resolves <id>-claims.txt (the vdd_templates name) too", () => {
@@ -109,4 +109,34 @@ test("pairRenderedFigures: the k-th svg host pairs with the k-th staged figure �
   assert.equal(short[1].fig, null);
   assert.ok(pairRenderedFigures(measured, null).every((p) => p.fig === null));
   assert.deepEqual(pairRenderedFigures([], figs), []);
+});
+
+test("groupStagedFigures: a staged figure that renders no svg takes NO pairing slot", () => {
+  // StudentPreview draws a <p> note for an unparseable (or element-less) diagram — no
+  // [role="img"] host, no measure() entry at all. Keeping it in figsByQ would pair the first
+  // rendered host with the BROKEN figure's claims and shift every figure behind it.
+  const figs = [
+    { id: "Q3", baseId: "Q3", renders: false, why: "does not parse" },   // note, no svg
+    { id: "Q3.a", baseId: "Q3.a", renders: true },
+    { id: "Q4", baseId: "Q4", renders: true },
+  ];
+  const { byQ, skipped } = groupStagedFigures(figs);
+  assert.deepEqual(skipped, [{ q: 3, id: "Q3", why: "does not parse" }]);
+  assert.equal(byQ.get(3).length, 1);
+  assert.equal(byQ.get(4)[0].id, "Q4");
+  // the ONE rendered host in Q3's preview pairs with Q3.a — not with the unrendered Q3
+  const pairs = pairRenderedFigures([{ index: 0, svg: true, pxPerUnit: 1, labels: [] }], byQ.get(3));
+  assert.equal(pairs[0].fig.id, "Q3.a");
+  // renders unset (undefined) counts as rendered — only an explicit false is a slot-taker
+  const { byQ: all } = groupStagedFigures([{ id: "Q1" }]);
+  assert.equal(all.get(1)[0].id, "Q1");
+});
+
+test("sqlProofQ3Argv: --auth-env goes along only when the URL came from an env FILE", () => {
+  const argv = sqlProofQ3Argv("/plugin", "00000000-0000-4000-8000-000000000042", "/adm/.env.local");
+  assert.deepEqual(argv.slice(0, 3), ["/plugin/tools/sql-proof.py", "q3", "--actor"]);
+  assert.deepEqual(argv.slice(-2), ["--auth-env", "/adm/.env.local"]);
+  // URL from the process env → sql-proof inherits it; no file flag
+  const bare = sqlProofQ3Argv("/plugin", "actor-uuid", null);
+  assert.ok(!bare.includes("--auth-env"));
 });

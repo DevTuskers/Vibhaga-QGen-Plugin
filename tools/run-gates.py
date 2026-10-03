@@ -139,13 +139,43 @@ def figure_ids(run: Path, specs_path: Path, content: dict) -> tuple[list, list[t
                 "nothing would be audited or vdd-checked")
     hand = []
     for key, val in ((content.get("figures") or {}).items()):
-        rel = val if isinstance(val, str) else (val or {}).get("file")
-        if not isinstance(rel, str) or not rel:
-            die(f"content.yaml figures:{key}: not a figure path (want 'figures/<id>.json')")
-        fpath = run / rel
-        fid = Path(rel).stem
+        # build-staged accepts ONLY {key: path-string} — anything else is the same usage error
+        # here as it is at stage 3, not a later surprise
+        if not isinstance(val, str) or not val:
+            die(f"content.yaml figures:{key}: must be a figure path string "
+                f"(want 'figures/<id>.json')")
+        fpath = run / val
+        fid = Path(val).stem
         hand.append((fid, fpath, fpath.with_name(f"{fid}-claims.txt")))
     return spec_ids, hand
+
+
+def staged_figure_uses(content: dict) -> dict:
+    """figure KEY → [staged ids] — where content.yaml attaches each `figures:` entry. A
+    question's `figure:` → `Q<n>`; a part's → `Q<n>.<label path joined by '.'>` — the ids
+    visual-check's staged-doc walk emits, so the check 'does the FILE stem equal the staged
+    id' can run before the audits. Keys never referenced return no ids (unused keys are
+    build-staged's call, not ours)."""
+    uses: dict[str, list[str]] = {}
+
+    def parts(nodes, prefix):
+        for p in nodes or []:
+            if not isinstance(p, dict):
+                continue
+            pid = f"{prefix}.{p.get('label')}"
+            if p.get("figure"):
+                uses.setdefault(p["figure"], []).append(pid)
+            parts(p.get("parts"), pid)
+
+    for i, q in enumerate(content.get("questions") or []):
+        if not isinstance(q, dict):
+            continue
+        n = q.get("n")
+        qid = f"Q{n}" if isinstance(n, int) and not isinstance(n, bool) else f"Q{i + 1}"
+        if q.get("figure"):
+            uses.setdefault(q["figure"], []).append(qid)
+        parts(q.get("parts"), qid)
+    return uses
 
 
 def staged_fields(staged: dict) -> list[dict]:
@@ -203,7 +233,8 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     staged, ids, ledger = run / "staged.json", run / "ids.json", run / "ledger.json"
     if content is None:
         die(f"no content.yaml in {run}")
-    spec_ids, hand = figure_ids(run, specs_path, _load_content(content))
+    content_doc = _load_content(content)
+    spec_ids, hand = figure_ids(run, specs_path, content_doc)
     # the audit/vdd-check set = specs ∪ content.yaml figures (hand-drawn figures are gated
     # exactly like template-built ones), each id once, sorted for a stable report
     fig_ids = sorted(set(spec_ids) | {fid for fid, _, _ in hand}, key=_fig_sort)
@@ -229,6 +260,17 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     # 2. per-figure audit + vdd-check — template-built AND hand-drawn alike; a figure file or
     #    its claim set missing fails the stage (hand figures get theirs from
     #    vdd_templates.finish(), which writes <id>-claims.txt beside the .json)
+    #    First: the FILE stem must equal the staged id everywhere content.yaml uses it —
+    #    visual-check (modes 1 and --session) resolves `<id>-claims.txt` by the staged id
+    #    (`figures/pic.json` used as Q5's figure audits fine but assesses claims-less).
+    uses = staged_figure_uses(content_doc)
+    for key, val in (content_doc.get("figures") or {}).items():
+        stem = Path(val).stem
+        used_at = uses.get(key) or []
+        if used_at and stem not in used_at:
+            return fail(gates, run, f"audit:{stem}", 1,
+                        f"figure {key} file {stem}.json is used at {', '.join(used_at)} — "
+                        f"name it {used_at[0]}.json so visual-check finds its claim set")
     for fid in fig_ids:
         fig, claims = hand_by_id.get(fid, (figs_dir / f"{fid}.json",
                                            figs_dir / f"{fid}-claims.txt"))
@@ -400,12 +442,14 @@ def cmd_ship(args, runner=run_cmd, log=print) -> int:
 
     # 4. optional --session visual check — the local staged.json IS the server doc (doc get
     #    just proved it), and the run's claim sets go with it so `allow:`/departures apply
-    #    exactly as in mode 1
+    #    exactly as in mode 1. Only when <run>/figures exists — a figure-less run has no
+    #    claim sets, and an absent dir makes visual-check die (the pre-change argv was bare).
     if args.session_check:
         vc_out = args.vc_session_out or str(run.parent / "vc-session")
-        rc, out = runner([str(NODE_BIN), str(TOOLS / "visual-check.mjs"), "--session", sid,
-                          "--staged", str(staged), "--claims-dir", str(run / "figures"),
-                          "--out", vc_out])
+        vc_cmd = [str(NODE_BIN), str(TOOLS / "visual-check.mjs"), "--session", sid]
+        if (run / "figures").is_dir():
+            vc_cmd += ["--staged", str(staged), "--claims-dir", str(run / "figures")]
+        rc, out = runner([*vc_cmd, "--out", vc_out])
         gates["visual-check-session"] = rc
         shown = quote(out, r"CLIPPED|revocation:|q3:", log=log)
         if rc:
