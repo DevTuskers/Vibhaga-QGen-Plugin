@@ -288,6 +288,24 @@ class BuildStagedTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self.assert_refuses(spec, tmp, "string expression")
 
+    def test_meta_keys_on_a_container_are_refused(self):
+        """`check:`/`level:` on a node WITH parts would be silently ignored — the walkers
+        only visit leaves — so build-staged refuses instead of letting it look checked."""
+        spec = copy.deepcopy(BASE)
+        spec["questions"][0]["parts"] = [
+            {"label": "a", "text": "t", "approach": "x", "final": "1"}]
+        del spec["questions"][0]["approach"], spec["questions"][0]["final"]
+        spec["questions"][0]["check"] = "1 == 1"
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec, tmp, "leaf-only")
+        spec2 = copy.deepcopy(BASE)
+        spec2["questions"][0]["parts"] = [
+            {"label": "a", "text": "t", "level": "M", "parts": [
+                {"label": "i", "text": "t", "approach": "x", "final": "1"}]}]
+        del spec2["questions"][0]["approach"], spec2["questions"][0]["final"]
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec2, tmp, "leaf-only")
+
 
 if __name__ == "__main__":
     unittest.main()

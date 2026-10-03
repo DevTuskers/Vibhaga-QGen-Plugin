@@ -297,9 +297,9 @@ def lesson_cards(session: dict, cards_dir: Path | None) -> list[tuple[dict, int,
         so = l.get("sort_order")
         nn = int(so) // 10 if isinstance(so, (int, float)) and not isinstance(so, bool) else None
         card = None
-        if nn and cards_dir is not None and cards_dir.is_dir():
+        if nn is not None and nn > 0 and cards_dir is not None and cards_dir.is_dir():
             hits = sorted(cards_dir.glob(f"{nn:02d}-*.yaml"))
-            card = hits[0] if hits else None
+            card = hits[0] if hits else None   # NN prefixes are unique per grade — one hit
         out.append((l, nn, card))
     return out
 

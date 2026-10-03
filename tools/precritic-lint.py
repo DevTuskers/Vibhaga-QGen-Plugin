@@ -31,9 +31,10 @@ Checks:
 
   (d) `--rubric medium-hard` — the plan appendix's set rules, read off the leaf `level:`
       keys (R|M/H, actor-only — build-staged never emits them): every question ≥3 leaf
-      parts; at most one R per question and only as its first leaf; the last leaf is H;
-      ≥60 % of a question's leaves M/H; ≥30 % H over the whole set. A leaf with no `level`
-      is a WARN, never a FAIL — its absence simply cannot prove a rule.
+      parts; at most one R per question and only as part (a), i.e. its first leaf in
+      document order; the last leaf is H; ≥60 % of the set's RATED leaves M/H and ≥30 % H —
+      both fractions are set-wide. A leaf with no `level` is a WARN and counts in no
+      denominator, so it can never drive a FAIL.
 
   (e) `--existing FILE …` — duplicate fingerprint: digits masked (`42`→`##`), whitespace
       tokens, Jaccard of each question's stem+part texts against every existing row's
@@ -250,14 +251,15 @@ def load_existing(path: Path) -> list[dict]:
 
 
 def rubric_medium_hard(questions: list, log) -> tuple[int, int]:
-    """Check (d) — the plan appendix's medium–hard set rules from leaf `level:` keys."""
+    """Check (d) — the plan appendix's medium–hard set rules from leaf `level:` keys.
+    "Part (a)" is document order's first leaf; the M/H and H fractions are SET-wide over
+    the rated leaves — a leaf with no `level` is a WARN and counts in no denominator."""
     fails = warns = 0
-    all_levels = []
+    all_rated = []
     for q in questions:
         lv = leaf_levels(q)
         names = [n for n, _ in lv]
         levels = [l for _, l in lv]
-        all_levels += levels
         qn = f"Q{q.get('n')}"
         if len(lv) < 3:
             fails += 1
@@ -266,27 +268,30 @@ def rubric_medium_hard(questions: list, log) -> tuple[int, int]:
         if len(r_at) > 1:
             fails += 1
             log(f"  FAIL {qn}: {len(r_at)} R parts — medium-hard allows one, and only as "
-                f"the first part")
+                f"part (a), i.e. the first part")
         elif r_at and r_at[0] != 0:
             fails += 1
-            log(f"  FAIL {qn}: the R part is {names[r_at[0]]} — medium-hard allows it only "
-                f"as the first part")
+            log(f"  FAIL {qn}: the R part is {names[r_at[0]]} — medium-hard allows it "
+                f"only as part (a), i.e. the first part")
         if levels and levels[-1] not in (None, "H"):
             fails += 1
             log(f"  FAIL {qn}: last part {names[-1]} is {levels[-1]} — medium-hard ends on H")
-        mh = sum(1 for l in levels if l in ("M", "H"))
-        if lv and mh / len(lv) < 0.6:
-            fails += 1
-            log(f"  FAIL {qn}: {mh}/{len(lv)} parts are M/H — medium-hard wants ≥60%")
         for name, l in lv:
             if l is None:
                 warns += 1
                 log(f"  WARN {name}: no level — the rubric cannot see it")
-    h = sum(1 for l in all_levels if l == "H")
-    if all_levels and h / len(all_levels) < 0.3:
+            else:
+                all_rated.append(l)
+    mh = sum(1 for l in all_rated if l in ("M", "H"))
+    if all_rated and mh / len(all_rated) < 0.6:
         fails += 1
-        log(f"  FAIL set: {h}/{len(all_levels)} leaves are H — medium-hard wants ≥30% H "
-            f"overall")
+        log(f"  FAIL set: {mh}/{len(all_rated)} rated leaves are M/H — medium-hard wants "
+            f"≥60%")
+    h = sum(1 for l in all_rated if l == "H")
+    if all_rated and h / len(all_rated) < 0.3:
+        fails += 1
+        log(f"  FAIL set: {h}/{len(all_rated)} rated leaves are H — medium-hard wants "
+            f"≥30% H overall")
     return fails, warns
 
 
@@ -407,7 +412,8 @@ def main(argv: list[str] | None = None) -> int:
                          "(required with --card unless --cards-dir is given)")
     ap.add_argument("--cards-dir", help="read cards from DIR/<NN>-*.yaml instead of the corpus")
     ap.add_argument("--rubric", choices=["medium-hard"], default=None,
-                    help="check the leaf `level:` keys against a set rubric (check d)")
+                    help="check the leaf `level:` keys against a set rubric (check d — R "
+                         "only as part (a), i.e. the first part in document order)")
     ap.add_argument("--existing", action="append", nargs="+", default=[], metavar="FILE",
                     help="existing-question dumps (JSON list or JSONL) — digits-masked Jaccard "
                          "duplicate warn against each row's stem_excerpt (check e)")

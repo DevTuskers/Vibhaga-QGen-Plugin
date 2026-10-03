@@ -287,7 +287,7 @@ class PrecriticLintTest(unittest.TestCase):
             run2 = write_levels_run(Path(td) / "b", ["M", "R", "H"])
             r2 = lint_plain(run2, "--rubric", "medium-hard")
             self.assertEqual(r2.returncode, 1)
-            self.assertIn("the R part is Q1.b — medium-hard allows it only as the first",
+            self.assertIn("the R part is Q1.b — medium-hard allows it only as part (a)",
                           r2.stdout)
 
     def test_rubric_fails_last_not_h(self):
@@ -297,9 +297,19 @@ class PrecriticLintTest(unittest.TestCase):
             self.assertEqual(r.returncode, 1)
             self.assertIn("ends on H", r.stdout)
 
+    def test_rubric_mh_fraction_is_set_wide(self):
+        # Q1 alone is 1/3 M/H among its rated leaves — under a per-question rule it
+        # failed; the set rules read ≥60% over ALL rated leaves, so the set passes
+        with tempfile.TemporaryDirectory() as td:
+            run = write_levels_run(Path(td), ["R", "M", None],
+                                   ["M", "H", "H"], ["M", "H", "H"], ["M", "H", "H"])
+            r = lint_plain(run, "--rubric", "medium-hard")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("WARN Q1.c: no level", r.stdout)
+
     def test_rubric_fails_under_60_percent_mh(self):
         with tempfile.TemporaryDirectory() as td:
-            run = write_levels_run(Path(td), ["R", "M", None, None, "H"])
+            run = write_levels_run(Path(td), ["R", "R", "M"])   # rated M/H 1/3 — and 2 Rs
             r = lint_plain(run, "--rubric", "medium-hard")
             self.assertEqual(r.returncode, 1)
             self.assertIn("medium-hard wants ≥60%", r.stdout)
@@ -316,6 +326,13 @@ class PrecriticLintTest(unittest.TestCase):
             run = write_levels_run(Path(td), ["R", None, "M", "H"])
             r = lint_plain(run, "--rubric", "medium-hard")
             self.assertIn("WARN Q1.b: no level", r.stdout)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            # a set with NO rated leaves at all cannot fail either — every leaf warned
+            run2 = write_levels_run(Path(td) / "b", [None, None, None])
+            r2 = lint_plain(run2, "--rubric", "medium-hard")
+            self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
+            self.assertIn("0 fail(s)", r2.stdout)
+            self.assertEqual(r2.stdout.count("no level"), 3)
 
     # ---- (e) --existing: digits-masked Jaccard duplicate warn ----------------
     def test_existing_duplicate_warns(self):

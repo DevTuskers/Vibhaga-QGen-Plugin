@@ -123,6 +123,100 @@ class CheckAnswersTest(unittest.TestCase):
             self.assertEqual(r.returncode, 1)
             self.assertIn("exponent", r.stdout)
 
+    def test_sequence_repetition_refused_before_it_allocates(self):
+        # [1]*10**9 is legal syntax but an ~8 GB bomb — refused by the length cap,
+        # never materialised (a MemoryError would escape the per-leaf catch)
+        for expr in ("[1] * 10**9 == [1]", "(1,) * 10**18 == (1,)", "sorted([1]*2000) == [1]"):
+            with self.subTest(expr=expr), tempfile.TemporaryDirectory() as td:
+                run = write_run(Path(td), f"""\
+  - n: 1
+    lessons: [L01]
+    stem: "x"
+    approach: "…"
+    final: "1"
+    check: {expr!r}
+""")
+                r = run_tool(run)
+                self.assertEqual(r.returncode, 1, expr)
+                self.assertIn("refused", r.stdout, expr)
+                self.assertIn("exceed", r.stdout, expr)
+
+    def test_sequence_at_the_cap_still_evaluates(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "x"
+    approach: "…"
+    final: "1000"
+    check: "sum([1] * 1000) == 1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_bigint_bomb_refused_by_the_value_cap(self):
+        # each ** exponent is ≤ MAX_POW, but the intermediate 2**1000 blows the
+        # |value| cap — the chain never reaches its second exponentiation
+        for expr in ("(2 ** 1000) ** 1000 > 0", "10 ** 20 == 1",
+                     "10**14 * 10**14 == 10**28"):
+            with self.subTest(expr=expr), tempfile.TemporaryDirectory() as td:
+                run = write_run(Path(td), f"""\
+  - n: 1
+    lessons: [L01]
+    stem: "x"
+    approach: "…"
+    final: "1"
+    check: {expr!r}
+""")
+                r = run_tool(run)
+                self.assertEqual(r.returncode, 1, expr)
+                self.assertIn("refused", r.stdout, expr)
+
+    def test_deep_nesting_refused_not_crashed(self):
+        # 3000 nested unary minuses — refused by the node cap or the parser, never a crash
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "x"
+    approach: "…"
+    final: "1"
+    check: "%s1 == 1"
+""" % ("-" * 3000))
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("FAIL Q1", r.stdout)
+
+    def test_check_without_a_comparison_fails(self):
+        for expr in ("True", "sum([1, 2, 3])", "abs(-5) * 2"):
+            with self.subTest(expr=expr), tempfile.TemporaryDirectory() as td:
+                run = write_run(Path(td), f"""\
+  - n: 1
+    lessons: [L01]
+    stem: "x"
+    approach: "…"
+    final: "1"
+    check: {expr!r}
+""")
+                r = run_tool(run)
+                self.assertEqual(r.returncode, 1, expr)
+                self.assertIn("no comparison", r.stdout, expr)
+
+    def test_same_literal_comparison_is_a_tautology(self):
+        for expr in ("1 == 1", "2.5 <= 2.5", "40 * 23 == 920 or 7 == 7"):
+            with self.subTest(expr=expr), tempfile.TemporaryDirectory() as td:
+                run = write_run(Path(td), f"""\
+  - n: 1
+    lessons: [L01]
+    stem: "x"
+    approach: "…"
+    final: "1"
+    check: {expr!r}
+""")
+                r = run_tool(run)
+                self.assertEqual(r.returncode, 1, expr)
+                self.assertIn("tautology", r.stdout, expr)
+
     def test_final_number_not_covered_warns(self):
         with tempfile.TemporaryDirectory() as td:
             run = write_run(Path(td), """\

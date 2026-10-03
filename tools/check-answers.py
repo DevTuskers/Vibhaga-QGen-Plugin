@@ -11,7 +11,11 @@ part) — `build-staged` never emits them:
           numbers, + - * / // % **, unary -, comparisons (chained ok), and/or/not,
           parentheses, tuple/list literals (constant indexing ok), and calls to
           ceil floor divmod min max abs sum round sorted int. Nothing else — no names,
-          no attributes.
+          no attributes. The check must contain at least one comparison — a bare
+          `True` or a `1 == 1` tautology re-derives nothing and is refused. Resource
+          bounds: every intermediate |number| ≤ 10**15, every list/tuple ≤ 1000
+          elements (a `seq * n` repetition is refused before it allocates), |exp| ≤
+          1000 on `**`, and a 2 s wall-clock backstop per leaf (SIGALRM, POSIX).
   level:  R | M | H — the leaf's difficulty on the plan appendix rubric (read by
           precritic-lint --rubric).
 
@@ -26,8 +30,10 @@ False or eval error, else 0.
 """
 import argparse
 import ast
+import contextlib
 import math
 import re
+import signal
 import sys
 from pathlib import Path
 
@@ -60,13 +66,56 @@ _CMP = {ast.Eq: lambda a, b: a == b, ast.NotEq: lambda a, b: a != b,
         ast.Gt: lambda a, b: a > b, ast.GtE: lambda a, b: a >= b}
 MAX_NODES = 200          # a check is one line of arithmetic — bigger is a mistake or worse
 MAX_POW = 1000           # |exponent| cap so `10**(10**8)` cannot hang the gate
+MAX_ABS = 10 ** 15       # every intermediate number stays small — big-int bombs die at birth
+MAX_SEQ = 1000           # every intermediate list/tuple stays short — `[1]*10**9` never exists
+EVAL_SECONDS = 2         # wall-clock backstop per leaf, on top of the structural caps
 
 
 class Refuse(ValueError):
-    """A construct outside the whitelist."""
+    """A construct outside the whitelist, or a resource bound hit."""
+
+
+def _cap(v):
+    """Refuse any intermediate value that escaped the bounds — |number| > MAX_ABS or
+    a list/tuple longer than MAX_SEQ."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        if abs(v) > MAX_ABS:
+            raise Refuse(f"value too large — |{v:g}| exceeds {MAX_ABS:g}")
+        return v
+    if isinstance(v, complex):
+        raise Refuse("complex numbers are out of scope")
+    if isinstance(v, (list, tuple)) and len(v) > MAX_SEQ:
+        raise Refuse(f"sequence too long — {len(v)} elements exceed {MAX_SEQ}")
+    return v
+
+
+@contextlib.contextmanager
+def _deadline(seconds: int):
+    """SIGALRM backstop around one leaf's evaluation (POSIX only — elsewhere the
+    structural caps are the whole defence)."""
+    if not hasattr(signal, "SIGALRM"):
+        yield
+        return
+    def _alarm(_sig, _frm):
+        raise Refuse(f"evaluation took over {seconds}s — timed out")
+    prev = signal.signal(signal.SIGALRM, _alarm)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, prev)
 
 
 def _eval(node):
+    """_eval_node under the resource caps — every value a node produces is bounded,
+    so nothing downstream of it can be huge."""
+    return _cap(_eval_node(node))
+
+
+def _eval_node(node):
     if isinstance(node, ast.Expression):
         return _eval(node.body)
     if isinstance(node, ast.Constant):
@@ -85,15 +134,25 @@ def _eval(node):
             raise Refuse("call target is not a whitelisted function")
         return f(*[_eval(a) for a in node.args])
     if isinstance(node, ast.BinOp):
+        a, b = _eval(node.left), _eval(node.right)
         if isinstance(node.op, ast.Pow):
-            base, exp = _eval(node.left), _eval(node.right)
-            if not isinstance(exp, (int, float)) or abs(exp) > MAX_POW:
-                raise Refuse(f"** exponent {exp!r} — |exp| must be ≤ {MAX_POW}")
-            return base ** exp
+            if not isinstance(b, (int, float)) or isinstance(b, bool) \
+                    or abs(b) > MAX_POW:
+                raise Refuse(f"** exponent {b!r} — |exp| must be ≤ {MAX_POW}")
+            return a ** b                        # result itself is capped by _eval
         op = _BIN.get(type(node.op))
         if op is None:
             raise Refuse(f"operator {type(node.op).__name__}")
-        return op(_eval(node.left), _eval(node.right))
+        if isinstance(node.op, ast.Mult):
+            # refuse `seq * n` before it allocates — a billion-element list is an OOM,
+            # and MemoryError is not an Exception so it would escape the per-leaf catch
+            for seq, n in ((a, b), (b, a)):
+                if isinstance(seq, (list, tuple)) and isinstance(n, int) \
+                        and not isinstance(n, bool) \
+                        and len(seq) * max(n, 0) > MAX_SEQ:
+                    raise Refuse(f"sequence repetition — {len(seq)} × {n} would "
+                                 f"exceed {MAX_SEQ} elements")
+        return op(a, b)
     if isinstance(node, ast.UnaryOp):
         if isinstance(node.op, ast.USub):
             return -_eval(node.operand)
@@ -134,11 +193,14 @@ def _eval(node):
 
 
 def parse_check(expr: str, where: str):
-    """→ ast.Expression — raises Refuse on anything outside the whitelist or too big."""
+    """→ ast.Expression — raises Refuse on anything outside the whitelist, too big,
+    or trivially satisfied (no comparison / a same-literal comparison)."""
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as e:
         raise Refuse(f"syntax: {e.msg}") from e
+    except (RecursionError, MemoryError) as e:
+        raise Refuse("too deeply nested") from e
     if sum(1 for _ in ast.walk(tree)) > MAX_NODES:
         raise Refuse(f"more than {MAX_NODES} nodes")
     # walk once so refusal lands before any evaluation
@@ -148,6 +210,14 @@ def parse_check(expr: str, where: str):
                           ast.GeneratorExp, ast.ListComp, ast.SetComp, ast.DictComp,
                           ast.Yield, ast.YieldFrom, ast.Slice)):
             raise Refuse(f"{type(n).__name__} is not in the whitelist")
+    comps = [n for n in ast.walk(tree) if isinstance(n, ast.Compare)]
+    if not comps:
+        raise Refuse("the check has no comparison — it never tests a derived value")
+    for c in comps:
+        sides = [c.left, *c.comparators]
+        if all(isinstance(s, ast.Constant) for s in sides) \
+                and len({s.value for s in sides}) == 1:
+            raise Refuse(f"tautology — both sides are the literal {sides[0].value!r}")
     return tree
 
 
@@ -240,7 +310,8 @@ def main() -> int:
         checked += 1
         try:
             tree = parse_check(expr, name)
-            ok = _eval(tree)
+            with _deadline(EVAL_SECONDS):
+                ok = _eval(tree)
         except Refuse as e:
             print(f"FAIL {name}: check refused — {e}")
             false += 1

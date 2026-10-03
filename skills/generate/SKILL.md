@@ -153,7 +153,7 @@ same two checkout paths in the critic's spawn prompt.
 3. **Plan — one line per question** in `notes.md`, before any authoring:
    `Q<n> · <skill / section> · <R/M/H per part> · not a duplicate because <…> · figure: <template | hand-draw | none>`.
    Check the set against the plan appendix rubric (for "medium–hard": ≥3 parts each, ≤1 R part and only as (a), an H
-   part last, ≥60 % M/H and ≥30 % H) and against AGENTS rule 3 for every multi-lesson tag. A figure that has nothing
+   part last, ≥60 % M/H and ≥30 % H across the set's levelled parts) and against AGENTS rule 3 for every multi-lesson tag. A figure that has nothing
    derivable (a pure shape to name) is dropped or put to the owner, never given an invented claim.
 4. **Author `content.yaml`** (the 2026-09-29 shape — `id_seed`, `lessons:` key map, `figures:` key map, `questions:`
    with `n`, `lessons`, `stem`, `figure`, `parts[label, text, figure, approach, final]`; `build-staged.py` docstring):
@@ -168,7 +168,8 @@ same two checkout paths in the critic's spawn prompt.
      (`check: "40 * 23 == 920"`, or `divmod(925, 40) == (23, 5)`; numbers, `+ - * / // % **`, comparisons,
      `and/or/not`, `ceil floor divmod min max abs sum round sorted int` — check-answers.py's docstring is the
      whitelist) and `level:` — `R`|`M`|`H`, the rubric level. Every number in `final` should be reachable from the
-     check. Leaves whose answer is not numeric (classify, name) keep their second-method derivation in `notes.md`
+     check. Both keys are leaf-only — a part that has `parts` cannot carry them (build-staged refuses). Leaves whose
+     answer is not numeric (classify, name) keep their second-method derivation in `notes.md`
      instead. `build-staged` never emits either key.
    - **Figure specs** — for each planned figure, one entry in `$A/specs/figures.json` per
      [`figure-templates`](../figure-templates/SKILL.md) (the stem's own numbers; the builder refuses any it cannot find).

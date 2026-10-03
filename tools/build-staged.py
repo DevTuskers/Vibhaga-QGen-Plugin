@@ -143,7 +143,12 @@ def check_sibling_labels(children, where):
 
 
 def check_meta(node, where):
-    """`level` ∈ {R,M,H} wherever present; `check` a string expression."""
+    """`level` ∈ {R,M,H} and `check` a string — on LEAVES only: on a node with `parts`
+    either key would be silently ignored (leaves()/leaf_levels() never visit containers),
+    so it is refused rather than let look checked."""
+    if node.get("parts") and \
+            (node.get("check") is not None or node.get("level") is not None):
+        die(f"{where}: 'check'/'level' are leaf-only keys — this node has 'parts'")
     lvl = node.get("level")
     if lvl is not None and lvl not in ("R", "M", "H"):
         die(f"{where}: level must be one of R, M, H (got {lvl!r})")
