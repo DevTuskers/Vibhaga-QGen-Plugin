@@ -496,7 +496,7 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
     for i in range(len(boxes)):
         _t1, ax0, ay0, ax1, ay1 = boxes[i]
         for _t2, bx0, by0, bx1, by1 in boxes[i + 1:]:
-            gap = math.hypot(max(0.0, bx0 - ax1, ax0 - bx1), max(0.0, by0 - ay1, ay0 - by1))
+            gap = _rect_gap((ax0, ay0, ax1, ay1), (bx0, by0, bx1, by1))
             if gap * scale_stroke < 4.0:
                 raise TemplateError(
                     f"{kind}: labels {_t1!r} and {_t2!r} are ~{gap * scale_stroke:.1f} "
@@ -611,6 +611,18 @@ def _arange(a: float, b: float, step: float):
     while v < b:
         yield v
         v += step
+
+
+def _rect_gap(a, b) -> float:
+    """Gap between two (x0, y0, x1, y1) boxes — 0 when they touch or overlap."""
+    return math.hypot(max(0.0, b[0] - a[2], a[0] - b[2]),
+                      max(0.0, b[1] - a[3], a[1] - b[3]))
+
+
+def _num_exact(v: float) -> str:
+    """A decimal literal that parses back to v exactly — `:g` truncates 8/3 to 2.66667,
+    which fails the audit's `derive <expr> = <value>` check (tolerance 1e-9)."""
+    return f"{v:g}" if float(f"{v:g}") == v else repr(v)
 
 
 def _unused_letters(used: set[str], n: int) -> list[str]:
@@ -742,13 +754,66 @@ def build_grid_polygon(*, figure_id, stem, ask=None, title=None, description=Non
     for a, b in zip(names, names[1:] + names[:1]):
         elements.append(vc.line(pts[a], pts[b], id=f"{a}{b}", width=2.5))
     if vertex_labels:
-        cx = sum(p[0] for p in pts.values()) / len(pts)
-        cy = sum(p[1] for p in pts.values()) / len(pts)
-        for n, v in pts.items():
-            ox = -22 if v[0] < cx - 1 else 12
-            oy = -12 if v[1] < cy else 4
+        # a vertex label seats on the corner's EXTERIOR bisector: for a convex corner that is
+        # the diagonal away from the polygon; for a reflex corner it is the notch. Seats
+        # inside the grid are impossible — a capital's box (~11x22 units) cannot clear the
+        # 30-unit grid lines AND the two meeting edges at once — so the search only ever
+        # succeeds when the exterior wedge runs out of the grid, and an interior corner
+        # (reflex, or a convex corner whose outside is grid-covered) is refused up front
+        # rather than left for the generic label pre-flight to find.
+        signed = sum(verts[i][0] * verts[(i + 1) % len(verts)][1]
+                     - verts[(i + 1) % len(verts)][0] * verts[i][1]
+                     for i in range(len(verts)))
+        strokes_now = stroke_segments(elements)
+        seated: list = []
+        for i, (n, v) in enumerate(pts.items()):
+            pv = tuple(c * cell_px for c in verts[i - 1])
+            nv = tuple(c * cell_px for c in verts[(i + 1) % len(verts)])
+            e1 = vc.unit(v, pv)
+            e2 = vc.unit(v, nv)
+            bx, by = e1[0] + e2[0], e1[1] + e2[1]
+            if math.hypot(bx, by) < 1e-9:
+                raise TemplateError(f"grid_polygon: vertex {n} is straight, not a corner — "
+                                    "drop the doubled vertex")
+            bx, by = bx / math.hypot(bx, by), by / math.hypot(bx, by)
+            # turn sign vs the polygon's signed area tells convex from reflex: the bisector
+            # already points at the labelable wedge — the notch for a reflex corner, the
+            # interior for a convex one — so convex labels go the opposite way
+            cross = (v[0] - pv[0]) * (nv[1] - v[1]) - (v[1] - pv[1]) * (nv[0] - v[0])
+            if cross * signed > 0:                      # convex: opposite the interior
+                bx, by = -bx, -by
+            w_ = _label_width(n, FS)
+            h_ = (MID_UP + POINT_LABEL_DOWN) * FS       # capitals carry no descender
+            seat = None
+            # beyond ~40 units the box's near edge lands >1.5·fontSize from the vertex —
+            # visual-metrics' target rule would fail it even if the seat is clear. The fan
+            # off the bisector finds seats like "above the top edge, shy of the corner"
+            # when the grid's spare row/column hems the diagonal.
+            for off in (0.0, -15.0, 15.0, -30.0, 30.0, -45.0, 45.0, -60.0, 60.0,
+                        -75.0, 75.0):
+                dx_, dy_ = (bx * math.cos(math.radians(off)) - by * math.sin(math.radians(off)),
+                            bx * math.sin(math.radians(off)) + by * math.cos(math.radians(off)))
+                for r_ in _arange(26.0, 40.0, 2.0):
+                    cx_, cy_ = v[0] + dx_ * r_, v[1] + dy_ * r_
+                    box_ = (cx_ - w_ / 2, cy_ - h_ / 2, cx_ + w_ / 2, cy_ + h_ / 2)
+                    if min(_seg_rect_dist(a, b, box_) - w2 / 2
+                           for a, b, w2 in strokes_now) >= 12.0 and \
+                            all(_rect_gap(box_, pb) >= 8.0 for pb in seated):
+                        seat = (cx_, cy_)
+                        break
+                if seat:
+                    break
+            if seat is None:
+                raise TemplateError(
+                    f"grid_polygon: vertex {n}'s label has no seat within reach that clears "
+                    f"the edges and grid lines — drop vertex_labels for this shape")
+            cx_, cy_ = seat
+            seated.append((cx_ - w_ / 2, cy_ - h_ / 2, cx_ + w_ / 2, cy_ + h_ / 2))
+            # point labels anchor top-left-ish: box = at + offset, y pulled up by MID_UP·size
+            ox = cx_ - w_ / 2 - v[0]
+            oy = cy_ - v[1] + FS * (MID_UP - POINT_LABEL_DOWN) / 2
             elements.append({"id": f"lbl{n}", "type": "point", "at": vc.P(v), "r": 0,
-                             "label": n, "labelOffset": [ox, oy]})
+                             "label": n, "labelOffset": [vc.r2(ox), vc.r2(oy)]})
     gx, gy = _unused_letters(set(names), 2)
     anchors = dict(pts)
     anchors[gx], anchors[gy] = (0.0, 0.0), (cols * cell_px, rows * cell_px)
@@ -922,6 +987,11 @@ def build_rays_from_point(*, figure_id, stem, ask=None, title=None, description=
         v = abs(d)
         specs.append((a, b, label, reflex, v))
     backed = _derive_backed(add, sorted({v for *_, v in specs}), stem)
+    if not backed:
+        # a constructed claim set needs at least one `derive` — with no marked angles there
+        # is nothing to back, so state the compass's own arithmetic (all canonical constants)
+        add("derive 360 / 90 = 4", "inferred",
+            "the full turn about the centre divides into four quarter-turns")
     arcs = []
     for i, (a, b, label, reflex, v) in enumerate(specs):
         # the 26-unit ladder leaves room for a numeral INSIDE its own arc — a numeral may
@@ -941,6 +1011,10 @@ def build_rays_from_point(*, figure_id, stem, ask=None, title=None, description=
         rel = (th - start) % 360.0
         return rel <= delta + 1e-9 if delta >= 0 else rel >= 360.0 + delta - 1e-9
 
+    placed_boxes: list = []       # text labels already seated — they are not strokes, so
+    #                             # the segment-distance check alone misses them (a numeral
+    #                             # and the centre label once landed in the same spot)
+
     def place(text_, near_bis, own_r) -> tuple[float, float]:
         """A numeral's box must clear the rays AND every arc — and it must never sit BEYOND a
         larger arc covering its wedge (a numeral past the reflex arc reads as labelling the
@@ -958,7 +1032,9 @@ def build_rays_from_point(*, figure_id, stem, ask=None, title=None, description=
                 px, py = vc.polar(O, d, th)
                 box = (px - w_ / 2, py - FS * MID_UP, px + w_ / 2, py + FS * MID_DOWN)
                 if min(_seg_rect_dist(a, b, box) - w2 / 2
-                       for a, b, w2 in stroke_segments(elements)) >= 11.0:
+                       for a, b, w2 in stroke_segments(elements)) >= 11.0 and \
+                        all(_rect_gap(box, pb) >= 8.0 for pb in placed_boxes):
+                    placed_boxes.append(box)
                     return px, py
         raise TemplateError(f"rays_from_point: angle label {text_!r} cannot be placed clear "
                             "of the arcs — widen the ray spacing")
@@ -989,8 +1065,9 @@ def build_rays_from_point(*, figure_id, stem, ask=None, title=None, description=
             box = (px, py - FS * MID_UP, px + w_lab, py + FS * MID_DOWN)
             worst = min(_seg_rect_dist(a, b, box) - w2 / 2
                         for a, b, w2 in stroke_segments(elements))
-            if worst >= 11.0:
+            if worst >= 11.0 and all(_rect_gap(box, pb) >= 8.0 for pb in placed_boxes):
                 placed = (vc.r2(px), vc.r2(py))
+                placed_boxes.append(box)
                 break
         if placed:
             break
@@ -1212,13 +1289,18 @@ def build_pictograph(*, figure_id, stem, ask=None, title=None, description=None,
         "a half symbol stands for half the key value")
     add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
         "symbol circles, a separator and labels only")
+    elements_n = len(elements)
     return finish(kind="pictograph", figure_id=figure_id, stem=stem, elements=elements,
                   anchors=anchors, points=[], segments=[], claims=claims, ask=ask,
                   title=title or "A pictograph of symbols in rows",
                   description=description or (
                       f"A pictograph with {len(rows)} rows of identical circles; one full "
                       f"circle stands for {per_symbol:g}, a right half-circle for half that."),
-                  scale="symbols are uniform — the count is the content", medium=medium)
+                  scale="symbols are uniform — the count is the content",
+                  budget=elements_n if elements_n > 32 else None,
+                  departures=([f"{elements_n} elements — one circle per item is the honest "
+                               "drawing (S6b §3.4)"] if elements_n > 32 else None),
+                  medium=medium)
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -1287,13 +1369,20 @@ def build_rectangle_points(*, figure_id, stem, ask=None, title=None, description
     if length is not None:
         add(f"ratio len AB / len BC = {ar:g}", "stem",
             f"the stem's {length:g} by {width:g}")
+        add(f"derive {length:g} * {width:g} = {_num_exact(length * width)}", "inferred",
+            "the stem's length times width — the rectangle's area")
+    else:
+        # a constructed claim set needs a `derive`; a shape with no stated lengths owns only
+        # its four right corners (canonical constants)
+        add("derive 360 / 90 = 4", "inferred",
+            "the four right corners share the full turn")
     for name, (side, t) in (on_points or {}).items():
         add(f"on {name} {side[0]}{side[1]}", "inferred", f"{name} sits {t:g} of the way along {side}")
     if on_points:
         name, (side, t) = next(iter(on_points.items()))
         from fractions import Fraction
         fr = Fraction(t).limit_denominator(64)
-        add(f"derive {fr.numerator} / {fr.denominator} = {t:g}", "inferred",
+        add(f"derive {fr.numerator} / {fr.denominator} = {_num_exact(t)}", "inferred",
             f"{name}'s position along {side} as a fraction")
     for n in pts:
         add(f'label "{n}" names {n}', "stem", "a named point")
@@ -1395,9 +1484,16 @@ def build_house_pentagon(*, figure_id, stem, ask=None, title=None, description=N
         if _ratio_justified(nums, v):
             add(f"ratio len {a_} / len {b_} = {v:g}", "stem",
                 f"the stem's {sides[a_]:g} and {sides[b_]:g}")
-    add(f"derive {' + '.join(f'{v:g}' for v in sides.values())} = {sum(sides.values()):g}",
-        "inferred", "the perimeter as a sum of the five sides")
+    add(f"derive {' + '.join(f'{v:g}' for v in sides.values())} = "
+        f"{_num_exact(sum(sides.values()))}", "inferred",
+        "the perimeter as a sum of the five sides")
+    claimed_texts = set()
     for k, t in texts.items():
+        # audit rule 1: ONE label claim per printed glyph — two sides of equal length print
+        # the same text, so the second binds nothing new
+        if t in claimed_texts:
+            continue
+        claimed_texts.add(t)
         add(f'label "{t}" names {k}', "stem",
             f"the figure's own {k} label" if t == f"{sides[k]:g} {unit}" else f"the stem's {t}")
     add('describe "a five-sided figure: a rectangular body with two slanting sides meeting at apex P"',
@@ -1453,23 +1549,47 @@ def build_cuboid(*, figure_id, stem, ask=None, title=None, description=None, med
     # the edge it names (16u → ≤24u); 16u off keeps ≥6 rendered px of stroke clearance.
     elements.append(vc.text(((A[0] + D[0]) / 2 - 16, (A[1] + D[1]) / 2), f"{height:g} {unit}",
                             id="slH", align="end", size=16))
-    # the width label sits on the OUTWARD normal of the bottom depth edge CG's midpoint —
-    # beside FG it reads as naming a height edge, and inside the silhouette it reads as a
-    # bottom edge. CG's outward normal is (−dy, dx)/|CG| (below-right of the figure).
-    g_mid = vc.lerp(C, (C[0] + dx, C[1] + dy), 0.5)
-    dcg = math.hypot(dx, dy)
-    nx, ny = -dy / dcg, dx / dcg
-    wlab = _label_width(f"{width:g} {unit}", 16)
-    off = 12 + _label_half_along(f"{width:g} {unit}", 16, nx, ny)
-    elements.append(vc.text((g_mid[0] + nx * off, g_mid[1] + ny * off),
-                            f"{width:g} {unit}", id="slW", size=16))
+    # the width label sits on the OUTWARD normal of a depth edge's midpoint — CG first
+    # (below-right of the figure; beside FG it would read as naming a height edge, and inside
+    # the silhouette as a bottom edge). A tall narrow front face crowds that seat against the
+    # length label, so fall back to the top depth edge AE (above-left of the figure). An edge
+    # is refused when its seat cannot clear the strokes and the labels already placed.
+    d_dep = math.hypot(dx, dy)
+    ctr_x = sum(p[0] for p in pts.values()) / 8
+    ctr_y = sum(p[1] for p in pts.values()) / 8
+    seats: list = []
+    for seg, mid in (("CG", vc.lerp(C, (C[0] + dx, C[1] + dy), 0.5)),
+                     ("AE", vc.lerp(A, E, 0.5))):
+        nx_, ny_ = -dy / d_dep, dx / d_dep
+        if nx_ * (ctr_x - mid[0]) + ny_ * (ctr_y - mid[1]) > 0:
+            nx_, ny_ = -nx_, -ny_                     # outward = away from the solid
+        off_ = 12 + _label_half_along(f"{width:g} {unit}", 16, nx_, ny_)
+        px_, py_ = mid[0] + nx_ * off_, mid[1] + ny_ * off_
+        w_ = _label_width(f"{width:g} {unit}", 16)
+        # the label is middle/middle — its box is CENTRED on the anchor, not start-aligned
+        seats.append((seg, px_, py_,
+                      (px_ - w_ / 2, py_ - 16 * MID_UP, px_ + w_ / 2, py_ + 16 * MID_DOWN)))
+    strokes_now = stroke_segments(elements)
+    placed_now = [b for _t, *b in label_boxes(elements, 16)]
+    width_seg = None
+    for seg, px_, py_, box_ in seats:
+        # 9.5 units ≈ the 8 rendered px the pre-flight wants once the 12-unit normal offset
+        # loses the edge's half-stroke and the half-extent estimate errs
+        if min(_seg_rect_dist(a, b, box_) - w2 / 2 for a, b, w2 in strokes_now) >= 9.5 and \
+                all(_rect_gap(box_, pb) >= 8.0 for pb in placed_now):
+            elements.append(vc.text((px_, py_), f"{width:g} {unit}", id="slW", size=16))
+            width_seg = seg
+            break
+    if width_seg is None:
+        raise TemplateError("cuboid: the width label has no seat clear of the other labels "
+                            "and edges — adjust the proportions")
     claims: list[tuple[str, str, str]] = []
 
     def add(pred, ev, note=""):
         claims.append((pred, ev, note))
         return f"K{len(claims)}"
 
-    dr = add(f"derive {length:g} / {height:g} = {length / height:g}", "stem",
+    dr = add(f"derive {length:g} / {height:g} = {_num_exact(length / height)}", "stem",
              "the front face's ratio from the stem's own numbers")
     add(f"ratio len DC / len DA = {length / height:g}", "stem",
         f"the stem's {length:g} {unit} by {height:g} {unit}, per derive {dr}")
@@ -1481,14 +1601,24 @@ def build_cuboid(*, figure_id, stem, ask=None, title=None, description=None, med
     for seg in sorted(hidden):
         add(f"paint {seg} dashed", "inferred", "a hidden edge drawn broken")
     contested = []
-    for pred, seg in ((f"{length:g} {unit}", "DC"), (f"{height:g} {unit}", "DA"),
-                      (f"{width:g} {unit}", "CG")):
-        kid = add(f'label "{pred}" names {seg}', "stem", f"the stem's {pred}")
-        if seg == "CG":
+    lab_pairs = [(f"{length:g} {unit}", "DC"), (f"{height:g} {unit}", "DA"),
+                 (f"{width:g} {unit}", width_seg)]
+    claimed_glyphs: set = set()
+    for pred, seg in lab_pairs:
+        # audit rule 1: ONE label claim per printed glyph — equal dimensions print the same
+        # text, so a repeated glyph binds nothing new. When the shared text also prints on
+        # the foreshortened edge, the claim names THAT edge: the drawn-vs-label pair check
+        # (2e-iii) then measures the edge that needs adjudication, not only a true one.
+        if pred in claimed_glyphs:
+            continue
+        claimed_glyphs.add(pred)
+        target = width_seg if any(s == width_seg for p, s in lab_pairs if p == pred) else seg
+        kid = add(f'label "{pred}" names {target}', "stem", f"the stem's {pred}")
+        if target == width_seg:
             # depth edges are drawn at depth_scale — the anchor-vs-label pair check (2e-iii)
-            # must see this declared, or DC/CG and DA/CG pairs look like a misdrawn ratio
-            contested.append((kid, f"{pred} prints the stem's true width on CG while the "
-                                   "oblique convention draws depth edges foreshortened "
+            # must see this declared, or pairs with the depth edge look like a misdrawn ratio
+            contested.append((kid, f"{pred} prints the stem's true width on {width_seg} while "
+                                   "the oblique convention draws depth edges foreshortened "
                                    f"({depth_scale:g}x at {depth_angle:g} deg)"))
     add('describe "a cuboid in oblique projection — the front face is true shape, '
         'depth edges run 35 degrees up-right at half the true width"', "inferred",
