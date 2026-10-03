@@ -837,6 +837,52 @@ class FloatingLabels(unittest.TestCase):
                       title=None, description=None, scale="x")
         self.assertIn("nearer anchor B than its own A", str(cm.exception))
 
+    def test_a_failed_finish_never_mutates_the_caller(self):
+        # the unsatisfiable pair above — a raise must not eat the caller's
+        # `_near`/`at` (finish() works on deep copies so retries are safe)
+        el = [_dot("dotA", 0.0, 0.0), _dot("dotB", 5.0, 0.0),
+              _floater("lblA", "A", (0.0, 0.0)), _floater("lblB", "B", (5.0, 0.0))]
+        anchors = {"A": (0.0, 0.0), "B": (5.0, 0.0)}
+        with self.assertRaises(vt.TemplateError):
+            vt.finish(kind="t", figure_id="tf", stem="Points A and B.", elements=el,
+                      anchors=anchors, points=["A", "B"], segments=[], ask=[["a", "x"]],
+                      claims=[('label "A" names A', "stem", ""),
+                              ('label "B" names B', "stem", "")],
+                      title=None, description=None, scale="x")
+        self.assertEqual(el[2]["at"], [0.0, 0.0])
+        self.assertEqual(el[2]["_near"], [0.0, 0.0])
+        self.assertNotIn("_floater", el[2])
+        self.assertEqual(anchors, {"A": (0.0, 0.0), "B": (5.0, 0.0)})
+
+    def test_region_false_frees_a_label_trapped_by_a_marker(self):
+        # a tight unfilled outline around the anchor is decorative ink, not a
+        # region — without `_region: false` the same-region rule traps the
+        # label inside an outline too small to hold it; rects count too
+        for marker in (
+            {"type": "polygon", "id": "mk",
+             "points": [[-12.0, -8.0], [12.0, -8.0], [12.0, 8.0], [-12.0, 8.0]]},
+            {"type": "rect", "id": "mk", "x": -12.0, "y": -8.0,
+             "width": 24.0, "height": 16.0},
+        ):
+            with self.subTest(marker=marker["type"]):
+                def build(flag):
+                    return vt.finish(
+                        kind="t", figure_id="tf", stem="A marked dot.",
+                        elements=[_dot("dotD", 0.0, 0.0),
+                                  dict(marker, **({"_region": False} if flag else {})),
+                                  _floater("lblD", "D", (0.0, 0.0))],
+                        anchors={"D": (0.0, 0.0)}, points=["D"], segments=[],
+                        ask=[["a", "x"]], claims=[('label "D" names D', "stem", "")],
+                        title=None, description=None, scale="x")
+                with self.assertRaises(vt.TemplateError) as cm:
+                    build(False)
+                self.assertIn("same-region", str(cm.exception))
+                b = build(True)
+                lbl = next(e for e in b.doc["elements"] if e["id"] == "lblD")
+                self.assertNotEqual(lbl["at"], [0.0, 0.0])          # it moved, and placed
+                self.assertNotIn("_region", next(e for e in b.doc["elements"]
+                                                 if e["id"] == "mk"))
+
 
 class RegionPoints(unittest.TestCase):
     def test_inside_outside_avoid(self):

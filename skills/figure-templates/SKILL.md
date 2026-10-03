@@ -61,16 +61,23 @@ vt.finish(kind=…, figure_id=<staged id>, stem=…, elements, anchors, points, 
   element; its `at` is ignored and finish() places it: 16 directions × `_gap…_gap+36`,
   first candidate keeping — in rendered px — ≥8 to every stroke edge, ≥4 to every other
   label, its centre ≥6 nearer `_near` than every other floater's anchor or dot centre, and
-  on the same side of every unfilled circle/closed polygon as `_near` (OUTSIDE one `_near`
-  sits ON, i.e. within 2 units of). No candidate → `TemplateError` naming the rule that
-  failed most. `_`-keys are stripped before the doc is written.
+  on the same side of every unfilled circle/closed polygon/rect as `_near` (OUTSIDE one
+  `_near` sits ON, i.e. within 2 units of; `_region: false` keeps a decorative outline out
+  of the rule — a small unfilled marker around an anchor must not trap its label). No
+  candidate → `TemplateError` naming the rule that failed most. After the sweep the fit
+  re-runs with every placed box and any floater now failing is re-searched (≤2 passes); a
+  floater the final pre-flight still refuses errors `floating label 'D' was placed at …
+  but fails <rule> at the final scale — raise _gap or widen the figure`. `_`-keys are
+  stripped before the doc is written, and finish() never mutates your `elements`/`anchors`
+  — a raise leaves them untouched.
 - **Fixed labels** get the same own-anchor rule as a pre-flight check: for
   `label "g" names P` with P an anchor, the glyph's box centre must beat every *other*
   anchor a label claim names by ≥3 rendered px — else `label 'D' is nearer anchor G than
   its own D`. Fix by moving it, or hand it to the search with `_near`.
 - **Region points**: `vt.region_point({"left": (c, r), "right": (c2, r2)}, inside=[…],
-  outside=[…], prefer=(x, y), margin=15, avoid=[pts], min_sep=30, step=2)` → the grid
-  point nearest `prefer` inside/outside the named circles and clear of `avoid`;
+  outside=[…], prefer=(x, y), margin=15, avoid=[pts], min_sep=30, step=2)` → the point
+  nearest `prefer` on the first expanding ring (outward at `step`) holding a valid point —
+  ≥margin inside/outside the named circles and ≥min_sep from `avoid`;
   `vt.on_circle_point(c, r, deg)` → a point ON the outline (0° = E, y down);
   `vt.membership_claims("D", p, circles)` → the `describe "D lies inside the right circle
   and outside the left circle"` claim tuple to append to `claims`.
