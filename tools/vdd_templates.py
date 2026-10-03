@@ -58,6 +58,10 @@ SLACK_EDGE, SLACK_STROKE = 1.0, 2.0   # the estimator errs — require the rende
 # wider than that renders BELOW 1 px per unit — clearance thresholds scale by 1/s, s = min(1,
 # PLATE_INNER / canvas_width); canvases narrower than it render ≥1 px/unit but get no credit for it.
 PLATE_INNER = 294.0
+# canvas height/width bound — a figure much taller than wide renders taller than a phone screen
+# on the 375 px plate (W8 dogfood: a 1×10 shaded grid came out 375×2253). The same constant is
+# the `aspect` rule in vdd-check.mjs and visual-metrics.mjs; no override — re-lay the figure out.
+MAX_ASPECT = 2.0
 # DOM getBBox on a `dominantBaseline="middle"` <text> returns the font's ~1.22em line box, biased
 # UP — measured on Inter (2026-10-01, capital "P" at size 18): −0.674·size above centre,
 # +0.543·size below. The old ±size/2 estimate under-measures the top by ~3 units and real renders
@@ -462,6 +466,10 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
     _translate(elements, dx, dy)
     anchors = {k: (vc.r2(v[0] + dx), vc.r2(v[1] + dy)) for k, v in anchors.items()}
     W, H = math.ceil(maxx - minx + 2 * margin), math.ceil(maxy - miny + 2 * margin)
+    if H > MAX_ASPECT * W:
+        raise TemplateError(
+            f"{kind}: canvas is {H}×{W} (h/w {H / W:.1f} > {MAX_ASPECT:g}) — renders "
+            f"~{round((375 - 26) * H / W)} px tall at 375; re-lay it out, e.g. a 1×10 grid as 5×2")
 
     # 2. clearance pre-flight — rendered px at the NARROWEST surface (the 294 px plate inner
     # width — PLATE_INNER). Edge distance is bound by OUR margin on the student surface

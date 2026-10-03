@@ -325,6 +325,19 @@ class Refusals(unittest.TestCase):
             vt.build_pictograph(figure_id="t1", stem="One circle stands for 5 cups.",
                                 per_symbol=5, rows=[["Mon", 7]])
 
+    def test_tall_canvas_refused(self):
+        # W8: a 1×10 shaded grid rendered 375×2253 — taller than a phone screen. A canvas
+        # over MAX_ASPECT× as tall as wide must be re-laid out, never drawn.
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.build_shaded_grid(figure_id="t1", stem="A grid of 10 squares.",
+                                 cols=1, rows=10, full=[(0, 0)])
+        self.assertIn("h/w", str(cm.exception))
+        # the same 10 squares re-laid out as 5×2 pass
+        b = vt.build_shaded_grid(figure_id="t1", stem="A grid of 10 squares.",
+                                 cols=5, rows=2, full=[(0, 0)])
+        c = b.doc["canvas"]
+        self.assertLessEqual(c["height"], vt.MAX_ASPECT * c["width"])
+
     def test_impossible_pentagon_slants(self):
         with self.assertRaises(vt.TemplateError) as cm:
             vt.build_house_pentagon(figure_id="t1", stem="Sides 8 m and 5 m.",

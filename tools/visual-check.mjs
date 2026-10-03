@@ -542,6 +542,15 @@ function figureLine(fig, pad) {
   parts.push(`arc ${a.arcs ? (failsOf("arc").length ? `${failsOf("arc").length} fail` : "ok") : "—"}`);
   const shadedF = failsOf("shaded");
   parts.push(`shaded ${a.shaded ? (shadedF.length ? `measured ${a.shaded.measured} ≠ claimed ${a.shaded.claimed}` : "ok") : "—"}`);
+  parts.push(`aspect ${a.aspect ? (failsOf("aspect").length ? "FAIL" : "ok") : "—"}`);
+  // the light-375 PNG's pixel dimensions — a tall plate is exactly what the aspect rule guards
+  let dims = "—";
+  const png375 = fig.pngs?.find((p) => /light-375\.png$/.test(p));
+  if (png375 && fs.existsSync(png375)) {
+    const b = fs.readFileSync(png375);
+    if (b.length > 24) dims = `${b.readUInt32BE(16)}×${b.readUInt32BE(20)}`;
+  }
+  parts.push(dims);
   const other = failsOf("parse").concat(failsOf("render")).map((f) => f.message).join("; ");
   return `${fig.id.padEnd(pad)}  ${fig.result.verdict.padEnd(4)}  ${parts.join(" · ")}${other ? ` · ${other}` : ""}  → ${fig.outDir}/`;
 }
@@ -599,6 +608,7 @@ async function batchMode() {
       shaded: f.result.shaded,
       font: f.result.font,
       arcs: f.result.arcs,
+      aspect: f.result.aspect,
       pngs: f.pngs,
     })),
   };

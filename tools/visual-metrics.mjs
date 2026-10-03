@@ -24,6 +24,10 @@
 export const EDGE_MIN_PX = 8;
 export const STROKE_MIN_PX = 6;
 export const TARGET_FACTOR = 1.5;
+// One shared bound — the same figure-taller-than-a-phone-screen limit vdd_templates.py's finish()
+// refuses at build time and vdd-check.mjs fails on the doc's canvas. Aspect is preserved from
+// canvas to render, so any of the three sees the same ratio.
+export const ASPECT_MAX = 2.0;
 export const ARC_TOLERANCE_DEG = 2;
 export const SHADED_TOLERANCE = 0.1; // cells
 export const ARC_LABEL_RE = /^(\d+(\.\d+)?°?|[a-z]°?|[α-ωθ]°?)$/;
@@ -269,7 +273,8 @@ function hasVisibleFill(el, defaults) {
  * assess({doc, claims, widths, fontsByWidth}) →
  *   { verdict: "PASS"|"FAIL", findings: [{rule, severity:"fail"|"allowed", message, label?}],
  *     labels: [{i, text, kind, width, edge_px, stroke_px, target_u, geom_u, fontSizeU, ok}],
- *     shaded: {claimed, measured, cell, cells}|null, font: {math, text, families}, arcs: {checked}|null }
+ *     shaded: {claimed, measured, cell, cells}|null, font: {math, text, families}, arcs: {checked}|null,
+ *     aspect: {ratio, limit}|null }
  */
 export function assess({ doc = null, claims = null, widths = [], fontsByWidth = null }) {
   const cs = typeof claims === "string" ? parseClaimSet(claims) : claims ?? null;
@@ -514,6 +519,29 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
     }
   }
 
+  // ── aspect — a figure much taller than wide renders taller than a 375 px phone screen ────────
+  // Same bound as the build-time MAX_ASPECT in vdd_templates.py and vdd-check's canvas rule; the
+  // render preserves the canvas ratio, so measure it wherever the plate was measured (prefer the
+  // 375 record — the phone-width plate — else the widest, else the doc's canvas).
+  let aspect = null;
+  {
+    const w375 =
+      widths?.find((w) => w.width === 375) ??
+      [...(widths ?? [])].sort((a, b) => (b.pxPerUnit || 0) - (a.pxPerUnit || 0))[0];
+    const cw = w375?.viewBox?.[2] ?? doc?.canvas?.width;
+    const ch = w375?.viewBox?.[3] ?? doc?.canvas?.height;
+    const ratio = cw > 0 && ch > 0 ? ch / cw : null;
+    if (ratio != null) {
+      aspect = { ratio: round2(ratio), limit: ASPECT_MAX };
+      if (ratio > ASPECT_MAX)
+        push(
+          "aspect",
+          "fail",
+          `aspect: figure renders ${round2(ratio)}× as tall as wide at ${w375?.width ?? "canvas"} px (> ${ASPECT_MAX}) — a phone screen won't hold it; re-lay it out, e.g. a 1×10 grid as 5×2`,
+        );
+    }
+  }
+
   // ── font ─────────────────────────────────────────────────────────────────────────────────────
   const normFam = (f) => String(f ?? "").replace(/\s+/g, " ").trim();
   const fams = new Set(
@@ -530,5 +558,5 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
     push("font", "fail", `font mix: text labels use ${fams.size} faces (${[...fams].join(" | ")})`);
 
   const verdict = findings.some((f) => f.severity === "fail") ? "FAIL" : "PASS";
-  return { verdict, findings, labels: rows, shaded, font, arcs };
+  return { verdict, findings, labels: rows, shaded, font, arcs, aspect };
 }

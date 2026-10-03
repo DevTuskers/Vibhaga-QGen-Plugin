@@ -18,6 +18,7 @@
  *   2. `a11y.title` real + non-generic, `a11y.description` present        (S6b §0.3, §3.3)
  *   3. label hygiene: no `$`, no backtick, no Sinhala in `text.value` / `math.latex`   (S6b §0.5–0.6)
  *   4. element budget (≤ 32 is a smell threshold, not a schema cap)         (S6b §3.4)
+ *   4b. canvas aspect — height/width > 2.0 renders taller than a 375 px phone screen (no override)
  *   5. `path` elements reported (avoid unless nothing else can draw it)     (T-S6b-9)
  *   6. `checkDiagram()` — ADVISORY, printed, never blocking                  (S6b §0.8)
  *   7. normalize consistency — `normalizeVdd(doc)` must move EVERY element by the same (dx, dy)
@@ -52,6 +53,7 @@
  */
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
+import { ASPECT_MAX } from "./visual-metrics.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -251,6 +253,10 @@ function checkDocument(doc, cs, canvasAnchors) {
     // this harness: "90°" on a variant:"right" mark rendered as <text>, inside the angle, on both surfaces).
     // The render step below asserts it; nothing to fail here.
   }
+  // canvas taller than ASPECT_MAX × wide renders taller than a phone screen on the 375 px plate —
+  // W8: a 1×10 shaded grid came out 375×2253 and nothing flagged it. No override: re-lay it out.
+  if (d.canvas.height > ASPECT_MAX * d.canvas.width)
+    fails.push(`aspect: canvas ${d.canvas.width}×${d.canvas.height} is ${(d.canvas.height / d.canvas.width).toFixed(1)}× as tall as wide (> ${ASPECT_MAX}) — re-lay it out, e.g. a 1×10 grid as 5×2`);
   notes.push(`elements by type: ${Object.entries(byType).map(([k, v]) => `${v} ${k}`).join(", ")}`);
   // `--budget N` raises the smell threshold for ONE figure whose claim set justifies it in `departures:` (e.g. six small
   // printed triangles that are one question part: 34 elements is the floor, run 10 II-01 I, 2026-09-06). Never a default.
@@ -630,6 +636,10 @@ async function selfTest() {
   t("2-point polygon → safeParse fails", checkDocument(bad, cs, anchors).fails.some((f) => f.startsWith("safeParse")));
   const missingLabel = { ...tri, elements: tri.elements.filter((e) => e.id !== "pC") };
   t("label C dropped → coverage fails", checkDocument(missingLabel, cs, { ...anchors }).fails.some((f) => f.includes('label "C"')));
+  const tall = { ...tri, canvas: { width: 66, height: 426 } };
+  t("canvas 66×426 (h/w 6.5) → aspect fails", checkDocument(tall, cs, anchors).fails.some((f) => f.startsWith("aspect:")));
+  const wide = { ...tri, canvas: { width: 426, height: 213 } };
+  t("canvas 426×213 (h/w 0.5) → no aspect fail", !checkDocument(wide, cs, anchors).fails.some((f) => f.startsWith("aspect:")));
   // normalize consistency has no reachable failure with the current Admin (every type translates) — assert the pass
   t("normalize: uniform translation on the correct triangle", good.notes.some((n) => n.startsWith("normalize: every element")));
   const leader = { id: "PQ", type: "arrow", head: "end", points: [[60, 40], [100, 20], [140, 70], [180, 100]] };
