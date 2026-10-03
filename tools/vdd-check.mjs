@@ -219,10 +219,14 @@ function evalClaims(cs, A, elements = []) {
         out.push({ id: c.id, kind: "ratio", claim: `circle ${m[1]}: |${m[1]}${p}| / |${m[1]}${pts[0]}|`, stated: 1, value: len(A[m[1]], A[p]) / len(A[m[1]], A[pts[0]]), evidence: c.evidence });
     } else if (c.pred === "circle" && (m = c.args.match(/^centre ([A-Z]) radius (\d+(?:\.\d+)?)$/))) {
       // `radius` is measured against the DRAWN element, not against anchors — every circle
-      // element whose centre sits at the anchor is compared (concentric rings each get a row)
-      if (has(m[1])) for (const el of elements) {
-        if (el.type === "circle" && len(el.center, A[m[1]]) <= 1.5)
+      // element whose centre sits at the anchor is compared (concentric rings each get a
+      // row), and a claim naming a centre with no circle there is a hard failure, not a
+      // silent skip (`elements` here is already filtered to visible geometry)
+      if (has(m[1])) {
+        const hits = elements.filter((el) => el.type === "circle" && len(el.center, A[m[1]]) <= 1.5);
+        if (hits.length) for (const el of hits)
           out.push({ id: c.id, kind: "ratio", claim: `circle ${m[1]}: ${el.id}.r / stated ${m[2]}`, stated: 1, value: el.r / +m[2], evidence: c.evidence });
+        else out.push({ id: c.id, kind: "fail", claim: `circle ${m[1]}: no circle centred at ${m[1]}`, stated: NaN, value: NaN, evidence: c.evidence });
       }
     }
   }
@@ -325,12 +329,38 @@ function checkDocument(doc, cs, canvasAnchors) {
     const missingAnch = cs.points.filter((p) => !A[p]);
     if (missingAnch.length) fails.push(`coverage: no canvas anchor for point(s) ${missingAnch.join(" ")} — pass --anchors, set meta.anchors, or add a label-only point element`);
     const tol = 0.01;
-    const strokes = d.elements.map((el, index) => {
-      if (!["line", "polyline", "polygon", "arrow"].includes(el.type)) return null;
+    // the same visibility rule the label check uses — an element that paints nothing
+    // covers nothing and cannot back a `radius` claim (stroke none/0-width/transparent,
+    // element or stroke opacity 0, a label-less r:0 point, a zero-size rim)
+    const strokeVisible = (el) => {
       const width = el.stroke?.width ?? d.defaults?.strokeWidth ?? 2;
       const opacity = (el.stroke?.opacity ?? 1) * (el.opacity ?? d.defaults?.opacity ?? 1);
       const color = lib.safeColor(el.stroke?.color, lib.safeColor(d.defaults?.strokeColor, "#1f2937")).toLowerCase();
-      if (!(width > 0) || !(opacity > 0) || ["none", "transparent"].includes(color)) return null;
+      return width > 0 && opacity > 0 && !["none", "transparent"].includes(color);
+    };
+    const fillVisible = (el) => {
+      if (!el.fill) return false;
+      const color = lib.safeColor(el.fill.color, lib.safeColor(d.defaults?.fillColor, "none")).toLowerCase();
+      return (el.fill.opacity ?? 1) * (el.opacity ?? d.defaults?.opacity ?? 1) > 0 &&
+        !["none", "transparent"].includes(color);
+    };
+    const paints = (el) => {
+      if ((el.opacity ?? d.defaults?.opacity ?? 1) <= 0) return false;
+      if (el.type === "point") return el.r > 0 || !!el.label;
+      if (el.type === "circle" || el.type === "arc") {
+        if (!(el.r > 0)) return false;
+        return strokeVisible(el) || fillVisible(el);
+      }
+      if (el.type === "ellipse") {
+        if (!(el.rx > 0 && el.ry > 0)) return false;
+        return strokeVisible(el) || fillVisible(el);
+      }
+      if (["line", "polyline", "polygon", "arrow", "rect"].includes(el.type)) return strokeVisible(el) || fillVisible(el);
+      return true;
+    };
+    const strokes = d.elements.map((el, index) => {
+      if (!["line", "polyline", "polygon", "arrow"].includes(el.type)) return null;
+      if (!strokeVisible(el)) return null;
       let pts = el.points.map((p) => p.map((v) => Math.round(v * 1000) / 1000));
       if (!pts.every((p) => p.every(Number.isFinite))) return null;
       if (el.rotation) {
@@ -389,15 +419,17 @@ function checkDocument(doc, cs, canvasAnchors) {
       if (!candidates.length) fails.push(`coverage: segment ${seg} has no eligible line/polyline/polygon/arrow through both ${P} and ${Q} with any declared arrow direction (T99 — the deleted side)`);
     }
     for (const p of anchored) {
-      const hit = d.elements.some((el) => coords(el).some((c) => len(c, A[p]) <= 1.5)) ||
-        d.elements.some((el) => ["line", "polyline", "polygon", "arrow", "rect"].includes(el.type) && (() => { const pts = edgeChain(el); for (let i = 0; i + 1 < pts.length; i++) if (onSegment(A[p], pts[i], pts[i + 1], 0.01)) return true; return false; })()) ||
-        d.elements.some((el) => onRim(el, A[p]));
+      const hit = d.elements.some((el) => paints(el) &&
+        (coords(el).some((c) => len(c, A[p]) <= 1.5) ||
+         (["line", "polyline", "polygon", "arrow", "rect"].includes(el.type) &&
+          (() => { const pts = edgeChain(el); for (let i = 0; i + 1 < pts.length; i++) if (onSegment(A[p], pts[i], pts[i + 1], 0.01)) return true; return false; })()) ||
+         onRim(el, A[p])));
       if (!hit && cs.points.includes(p)) fails.push(`coverage: point ${p} is anchored at (${A[p]}) but no element passes within 1.5 px of it`);
     }
     if (cs.segments.length) notes.push(`coverage: segments ${cs.segments.length} checked · labels ${cs.labels.length} checked · points ${cs.points.length}`);
     // numeric — drawn canvas geometry vs BOTH the claim set's STATED value (the stem-derived
     // number) and its CLAIM-SET anchors (canvas coordinates for a constructed set)
-    const claimed = evalClaims(cs, cs.anchors, d.elements), drawn = evalClaims(cs, A, d.elements);
+    const claimed = evalClaims(cs, cs.anchors, d.elements.filter(paints)), drawn = evalClaims(cs, A, d.elements.filter(paints));
     // a claim with a numeric-capable pred that produced no evaluation was silently skipped — a typo'd
     // args string or a missing anchor would otherwise be invisible (the hole W15's grammar fix exposed)
     const evaluated = new Set(claimed.map((p) => p.id));
@@ -405,6 +437,10 @@ function checkDocument(doc, cs, canvasAnchors) {
     if (skipped.length) notes.push(`⚠️ numeric: ${skipped.length} claim(s) did not evaluate — check the args grammar and that every point is anchored: ${skipped.map((c) => `${c.id} ${c.pred} ${c.args}`).join("; ")}`);
     const B = { ratio: 0.02, angle: 1, residual: 0.01 };   // the single tight band — every figure is authored on the canvas
     for (const pc of claimed) {
+      if (pc.kind === "fail") {
+        fails.push(`numeric ${pc.id} ${pc.claim} — the claim names a circle the drawing does not draw (or draws invisibly)`);
+        continue;
+      }
       const dc = drawn.find((x) => x.id === pc.id && x.claim === pc.claim);
       if (!dc || !Number.isFinite(pc.value) || !Number.isFinite(dc.value)) continue;
       let diff, vs, other, ok, unit;
@@ -689,6 +725,15 @@ async function selfTest() {
   t("radius claim evaluates when drawn r matches", radOk.numeric.length === 1 && radOk.numeric[0].ok && !radOk.fails.some((f) => f.startsWith("numeric")));
   const radBad = checkDocument({ ...tri, elements: [{ id: "c1", type: "circle", center: [150, 130], r: 90 }] }, radCs, { A: [150, 130] });
   t("radius claim fails when drawn r disagrees", radBad.fails.some((f) => f.startsWith("numeric K1")));
+  // invisible geometry neither covers an anchor nor backs a radius claim
+  const ghostCircle = { ...tri, elements: [{ id: "c1", type: "circle", center: [150, 130], r: 80, stroke: { width: 0 } }] };
+  t("anchor on an invisible circle's rim is uncovered", noCover(checkDocument(ghostCircle, onePt(230, 130), { A: [230, 130] }).fails));
+  const ghostDot = { ...tri, elements: [{ id: "p1", type: "point", at: [230, 130], r: 0 }] };
+  t("a label-less r:0 point covers nothing", noCover(checkDocument(ghostDot, onePt(230, 130), { A: [230, 130] }).fails));
+  const noCirc = checkDocument({ ...tri, elements: [] }, radCs, { A: [150, 130] });
+  t("radius claim with no circle at the centre is a FAIL", noCirc.fails.some((f) => f.includes("no circle centred at A")));
+  const ghostRad = checkDocument(ghostCircle, radCs, { A: [150, 130] });
+  t("radius claim against an invisible circle is a FAIL", ghostRad.fails.some((f) => f.includes("no circle centred at A")));
   // normalize consistency has no reachable failure with the current Admin (every type translates) — assert the pass
   t("normalize: uniform translation on the correct triangle", good.notes.some((n) => n.startsWith("normalize: every element")));
   const leader = { id: "PQ", type: "arrow", head: "end", points: [[60, 40], [100, 20], [140, 70], [180, 100]] };
@@ -697,7 +742,10 @@ async function selfTest() {
   const leaderCheck = (elements, claims = leaderClaims, A = leaderAnchors, defaults = tri.defaults) => checkDocument({ ...tri, defaults, elements }, claims, A);
   const rejected = (elements, claims = leaderClaims, defaults = tri.defaults) => {
     const r = leaderCheck(elements, claims, leaderAnchors, defaults);
-    return !!r.parsed && r.fails.length === 1 && r.fails[0].startsWith("coverage: segment PQ");
+    // every failure must be a coverage failure and the segment must be among them —
+    // an invisible arrow now uncovers its OWN endpoints too, so don't count heads
+    return !!r.parsed && r.fails.every((f) => f.startsWith("coverage:")) &&
+      r.fails.some((f) => f.startsWith("coverage: segment PQ"));
   };
   for (const head of ["end", "both", undefined]) t(`continuous curved arrow head ${head ?? "default end"}: coverage passes`, leaderCheck([{ ...leader, head }]).fails.length === 0);
   t("reversed chain with both heads preserves declared direction", leaderCheck([{ ...leader, head: "both", points: [...leader.points].reverse() }]).fails.length === 0);
