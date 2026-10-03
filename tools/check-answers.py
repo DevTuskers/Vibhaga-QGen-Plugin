@@ -11,8 +11,10 @@ part) — `build-staged` never emits them:
           numbers, + - * / // % **, unary -, comparisons (chained ok), and/or/not,
           parentheses, tuple/list literals (constant indexing ok), and calls to
           ceil floor divmod min max abs sum round sorted int. Nothing else — no names,
-          no attributes. The check must contain at least one comparison — a bare
-          `True` or a `1 == 1` tautology re-derives nothing and is refused. Resource
+          no attributes. The check must contain at least one comparison, and every
+          comparison must compute something — a bare `True` or a constant-only
+          compare (`1 == 1`, `1 < 2`, `(1, 2) == (1, 2)`) re-derives nothing and is
+          refused. Resource
           bounds: every intermediate |number| ≤ 10**15, every list/tuple ≤ 1000
           elements (a `seq * n` repetition is refused before it allocates), |exp| ≤
           1000 on `**`, and a 2 s wall-clock backstop per leaf (SIGALRM, POSIX).
@@ -192,9 +194,22 @@ def _eval_node(node):
     raise Refuse(f"{type(node).__name__} is not in the whitelist")
 
 
+def _literal(node) -> bool:
+    """A parse-time constant: a Constant, a tuple/list of literals, or a bare ± sign on
+    one (`-5` is a literal, not a computation). Anything else — BinOp, Call, Subscript,
+    `not`, unary applied to a computed operand — counts as computed."""
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, (ast.Tuple, ast.List)):
+        return all(_literal(e) for e in node.elts)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+        return _literal(node.operand)
+    return False
+
+
 def parse_check(expr: str, where: str):
     """→ ast.Expression — raises Refuse on anything outside the whitelist, too big,
-    or trivially satisfied (no comparison / a same-literal comparison)."""
+    or trivially satisfied (no comparison / an all-literal comparison)."""
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as e:
@@ -214,10 +229,9 @@ def parse_check(expr: str, where: str):
     if not comps:
         raise Refuse("the check has no comparison — it never tests a derived value")
     for c in comps:
-        sides = [c.left, *c.comparators]
-        if all(isinstance(s, ast.Constant) for s in sides) \
-                and len({s.value for s in sides}) == 1:
-            raise Refuse(f"tautology — both sides are the literal {sides[0].value!r}")
+        if all(_literal(s) for s in (c.left, *c.comparators)):
+            raise Refuse(f"constant-only comparison {ast.unparse(c)!r} — at least one "
+                         f"side must compute something")
     return tree
 
 

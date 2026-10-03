@@ -332,7 +332,14 @@ class PrecriticLintTest(unittest.TestCase):
             r2 = lint_plain(run2, "--rubric", "medium-hard")
             self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
             self.assertIn("0 fail(s)", r2.stdout)
-            self.assertEqual(r2.stdout.count("no level"), 3)
+
+    def test_rubric_unrated_last_leaf_warns_cannot_check_h(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_levels_run(Path(td), ["R", "M", None], ["M", "H", "H"])
+            r = lint_plain(run, "--rubric", "medium-hard")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("WARN Q1: last part has no level — cannot check it is H",
+                          r.stdout)
 
     # ---- (e) --existing: digits-masked Jaccard duplicate warn ----------------
     def test_existing_duplicate_warns(self):

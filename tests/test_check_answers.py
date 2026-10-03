@@ -104,7 +104,7 @@ class CheckAnswersTest(unittest.TestCase):
     stem: "x"
     approach: "…"
     final: "23"
-    check: "divmod(925, 40) == (23, 5) and 20 < 23 <= 23 and (3, 1)[0] == 3 and not 0"
+    check: "divmod(925, 40) == (23, 5) and 20 < 23 <= 20 + 3 and (3, 1)[0] == 3 and not 0"
 """)
             r = run_tool(run)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -203,7 +203,9 @@ class CheckAnswersTest(unittest.TestCase):
                 self.assertIn("no comparison", r.stdout, expr)
 
     def test_same_literal_comparison_is_a_tautology(self):
-        for expr in ("1 == 1", "2.5 <= 2.5", "40 * 23 == 920 or 7 == 7"):
+        # every side a literal — same value or not — computes nothing
+        for expr in ("1 == 1", "2.5 <= 2.5", "1 < 2", "(1, 2) == (1, 2)",
+                     "[1] == [1]", "-5 < 0", "40 * 23 == 920 or 7 == 7"):
             with self.subTest(expr=expr), tempfile.TemporaryDirectory() as td:
                 run = write_run(Path(td), f"""\
   - n: 1
@@ -215,7 +217,21 @@ class CheckAnswersTest(unittest.TestCase):
 """)
                 r = run_tool(run)
                 self.assertEqual(r.returncode, 1, expr)
-                self.assertIn("tautology", r.stdout, expr)
+                self.assertIn("constant-only", r.stdout, expr)
+
+    def test_one_computed_side_is_enough(self):
+        # -20 is a bare negative literal, but the BinOp side makes it a real check
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "x"
+    approach: "…"
+    final: "-20"
+    check: "5 * -4 == -20"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
     def test_final_number_not_covered_warns(self):
         with tempfile.TemporaryDirectory() as td:

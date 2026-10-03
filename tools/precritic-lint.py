@@ -276,6 +276,9 @@ def rubric_medium_hard(questions: list, log) -> tuple[int, int]:
         if levels and levels[-1] not in (None, "H"):
             fails += 1
             log(f"  FAIL {qn}: last part {names[-1]} is {levels[-1]} — medium-hard ends on H")
+        elif levels and levels[-1] is None:
+            warns += 1
+            log(f"  WARN {qn}: last part has no level — cannot check it is H")
         for name, l in lv:
             if l is None:
                 warns += 1
