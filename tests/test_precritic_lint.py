@@ -57,7 +57,7 @@ claims:
 CLAIMS_LINE = """\
 claims:
   K1  axis AB from 730 to 750 | stem | endpoints
-  K2  at 745 @P | inferred | the marked point
+  K2  at 745 380.00 62.94 | inferred | the marked point
 """
 
 CLAIMS_PICTO = """\

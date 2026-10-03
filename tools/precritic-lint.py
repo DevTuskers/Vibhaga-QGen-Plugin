@@ -19,7 +19,7 @@ Checks:
 
   (b) WARN — a figure spec's `description` (a11y) containing a digit token equal to a value
       the figure carries as READABLE content, taken from its emitted claim set
-      `figures/<figure_id>-claims.txt`: number-line `at` values, `shaded n of m` n,
+      `figures/<figure_id>-claims.txt`: number-line `at v x y` values, `shaded n of m` n,
       `stage k shows d dots` d, pictograph row counts (symbols and items). T125: the a11y
       description must not hand over what a part asks the student to read off the figure.
 
@@ -51,7 +51,9 @@ PROG = "precritic-lint"
 
 # claim-set lines that carry a value the student reads off the figure (item G-b)
 READABLE_RES = (
-    (re.compile(r"\bat\s+(-?\d+(?:\.\d+)?)\s+@"), (1,)),              # number_line `at v @P`
+    # the claim file carries `@anchor` resolved to coordinates: `at 30 216.12 62.94` — requiring
+    # the two trailing numbers keeps a prose `at 2 per symbol` (pictograph describe) from matching
+    (re.compile(r"\bat\s+(-?\d+(?:\.\d+)?)\s+-?\d+(?:\.\d+)?\s+-?\d+(?:\.\d+)?"), (1,)),
     (re.compile(r"\bshaded\s+(\d+(?:\.\d+)?)\s+of\s+\d+\s+cells"), (1,)),   # shaded_grid n of m
     (re.compile(r"\bstage\s+\d+\s+shows\s+(\d+(?:\.\d+)?)\s+dots"), (1,)),  # dot_pattern d
     (re.compile(r"\bshows\s+(\d+(?:\.\d+)?)\s+symbols\s+—\s+(\d+(?:\.\d+)?)\s+items"), (1, 2)),
