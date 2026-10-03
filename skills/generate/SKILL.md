@@ -189,12 +189,16 @@ same two checkout paths in the critic's spawn prompt.
     `--accept-signatures 0` on the real publish too; it refuses (exit 4) without it. Exit 0 is the only success; quote
     "published k/n", "read-back 1: staged doc confirms …", `t77: N question(s) · N comparisons · 0 mismatch(es)` and
     "provenance: N id(s) · OK". Exit 1 = staged and live disagree; the run is failed until they agree (**T77**).
+    After the logout the tool runs Q3 itself when `VIBHAGA_ADMIN_AUTH_DB_URL` resolves: `q3: ok` (counts land in the
+    ledger under the session) · `q3: PENDING — no VIBHAGA_ADMIN_AUTH_DB_URL; …` (prove by hand, step 11) ·
+    `q3: NOT ok — <counts>` turns an otherwise-successful write into exit 5.
 11. **Prove it by SQL:** `python3 tools/sql-proof.py q2 <sid> --expected <N> --out $A/q2.json` → `q2: ok` (count,
-    flagged, published, paperless, scope, 0 signed, 0 unanswered leaves). After the **last** network subcommand,
-    `python3 tools/sql-proof.py q3 --actor <user id printed on logout> --out $A/q3.json` → `q3: ok` on the Admin Auth
-    project. `q3` exits 2 when no `VIBHAGA_ADMIN_AUTH_DB_URL` is provisioned (true on the owner's laptop on
-    2026-10-02): then run the Q3 `SELECT`, actor id substituted, through the Supabase MCP `execute_sql` on the **Admin
-    Auth** project, and record its row (`actor_exists`, `sessions`, `active_refresh_tokens`, `wrong_project`, `ok`) in `q3.json` by hand — same `ok` rule; never `PENDING` at done.
+    flagged, published, paperless, scope, 0 signed, 0 unanswered leaves). Q3 is now automatic: every **write**
+    subcommand's logout runs it (step 10) — on a `q3: PENDING` line (no `VIBHAGA_ADMIN_AUTH_DB_URL`, true on the
+    owner's laptop on 2026-10-02) run the Q3 `SELECT`, actor id substituted, through the Supabase MCP `execute_sql`
+    on the **Admin Auth** project, and record its row (`actor_exists`, `sessions`, `active_refresh_tokens`,
+    `wrong_project`, `ok`) in `q3.json` by hand — same `ok` rule; never `PENDING` at done. A psql
+    `permission denied for schema auth` means the Q3 role lacks USAGE on `auth` — e.g. `grant anon to <role>`.
     Leave the questions published and flagged.
 12. **Critique — a fresh `qgen-critic`** ([`agents/qgen-critic.md`](../../agents/qgen-critic.md)). Spawn it with
     **paths only**, in exactly this shape:

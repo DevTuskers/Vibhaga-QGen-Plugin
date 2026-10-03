@@ -78,7 +78,7 @@ class PlaygroundTests(unittest.TestCase):
     def api(self, fake):
         return tool.PlaygroundApi(FAKE_ENV, transport=fake, log=self.logs.append)
 
-    def call(self, fn, *args):
+    def call(self, fn, *args, write=True):
         self.logs.clear()
         api = self.api(self.fake_obj)
         try:
@@ -87,7 +87,9 @@ class PlaygroundTests(unittest.TestCase):
             self.logs.append(str(e))
             return e.code
         finally:
-            tool.finish(api, log=self.logs.append)
+            # no auth DB URL in tests → a write prints the PENDING line, never runs psql
+            with mock.patch.object(tool.sqlp, "find_auth_url", return_value=(None, "no url in tests")):
+                tool.finish(api, write=write, log=self.logs.append)
 
     def run_pub(self, fake=None, accept=0, dry=False, scope=SCOPE, t77=None, sql=None,
                 staged=None, ids=None, ledger=None, sid=SID):
@@ -221,8 +223,7 @@ class PlaygroundTests(unittest.TestCase):
         self.assertEqual(fake.grants, 4)                                    # get, dry-run, loop, readback
         self.assertEqual(fake.logouts, 1)
         self.assertEqual(fake.calls[-1], ("POST", "/auth/v1/logout?scope=global"))
-        self.assertEqual(sum(1 for l in self.logs if f"FROM auth.sessions WHERE user_id = '{ACTOR}'" in l
-                             or f"FROM auth.refresh_tokens WHERE user_id = '{ACTOR}'" in l), 2)
+        self.assertIn(f"q3: PENDING — no VIBHAGA_ADMIN_AUTH_DB_URL; run tools/sql-proof.py q3 --actor {ACTOR}", self.logs)
         secret_words = {"pw", "tok1", "tok2", "tok3", "tok4", FAKE_ENV["VIBHAGA_ADMIN_EMAIL"]}
         self.assertFalse(secret_words & {w for l in self.logs for w in l.replace("'", " ").replace('"', " ").split()})
         self.assertEqual(len(t77_calls), 1)
@@ -369,14 +370,14 @@ class PlaygroundTests(unittest.TestCase):
             {"lesson_id": ID1, "grade": None, "exam": "ol", "subject": "Mathematics", "name": "Algebra", "name_sinhala": None, "sort_order": 3},
         ]
         self.fake_obj = tool.FakePlayground({}, {}, lessons=lessons)
-        self.assertEqual(self.call(tool.cmd_lessons, 6, None, None), 0)
+        self.assertEqual(self.call(tool.cmd_lessons, 6, None, None, write=False), 0)
         lines = [l for l in self.logs if "|" in l]
         self.assertEqual(len(lines), 2)
         self.assertIn("Numbers", lines[0]) and self.assertIn("Fractions", lines[1])   # sort_order order
-        self.assertEqual(self.call(tool.cmd_lessons, 6, "ol", None), 2)              # grade+exam → 2
+        self.assertEqual(self.call(tool.cmd_lessons, 6, "ol", None, write=False), 2)              # grade+exam → 2
         bad = [dict(lessons[0], sort_order="x")]
         self.fake_obj = tool.FakePlayground({}, {}, lessons=bad)
-        self.assertEqual(self.call(tool.cmd_lessons, None, None, None), 5)
+        self.assertEqual(self.call(tool.cmd_lessons, None, None, None, write=False), 5)
 
     def test_questions_list_params_and_cursor(self):
         corpus = [summary(ID1, 1), summary(ID2, 2), summary(ID3, 3)]
@@ -384,7 +385,7 @@ class PlaygroundTests(unittest.TestCase):
         params = {"status": "published", "needs_human_review": "true", "grade": 6, "subject": "Mathematics",
                   "medium": "sinhala", "lesson_id": LESSON, "batch_id": SID, "q": "fraction", "limit": 2}
         out = self.root / "q.json"
-        self.assertEqual(self.call(tool.cmd_questions_list, params, True, out), 0)
+        self.assertEqual(self.call(tool.cmd_questions_list, params, True, out, write=False), 0)
         list_calls = [p for m, p in self.fake_obj.calls if m == "GET" and "playground/questions?" in p]
         self.assertEqual(len(list_calls), 2)                                          # --all followed the cursor
         self.assertIn("cursor=2", list_calls[1])
@@ -393,25 +394,25 @@ class PlaygroundTests(unittest.TestCase):
             self.assertIn(frag, list_calls[0])
         self.assertEqual(len(json.loads(out.read_text())), 3)
         self.assertTrue(any("flagged" in l and "batch" in l and "Q1" in l for l in self.logs))
-        self.assertEqual(self.call(tool.cmd_questions_list, {"grade": 6, "exam": "ol"}, False, None), 2)
-        self.assertEqual(self.call(tool.cmd_questions_list, {"batch_id": "nope"}, False, None), 2)
+        self.assertEqual(self.call(tool.cmd_questions_list, {"grade": 6, "exam": "ol"}, False, None, write=False), 2)
+        self.assertEqual(self.call(tool.cmd_questions_list, {"batch_id": "nope"}, False, None, write=False), 2)
 
     def test_question_show(self):
         detail = {"question": {"question_id": ID1, "question_number": 1}, "sub_questions": [], "sub_answers": [], "answers": []}
         self.fake_obj = tool.FakePlayground({}, {}, question_detail=detail)
-        self.assertEqual(self.call(tool.cmd_question_show, ID1, None), 0)
+        self.assertEqual(self.call(tool.cmd_question_show, ID1, None, write=False), 0)
         self.assertIn(ID1, "".join(self.logs))
         out = self.root / "one.json"
-        self.assertEqual(self.call(tool.cmd_question_show, ID1, out), 0)
+        self.assertEqual(self.call(tool.cmd_question_show, ID1, out, write=False), 0)
         self.assertEqual(json.loads(out.read_text()), detail)
         self.assertTrue(any(p.endswith(f"/playground/questions/{ID1}") for _, p in self.fake_obj.calls))
 
     # ---------- supporting surfaces used by the flows above ----------
     def test_session_show_list_archive(self):
         fake = self.new_fake()
-        self.assertEqual(self.call(tool.cmd_session_show, SID), 0)
+        self.assertEqual(self.call(tool.cmd_session_show, SID, write=False), 0)
         self.assertIn(SID, "".join(self.logs))
-        self.assertEqual(self.call(tool.cmd_session_list, "active", 10), 0)
+        self.assertEqual(self.call(tool.cmd_session_list, "active", 10, write=False), 0)
         self.assertIn(SID, "".join(self.logs))
         self.assertEqual(self.call(tool.cmd_session_archive, SID, self.ledger_path), 0)
         self.assertEqual(fake.sessions[SID]["status"], "archived")
@@ -420,7 +421,7 @@ class PlaygroundTests(unittest.TestCase):
     def test_doc_get_and_put_happy_path(self):
         fake = self.new_fake()
         out = self.root / "doc.json"
-        self.assertEqual(self.call(tool.cmd_doc_get, SID, out), 0)
+        self.assertEqual(self.call(tool.cmd_doc_get, SID, out, write=False), 0)
         got = json.loads(out.read_text())
         self.assertEqual(set(got), {"session", "questions", "stats"})                # ready dropped
         self.assertEqual(len(got["questions"]), 3)
@@ -431,18 +432,112 @@ class PlaygroundTests(unittest.TestCase):
 
     def test_validate_subcommand(self):
         self.fake_obj = self.new_fake(validate_errors={ID1: ["bad label"]}, validate_warnings={ID2: ["no a11y description"]})
-        self.assertEqual(self.call(tool.cmd_validate, SID, self.staged_path), 3)
+        self.assertEqual(self.call(tool.cmd_validate, SID, self.staged_path, write=False), 3)
         self.assertTrue(any("Q1" in l for l in self.logs))
         self.assertTrue(any("error: bad label" in l for l in self.logs))
         self.assertTrue(any("warn: no a11y description" in l for l in self.logs))
         self.fake_obj = self.new_fake()
-        self.assertEqual(self.call(tool.cmd_validate, SID, self.staged_path), 0)
+        self.assertEqual(self.call(tool.cmd_validate, SID, self.staged_path, write=False), 0)
 
     def test_doc_put_archived_before_guard_order(self):
         # archived is checked on the GET session even when the staged file itself is clean
         fake = self.new_fake(archived={SID})
         self.assertEqual(self.call(tool.cmd_doc_put, SID, self.staged_path, self.ledger_path, False, False), 3)
         self.assertFalse(fake.put_bodies)
+
+
+class FinishQ3(unittest.TestCase):
+    """After a WRITE subcommand's logout the revocation is PROVEN (Q3, sql-proof's own runner,
+    mocked here); a read-only command prints nothing past the logout line (B1/B2)."""
+
+    Q3_OK = {"actor_exists": 1, "sessions": 0, "active_refresh_tokens": 0, "wrong_project": False, "ok": True}
+    Q3_BAD = {"actor_exists": 1, "sessions": 2, "active_refresh_tokens": 0, "wrong_project": False, "ok": False}
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.ledger_path = self.root / "ledger.json"
+        self.logs = []
+        fake = tool.FakePlayground({}, {})
+        self.api = tool.PlaygroundApi(dict(tool._pub.FAKE_ENV), transport=fake, log=self.logs.append)
+        self.api.token = "tok"; self.api.user_id = tool.FakePlayground.ACTOR
+
+    def finish(self, **kw):
+        kw.setdefault("write", True)
+        return tool.finish(self.api, log=self.logs.append, **kw)
+
+    def test_read_only_prints_nothing_past_logout(self):
+        self.assertEqual(self.finish(write=False), 0)
+        self.assertEqual(self.logs, [f"logout?scope=global → HTTP 204 (a 204 is NOT the proof — agent-identities §3)"])
+
+    def test_write_without_url_prints_one_pending_line(self):
+        with mock.patch.object(tool.sqlp, "find_auth_url", return_value=(None, "none")):
+            self.assertEqual(self.finish(), 0)
+        self.assertEqual(self.logs[-1],
+                         f"q3: PENDING — no VIBHAGA_ADMIN_AUTH_DB_URL; run tools/sql-proof.py q3 --actor {tool.FakePlayground.ACTOR}")
+        self.assertFalse(any("orchestrator" in l for l in self.logs))
+
+    def test_write_ok_records_the_ledger(self):
+        with mock.patch.object(tool.sqlp, "find_auth_url", return_value=("postgres://x@invalid.test/db", "test")), \
+             mock.patch.object(tool.sqlp, "run_proof", return_value=dict(self.Q3_OK)):
+            self.assertEqual(self.finish(sid=SID, ledger=self.ledger_path), 0)
+        self.assertEqual(self.logs[-1], "q3: ok")
+        q3 = json.loads(self.ledger_path.read_text())["sessions"][SID]["q3"]
+        self.assertEqual(q3["counts"], {"actor_exists": 1, "sessions": 0, "active_refresh_tokens": 0, "wrong_project": False})
+        self.assertIs(q3["ok"], True)
+        self.assertEqual(q3["actor"], tool.FakePlayground.ACTOR)
+        self.assertIn("checked_at", q3)
+
+    def test_write_not_ok_returns_5_and_names_the_counts(self):
+        with mock.patch.object(tool.sqlp, "find_auth_url", return_value=("postgres://x@invalid.test/db", "test")), \
+             mock.patch.object(tool.sqlp, "run_proof", return_value=dict(self.Q3_BAD)):
+            self.assertEqual(self.finish(sid=SID, ledger=self.ledger_path), 5)
+        self.assertIn("q3: NOT ok — sessions=2", self.logs[-1])
+        self.assertIs(json.loads(self.ledger_path.read_text())["sessions"][SID]["q3"]["ok"], False)
+
+    def test_psql_failure_is_not_ok_not_pending(self):
+        with mock.patch.object(tool.sqlp, "find_auth_url", return_value=("postgres://x@invalid.test/db", "test")), \
+             mock.patch.object(tool.sqlp, "run_proof", side_effect=SystemExit(1)):
+            self.assertEqual(self.finish(), 5)
+        self.assertIn("psql failed", self.logs[-1])
+
+    def test_no_actor_id_skips_the_proof(self):
+        self.api.user_id = None
+        with mock.patch.object(tool.sqlp, "find_auth_url", return_value=("postgres://x@invalid.test/db", "test")):
+            self.assertEqual(self.finish(), 0)
+        self.assertIn("no signed-in actor", self.logs[-1])
+
+    def test_main_returns_5_when_q3_fails_after_a_write(self):
+        env_file = self.root / "env.local"
+        env_file.write_text("\n".join(f"{k}={v}" for k, v in tool._pub.FAKE_ENV.items()))
+        staged = self.root / "staged.json"
+        staged.write_text(json.dumps({"questions": []}))
+        api = tool.PlaygroundApi(dict(tool._pub.FAKE_ENV),
+                               transport=tool.FakePlayground({SID: session_row()}, {SID: []}),
+                               log=lambda l: None)
+        argv = ["x", "doc", "put", SID, "--staged", str(staged), "--ledger", str(self.ledger_path),
+                "--env", str(env_file)]
+        with mock.patch.object(tool, "PlaygroundApi", return_value=api), \
+             mock.patch.object(tool.sqlp, "find_auth_url", return_value=("postgres://x@invalid.test/db", "test")), \
+             mock.patch.object(tool.sqlp, "run_proof", return_value=dict(self.Q3_BAD)), \
+             mock.patch("sys.argv", argv), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(tool.main(), 5)
+
+    def test_main_read_only_subcommand_never_runs_q3(self):
+        env_file = self.root / "env.local"
+        env_file.write_text("\n".join(f"{k}={v}" for k, v in tool._pub.FAKE_ENV.items()))
+        api = tool.PlaygroundApi(dict(tool._pub.FAKE_ENV),
+                               transport=tool.FakePlayground({SID: session_row()}, {}),
+                               log=lambda l: None)
+        argv = ["x", "session", "list", "--env", str(env_file)]
+        with mock.patch.object(tool, "PlaygroundApi", return_value=api), \
+             mock.patch.object(tool.sqlp, "find_auth_url") as find, \
+             mock.patch("sys.argv", argv), contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(tool.main(), 0)
+        find.assert_not_called()                        # a read-only command never reaches the proof
+        self.assertNotIn("orchestrator", out.getvalue())
+        self.assertNotIn("q3:", out.getvalue())
 
 
 if __name__ == "__main__":

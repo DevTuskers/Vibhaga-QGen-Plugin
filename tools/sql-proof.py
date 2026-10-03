@@ -82,29 +82,37 @@ def slice_proof(sql_text: str, marker: str) -> str:
     return raw  # sent to psql WITH its comments, same as critic-read
 
 
-def resolve_auth_url(auth_env: str | None) -> str:
+def find_auth_url(auth_env: str | None, env_path: Path | None = None) -> tuple[str | None, str]:
     """`--auth-env` file → VIBHAGA_ADMIN_AUTH_DB_URL env → that key's line in the admin env file
-    (VIBHAGA_ADMIN_ENV wins, else _admin_auth.ENV_PATH). Prints the SOURCE — never the value."""
+    (env_path when given, else VIBHAGA_ADMIN_ENV, else _admin_auth.ENV_PATH). Returns
+    (url, source) or (None, reason); prints nothing — callers announce the source or the miss.
+    Shared with playground-publish.py's post-logout Q3 — resolution order is never copied."""
     if auth_env:
         p = Path(auth_env)
         if not p.is_file():
-            die(f"--auth-env {auth_env} is not a readable file")
+            return None, f"--auth-env {auth_env} is not a readable file"
         url = cr.read_env(p).get("VIBHAGA_ADMIN_AUTH_DB_URL")
         if not url:
-            die(f"--auth-env {auth_env} has no VIBHAGA_ADMIN_AUTH_DB_URL line")
-        print(f"{PROG}: auth DB URL from --auth-env {auth_env}", file=sys.stderr)
-        return url
+            return None, f"--auth-env {auth_env} has no VIBHAGA_ADMIN_AUTH_DB_URL line"
+        return url, f"--auth-env {auth_env}"
     if os.environ.get("VIBHAGA_ADMIN_AUTH_DB_URL"):
-        print(f"{PROG}: auth DB URL from VIBHAGA_ADMIN_AUTH_DB_URL env", file=sys.stderr)
-        return os.environ["VIBHAGA_ADMIN_AUTH_DB_URL"]
-    env_path = (Path(os.environ["VIBHAGA_ADMIN_ENV"]) if os.environ.get("VIBHAGA_ADMIN_ENV")
-                else _auth.ENV_PATH)
-    url = cr.read_env(env_path).get("VIBHAGA_ADMIN_AUTH_DB_URL") if env_path.is_file() else None
-    if not url:
-        die("no VIBHAGA_ADMIN_AUTH_DB_URL — not in the environment, no --auth-env file, and no line "
-            f"in {env_path} (the Admin Auth project URL lives in Vibhaga-Admin/.env.local or the environment)")
-    print(f"{PROG}: auth DB URL from {env_path}", file=sys.stderr)
-    return url
+        return os.environ["VIBHAGA_ADMIN_AUTH_DB_URL"], "VIBHAGA_ADMIN_AUTH_DB_URL env"
+    ep = env_path or (Path(os.environ["VIBHAGA_ADMIN_ENV"]) if os.environ.get("VIBHAGA_ADMIN_ENV")
+                      else _auth.ENV_PATH)
+    url = cr.read_env(ep).get("VIBHAGA_ADMIN_AUTH_DB_URL") if ep.is_file() else None
+    if url:
+        return url, str(ep)
+    return None, ("not in the environment, no --auth-env file, and no line in "
+                  f"{ep} (the Admin Auth project URL lives in Vibhaga-Admin/.env.local or the environment)")
+
+
+def resolve_auth_url(auth_env: str | None) -> str:
+    """The CLI wrapper over find_auth_url — prints the SOURCE (never the value) or dies."""
+    url, src = find_auth_url(auth_env)
+    if url:
+        print(f"{PROG}: auth DB URL from {src}", file=sys.stderr)
+        return url
+    die(src if auth_env else f"no VIBHAGA_ADMIN_AUTH_DB_URL — {src}")
 
 
 def run_proof(pg: dict[str, str], block: str, variables: list[tuple[str, str]], tag: str) -> dict:
@@ -121,9 +129,20 @@ def run_proof(pg: dict[str, str], block: str, variables: list[tuple[str, str]], 
     except FileNotFoundError:
         die("psql is not on PATH")
     if proc.returncode != 0:
-        err = proc.stderr.strip().splitlines()
+        # psql stderr carries no URL and no password — safe to echo. Lead with the ERROR:/FATAL:
+        # line (psql prefixes it "psql: error:" so it may sit mid-line), then up to the last 3
+        # stderr lines — the owner once saw only `^`, the caret under a psql position marker.
+        err = [l.rstrip() for l in proc.stderr.splitlines() if l.strip()]
+        flagged = next((l.strip() for l in err if re.search(r"(ERROR|FATAL):", l)), None)
+        tail = err[-3:]
+        shown = ([flagged] if flagged and flagged not in tail else []) + tail
         print(f"{PROG}: psql failed on {tag} (exit {proc.returncode})"
-              + (f" — {err[-1]}" if err else ""), file=sys.stderr)
+              + ("" if shown else " — no stderr"), file=sys.stderr)
+        for l in shown:
+            print(f"{PROG}:   {l}", file=sys.stderr)
+        if any("permission denied for schema auth" in l for l in err):
+            print(f"{PROG}: the Q3 role needs USAGE on schema auth — e.g. `grant anon to <role>`; "
+                  "see skills/generate/SKILL.md step 11", file=sys.stderr)
         raise SystemExit(1)
     lines = [l for l in proc.stdout.splitlines() if l.strip()]
     if len(lines) != 2:

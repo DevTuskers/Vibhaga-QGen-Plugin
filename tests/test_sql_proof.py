@@ -49,7 +49,7 @@ case "$data" in
   *) echo "no Q marker in stdin" >&2; exit 8;;
 esac
 if [ -n "$FAKE_PSQL_EXIT" ]; then
-  echo "psql: synthetic failure" >&2
+  if [ -n "$FAKE_PSQL_ERR" ]; then printf '%s' "$FAKE_PSQL_ERR" >&2; else echo "psql: synthetic failure" >&2; fi
   exit "$FAKE_PSQL_EXIT"
 fi
 printf '%s\\n' "$FAKE_PSQL_OUT"
@@ -134,6 +134,7 @@ class EndToEnd(unittest.TestCase):
             # empty defaults: the stub treats "" as unset and ambient leakage can't reach a test
             "FAKE_PSQL_OUT": "",
             "FAKE_PSQL_EXIT": "",
+            "FAKE_PSQL_ERR": "",
         }
 
     def tearDown(self):
@@ -177,6 +178,31 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("psql failed on q2", err)
         self.assertIn("synthetic failure", err)
+
+    def test_psql_failure_shows_the_error_line_and_the_tail(self):
+        # the owner once saw only `^` — the caret under psql's position marker. The ERROR/FATAL
+        # line plus up to the last 3 stderr lines must print.
+        canned = ("psql: error: connection to server failed\n"
+                  'FATAL:  password authentication failed for user "proof"\n'
+                  "LINE 1: SELECT bogus\n"
+                  "       ^\n")
+        rc, _, err = self.run_main("q3", "--actor", ACTOR,
+                                   extra={"FAKE_PSQL_EXIT": "2", "FAKE_PSQL_ERR": canned})
+        self.assertEqual(rc, 1)
+        self.assertIn('FATAL:  password authentication failed for user "proof"', err)
+        self.assertIn("LINE 1: SELECT bogus", err)
+        self.assertIn("^", err)
+        self.assertNotIn("s3cret", err)
+
+    def test_psql_permission_denied_schema_auth_adds_the_grant_hint(self):
+        canned = ("ERROR:  permission denied for schema auth\n"
+                  "LINE 1: ...x.users\n"
+                  "                 ^\n")
+        rc, _, err = self.run_main("q3", "--actor", ACTOR,
+                                   extra={"FAKE_PSQL_EXIT": "3", "FAKE_PSQL_ERR": canned})
+        self.assertEqual(rc, 1)
+        self.assertIn("the Q3 role needs USAGE on schema auth", err)
+        self.assertIn("step 11", err)
 
     def test_q2_argv_never_carries_the_url(self):
         vals = [1, 4, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, "t"]

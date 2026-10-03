@@ -23,8 +23,12 @@ per stage, and the same guard-rail shape, adapted to the playground routes:
      does this in the UI; the API leaves it to the client) — then two read-backs: the staged doc again,
      and the LIVE ROWS by direct SELECT, never the API (Hyperdrive's cache is ~75 s stale, T5): the T77
      staged-vs-published diff plus a per-id provenance query
-  6. `POST /auth/v1/logout?scope=global` is the last act of every network subcommand, and the two
-     revocation SQL statements the orchestrator must run on the Admin Auth project are printed
+  6. `POST /auth/v1/logout?scope=global` is the last act of every network subcommand. After a WRITE
+     subcommand (session create/archive, doc put, publish, unpublish, flag-review) the revocation is
+     then PROVEN: queries.sql Q3 runs on the Admin Auth project via sql-proof's own resolver +
+     psql runner when VIBHAGA_ADMIN_AUTH_DB_URL resolves, the counts land in the ledger under the
+     session, and a NOT-ok after a successful write exits 5. With no URL source one `q3: PENDING`
+     line stands in for the proof. Read-only subcommands print nothing past the logout line.
 
 `clear-review` / `unflag-review` are REFUSED with zero network calls and no env read: lowering a review
 flag is a human act (decision 0014 PD-1 guard-rail 4 / PD-2, 0009, 0020) — use 'Go live' / 'Remove flag'
@@ -59,7 +63,8 @@ Ledger shape (--ledger, merged by session id, never dropping a key):
 
 Exit codes: 0 ok · 1 read-back mismatch / staged doc stale / self-test failure · 2 usage / missing input
             · 3 refused (scope, archived, unflagged, exam-keyed, drop, staged≠server, validate errors)
-            · 4 refused at the dry-run (signatures) · 5 a network call or write failed mid-run · 6 auth failed.
+            · 4 refused at the dry-run (signatures) · 5 a network call or write failed mid-run,
+            or the post-write Q3 proof ran and was NOT ok · 6 auth failed.
 """
 from __future__ import annotations
 
@@ -71,8 +76,11 @@ import _admin_auth as _auth  # noqa: E402  (shared env + transport — a bare ur
 import publish as _pub      # noqa: E402  (the sibling tool — reuse, don't copy)
 
 HERE = Path(__file__).resolve().parent
+_spec = importlib.util.spec_from_file_location("sql_proof", HERE / "sql-proof.py")
+sqlp = importlib.util.module_from_spec(_spec)  # noqa: E402  (Q3's URL resolution + psql runner — reused, not copied)
+_spec.loader.exec_module(sqlp)
+
 Refuse = _pub.Refuse
-finish = _pub.finish
 ARCHIVED_MSG = "session is archived — re-open it in the Admin /generate page first; the API would 409 batch_archived"
 MEDIUMS = ("sinhala", "english", "tamil")
 
@@ -338,8 +346,57 @@ def refuse_archived(sess: dict) -> None:
         raise Refuse(ARCHIVED_MSG, 3)
 
 
+def q3_after_logout(api: PlaygroundApi, *, sid: str | None, ledger: Path | None,
+                    env_path: Path | None, log=print) -> int:
+    """Guard-rail 6b — after a WRITE subcommand's global logout, prove the revocation on the
+    ADMIN AUTH project: queries.sql Q3 run through sql-proof's own resolver + runner (imported,
+    never copied). Returns 0 when the proof is ok or cannot run here (PENDING); 5 when it ran
+    and failed — psql error included, that is a NOT-ok not a skip."""
+    uid = api.user_id
+    url, src = sqlp.find_auth_url(None, env_path)
+    if not url:
+        log(f"q3: PENDING — no VIBHAGA_ADMIN_AUTH_DB_URL; run tools/sql-proof.py q3 --actor {uid or '<actor user_id>'}")
+        return 0
+    if not uid or not sqlp.UUID_RE.match(uid):
+        log("q3: skipped — no signed-in actor id (the command never completed a grant)")
+        return 0
+    print(f"{sqlp.PROG}: auth DB URL from {src}", file=sys.stderr)
+    block = sqlp.slice_proof(sqlp.QUERIES.read_text(encoding="utf-8"), "Q3")
+    try:
+        row = sqlp.run_proof(sqlp.cr.pg_env_from_url(url), block, [("actor_id", uid)], "q3")
+    except SystemExit:
+        row = None                                      # run_proof printed the psql error above
+    ok = bool(row) and row.get("ok") is True
+    counts = {k: v for k, v in (row or {}).items() if k != "ok"}
+    if row is None:
+        log("q3: NOT ok — psql failed (its error is above)")
+    else:
+        log(" ".join(f"{k}={sqlp.show(v)}" for k, v in row.items()))
+        bad = sqlp.failing_q3(counts)
+        log("q3: ok" if ok else f"q3: NOT ok — {', '.join(bad) if bad else 'ok=f'}")
+    if ledger is not None and sid:
+        led, ent = ledger_entry(ledger, sid)
+        ent["q3"] = {"counts": counts, "ok": ok,
+                     "checked_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                     "actor": uid}
+        save_ledger(ledger, led)
+    return 0 if ok else 5
+
+
+def finish(api: PlaygroundApi, *, write: bool, sid: str | None = None, ledger: Path | None = None,
+           env_path: Path | None = None, log=print) -> int:
+    """Guard-rail 6: logout is the last act of every network subcommand. After a WRITE command the
+    revocation is then PROVEN (Q3) or one PENDING line stands in for the old SQL hint; read-only
+    commands print nothing past the logout line."""
+    st = api.logout_global()
+    log(f"logout?scope=global → HTTP {st} (a 204 is NOT the proof — agent-identities §3)")
+    if not write:
+        return 0
+    return q3_after_logout(api, sid=sid, ledger=ledger, env_path=env_path, log=log)
+
+
 # ----------------------------------------------------------------------------------------------- subcommands
-def cmd_session_create(api: PlaygroundApi, name: str, scope_kv, lessons_csv: str, ledger_path: Path, log=print) -> int:
+def cmd_session_create(api: PlaygroundApi, name: str, scope_kv, lessons_csv: str, ledger_path: Path, log=print, sid_out: dict | None = None) -> int:
     scope = scope_from_kv(scope_kv)                       # local rules BEFORE the first call
     lessons = parse_uuid_list(lessons_csv, "--lessons")
     if not lessons:
@@ -352,6 +409,7 @@ def cmd_session_create(api: PlaygroundApi, name: str, scope_kv, lessons_csv: str
     api.fresh_token("session-create")
     sess = api.create_session(body)
     led, ent = ledger_entry(ledger_path, sess["id"]); upsert_meta(ent, sess); save_ledger(ledger_path, led)
+    if sid_out is not None: sid_out["sid"] = sess["id"]   # main records the Q3 proof under the new sid
     log(sess["id"])                                       # the new session id, alone on its line
     return 0
 
@@ -947,9 +1005,16 @@ def main(argv=None) -> int:
         if not env_path or not env_path.exists():
             raise Refuse(f"admin env file not found: {env_path or 'Vibhaga-Admin/.env.local (walked up from ' + str(HERE) + ')'} (pass --env or VIBHAGA_ADMIN_ENV)", 2)
         api = PlaygroundApi(_pub.read_env(env_path), cred_prefix=getattr(a, "cred_prefix", "VIBHAGA_ADMIN"))
-        try:
+        # WRITE subcommands — the ones whose logout leaves a revocation to prove (B1/B2: reads
+        # print no hint at all; writes get the auto-Q3 or the PENDING line).
+        write = (a.cmd == "session" and a.sub in ("create", "archive")) or \
+                (a.cmd == "doc" and a.sub == "put") or \
+                a.cmd in ("publish", "unpublish", "flag-review")
+        created: dict = {}
+
+        def go() -> int:
             if a.cmd == "session":
-                if a.sub == "create": return cmd_session_create(api, a.name, a.scope, a.lessons, Path(a.ledger))
+                if a.sub == "create": return cmd_session_create(api, a.name, a.scope, a.lessons, Path(a.ledger), sid_out=created)
                 if a.sub == "show": return cmd_session_show(api, a.sid)
                 if a.sub == "list": return cmd_session_list(api, a.status, a.limit)
                 if a.sub == "archive": return cmd_session_archive(api, a.sid, Path(a.ledger))
@@ -969,8 +1034,18 @@ def main(argv=None) -> int:
                                                 ("batch_id", a.batch_id), ("q", a.q), ("limit", a.limit)) if v is not None}
                     return cmd_questions_list(api, params, a.fetch_all, Path(a.out) if a.out else None)
                 if a.sub == "show": return cmd_question_show(api, a.question_id, Path(a.out) if a.out else None)
+            return 2
+        rc = None
+        try:
+            rc = go()
         finally:
-            finish(api)
+            sid = created.get("sid") or getattr(a, "sid", None)
+            frc = finish(api, write=write, sid=sid,
+                         ledger=Path(a.ledger) if getattr(a, "ledger", None) else None,
+                         env_path=env_path)
+            if rc == 0 and frc:
+                rc = frc                     # a NOT-ok Q3 after a successful write → exit 5
+        return 2 if rc is None else rc
     except Refuse as e:
         print(e); return e.code
     return 2
