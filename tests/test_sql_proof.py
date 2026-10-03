@@ -213,14 +213,26 @@ class EndToEnd(unittest.TestCase):
         self.assertIn('user "<user>"', err)
         self.assertIn("Connection refused", err)     # the error wording survives
 
-    def test_psql_permission_denied_schema_auth_adds_the_grant_hint(self):
-        canned = ("ERROR:  permission denied for schema auth\n"
-                  "LINE 1: ...x.users\n"
+    def test_psql_missing_qgen_function_adds_the_setup_hint(self):
+        # on the content project (or before the one-time setup) qgen.q3 is absent
+        canned = ('ERROR:  function qgen.q3(uuid) does not exist\n'
+                  "LINE 1: ...FROM qgen.q3('00000000-0000-4000-8000-0000000000f0'::uuid) f\n"
+                  "                 ^\n"
+                  "HINT:  No function matches the given name and argument types.\n")
+        rc, _, err = self.run_main("q3", "--actor", ACTOR,
+                                   extra={"FAKE_PSQL_EXIT": "3", "FAKE_PSQL_ERR": canned})
+        self.assertEqual(rc, 1)
+        self.assertIn("qgen.q3 missing", err)
+        self.assertIn("step 11", err)
+
+    def test_psql_permission_denied_adds_the_grant_hint(self):
+        canned = ("ERROR:  permission denied for function q3\n"
+                  "LINE 1: ...qgen.q3(...\n"
                   "                 ^\n")
         rc, _, err = self.run_main("q3", "--actor", ACTOR,
                                    extra={"FAKE_PSQL_EXIT": "3", "FAKE_PSQL_ERR": canned})
         self.assertEqual(rc, 1)
-        self.assertIn("the Q3 role needs USAGE on schema auth", err)
+        self.assertIn("USAGE on schema qgen and EXECUTE on qgen.q3", err)
         self.assertIn("step 11", err)
 
     def test_q2_argv_never_carries_the_url(self):

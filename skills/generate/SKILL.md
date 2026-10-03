@@ -218,9 +218,28 @@ same two checkout paths in the critic's spawn prompt.
     owner's laptop on 2026-10-02) run the Q3 `SELECT`, actor id substituted, through the Supabase MCP `execute_sql`
     on the **Admin Auth** project, and record its row (`actor_exists`, `sessions`, `active_refresh_tokens`,
     `wrong_project`, `ok`) in `q3.json` by hand — same `ok` rule; never `PENDING` at done. A psql
-    `permission denied for schema auth` means the Q3 role lacks USAGE on `auth` — e.g. `grant anon to <role>`
-    (postgres itself cannot grant that schema — grant a role that already has it).
-    Leave the questions published and flagged.
+    `function qgen.q3 does not exist` or a `permission denied` means the one-time setup below was
+    not run (or psql landed on the wrong project). Leave the questions published and flagged.
+
+    **One-time Admin Auth setup** (run once as `postgres`): Q3 reads through `qgen.q3`, a
+    counts-only SECURITY DEFINER function — RLS on `auth.*` has no policies, so a plain reader
+    role would see zero rows, and the reader must not be BYPASSRLS. The MCP fallback still works:
+    postgres can execute the function.
+
+    ```sql
+    create schema if not exists qgen;
+    create or replace function qgen.q3(actor uuid)
+    returns table(actor_exists bigint, sessions bigint, active_refresh_tokens bigint)
+    language sql stable security definer set search_path = '' as $$
+      select (select count(*) from auth.users where id = actor),
+             (select count(*) from auth.sessions where user_id = actor),
+             (select count(*) from auth.refresh_tokens where user_id = actor::text and revoked is not true);
+    $$;
+    revoke all on function qgen.q3(uuid) from public, anon, authenticated, service_role;
+    create role qgen_auth_reader login password '<strong password>';   -- skip if it exists
+    grant usage on schema qgen to qgen_auth_reader;
+    grant execute on function qgen.q3(uuid) to qgen_auth_reader;
+    ```
 12. **Pre-critic lint** — `run-gates build --card` already ran `tools/precritic-lint.py`; re-run it standalone
     (`python3 tools/precritic-lint.py $A --card <key>=<NN> --grade <g>`) after any `content.yaml` edit. Fix every
     FAIL (`not_taught` probe found in a stem/part/approach/final) and look at each WARN (a11y `description`

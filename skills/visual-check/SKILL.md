@@ -120,7 +120,10 @@ after sign-in** (cookies — never a token), and whatever happens, **Sign out** 
 Prove the revocation: queries.sql **Q3** on the **Admin Auth** project — `VIBHAGA_ADMIN_AUTH_DB_URL`
 is parsed into `PG*` env vars for psql (never on argv; `-f -` on stdin so `:'actor_id'`
 interpolates, `-c` does NOT), read-only — or the printed `revocation: PENDING` line when the
-env is unset. Never select token values.
+env is unset. Q3 counts through `qgen.q3(actor)`, a SECURITY DEFINER function installed by the
+one-time setup in generate step 11 — `auth.*` has RLS with no policies, so a reader role
+selecting it directly sees zero rows and would report a false "revoked". Never select token
+values.
 
 ### The rules that survive from the manual drive
 

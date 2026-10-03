@@ -6,7 +6,9 @@
 
 q2 runs queries.sql Q2 — the post-publish proof — on the CONTENT database; q3 runs Q3 — the auth
 revocation proof — on the ADMIN AUTH project (a different Supabase project: zero sessions for a user
-that does not exist there proves nothing, which is why Q3 carries the wrong_project check). Each block
+that does not exist there proves nothing, which is why Q3 carries the wrong_project check; and the
+counts come from `qgen.q3(actor)`, a counts-only SECURITY DEFINER function — RLS on auth.* has no
+policies, so a non-BYPASSRLS reader would silently see zero rows). Each block
 is sliced out of the REAL queries.sql (from its `-- Q2` / `-- Q3` header comment to the statement's
 terminating `;`), then guarded locally: ONE statement starting WITH or SELECT — Q2 opens `WITH`, so
 critic-read's SELECT-only assertion does not apply — and no write token (a smoke check; the read-only
@@ -168,9 +170,12 @@ def run_proof(pg: dict[str, str], block: str, variables: list[tuple[str, str]], 
               + ("" if shown else " — no stderr"), file=sys.stderr)
         for l in shown:
             print(f"{PROG}:   {l}", file=sys.stderr)
-        if any("permission denied for schema auth" in l for l in err):
-            print(f"{PROG}: the Q3 role needs USAGE on schema auth — e.g. `grant anon to <role>`; "
-                  "see skills/generate/SKILL.md step 11", file=sys.stderr)
+        if any("qgen" in l and "does not exist" in l for l in err):
+            print(f"{PROG}: qgen.q3 missing — wrong project, or the setup SQL in "
+                  "skills/generate/SKILL.md step 11 was not run", file=sys.stderr)
+        elif any("permission denied" in l for l in err):
+            print(f"{PROG}: the Q3 role needs USAGE on schema qgen and EXECUTE on qgen.q3 — "
+                  "see the one-time setup in skills/generate/SKILL.md step 11", file=sys.stderr)
         raise SystemExit(1)
     lines = [l for l in proc.stdout.splitlines() if l.strip()]
     if len(lines) != 2:
