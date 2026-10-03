@@ -53,7 +53,7 @@
  */
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
-import { ASPECT_MAX } from "./visual-metrics.mjs";
+import { ASPECT_MAX, paintVisible } from "./visual-metrics.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -330,32 +330,34 @@ function checkDocument(doc, cs, canvasAnchors) {
     if (missingAnch.length) fails.push(`coverage: no canvas anchor for point(s) ${missingAnch.join(" ")} — pass --anchors, set meta.anchors, or add a label-only point element`);
     const tol = 0.01;
     // the same visibility rule the label check uses — an element that paints nothing
-    // covers nothing and cannot back a `radius` claim (stroke none/0-width/transparent,
-    // element or stroke opacity 0, a label-less r:0 point, a zero-size rim)
+    // covers nothing and cannot back a `radius` claim: stroke none/0-width/zero-alpha
+    // (paintVisible knows `#rrggbb00`/`rgba(…,0)`), element or stroke opacity 0, a
+    // label-less r:0 point, a zero-size rim. Only fillable types can paint via fill.
     const strokeVisible = (el) => {
       const width = el.stroke?.width ?? d.defaults?.strokeWidth ?? 2;
       const opacity = (el.stroke?.opacity ?? 1) * (el.opacity ?? d.defaults?.opacity ?? 1);
-      const color = lib.safeColor(el.stroke?.color, lib.safeColor(d.defaults?.strokeColor, "#1f2937")).toLowerCase();
-      return width > 0 && opacity > 0 && !["none", "transparent"].includes(color);
+      const color = lib.safeColor(el.stroke?.color, lib.safeColor(d.defaults?.strokeColor, "#1f2937"));
+      return width > 0 && opacity > 0 && paintVisible(color);
     };
     const fillVisible = (el) => {
       if (!el.fill) return false;
-      const color = lib.safeColor(el.fill.color, lib.safeColor(d.defaults?.fillColor, "none")).toLowerCase();
+      const color = lib.safeColor(el.fill.color, lib.safeColor(d.defaults?.fillColor, "none"));
       return (el.fill.opacity ?? 1) * (el.opacity ?? d.defaults?.opacity ?? 1) > 0 &&
-        !["none", "transparent"].includes(color);
+        paintVisible(color);
     };
     const paints = (el) => {
       if ((el.opacity ?? d.defaults?.opacity ?? 1) <= 0) return false;
       if (el.type === "point") return el.r > 0 || !!el.label;
-      if (el.type === "circle" || el.type === "arc") {
+      if (["circle", "arc"].includes(el.type)) {
         if (!(el.r > 0)) return false;
-        return strokeVisible(el) || fillVisible(el);
+        return el.type === "circle" ? strokeVisible(el) || fillVisible(el) : strokeVisible(el);
       }
       if (el.type === "ellipse") {
         if (!(el.rx > 0 && el.ry > 0)) return false;
         return strokeVisible(el) || fillVisible(el);
       }
-      if (["line", "polyline", "polygon", "arrow", "rect"].includes(el.type)) return strokeVisible(el) || fillVisible(el);
+      if (["rect", "polygon", "path"].includes(el.type)) return strokeVisible(el) || fillVisible(el);
+      if (["line", "polyline", "arrow"].includes(el.type)) return strokeVisible(el);
       return true;
     };
     const strokes = d.elements.map((el, index) => {
@@ -734,6 +736,15 @@ async function selfTest() {
   t("radius claim with no circle at the centre is a FAIL", noCirc.fails.some((f) => f.includes("no circle centred at A")));
   const ghostRad = checkDocument(ghostCircle, radCs, { A: [150, 130] });
   t("radius claim against an invisible circle is a FAIL", ghostRad.fails.some((f) => f.includes("no circle centred at A")));
+  // zero-alpha colours (#rrggbbaa, rgba(…,0)) neither cover nor back a radius claim
+  const alphaHex = { ...tri, elements: [{ id: "c1", type: "circle", center: [150, 130], r: 80, stroke: { color: "#00000000" } }] };
+  t("anchor on a zero-alpha-hex circle rim is uncovered", noCover(checkDocument(alphaHex, onePt(230, 130), { A: [230, 130] }).fails));
+  t("zero-alpha-hex circle cannot back a radius claim",
+    checkDocument(alphaHex, radCs, { A: [150, 130] }).fails.some((f) => f.includes("no circle centred at A")));
+  const alphaRgba = { ...tri, elements: [{ id: "c1", type: "circle", center: [150, 130], r: 80, stroke: { color: "rgba(0,0,0,0)" } }] };
+  t("rgba(…,0) stroke neither covers nor backs a radius claim",
+    noCover(checkDocument(alphaRgba, onePt(230, 130), { A: [230, 130] }).fails) &&
+    checkDocument(alphaRgba, radCs, { A: [150, 130] }).fails.some((f) => f.includes("no circle centred at A")));
   // normalize consistency has no reachable failure with the current Admin (every type translates) — assert the pass
   t("normalize: uniform translation on the correct triangle", good.notes.some((n) => n.startsWith("normalize: every element")));
   const leader = { id: "PQ", type: "arrow", head: "end", points: [[60, 40], [100, 20], [140, 70], [180, 100]] };
@@ -813,8 +824,12 @@ async function selfTest() {
     for (const hidden of [[], [0], [1], [0, 1]]) {
       const elements = assembly.map((el, i) => ({ ...el, stroke: { color: hidden.includes(i) ? "#12345600" : "rebeccapurple" } }));
       const rep = leaderCheck(elements), r = await render({ ...tri, elements }, leaderClaims, paintOut, [320], false, rep.coverage);
-      t(`Chromium assembly requires both paints; hidden components ${JSON.stringify(hidden)}`, rep.fails.length === 0 && r.fails.length === (hidden.length ? 2 : 0) &&
-        r.fails.every((f) => f.includes("coverage segment PQ")));
+      t(`Chromium assembly requires both paints; hidden components ${JSON.stringify(hidden)}`,
+        // the document check itself now sees zero-alpha paint — it fails coverage before Chromium runs,
+        // so no candidates reach the render and Chromium adds nothing on top
+        (hidden.length
+          ? rep.fails.every((f) => f.startsWith("coverage:")) && rep.fails.some((f) => f.includes("segment PQ")) && r.fails.length === 0
+          : rep.fails.length === 0 && r.fails.length === 0));
     }
     for (const background of ["white", "#111"]) {
       const r = await render({ ...paintDoc, canvas: { ...tri.canvas, background } }, null, paintOut, [320], false, paintCoverage);
