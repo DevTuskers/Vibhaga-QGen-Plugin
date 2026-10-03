@@ -57,6 +57,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 import { assess } from "./visual-metrics.mjs";
 import { q3Block, pgEnvFromUrl, pushFigure, claimsForWarn } from "./session-db.mjs";
+import { contactSheetHtml } from "./contact-sheet.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN = path.resolve(HERE, "..");
@@ -510,6 +511,25 @@ async function runBatch(figures, { out, widths, themes, headed }) {
       }
       await ctx.close();
     }
+    // The contact sheet (W9-C): every figure's light-375.png at native size, 2 per row with its
+    // id captioned above, on white — one PNG the lead can read instead of N. Composed in a bare
+    // page off the already-open browser; the PNGs are inlined as data URIs because a setContent
+    // page may not load file:// subresources. Skipped silently when no light-375 shot exists
+    // (a --widths/--themes that excludes them, or every figure invalid before render).
+    const items = [];
+    for (const fig of figures) {
+      const png = (fig.pngs ?? []).find((p) => /light-375\.png$/.test(p));
+      if (png && fs.existsSync(png)) items.push({ id: fig.id, data: fs.readFileSync(png).toString("base64") });
+    }
+    if (items.length) {
+      const sheetPath = path.join(out, "contact-light-375.png");
+      const page = await browser.newPage();
+      await page.setContent(contactSheetHtml(items));
+      await page.screenshot({ path: sheetPath, fullPage: true });
+      await page.close();
+      const b = fs.readFileSync(sheetPath);
+      figures.sheet = { path: sheetPath, dims: b.length > 24 ? `${b.readUInt32BE(16)}×${b.readUInt32BE(20)}` : "?" };
+    }
   } finally {
     await browser.close();
     if (server.proc) { server.proc.kill("SIGTERM"); }
@@ -591,7 +611,7 @@ async function batchMode() {
     pngs += fig.pngs.length;
     console.log(figureLine(fig, pad));
   }
-  console.log(`${figures.length} figures · ${pass} pass · ${figures.length - pass} fail${claimsDir ? ` · ${noClaims} without claims` : ""} · PNGs: ${pngs} · report: ${path.join(out, "report.json")}`);
+  console.log(`${figures.length} figures · ${pass} pass · ${figures.length - pass} fail${claimsDir ? ` · ${noClaims} without claims` : ""} · PNGs: ${pngs} · report: ${path.join(out, "report.json")}${figures.sheet ? ` · contact: ${figures.sheet.path} ${figures.sheet.dims}` : ""}`);
   fs.mkdirSync(out, { recursive: true });
   const report = {
     tool: "visual-check",
