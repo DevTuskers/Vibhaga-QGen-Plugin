@@ -1,6 +1,6 @@
 ---
 name: author-question-answers
-description: Author a verified-looking worked answer that is actually right — derive it independently (D3), confirm it by a genuinely second method, and fit the whole thing into `approach` + `final` in content.yaml (emitted as `approach` + `final_answer_latex` by build-staged; the `steps` array is dead). Provenance goes to the working notes, never to `approach`, which students read; `verified_by` is never written by anything but a human clicking "Mark reviewed". Use when writing, checking, correcting or reviewing the answer/solution/marking of a generated maths question.
+description: Author a verified-looking worked answer that is actually right — derive it independently (D3), confirm it by a genuinely second method, and fit the whole thing into `approach` + `final` in content.yaml (emitted as `approach` + `final_answer_latex` by build-staged; the `steps` array is dead). Provenance goes to the working notes, never to `approach`, which students read; `verified_by` is never written by anything but a human clicking "Go live" (was "Mark reviewed"). Use when writing, checking, correcting or reviewing the answer/solution/marking of a generated maths question.
 argument-hint: "[question number or part]"
 ---
 
@@ -30,7 +30,7 @@ true`, which the builder sets on every question.
    *absent* flag publishes UNFLAGGED and student-visible, so the builder setting it explicitly is
    what keeps D3 honest). **D3 + OD-4**: a derived answer may not publish unflagged.
 2. **Never write `verified_by`. By any route.** Publish deliberately never stamps it, and the *only*
-   act that does is a human clicking **"Mark reviewed"** in Admin. The promise is
+   act that does is a human clicking **"Go live"** in Admin. The promise is
    **`verified_by IS NULL` ⇒ no human signed this**. Breaking it costs the platform its only trust
    marker.
 3. **Provenance goes in the working notes, never in `approach`.** `approach` is rendered to the
@@ -66,7 +66,7 @@ true`, which the builder sets on every question.
 Code facts worth carrying (re-derive line numbers before citing them — they move):
 
 - **Publish never signs** — `verified_by`/`verified_at` are `null, null` on both `answers` and
-  `sub_answers` inserts; clearing the flag via "Mark reviewed" is the signature (three targeted
+  `sub_answers` inserts; clearing the flag via "Go live" is the signature (three targeted
   `UPDATE`s, no sub-tree delete).
 - **A publish that destroys a signature re-raises the flag** (`reflagged` in the response).
 - **Malformed answer ids are skipped, not rejected** — `continue; // skip malformed; never block

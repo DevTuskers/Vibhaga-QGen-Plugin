@@ -30,7 +30,7 @@ Plan: [`plans/2026-09-29-question-generation-plugin.md`](https://github.com/DevT
 >
 > ⭐ **The flagged-only truth, said once:** every playground publish writes `needs_human_review = true`, whoever authored
 > it, agent or human admin (0018 PD-3 / OD-2). A published playground question is **not served to students** until a human
-> clicks "Mark reviewed" on the Admin `/generate` page. Nothing in this skill, and nothing the tools can do, lowers that
+> clicks **Go live** on the Admin `/generate` page. Nothing in this skill, and nothing the tools can do, lowers that
 > flag.
 
 **Tools (all existing, none forked):** `tools/build-staged.py` · `tools/vdd_templates.py` · `tools/audit-claim-set.py` ·

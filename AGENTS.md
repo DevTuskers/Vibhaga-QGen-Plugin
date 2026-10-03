@@ -6,7 +6,7 @@ stem you author. These rules hold in every session that loads the plugin.
 
 ## Generation rules
 1. **Flagged-only.** Every generated row lands FLAGGED (`needs_human_review = true`) with
-   `verified_by` NULL on every answer and sub-answer. Only a human clicking "Mark reviewed" in Admin
+   `verified_by` NULL on every answer and sub-answer. Only a human clicking "Go live" in Admin
    clears it. No tool, query or agent lowers a flag or writes `verified_by`.
 2. **Lesson content comes only from the corpus checkout**, never from an API. Resolve it as
    `VIBHAGA_CORPUS` env → sibling `<plugin>/../Vibhaga-Maths-Corpus`. No published lesson (or no scope

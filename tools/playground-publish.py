@@ -27,8 +27,8 @@ per stage, and the same guard-rail shape, adapted to the playground routes:
      revocation SQL statements the orchestrator must run on the Admin Auth project are printed
 
 `clear-review` / `unflag-review` are REFUSED with zero network calls and no env read: lowering a review
-flag is a human act (decision 0014 PD-1 guard-rail 4 / PD-2, 0009) — use 'Mark reviewed' / 'Unflag' on
-the Admin /generate page.
+flag is a human act (decision 0014 PD-1 guard-rail 4 / PD-2, 0009, 0020) — use 'Go live' / 'Remove flag'
+on the Admin /generate page.
 
 Usage (from anywhere; credentials + URLs are read at run time from Vibhaga-Admin/.env.local — never printed):
   playground-publish.py session create --name N --scope grade=6,subject=Mathematics,medium=sinhala --lessons uuid,uuid --ledger L.json
@@ -934,7 +934,7 @@ def main(argv=None) -> int:
     if not a.cmd: ap.print_help(); return 2
     try:
         if a.cmd in ("clear-review", "unflag-review"):
-            raise Refuse("refused: lowering a review flag is a human act (decision 0014 PD-1 guard-rail 4 / PD-2, 0009) — use 'Mark reviewed' / 'Unflag' on the Admin /generate page", 3)
+            raise Refuse("refused: lowering a review flag is a human act (decision 0014 PD-1 guard-rail 4 / PD-2, 0009) — use 'Go live' / 'Remove flag' on the Admin /generate page", 3)
         if a.cmd in ("session", "doc", "questions") and not getattr(a, "sub", None):
             return 2
         # every id is validated AND lowered BEFORE the env file is read or any network call
