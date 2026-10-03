@@ -2437,9 +2437,11 @@ def build_circles_in_circle(*, figure_id, stem, ask=None, title=None, descriptio
 def build_abacus(*, figure_id, stem, ask=None, title=None, description=None,
                  medium="english", place_values=None, beads=None, bead_r=7.5):
     """A spike abacus: one vertical rod per place value (left to right, e.g.
-    [10000, 1000, 100, 10, 1]), `beads[i]` beads threaded on rod i (0–9 — the lesson's
-    own rule that a rod never carries ten), a base bar under the rods and the value
-    printed below each rod (floating labels — their `_near` sits just under the bar).
+    [10000, 1000, 100, 10, 1]), `beads[i]` ink beads threaded on rod i (0–9 — the
+    lesson's own rule that a rod never carries ten), a base bar under the rods and
+    the value printed below each rod — a FIXED label centred on its rod (a floater
+    drifts sideways off it), rod spacing wide enough that adjacent labels keep
+    ≥4 rendered px on the tightest plate.
     The derive claim sums beads × place value to the number shown."""
     vc.reset_ids()
     if not isinstance(place_values, (list, tuple)) or not place_values:
@@ -2461,11 +2463,20 @@ def build_abacus(*, figure_id, stem, ask=None, title=None, description=None,
             raise TemplateError(f"abacus: rod {i + 1} carries {b} beads — a place-value rod "
                                 "never holds ten (the lesson's own rule)")
     lab_size = 15.0
-    est_span = len(place_values) * 90.0 + 120.0
     max_lab = max(_label_width(f"{v:g}", lab_size) for v in place_values)
-    spacing = max(64.0, max_lab + _clearance_units(6.0, est_span))
+    # adjacent value labels must keep ≥4 RENDERED px on the tightest plate; the
+    # spacing feeds the span and the span sets the scale — iterate to a fixpoint
+    spacing = 64.0
+    for _ in range(4):
+        span = (len(place_values) - 1) * spacing + max(52.0, max_lab)
+        new = max(64.0, max_lab + _clearance_units(4.0 + 1.0, span))
+        if abs(new - spacing) < 0.5:
+            break
+        spacing = new
     rod_h = 9 * (2 * bead_r + 3.0) + 24.0          # room for nine beads on a rod
     base_y = rod_h                                 # local coords; finish() translates
+    lab_y = base_y + 1.5 + _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, span) \
+        + lab_size * MID_UP                        # box top a fixed gap under the bar
     xs = [i * spacing for i in range(len(place_values))]
     elements = [vc.line((xs[0] - 26.0, base_y), (xs[-1] + 26.0, base_y), id="base",
                         width=3.0)]
@@ -2474,9 +2485,9 @@ def build_abacus(*, figure_id, stem, ask=None, title=None, description=None,
                                 width=2.0))
         for j in range(beads[i]):
             elements.append(vc.circle((x, base_y - 10.0 - bead_r - j * (2 * bead_r + 3.0)),
-                                      bead_r, id=f"b{i + 1}_{j + 1}"))
-        elements.append(_float_label(f"lv{i + 1}", f"{place_values[i]:g}",
-                                     (x, base_y + 4.0), gap=6.0, size=lab_size))
+                                      bead_r, fill=vc.INK, id=f"b{i + 1}_{j + 1}"))
+        elements.append(vc.text((x, lab_y), f"{place_values[i]:g}",
+                                id=f"lv{i + 1}", size=lab_size))
     claims: list[tuple[str, str, str]] = []
 
     def add(pred, ev, note=""):
@@ -2537,7 +2548,9 @@ def build_sorting_rings(*, figure_id, stem, ask=None, title=None, description=No
         glyphs += items
         norm.append((gname, items))
     _distinct_glyphs("sorting_rings", glyphs)
-    it_size, name_size = 15.0, 16.0
+    # card text and ring names carry NO size override — they render at the
+    # renderer's default (FS) and the cards/rings grow to fit, not vice versa
+    it_size = name_size = FS
     # pad from label-box to card edge must stay ≥8 rendered px — estimate the span,
     # size the cards/rings, then refine the pad once against the real span
     pad = _clearance_units(STROKE_PX + SLACK_STROKE + 2.0, 620.0)
@@ -2567,16 +2580,14 @@ def build_sorting_rings(*, figure_id, stem, ask=None, title=None, description=No
         cx = cur + ring_r
         cur += 2 * ring_r + ring_gap
         elements.append(vc.circle((cx, 0.0), ring_r, id=f"ring{i + 1}"))
-        elements.append(vc.text((cx, -ring_r - name_drop), gname, id=f"nm{i + 1}",
-                                size=name_size))
+        elements.append(vc.text((cx, -ring_r - name_drop), gname, id=f"nm{i + 1}"))
         top = -stack_h / 2.0
         for j, item in enumerate(items):
             cy = top + j * (card_h + 6.0) + card_h / 2.0
             elements.append({"id": f"cd{i + 1}_{j + 1}", "type": "rect",
                              "x": vc.r2(cx - card_w / 2.0), "y": vc.r2(cy - card_h / 2.0),
                              "width": vc.r2(card_w), "height": vc.r2(card_h)})
-            elements.append(vc.text((cx, cy), item, id=f"it{i + 1}_{j + 1}",
-                                    size=it_size))
+            elements.append(vc.text((cx, cy), item, id=f"it{i + 1}_{j + 1}"))
             add(f'label "{item}" names it{i + 1}{j + 1}', "inferred", "an item card")
         add(f'label "{gname}" names ring{i + 1}', "inferred", "the ring's label")
         add(f'describe "ring {i + 1} holds the {gname} cards — '

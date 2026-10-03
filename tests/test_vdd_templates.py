@@ -1051,6 +1051,25 @@ class MembershipTemplates(unittest.TestCase):
         with self.assertRaises(vt.TemplateError):
             self._b("abacus", place_values=[10, 10], beads=[1, 2])
 
+    def test_abacus_labels_fixed_centred_under_their_rods(self):
+        """R1 fix: floated rod labels drifted sideways off their rods — the value
+        labels are FIXED now (x = the rod's x, one shared baseline under the bar)
+        and the beads are ink-filled, like the lesson's abacus figures."""
+        b = self._b("abacus", place_values=[10000, 1000, 100, 10, 1],
+                    beads=[1, 2, 3, 4, 5])
+        rods = {e["id"]: e for e in b.doc["elements"] if e["id"].startswith("rod")}
+        labs = {e["id"]: e for e in b.doc["elements"] if e["id"].startswith("lv")}
+        self.assertEqual(len(labs), 5)
+        self.assertEqual(len({lab["at"][1] for lab in labs.values()}), 1)
+        for i in range(1, 6):
+            self.assertEqual(labs[f"lv{i}"]["at"][0],
+                             rods[f"rod{i}"]["points"][0][0])
+            self.assertNotIn("_near", labs[f"lv{i}"])
+        beads = [e for e in b.doc["elements"] if e["type"] == "circle"]
+        self.assertTrue(beads)
+        for bd in beads:
+            self.assertEqual(bd.get("fill", {}).get("color"), vt.vc.INK)
+
     def test_sorting_rings_layout_and_claims(self):
         b = self._b("sorting_rings",
                     groups=[["Even", ["2", "8", "14"]], ["Odd", ["3", "9"]]])
@@ -1063,7 +1082,7 @@ class MembershipTemplates(unittest.TestCase):
             ring = rings[0] if cd["id"].startswith("cd1") else rings[1]
             cx, cy = cd["x"] + cd["width"] / 2, cd["y"] + cd["height"] / 2
             # the farthest corner of the card from the ring's centre (cards share cx)
-            self.assertAlmostEqual(cx, ring["center"][0])
+            self.assertLess(abs(cx - ring["center"][0]), 0.02)   # x/width are r2'd
             d = math.hypot(cd["width"] / 2, abs(cy - ring["center"][1]) + cd["height"] / 2)
             self.assertLessEqual(d, ring["r"] - 7.9)
         self.assertIn('label "Even" names ring1', b.claims)
@@ -1078,6 +1097,17 @@ class MembershipTemplates(unittest.TestCase):
                     groups=[["A", ["1"]], ["B", ["2"]], ["C", ["3"]], ["D", ["4"]]])
         with self.assertRaises(vt.TemplateError):
             self._b("sorting_rings", groups=[["A", ["1", "1"]], ["B", ["2"]]])
+
+    def test_sorting_rings_text_renders_at_the_default_size(self):
+        """R1 fix: card numerals shrank (~13 px) to fit fixed-size cards — text now
+        carries no fontSize override (the renderer's default applies) and the
+        cards/rings grow to fit it instead."""
+        b = self._b("sorting_rings",
+                    groups=[["Even", ["2", "8"]], ["Odd", ["3", "9"]]])
+        texts = [e for e in b.doc["elements"] if e["type"] == "text"]
+        self.assertTrue(texts)
+        for e in texts:
+            self.assertIn(e.get("fontSize"), (None, vt.FS))
 
     def test_shape_row_kinds_letters_and_rows(self):
         b = self._b("shape_row",
@@ -1132,8 +1162,8 @@ class ByteIdentity(unittest.TestCase):
         "selftest-cpts": "50962ab15121a4b924b1b7e9ccdd0410e9ae4e1dca9d705f9f54ec9ea93e641a",
         "selftest-2cpts": "5fa4326b9eacf9305aad16dab97e5f337065db4d1c4913060d207a1b171ce4a3",
         "selftest-cin": "8c937c7528a26ab0f40968a83f598546e7afb7cb656014416549ab246c2b7383",
-        "selftest-abacus": "2af911fa1ea14c70c26559bf3a30732c71025edd83b90c75635b5826b5850e22",
-        "selftest-rings": "b6c3ef522dd27569269a6151c746ad11330e7bf5bfb706f5175053053eedcaee",
+        "selftest-abacus": "572e5a1390eebed8e8cf6dbffe623e635839972edf93dbabba66cba0b25f4675",
+        "selftest-rings": "d4c07de7ae9ab9c24585c12c4579695c427d9e26306c55e4a0c8025610e62c9b",
         "selftest-shapes": "d42573f3abb65967d506d6bf18dcc9e7b5b266d06ed19d831ab220b2c737f5c3",
     }
 
