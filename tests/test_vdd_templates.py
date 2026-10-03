@@ -338,6 +338,26 @@ class Refusals(unittest.TestCase):
         c = b.doc["canvas"]
         self.assertLessEqual(c["height"], vt.MAX_ASPECT * c["width"])
 
+    def test_shaded_grid_over_budget_emits_a_budget_line(self):
+        # a 10×10 grid shading 47 cells is 60+ elements — over the 32-element budget the
+        # claim set must carry `budget:` + a `departures:` justification (the same escape
+        # number_line/pictograph/dot_pattern use), and the audit must pass it
+        b = vt.build_shaded_grid(figure_id="t1",
+                                 stem="A square grid of 100 squares of side 1 cm has "
+                                      "47 squares shaded.",
+                                 cols=10, rows=10, full=[(i % 10, i // 10) for i in range(47)])
+        n = len(b.doc["elements"])
+        self.assertGreater(n, 32)
+        self.assertRegex(b.claims, rf"(?m)^budget:\s+{n}$")
+        self.assertRegex(b.claims, r"(?m)^departures:")
+        with tempfile.TemporaryDirectory() as td:
+            r = audit(b.claims, td)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        # a small grid stays silent — no budget line, no departures section
+        small = vt.build_shaded_grid(figure_id="t1", stem="A grid of 4 squares.",
+                                     cols=2, rows=2, full=[(0, 0)])
+        self.assertNotIn("budget:", small.claims)
+
     def test_impossible_pentagon_slants(self):
         with self.assertRaises(vt.TemplateError) as cm:
             vt.build_house_pentagon(figure_id="t1", stem="Sides 8 m and 5 m.",

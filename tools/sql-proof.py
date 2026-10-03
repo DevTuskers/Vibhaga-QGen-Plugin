@@ -18,8 +18,8 @@ never hold one inside a string literal).
 psql runs `-X -q -w -A -F '\\t' -P footer=off -v ON_ERROR_STOP=1 -v batch_id=… -v expected=…` (q3:
 `-v actor_id=…`) with the SQL on stdin (`-f -`) prefixed `set default_transaction_read_only=on;`.
 Unaligned output keeps the header row so each count maps to its column name. The DB URL is split into
-PG* environment variables — NEVER on argv, never printed (critic-read.py's pg_env_from_url, itself a
-port of session-db.mjs's pgEnvFromUrl — reused, not copied).
+PG* environment variables — NEVER on argv, never printed (critic-read.py's pg_env_from_url —
+reused, not copied).
 
 URL resolution — the SOURCE is announced on stderr, never the value:
   q2 (content):  --db-env FILE → DATABASE_URL env → Vibhaga-DB/.env beside Vibhaga-Admin

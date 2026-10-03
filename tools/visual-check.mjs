@@ -8,7 +8,8 @@
  *                                          [--base-url URL] [--claims-dir DIR] [--headed]
  *                                          [--admin PATH]
  *     node tools/visual-check.mjs --session <playground-session-id> [--out DIR] [--base-url URL]
- *                                          [--admin PATH]     (always headed — signs in, then out)
+ *                                          [--staged FILE] [--claims-dir DIR] [--admin PATH]
+ *                                          (always headed — signs in, then out)
  *     node tools/visual-check.mjs --self-test
  *
  * `--admin PATH` is the Vibhaga-Admin CHECKOUT (`--admin` flag > `VIBHAGA_ADMIN` env >
@@ -24,7 +25,12 @@
  *   · a directory → every VDD `.json` in it (`*.anchors.json` and non-VDD JSON skipped).
  * A figure's claim set (optional): sibling `<base>.claims.txt` or `<base>-claims.txt`, else
  * `<claims-dir>/<id>.claims.txt` or `<claims-dir>/<id>-claims.txt` via `--claims-dir` (the second
- * name is what vdd_templates.py emits: figure id `Q3` → `Q3-claims.txt`).
+ * name is what vdd_templates.py emits: figure id `Q3` → `Q3-claims.txt`). In `--session` mode
+ * `--staged FILE` reads the run's staged doc from disk (run-gates ship has already proven
+ * `doc get` == staged.json, so the local file IS the server doc — nothing is scraped from the
+ * page) and pairs each rendered figure with the doc's figures in document order per question;
+ * `--claims-dir` then resolves each pair's claim set so `allow:`/departures apply exactly as in
+ * mode 1. `--claims-dir` without `--staged` is a usage error — claims need the staged ids.
  *
  * Server: `--base-url` is used as-is (must answer `GET /diagtest` 200); otherwise
  * `node_modules/.bin/next dev -p <free port>` is spawned in the Admin checkout and waited on for up
@@ -56,13 +62,13 @@ import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
 import { assess } from "./visual-metrics.mjs";
-import { q3Block, pgEnvFromUrl, pushFigure, claimsForWarn } from "./session-db.mjs";
+import { pushFigure, claimsForWarn, pairRenderedFigures, groupStagedFigures, sqlProofQ3Argv } from "./session-db.mjs";
 import { contactSheetHtml } from "./contact-sheet.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN = path.resolve(HERE, "..");
 const args = process.argv.slice(2);
-const VALUE_OPTS = new Set(["--out", "--widths", "--themes", "--base-url", "--claims-dir", "--admin", "--session"]);
+const VALUE_OPTS = new Set(["--out", "--widths", "--themes", "--base-url", "--claims-dir", "--admin", "--session", "--staged"]);
 const positional = [];
 for (let i = 0; i < args.length; i++) {
   if (VALUE_OPTS.has(args[i])) { i++; continue; }
@@ -406,24 +412,33 @@ async function ensureServer() {
 const isVdd = (o) => o && typeof o === "object" && o.schema === "vibhaga.diagram";
 const isStaged = (o) => o && typeof o === "object" && Array.isArray(o.questions);
 
+// The staged-doc walk is shared: mode 1 reads the doc from a positional input, --session from
+// --staged — either way each diagram_dsl becomes a figure whose claim set resolves by the
+// staged id (`Q<n>`, `Q<n>.<label>`, `Q<n>.ans<k>`) under --claims-dir.
+function collectFromStaged(figures, seen, staged, source, claimsDir) {
+  const push = (id, doc, _src, fileBase = null) =>
+    pushFigure(figures, seen, id, doc, source, fileBase, claimsDir);
+  const walkSubs = (list, prefix) => {
+    for (const s of list ?? []) {
+      if (!s || typeof s !== "object") continue;
+      const id = `${prefix}.${s.label ?? "?"}`;
+      if (s.diagram_dsl) push(id, s.diagram_dsl);
+      // sub-answers: canonical `answers: []`, plus the legacy singular `sub_answer` folded first
+      // (the same order Admin's normalizeStagedQuestions uses).
+      const answers = [...(s.sub_answer ? [s.sub_answer] : []), ...(Array.isArray(s.answers) ? s.answers : [])];
+      answers.forEach((a, k) => { if (a?.diagram_dsl) push(`${id}.ans${k + 1}`, a.diagram_dsl); });
+      walkSubs(s.sub_questions, id);
+    }
+  };
+  walkStagedDoc(staged, source, push, walkSubs);
+}
+
 function collectFigures(inputs, claimsDir) {
   const figures = [];
   const seen = new Map();
   // pushFigure (session-db.mjs) dedups `id` to `id~k` but resolves claims by the BASE id —
   // a duplicate shares the first figure's claim file.
   const push = (id, doc, source, fileBase) => pushFigure(figures, seen, id, doc, source, fileBase, claimsDir);
-  const walkSubs = (list, prefix, source) => {
-    for (const s of list ?? []) {
-      if (!s || typeof s !== "object") continue;
-      const id = `${prefix}.${s.label ?? "?"}`;
-      if (s.diagram_dsl) push(id, s.diagram_dsl, source, null);
-      // sub-answers: canonical `answers: []`, plus the legacy singular `sub_answer` folded first
-      // (the same order Admin's normalizeStagedQuestions uses).
-      const answers = [...(s.sub_answer ? [s.sub_answer] : []), ...(Array.isArray(s.answers) ? s.answers : [])];
-      answers.forEach((a, k) => { if (a?.diagram_dsl) push(`${id}.ans${k + 1}`, a.diagram_dsl, source, null); });
-      walkSubs(s.sub_questions, id, source);
-    }
-  };
   for (const input of inputs) {
     const st = fs.statSync(input, { throwIfNoEntry: false });
     if (!st) die(`no such input: ${input}`);
@@ -441,20 +456,24 @@ function collectFigures(inputs, claimsDir) {
     try { doc = JSON.parse(fs.readFileSync(input, "utf8")); }
     catch (e) { die(`${input}: not JSON — ${e.message}`); }
     if (isVdd(doc)) push(path.basename(input, ".json"), doc, input, input.slice(0, -5));
-    else if (isStaged(doc)) walkStagedDoc(doc, input, push, walkSubs);
+    else if (isStaged(doc)) collectFromStaged(figures, seen, doc, input, claimsDir);
     else die(`${input}: neither a VDD document (schema:"vibhaga.diagram") nor a staged doc (questions[])`);
   }
   return figures;
 }
+// ⚠️ the walk order IS the pairing order for --session: it must emit each question's figures in
+// the order StudentPreview renders them — question figure, then parts (each part: its figure,
+// its sub-answers' figures, then nested sub-questions), then the whole-question answers LAST.
+// Answers-before-parts here would mis-pair every part figure behind them.
 function walkStagedDoc(staged, source, push, walkSubs) {
   (staged.questions ?? []).forEach((q, i) => {
     if (!q || typeof q !== "object") return;
     const id = `Q${q.question_number ?? i + 1}`;
     if (q.diagram_dsl) push(id, q.diagram_dsl, source, null);
+    walkSubs(q.sub_questions, id, source);
     (Array.isArray(q.answers) ? q.answers : []).forEach((a, k) => {
       if (a?.diagram_dsl) push(`${id}.ans${k + 1}`, a.diagram_dsl, source, null);
     });
-    walkSubs(q.sub_questions, id, source);
   });
 }
 
@@ -582,7 +601,7 @@ function figureLine(fig, pad) {
 }
 
 async function batchMode() {
-  if (!positional.length && !flag("--self-test")) die(`usage: visual-check.mjs <inputs…> [--out DIR] [--widths 320,375,768] [--themes light,dark] [--base-url URL] [--claims-dir DIR] [--headed] [--admin PATH]\n       visual-check.mjs --session <id>   (⚠️ --session, not --admin — --admin PATH is the Admin CHECKOUT)\n       visual-check.mjs --self-test`);
+  if (!positional.length && !flag("--self-test")) die(`usage: visual-check.mjs <inputs…> [--out DIR] [--widths 320,375,768] [--themes light,dark] [--base-url URL] [--claims-dir DIR] [--headed] [--admin PATH]\n       visual-check.mjs --session <id> [--staged FILE] [--claims-dir DIR]   (⚠️ --session, not --admin — --admin PATH is the Admin CHECKOUT)\n       visual-check.mjs --self-test`);
   const out = path.resolve(opt("--out", path.join(os.tmpdir(), "visual-check-out")));
   const widths = opt("--widths", "320,375,768").split(",").map(Number);
   if (!widths.length || widths.some((w) => !(w > 0))) die(`bad --widths: ${opt("--widths")}`);
@@ -690,6 +709,41 @@ async function extractActorId(page) {
 async function sessionMode() {
   const sessionId = opt("--session");
   const out = path.resolve(opt("--out", path.join(os.tmpdir(), "visual-check-out")));
+  const stagedFile = opt("--staged") ? path.resolve(opt("--staged")) : null;
+  const claimsDir = opt("--claims-dir") ? path.resolve(opt("--claims-dir")) : null;
+  if (claimsDir && !stagedFile)
+    die("--claims-dir needs --staged FILE — the staged doc supplies each rendered figure's id; claims resolve against it (run-gates ship passes --staged <run>/staged.json --claims-dir <run>/figures)");
+  if (stagedFile && !fs.existsSync(stagedFile)) die(`--staged ${stagedFile} does not exist`);
+  if (claimsDir && !fs.existsSync(claimsDir)) die(`--claims-dir ${claimsDir} does not exist`);
+  // --staged: the run's staged doc read from disk — ship's doc-get step has already proven it
+  // IS the server doc, so nothing is fetched from the page. Each diagram_dsl becomes a figure
+  // keyed by staged id; the rendered↔staged pairing is positional per question (see
+  // pairRenderedFigures), so this map is built once, up front, and a bad file dies before the
+  // browser ever opens.
+  const figsByQ = new Map();               // question number → staged figures, doc order
+  if (stagedFile) {
+    let staged;
+    try { staged = JSON.parse(fs.readFileSync(stagedFile, "utf8")); }
+    catch (e) { die(`--staged ${stagedFile}: not JSON — ${e.message}`); }
+    if (!isStaged(staged)) die(`--staged ${stagedFile}: not a staged doc (no questions[])`);
+    const figs = [];
+    collectFromStaged(figs, new Map(), staged, stagedFile, claimsDir);
+    for (const f of figs) {
+      const r = lib.parseVddDocument(f.doc);
+      f.parsed = r.ok ? r.value : f.doc;
+      // StudentPreview renders an unparseable or element-less diagram as a <p> note — NO
+      // [role="img"] host, no svg — so it must not take a pairing slot, or one broken figure
+      // shifts every figure behind it onto the wrong claim set (a false PASS).
+      if (!r.ok) { f.renders = false; f.why = "does not parse"; }
+      else if (!(r.value.elements ?? []).length) { f.renders = false; f.why = "has no elements"; }
+      const w = claimsForWarn(f.baseId ?? f.id, claimsDir, f.claims);
+      if (w) console.log(w);
+    }
+    const { byQ, skipped } = groupStagedFigures(figs);
+    for (const s of skipped)
+      console.log(`  WARN Q${s.q}: staged figure ${s.id} ${s.why} — not rendered, not paired`);
+    for (const [k, v] of byQ) figsByQ.set(k, v);
+  }
   const outDir = path.join(out, "session");
   fs.mkdirSync(outDir, { recursive: true });
   const creds = loadCredentials();
@@ -752,6 +806,7 @@ async function sessionMode() {
     let actorId = null;
     let anyFail = false;
     let fatal = null;
+    let proofFail = false;
     try {
       actorId = await extractActorId(page);
       if (!actorId) throw new Error("could not extract the actor's user id from the Supabase session (cookie/localStorage)");
@@ -815,8 +870,16 @@ async function sessionMode() {
         });
         const clipped = !(clip.noScroll && clip.svgsInside);
         const measured = await port.evaluate((el) => window.__vc.measure(el));
-        const results = (measured ?? []).filter((m) => m.svg)
-          .map((m) => assess({ doc: null, claims: null, widths: [{ width: 375, pxPerUnit: m.pxPerUnit, labels: m.labels }] }));
+        // --staged: pair each rendered figure with the staged doc's figure by position among
+        // the svg-bearing hosts (m.index counts svg-less plates too — see pairRenderedFigures);
+        // the same claims then drive assess() exactly as in mode 1.
+        const qFigs = stagedFile ? (figsByQ.get(n) ?? []) : null;
+        const pairs = pairRenderedFigures(measured, qFigs);
+        if (qFigs && qFigs.length !== pairs.length)
+          console.log(`  WARN Q${n}: ${qFigs.length} staged figure(s) but ${pairs.length} rendered — claims resolved by position`);
+        const results = pairs.map(({ measured: m, fig }) =>
+          assess({ doc: fig?.parsed ?? null, claims: fig?.claims?.text ?? null,
+                   widths: [{ width: 375, pxPerUnit: m.pxPerUnit, labels: m.labels }] }));
         const fails = results.flatMap((r) => r.findings.filter((f) => f.severity === "fail"));
         if (fails.length || clipped) anyFail = true;
         const verdict = clipped ? "CLIPPED FAIL" : fails.length ? "FAIL" : "PASS";
@@ -864,27 +927,28 @@ async function sessionMode() {
       console.error("visual-check: ⚠️ SIGN-OUT FAILED — the admin session may still be live; verify revocation with queries.sql Q3 on the Admin Auth project");
     }
     // The revocation proof runs whether or not the loop failed — never select token values.
+    // Same resolution playground-publish's post-logout Q3 uses (sql-proof's find_auth_url):
+    // VIBHAGA_ADMIN_AUTH_DB_URL env, then that key's line in the admin env file. When it
+    // resolves, sql-proof.py runs the proof itself (its own resolver + psql runner, output
+    // echoed verbatim); when it doesn't, one PENDING hint stands instead. The URL is never
+    // printed and never placed on argv.
     if (actorId) {
-      const dbUrl = process.env.VIBHAGA_ADMIN_AUTH_DB_URL;
-      if (dbUrl) {
-        // psql gets NO URL on argv (a password in argv leaks into `ps`) — PG* vars carry it, and
-        // -f - feeds the SQL on stdin so `:'actor_id'` interpolates (psql -c does NOT).
-        let pgEnv, sql;
-        try {
-          pgEnv = pgEnvFromUrl(dbUrl);
-          sql = q3Block(fs.readFileSync(path.join(PLUGIN, "queries.sql"), "utf8"));
-        } catch (e) {
-          console.log(`revocation: ${e.message} — run queries.sql Q3 on the Admin Auth project with actor_id=${actorId}`);
-        }
-        if (pgEnv && sql) {
-          const r = spawnSync("psql", ["-v", `actor_id=${actorId}`, "-f", "-"], {
-            input: sql,
-            env: { ...process.env, ...pgEnv, PGOPTIONS: "-c default_transaction_read_only=on" },
-            encoding: "utf8",
-          });
-          if (r.error || r.status !== 0)
-            console.log(`revocation: psql failed — ${r.stderr?.trim() || r.error?.message} — run queries.sql Q3 on the Admin Auth project with actor_id=${actorId}`);
-          else console.log(`revocation: queries.sql Q3 on the Admin Auth project (actor_id=${actorId}):\n${r.stdout.trim()}`);
+      const envFile = adminEnvFile();
+      const fromEnv = !!process.env.VIBHAGA_ADMIN_AUTH_DB_URL;
+      const authUrl = process.env.VIBHAGA_ADMIN_AUTH_DB_URL
+        ?? (envFile ? parseEnvFile(envFile).VIBHAGA_ADMIN_AUTH_DB_URL : null);
+      if (authUrl) {
+        // authEnv when the URL came from the FILE: sql-proof's own resolver would not find
+        // this file when --admin/VIBHAGA_ADMIN points at a non-sibling checkout — one
+        // resolution feeds both (see sqlProofQ3Argv).
+        const r = spawnSync(process.env.PYTHON ?? "python3",
+          sqlProofQ3Argv(PLUGIN, actorId, fromEnv ? null : envFile),
+          { encoding: "utf8" });
+        const text = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
+        if (text) console.log(text.split("\n").map((l) => `  ${l}`).join("\n"));
+        if (r.error || r.status !== 0) {
+          console.log(`  q3: NOT ok — the proof did not pass (sql-proof exit ${r.status ?? r.error?.message})`);
+          proofFail = true;
         }
       } else {
         console.log(`revocation: PENDING — run queries.sql Q3 on the Admin Auth project with actor_id=${actorId}`);
@@ -893,7 +957,7 @@ async function sessionMode() {
       console.log("revocation: UNKNOWN — no actor id was captured before the failure");
     }
   }
-  exitCode = fatal ? 1 : anyFail ? 1 : 0;
+  exitCode = fatal ? 1 : (anyFail || proofFail) ? 1 : 0;
   } finally {
     await browser.close();
     if (server.proc) server.proc.kill("SIGTERM");

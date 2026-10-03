@@ -19,7 +19,8 @@ smoke check — the read-only transaction is the guard; slicing stops at the fir
 non-comment line, so Q4 must never hold a `;` inside a literal), and runs each read-only through `psql -X -A -t -q -w
 -v ON_ERROR_STOP=1 -v batch_id=<id> -f -` with the SQL on stdin prefixed
 `set default_transaction_read_only=on;`. The DB URL is NEVER on argv or printed — it is split into
-PG* environment variables (the session-db.mjs `pgEnvFromUrl` approach, ported).
+PG* environment variables (a password on argv leaks into `ps`; `-f -` on stdin so `:'actor_id'`
+interpolates — `psql -c` does not).
 
 DB URL resolution: `--db-env` file → `DATABASE_URL` env → `publish.load_db_url` (env, then
 `Vibhaga-DB/.env` beside Vibhaga-Admin — reused, not copied). The SOURCE (never the value) is
@@ -128,8 +129,8 @@ def assert_single_select(block: str, marker: str) -> str:
 
 
 def pg_env_from_url(raw: str) -> dict[str, str]:
-    """postgres URL → libpq env vars, so the password is never on psql's argv (session-db.mjs
-    `pgEnvFromUrl`, ported). `?sslmode=` honoured; default `require`."""
+    """postgres URL → libpq env vars, so the password is never on psql's argv and never printed.
+    `?sslmode=` honoured; default `require`."""
     u = urllib.parse.urlsplit(raw)  # raises ValueError on a malformed URL — caller surfaces it
     if not u.hostname or not u.username:
         die("the DB URL is not a postgres URL (needs host + user)")

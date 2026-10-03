@@ -1,43 +1,11 @@
 // Offline-testable helpers for `visual-check.mjs` — separated so the unit tests can import them
-// without touching the Admin checkout, esbuild, or a browser: q3Block/pgEnvFromUrl feed
-// `--session`'s revocation proof; claimsFor/pushFigure/claimsForWarn carry the claim-set lookup
-// and its dedup + missing-claims decisions. No secrets: the URL is only ever parsed into PG*
-// environment variables for the psql child process, never placed on its command line (argv leaks
-// into `ps`) and never printed.
+// without touching the Admin checkout, esbuild, or a browser: claimsFor/pushFigure/claimsForWarn
+// carry the claim-set lookup and its dedup + missing-claims decisions (modes 1 AND --session), and
+// pairRenderedFigures is --session's rendered↔staged pairing (a mis-pair assesses a figure against
+// another figure's claims). The post-logout Q3 proof lives in tools/sql-proof.py — --session
+// shells to it, there is no JS copy of it here.
 import fs from "node:fs";
 import path from "node:path";
-
-/**
- * Slice the Q3 block out of queries.sql's text: from the "Q3 —" marker's first SELECT to its
- * terminating `;` — NOT to EOF (the file has more queries after it).
- */
-export function q3Block(sqlText) {
-  const at = sqlText.indexOf("Q3 —");
-  if (at < 0) throw new Error("queries.sql has no Q3 block");
-  const sel = sqlText.indexOf("SELECT", at);
-  const end = sel < 0 ? -1 : sqlText.indexOf(";", sel);
-  if (sel < 0 || end < 0) throw new Error("queries.sql Q3 block has no SELECT…;");
-  return sqlText.slice(sel, end + 1);
-}
-
-/**
- * Parse a postgres URL into libpq environment variables. psql reads PGHOST/PGPORT/PGUSER/
- * PGPASSWORD/PGDATABASE from the environment — that keeps the password OFF argv and out of logs.
- * PGSSLMODE defaults to require unless the URL says otherwise (`?sslmode=disable` honoured).
- */
-export function pgEnvFromUrl(raw) {
-  const u = new URL(raw); // throws TypeError on a malformed URL — caller surfaces it
-  if (!u.hostname || !u.username) throw new Error("VIBHAGA_ADMIN_AUTH_DB_URL is not a postgres URL (needs host + user)");
-  const env = {
-    PGHOST: u.hostname.replace(/^\[|\]$/g, ""), // WHATWG keeps IPv6 brackets; PGHOST wants bare
-    PGPORT: u.port || "5432",
-    PGUSER: decodeURIComponent(u.username),
-    PGPASSWORD: decodeURIComponent(u.password),
-    PGDATABASE: decodeURIComponent(u.pathname.replace(/^\//, "")) || "postgres",
-    PGSSLMODE: u.searchParams.get("sslmode") ?? "require",
-  };
-  return env;
-}
 
 /**
  * Find a figure's claim set, in order: `<fileBase>.claims.txt`, `<fileBase>-claims.txt` beside a
@@ -76,4 +44,56 @@ export function pushFigure(figures, seen, id, doc, source, fileBase, claimsDir) 
 export function claimsForWarn(baseId, claimsDir, resolved) {
   if (!claimsDir || resolved) return null;
   return `WARN no claim set for ${baseId} (looked for ${baseId}.claims.txt / ${baseId}-claims.txt in ${claimsDir})`;
+}
+
+/**
+ * --session's per-question pairing: the k-th svg-bearing `[role="img"]` host in the student
+ * preview IS the k-th figure collectFromStaged emitted for that question — StudentPreview's
+ * document order (question figure, then parts in label order, then the whole-question answers)
+ * is the walk's order. ⚠️ pair on POSITION among the svg entries, never m.index — measure()'s
+ * index counts every role=img host, svg-less plates included, so one unparseable figure ahead
+ * of a real one would shift every pairing behind it. `stagedFigs` null → figures assess
+ * claims-less exactly as before. → [{measured, fig}] with fig null when the staged doc has
+ * fewer figures than the preview renders.
+ */
+export function pairRenderedFigures(measured, stagedFigs) {
+  return (measured ?? []).filter((m) => m?.svg)
+    .map((m, k) => ({ measured: m, fig: stagedFigs?.[k] ?? null }));
+}
+
+/**
+ * Group collectFromStaged's figures by question number for --session pairing, in the walk's
+ * document order. ⚠️ A figure with `renders === false` (the caller marks it when the doc fails
+ * parseVddDocument or parses to zero elements — StudentPreview draws a `<p>` note, NO svg host)
+ * takes no pairing slot and lands in `skipped` instead; counted, it would shift every figure
+ * behind it in that question onto the wrong claim set. → {byQ: Map<q, fig[]>, skipped: [{q,id,why}]}
+ */
+export function groupStagedFigures(figs) {
+  const byQ = new Map();
+  const skipped = [];
+  for (const f of figs) {
+    const id = f.baseId ?? f.id;
+    const m = id.match(/^Q(\d+)/);
+    if (!m) continue;
+    const q = +m[1];
+    if (f.renders === false) { skipped.push({ q, id, why: f.why ?? "does not parse" }); continue; }
+    if (!byQ.has(q)) byQ.set(q, []);
+    byQ.get(q).push(f);
+  }
+  return { byQ, skipped };
+}
+
+/**
+ * The argv for --session's post-logout Q3 proof. `authEnv` is the env FILE the URL was read
+ * from — sql-proof.py resolves VIBHAGA_ADMIN_AUTH_DB_URL via env → VIBHAGA_ADMIN_ENV → the
+ * admin checkout's own .env.local path, which is NOT necessarily the file visual-check's
+ * resolver found it in (a non-sibling --admin/VIBHAGA_ADMIN checkout), so the file goes along
+ * as `--auth-env` and one resolution feeds both. null when the URL came from the process env —
+ * sql-proof inherits it anyway. actorId on argv matches the ship-chain behaviour; the URL
+ * itself never goes on argv.
+ */
+export function sqlProofQ3Argv(pluginDir, actorId, authEnv = null) {
+  const argv = [path.join(pluginDir, "tools", "sql-proof.py"), "q3", "--actor", actorId];
+  if (authEnv) argv.push("--auth-env", authEnv);
+  return argv;
 }

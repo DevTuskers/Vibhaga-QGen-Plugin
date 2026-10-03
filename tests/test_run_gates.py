@@ -8,6 +8,9 @@ stage ordering, stop-at-first-failure, the doc-compare ignore list, and exit pro
 import importlib.util
 import io
 import json
+import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -33,8 +36,10 @@ def make_run(tmp: Path) -> Path:
                     {"template": "number_line", "figure_id": "Q2"}]), encoding="utf-8")
     (run / "content.yaml").write_text("id_seed: t\nquestions: []\n", encoding="utf-8")
     (run / "staged.json").write_text(json.dumps({"questions": [
-        {"question_id": ID1, "question_number": 1, "stem": "one"},
-        {"question_id": ID2, "question_number": 2, "stem": "two"}]}), encoding="utf-8")
+        {"question_id": ID1, "question_number": 1, "stem": "one",
+         "question_text": "one stem"},
+        {"question_id": ID2, "question_number": 2, "stem": "two",
+         "question_text": "two stem"}]}), encoding="utf-8")
     (run / "ids.json").write_text(json.dumps([ID1, ID2]), encoding="utf-8")
     (run / "ledger.json").write_text('{"sessions": {}}', encoding="utf-8")
     return run
@@ -64,6 +69,18 @@ class StubRunner:
         for pred, rc, out in self.canned:
             if pred(joined):
                 return rc, out
+        if any(a.endswith("vdd_templates.py") for a in argv) and "build" in argv:
+            # emit <id>.json + <id>-claims.txt per spec, the way vdd_templates build does —
+            # the audit stage requires the files to exist
+            specs = json.loads(Path(argv[argv.index("build") + 1]).read_text())
+            out_dir = Path(argv[argv.index("--out") + 1])
+            out_dir.mkdir(exist_ok=True)
+            for s in rg.pl.figure_specs(specs):
+                fid = s.get("figure_id") if isinstance(s, dict) else None
+                if fid:
+                    (out_dir / f"{fid}.json").write_text("{}", encoding="utf-8")
+                    (out_dir / f"{fid}-claims.txt").write_text("claims:\n", encoding="utf-8")
+            return 0, ""
         return 0, ""
 
 
@@ -191,6 +208,230 @@ class BuildTest(unittest.TestCase):
                 rg.cmd_build(build_args(run), runner=stub)
             self.assertEqual(e.exception.code, 2)
             self.assertEqual(stub.calls, [])
+
+    def test_hand_drawn_figures_are_audited_too(self):
+        # specs ∪ content.yaml figures: a hand-drawn figure is gated exactly like a
+        # template-built one (audit + vdd-check on its own files)
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "figures").mkdir(exist_ok=True)
+            (run / "figures" / "Q7.json").write_text("{}", encoding="utf-8")
+            (run / "figures" / "Q7-claims.txt").write_text("claims:\n", encoding="utf-8")
+            (run / "content.yaml").write_text(
+                "id_seed: t\nfigures: {H7: figures/Q7.json}\nquestions: []\n",
+                encoding="utf-8")
+            stub = StubRunner()
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run), runner=stub)
+            self.assertEqual(rc, 0, out.getvalue())
+            audits = [" ".join(c) for c in stub.calls if "audit-claim-set" in " ".join(c)]
+            vdds = [" ".join(c) for c in stub.calls if "vdd-check" in " ".join(c)]
+            self.assertTrue(any("Q7-claims.txt" in c for c in audits), audits)
+            self.assertTrue(any("Q7.json" in c for c in vdds), vdds)
+            gates = json.loads((run / "gates.json").read_text())
+            self.assertEqual(gates["audit:Q7"], 0)
+            self.assertEqual(gates["vdd-check:Q7"], 0)
+            self.assertIn("Q7 audit ok · vdd-check ok", out.getvalue())
+            self.assertIn("3 figures", out.getvalue())
+
+    def test_hand_figure_missing_claims_fails_the_stage(self):
+        # a content.yaml figure with no <id>-claims.txt must fail loudly, not pass unaudited
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "figures").mkdir(exist_ok=True)
+            (run / "figures" / "Q7.json").write_text("{}", encoding="utf-8")
+            (run / "content.yaml").write_text(
+                "id_seed: t\nfigures: {H7: figures/Q7.json}\nquestions: []\n",
+                encoding="utf-8")
+            stub = StubRunner()
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run), runner=stub)
+            self.assertEqual(rc, 1)
+            self.assertIn("Q7-claims.txt", out.getvalue())
+            self.assertEqual(json.loads((run / "gates.json").read_text())["audit:Q7"], 1)
+            # the audit subprocess was never even invoked for Q7
+            self.assertFalse(any("audit-claim-set" in " ".join(c) and "Q7" in " ".join(c)
+                                 for c in stub.calls))
+
+    def test_all_hand_drawn_run_skips_the_template_stage(self):
+        # specs/figures.json absent → every figure hand-drawn; stage 1 skips with a log line
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "specs" / "figures.json").unlink()
+            (run / "figures").mkdir(exist_ok=True)
+            (run / "figures" / "Q7.json").write_text("{}", encoding="utf-8")
+            (run / "figures" / "Q7-claims.txt").write_text("claims:\n", encoding="utf-8")
+            (run / "content.yaml").write_text(
+                "id_seed: t\nfigures: {H7: figures/Q7.json}\nquestions: []\n",
+                encoding="utf-8")
+            stub = StubRunner()
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run), runner=stub)
+            self.assertEqual(rc, 0, out.getvalue())
+            self.assertIn("templates: skipped — no specs/figures.json", out.getvalue())
+            self.assertFalse(any("vdd_templates" in " ".join(c) for c in stub.calls))
+            self.assertTrue(any("Q7-claims.txt" in " ".join(c) for c in stub.calls))
+
+    def test_figure_file_stem_must_match_its_staged_id(self):
+        # visual-check resolves <id>-claims.txt by the STAGED id (Q3, Q3.a) — a file named
+        # anything else audits under its basename but then assesses claims-less in both modes.
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "specs" / "figures.json").write_text("[]", encoding="utf-8")
+            (run / "figures").mkdir(exist_ok=True)
+            (run / "figures" / "pic.json").write_text("{}", encoding="utf-8")
+            (run / "figures" / "pic-claims.txt").write_text("claims:\n", encoding="utf-8")
+            (run / "content.yaml").write_text(
+                "id_seed: t\nfigures: {F1: figures/pic.json}\nquestions:\n"
+                "  - {n: 3, stem: s, lessons: [L1], figure: F1, approach: a, final: f}\n",
+                encoding="utf-8")
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run), runner=StubRunner())
+            self.assertEqual(rc, 1)
+            self.assertIn("figure F1 file pic.json is used at Q3 — name it Q3.json "
+                          "so visual-check finds its claim set", out.getvalue())
+            self.assertEqual(json.loads((run / "gates.json").read_text())["audit:pic"], 1)
+            # naming the file after its staged id clears the check — same run, renamed
+            (run / "figures" / "pic.json").rename(run / "figures" / "Q3.json")
+            (run / "figures" / "pic-claims.txt").rename(run / "figures" / "Q3-claims.txt")
+            (run / "content.yaml").write_text(
+                "id_seed: t\nfigures: {F1: figures/Q3.json}\nquestions:\n"
+                "  - {n: 3, stem: s, lessons: [L1], figure: F1, approach: a, final: f}\n",
+                encoding="utf-8")
+            with redirect_stdout(io.StringIO()):
+                rc = rg.cmd_build(build_args(run), runner=StubRunner())
+            self.assertEqual(rc, 0)
+
+    def test_figure_file_stem_must_match_its_staged_id_parts(self):
+        # same check at part depth: a part's figure is staged as Q<n>.<label[.label…]>
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "specs" / "figures.json").write_text("[]", encoding="utf-8")
+            (run / "figures").mkdir(exist_ok=True)
+            (run / "figures" / "pic.json").write_text("{}", encoding="utf-8")
+            (run / "figures" / "pic-claims.txt").write_text("claims:\n", encoding="utf-8")
+            (run / "content.yaml").write_text(
+                "id_seed: t\nfigures: {F2: figures/pic.json}\nquestions:\n"
+                "  - {n: 3, stem: s, lessons: [L1], parts:\n"
+                "     [{label: a, text: t, figure: F2, approach: x, final: y}]}\n",
+                encoding="utf-8")
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run), runner=StubRunner())
+            self.assertEqual(rc, 1)
+            self.assertIn("used at Q3.a — name it Q3.a.json", out.getvalue())
+
+    def test_figures_map_dict_value_dies_like_build_staged(self):
+        # build-staged accepts only {key: path-string} — stage 2 must refuse the dict shape
+        # too, not carry a usage error later into the chain
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "content.yaml").write_text(
+                "id_seed: t\nfigures: {H7: {file: figures/Q7.json}}\nquestions: []\n",
+                encoding="utf-8")
+            with self.assertRaises(SystemExit) as cm:
+                rg.cmd_build(build_args(run), runner=StubRunner())
+            self.assertEqual(cm.exception.code, 2)
+
+    def test_markdown_gate_blocks_stop_the_build(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            stub = StubRunner()
+            stub.canned.append((lambda j: "markdown-gate" in j, 1,
+                                "Q2 · question_text\n"
+                                "   [block] M2-displayMathInline — line 3\n"
+                                "1 fields · 1 BLOCKED\n"))
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run), runner=stub)
+            self.assertEqual(rc, 1)
+            self.assertIn("[block] M2-displayMathInline", out.getvalue())
+            self.assertFalse(any("visual-check" in " ".join(c) for c in stub.calls))
+            gates = json.loads((run / "gates.json").read_text())
+            self.assertEqual(gates["markdown-gate"], 1)
+
+    def test_markdown_gate_stage_order_and_fields_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            stub = StubRunner()
+            stub.canned.append((lambda j: "markdown-gate" in j, 0, "2 fields · 0 BLOCKED\n"))
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run), runner=stub)
+            self.assertEqual(rc, 0, out.getvalue())
+            joined = [" ".join(c) for c in stub.calls]
+            i_staged = next(i for i, c in enumerate(joined) if "build-staged" in c)
+            i_mg = next(i for i, c in enumerate(joined) if "markdown-gate" in c)
+            i_vc = next(i for i, c in enumerate(joined) if "visual-check" in c)
+            self.assertLess(i_staged, i_mg)
+            self.assertLess(i_mg, i_vc)
+            fields = json.loads((run / "fields.json").read_text())
+            self.assertEqual([(f["id"], f["field"]) for f in fields],
+                             [("Q1", "question_text"), ("Q2", "question_text")])
+            self.assertIn("markdown-gate: 2 fields · 0 BLOCKED", out.getvalue())
+            self.assertEqual(json.loads((run / "gates.json").read_text())["markdown-gate"], 0)
+
+    def test_staged_fields_matches_fields_py_field_set(self):
+        # the same set run-gate.sh's fields_py produces: stems (+_sinhala), answers[] AND the
+        # singular sub_answer, part texts, sq/sa at depth 1, sq2/sa2 below
+        staged = {"questions": [{
+            "question_id": ID1, "question_number": 1,
+            "question_text": "stem", "question_text_sinhala": "si",
+            "answers": [{"answer_id": "a1", "approach": "app", "final_answer_latex": "fin"}],
+            "sub_questions": [{
+                "sub_question_id": "s1", "label": "a",
+                "text": "part", "text_sinhala": "parsi",
+                "sub_answer": {"sub_answer_id": "s2",
+                               "approach": "pa", "final_answer_latex": "pf"},
+                "sub_questions": [{
+                    "sub_question_id": "s3", "label": "i", "text": "deep",
+                    "sub_answer": {"sub_answer_id": "s4",
+                                   "approach": "da", "final_answer_latex": "df"}}]}]}]}
+        got = [(f["id"], f["field"]) for f in rg.staged_fields(staged)]
+        self.assertEqual(got, [
+            ("Q1", "question_text"), ("Q1", "question_text_sinhala"),
+            ("Q1", "a:a1:approach"), ("Q1", "a:a1:final"),
+            ("Q1/a", "sq:s1:text"), ("Q1/a", "sq:s1:text_sinhala"),
+            ("Q1/a", "sa:s2:approach"), ("Q1/a", "sa:s2:final"),
+            ("Q1/a/i", "sq2:s3:text"),
+            ("Q1/a/i", "sa2:s4:approach"), ("Q1/a/i", "sa2:s4:final")])
+
+    def test_markdown_gate_real_binary(self):
+        # one real invocation: a single-line $$…$$ stem blocks, a clean field passes.
+        # markdown-gate bundles the renderer from the sibling checkouts — resolve them the way
+        # the sibling convention does (env, then walking up from the plugin dir so a worktree
+        # under a sibling dir finds the umbrella checkouts too).
+        env = dict(os.environ)
+        for var, name in (("VIBHAGA_WEB", "Vibhaga-Web"), ("VIBHAGA_ADMIN", "Vibhaga-Admin")):
+            if env.get(var):
+                continue
+            d = TOOLS.parent
+            while not (d / name).is_dir() and d.parent != d:
+                d = d.parent
+            if (d / name).is_dir():
+                env[var] = str(d / name)
+        if not shutil.which("node") or "VIBHAGA_WEB" not in env or "VIBHAGA_ADMIN" not in env:
+            self.skipTest("node or the sibling checkouts (Vibhaga-Web/Vibhaga-Admin) unavailable")
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "fields.json"
+            f.write_text(json.dumps([{"id": "Q1", "field": "question_text",
+                                      "text": "Consider these. $$x \\times 2$$ find it."}]),
+                         encoding="utf-8")
+            r = subprocess.run(["node", str(TOOLS / "markdown-gate.mjs"), "--fields", str(f)],
+                               capture_output=True, text=True, env=env)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("BLOCKED", r.stdout + r.stderr)
+            f.write_text(json.dumps([{"id": "Q1", "field": "question_text",
+                                      "text": "Consider $x \\times 2$ — find it."}]),
+                         encoding="utf-8")
+            r = subprocess.run(["node", str(TOOLS / "markdown-gate.mjs"), "--fields", str(f)],
+                               capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("0 BLOCKED", r.stdout + r.stderr)
 
     def test_card_without_grade_is_usage_error(self):
         with tempfile.TemporaryDirectory() as td:
@@ -347,7 +588,21 @@ class ShipTest(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 rc = rg.cmd_ship(ship_args(run, session_check=True), runner=stub2)
             self.assertEqual(rc, 0)
-            self.assertTrue(any("--session" in c for c in map(" ".join, stub2.calls)))
+            sess = next(" ".join(c) for c in stub2.calls if "--session" in c)
+            # no <run>/figures dir → the pre-change bare argv; an absent dir makes
+            # visual-check die, and a figure-less run has no claim sets to pair anyway
+            self.assertNotIn("--claims-dir", sess)
+            self.assertNotIn("--staged", sess)
+            # with figures/ present, the local staged.json IS the server doc (doc get just
+            # proved it) and the claim sets go to the live preview — allow:/departures apply
+            (run / "figures").mkdir()
+            stub3 = StubRunner()
+            with redirect_stdout(io.StringIO()):
+                rc = rg.cmd_ship(ship_args(run, session_check=True), runner=stub3)
+            self.assertEqual(rc, 0)
+            sess = next(" ".join(c) for c in stub3.calls if "--session" in c)
+            self.assertIn(f"--staged {run / 'staged.json'}", sess)
+            self.assertIn(f"--claims-dir {run / 'figures'}", sess)
 
 
 if __name__ == "__main__":

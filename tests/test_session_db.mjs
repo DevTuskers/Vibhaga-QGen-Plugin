@@ -3,57 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { q3Block, pgEnvFromUrl, claimsFor, pushFigure, claimsForWarn } from "../tools/session-db.mjs";
-
-// Synthetic SQL + a synthetic URL only — never a real host, user, or query text.
-
-const SQL = `-- Q1 …
-SELECT 1;
--- Q2 …
-SELECT 2;
--- Q3 — revocation check
-SELECT count(*) FROM audit_log WHERE actor_id = :'actor_id';
--- Q4 …
-SELECT 4;
-`;
-
-test("q3Block slices Q3's SELECT to its terminating semicolon — not to EOF", () => {
-  const block = q3Block(SQL);
-  assert.match(block, /^SELECT count\(\*\)/);
-  assert.match(block, /;$/);
-  assert.ok(!block.includes("SELECT 4"), "trailing queries must not bleed into the block");
-});
-
-test("q3Block throws clearly when the Q3 marker or SELECT is missing", () => {
-  assert.throws(() => q3Block("SELECT 1;"), /no Q3 block/);
-  assert.throws(() => q3Block("-- Q3 — nothing here"), /no SELECT/);
-});
-
-test("pgEnvFromUrl splits a postgres URL into PG* vars — nothing on argv", () => {
-  const env = pgEnvFromUrl("postgresql://svc_user:p%40ss@db.example.test:6543/authdb");
-  assert.deepEqual(env, {
-    PGHOST: "db.example.test",
-    PGPORT: "6543",
-    PGUSER: "svc_user",
-    PGPASSWORD: "p@ss",
-    PGDATABASE: "authdb",
-    PGSSLMODE: "require",
-  });
-});
-
-test("pgEnvFromUrl: defaults and explicit sslmode", () => {
-  assert.equal(pgEnvFromUrl("postgres://u:p@h.test/db").PGPORT, "5432");
-  assert.equal(pgEnvFromUrl("postgres://u:p@h.test/db?sslmode=disable").PGSSLMODE, "disable");
-  assert.throws(() => pgEnvFromUrl("not-a-url"));
-  assert.throws(() => pgEnvFromUrl("postgres://h.test/db"), /needs host \+ user/);
-});
-
-test("pgEnvFromUrl: percent-decoded user/password/database, IPv6 brackets stripped", () => {
-  const env = pgEnvFromUrl("postgresql://svc%20user:x@[2001:db8::1]/auth%20db");
-  assert.equal(env.PGUSER, "svc user");
-  assert.equal(env.PGHOST, "2001:db8::1");
-  assert.equal(env.PGDATABASE, "auth db");
-});
+import { claimsFor, pushFigure, claimsForWarn, pairRenderedFigures, groupStagedFigures, sqlProofQ3Argv } from "../tools/session-db.mjs";
+import { assess } from "../tools/visual-metrics.mjs";
 
 test("claimsFor: --claims-dir resolves <id>-claims.txt (the vdd_templates name) too", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-claims-"));
@@ -95,4 +46,97 @@ test("claimsForWarn: warns only under --claims-dir and only when nothing resolve
     `WARN no claim set for Q3 (looked for Q3.claims.txt / Q3-claims.txt in ${dir})`);
   assert.equal(claimsForWarn("Q3", dir, { path: "p", text: "t" }), null); // resolved → silent
   assert.equal(claimsForWarn("Q3", null, null), null);                    // no --claims-dir → silent
+});
+
+test("--session --staged/--claims-dir: the staged figure's claim set applies the same allow/target outcome as mode 1", () => {
+  // visual-check --session reads the staged doc from --staged and resolves each rendered
+  // figure's claims via pushFigure/claimsFor, then calls the same assess() batch mode does — a
+  // numeral floating
+  // far from paint is a `target` finding claims-less, `allowed` with `allow: label:"…"`, and
+  // the session-mode call and the batch-mode call produce byte-identical findings.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-session-claims-"));
+  fs.writeFileSync(path.join(dir, "Q5-claims.txt"), [
+    'labels: "3502"',
+    "claims:",
+    '  K1 describe "a numeral card inside the ring" | inferred |',
+    'allow: label:"3502"',
+  ].join("\n"));
+  const doc = {
+    schema: "vibhaga.diagram", schemaVersion: 1,
+    canvas: { width: 300, height: 260 }, defaults: { strokeWidth: 2, fontSize: 18 },
+    elements: [{ id: "ring", type: "circle", center: [150, 130], r: 80 }],
+  };
+  // what __vc.measure() would hand back: one text label 60u from the nearest paint
+  const measured = [{ width: 375, pxPerUnit: 1, labels: [{
+    i: 0, text: "3502", kind: "text", bbox: [140, 120, 40, 18],
+    fontFamily: "Inter, sans-serif", fontSizeU: 18, edge_u: 60, stroke_u: 60, geom_u: 60,
+  }] }];
+  const figures = [], seen = new Map();
+  pushFigure(figures, seen, "Q5", doc, "the session doc", null, dir);
+  const fig = figures[0];
+  const sessionMode = assess({ doc: fig.doc, claims: fig.claims?.text ?? null, widths: measured });
+  const batchMode = assess({ doc: fig.doc, claims: fig.claims?.text ?? null, widths: measured });
+  const claimsLess = assess({ doc: fig.doc, claims: null, widths: measured });
+  assert.equal(fig.claims.path, path.join(dir, "Q5-claims.txt"));
+  assert.deepEqual(sessionMode.findings, batchMode.findings);
+  assert.ok(claimsLess.findings.some((f) => f.rule === "target" && f.severity === "fail"));
+  assert.equal(claimsLess.verdict, "FAIL");
+  assert.ok(sessionMode.findings.some((f) => f.rule === "target" && f.severity === "allowed"));
+  assert.equal(sessionMode.findings.filter((f) => f.severity === "fail").length, 0);
+  assert.equal(sessionMode.verdict, "PASS");
+});
+
+test("pairRenderedFigures: the k-th svg host pairs with the k-th staged figure — m.index counts svg-less hosts", () => {
+  // StudentPreview renders a "Diagram coming soon" plate (role=img, no svg) for an unparseable
+  // figure; that host still takes an index in measure()'s list. Pairing by m.index would shift
+  // every figure behind it onto the wrong claim set — the pairing must count only svg entries.
+  const figs = [{ id: "Q1" }, { id: "Q1.a" }, { id: "Q1.ans1" }];
+  const measured = [
+    { index: 0, svg: false, labels: [] },                    // unparseable-figure plate, no svg
+    { index: 1, svg: true, pxPerUnit: 1, labels: [] },
+    { index: 2, svg: false, labels: [] },                    // another plate, mid-list
+    { index: 3, svg: true, pxPerUnit: 1, labels: [] },
+  ];
+  const pairs = pairRenderedFigures(measured, figs);
+  assert.equal(pairs.length, 2);                             // only svg hosts pair
+  assert.equal(pairs[0].measured.index, 1);
+  assert.equal(pairs[0].fig.id, "Q1");                       // svg #1 → figs[0], not figs[1]
+  assert.equal(pairs[1].measured.index, 3);
+  assert.equal(pairs[1].fig.id, "Q1.a");                     // svg #2 → figs[1], not figs[3]
+  // More rendered figures than staged → the extras get fig null (claims-less, never a
+  // wrong-figure claim set); no staged list at all → every fig null.
+  const short = pairRenderedFigures(measured, [figs[0]]);
+  assert.equal(short[1].fig, null);
+  assert.ok(pairRenderedFigures(measured, null).every((p) => p.fig === null));
+  assert.deepEqual(pairRenderedFigures([], figs), []);
+});
+
+test("groupStagedFigures: a staged figure that renders no svg takes NO pairing slot", () => {
+  // StudentPreview draws a <p> note for an unparseable (or element-less) diagram — no
+  // [role="img"] host, no measure() entry at all. Keeping it in figsByQ would pair the first
+  // rendered host with the BROKEN figure's claims and shift every figure behind it.
+  const figs = [
+    { id: "Q3", baseId: "Q3", renders: false, why: "does not parse" },   // note, no svg
+    { id: "Q3.a", baseId: "Q3.a", renders: true },
+    { id: "Q4", baseId: "Q4", renders: true },
+  ];
+  const { byQ, skipped } = groupStagedFigures(figs);
+  assert.deepEqual(skipped, [{ q: 3, id: "Q3", why: "does not parse" }]);
+  assert.equal(byQ.get(3).length, 1);
+  assert.equal(byQ.get(4)[0].id, "Q4");
+  // the ONE rendered host in Q3's preview pairs with Q3.a — not with the unrendered Q3
+  const pairs = pairRenderedFigures([{ index: 0, svg: true, pxPerUnit: 1, labels: [] }], byQ.get(3));
+  assert.equal(pairs[0].fig.id, "Q3.a");
+  // renders unset (undefined) counts as rendered — only an explicit false is a slot-taker
+  const { byQ: all } = groupStagedFigures([{ id: "Q1" }]);
+  assert.equal(all.get(1)[0].id, "Q1");
+});
+
+test("sqlProofQ3Argv: --auth-env goes along only when the URL came from an env FILE", () => {
+  const argv = sqlProofQ3Argv("/plugin", "00000000-0000-4000-8000-000000000042", "/adm/.env.local");
+  assert.deepEqual(argv.slice(0, 3), ["/plugin/tools/sql-proof.py", "q3", "--actor"]);
+  assert.deepEqual(argv.slice(-2), ["--auth-env", "/adm/.env.local"]);
+  // URL from the process env → sql-proof inherits it; no file flag
+  const bare = sqlProofQ3Argv("/plugin", "actor-uuid", null);
+  assert.ok(!bare.includes("--auth-env"));
 });
