@@ -2,6 +2,7 @@
 """run-gates.py — the two mechanical chains of generate §2 as ONE command each (W9 item E).
 
     run-gates.py build <run> --medium M [--vc-out DIR] [--card KEY=NN …] --grade N
+                       [--rubric medium-hard]
     run-gates.py ship  <run> --sid SID --scope K=V,… [--session-check]
                        [--vc-session-out DIR] [--accept-signatures N] [--expected N]
 
@@ -18,10 +19,12 @@ forked or re-implemented and no gate is lowered:
              template-built ones: audit-claim-set.py <id>-claims.txt · vdd-check.mjs <id>.json
              --claims … --medium M (a figure file or claim set missing fails the stage)
           3. build-staged.py content.yaml --out staged.json --ids-out ids.json
-          4. markdown-gate.mjs --fields <run>/fields.json — the fields list is the same set
+          4. check-answers.py <run> — every leaf's `check:` expression must evaluate True
+          5. markdown-gate.mjs --fields <run>/fields.json — the fields list is the same set
              run-gate.sh's fields_py produces; any BLOCKED field fails the stage
-          5. visual-check.mjs staged.json --claims-dir figures --out DIR (default ../vc)
-          6. precritic-lint.py (only when --card is given — else a skipped line)
+          6. visual-check.mjs staged.json --claims-dir figures --out DIR (default ../vc)
+          7. precritic-lint.py (runs when --card, --rubric or an existing*.json file is
+             present — every <run>/existing*.json is auto-passed as --existing)
   ship:   1. validate · 2. doc put --ledger · 3. doc get → compare questions against
              staged.json by question_id key-by-key (server-added `published`/`published_at`
              and the renormalised `sort_order` ignored; a server-only id is a WARN, not a fail)
@@ -299,7 +302,18 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     if rc:
         return fail(gates, run, "build-staged", rc, out)
 
-    # 4. markdown gate over every text field of the staged doc — the fields list is written
+    # 4. answers as code — every leaf's `check:` expression must evaluate True (a False or an
+    #    eval error stops the chain; missing checks and uncovered final numbers are WARNs)
+    rc, out = runner([sys.executable, str(TOOLS / "check-answers.py"), str(run)])
+    gates["check-answers"] = rc
+    if rc:
+        shown = quote(out, r"FAIL|check-answers:", log=log)
+        return fail(gates, run, "check-answers", rc, out, shown)
+    m = re.search(r"check-answers: .*", out)
+    if m:
+        log(f"  {m.group(0)}")
+
+    # 5. markdown gate over every text field of the staged doc — the fields list is written
     #    to <run>/fields.json so the same gate can be re-run standalone
     fields = staged_fields(json.loads(staged.read_text(encoding="utf-8")))
     fields_path = run / "fields.json"
@@ -314,7 +328,7 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     m = re.search(r"\d+ fields · \d+ BLOCKED", out)
     log(f"  markdown-gate: {m.group(0) if m else f'{len(fields)} fields · 0 BLOCKED'}")
 
-    # 5. visual-check mode 1
+    # 6. visual-check mode 1
     vc_out = Path(args.vc_out) if args.vc_out else run.parent / "vc"
     rc, vc_out_text = runner([str(NODE_BIN), str(TOOLS / "visual-check.mjs"), str(staged),
                               "--claims-dir", str(figs_dir), "--out", str(vc_out)])
@@ -322,21 +336,28 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     if rc:
         return fail(gates, run, "visual-check", rc, vc_out_text)
 
-    # 5. pre-critic lint — only when cards are bound (--card ⇒ --grade checked up front)
-    if args.card:
-        argv = [sys.executable, str(TOOLS / "precritic-lint.py"), str(run),
-                "--grade", str(args.grade)]
+    # 7. pre-critic lint — runs when cards are bound, a rubric is asked for, or the run has
+    #    existing*.json dumps to dedup against (--card ⇒ --grade checked up front)
+    existing = sorted(run.glob("existing*.json"))
+    if args.card or args.rubric or existing:
+        argv = [sys.executable, str(TOOLS / "precritic-lint.py"), str(run)]
         for c in args.card:
             argv += ["--card", c]
+        if args.grade is not None:
+            argv += ["--grade", str(args.grade)]
         if args.cards_dir:
             argv += ["--cards-dir", args.cards_dir]
+        if args.rubric:
+            argv += ["--rubric", args.rubric]
+        if existing:
+            argv += ["--existing", *[str(p) for p in existing]]
         rc, out = runner(argv)
         gates["precritic-lint"] = rc
         shown = quote(out, r"FAIL|WARN", log=log)
         if rc:
             return fail(gates, run, "precritic-lint", rc, out, shown)
     else:
-        log("precritic-lint: skipped — no --card given")
+        log("precritic-lint: skipped — no --card/--rubric/existing*.json")
 
     for fid in fig_ids:
         m = re.search(rf"^{re.escape(fid)}\s+(PASS|FAIL)\s.*?\b(\d+×\d+)\b",
@@ -497,6 +518,9 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--card", action="append", default=[], help="KEY=NN for precritic-lint")
     b.add_argument("--grade", type=int, help="required with --card")
     b.add_argument("--cards-dir", help="passed through to precritic-lint")
+    b.add_argument("--rubric", choices=["medium-hard"], default=None,
+                   help="passed to precritic-lint — checks the leaf `level:` keys against "
+                        "the set rubric")
     s = sub.add_parser("ship", help="the live chain: validate → doc put → doc get diff → "
                        "[--session check] → publish dry-run → publish → q2")
     s.add_argument("run")

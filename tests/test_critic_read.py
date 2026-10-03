@@ -401,5 +401,91 @@ class PreviousMode(EndToEnd):
         self.assertIn("≠ this batch", err)
 
 
+MINI_CARD = """\
+schema_version: 1
+grade: 6
+subject: Mathematics
+medium: si
+lesson_number: {nn}
+title_en: {title}
+title_si: {title} (si)
+syllabus_refs: ["1.1"]
+term: 1
+periods: 2
+source: {{file: "lessons/{slug}.md", sha256: "0000000000000000000000000000000000000000000000000000000000000001"}}
+generated:
+  sections:
+    - {{number: "1.1", title: "First section of {title}"}}
+  vocabulary: ["{title}-term"]
+  worked_examples: []
+  exercises: []
+  activities: []
+  figure_kinds: []
+  figures: 0
+  tables: 0
+  summary: []
+curated:
+  status: drafted
+  not_taught: []
+  prerequisites: []
+  difficulty_hooks: []
+"""
+
+
+class BriefTests(unittest.TestCase):
+    """The critic pack: brief.txt = scope-cards brief for exactly the session's lessons —
+    Q4a's session_lessons mapped to NN-*.yaml cards (sort_order ÷ 10), grade from the
+    session row. No DB, no psql — write_brief is the unit under test."""
+
+    def _corpus(self, tmp: Path, cards: dict) -> Path:
+        d = tmp / "corpus" / "maths" / "grade-06" / "scope-cards"
+        d.mkdir(parents=True)
+        for nn, title in cards.items():
+            (d / f"{nn:02d}-{title}.yaml").write_text(
+                MINI_CARD.format(nn=nn, title=title, slug=f"{nn:02d}-{title}"),
+                encoding="utf-8")
+        return tmp / "corpus"
+
+    def _session(self, *lessons) -> dict:
+        return {"grade": 6, "session_lessons": [
+            {"lesson_id": f"00000000-0000-4000-8000-0000000000{n:02x}",
+             "sort_order": n * 10, "name": name} for n, name in lessons]}
+
+    def test_brief_maps_each_session_lesson_to_its_card(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "rows"
+            out.mkdir()
+            corpus = self._corpus(Path(td), {1: "Alpha", 2: "Beta"})
+            session = self._session((1, "Alpha"), (2, "Beta"), (3, "Gamma"))
+            p = cr.write_brief(out, session, corpus)
+            text = p.read_text(encoding="utf-8")
+            self.assertIn("== 01-Alpha.yaml — Alpha", text)
+            self.assertIn("Alpha-term", text)          # the real brief body made it in
+            self.assertIn("== 02-Beta.yaml — Beta", text)
+            self.assertIn("== lesson 03 (Gamma) — no scope card found", text)
+
+    def test_title_mismatch_warns_and_no_corpus_says_so(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "rows"
+            out.mkdir()
+            corpus = self._corpus(Path(td), {1: "Alpha"})
+            session = self._session((1, "Not-Alpha"))
+            p = cr.write_brief(out, session, corpus)
+            self.assertIn("title_en 'Alpha' ≠ lesson name 'Not-Alpha'",
+                          p.read_text(encoding="utf-8"))
+            p2 = cr.write_brief(out, session, None)
+            self.assertIn("grade/corpus unresolved", p2.read_text(encoding="utf-8"))
+
+    def test_lesson_with_no_sort_order_is_named_not_dropped(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "rows"
+            out.mkdir()
+            corpus = self._corpus(Path(td), {1: "Alpha"})
+            session = self._session((1, "Alpha"))
+            session["session_lessons"].append({"lesson_id": "x", "name": "Mystery"})
+            text = cr.write_brief(out, session, corpus).read_text(encoding="utf-8")
+            self.assertIn("== lesson ? (Mystery) — no scope card found", text)
+
+
 if __name__ == "__main__":
     unittest.main()

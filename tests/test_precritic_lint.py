@@ -106,6 +106,30 @@ def lint(run: Path, tmp: Path, *extra):
         capture_output=True, text=True)
 
 
+def lint_plain(run: Path, *extra):
+    """No cards bound — for the rubric (d) and dedup (e) checks, which need no corpus."""
+    return subprocess.run([sys.executable, str(TOOL), str(run), *extra],
+                          capture_output=True, text=True)
+
+
+PART = '      - label: {label}\n        text: "t"\n        approach: "x"\n        final: "1"{lvl}\n'
+
+
+def write_levels_run(tmp: Path, *question_levels) -> Path:
+    """question_levels = [R,M,H]-style lists of level strings (None → the key is absent)."""
+    qs = []
+    for i, levels in enumerate(question_levels, 1):
+        parts = "".join(PART.format(label=chr(96 + k), lvl=f"\n        level: {l}" if l else "")
+                        for k, l in enumerate(levels, 1))
+        qs.append(f'  - n: {i}\n    lessons: [L07]\n    stem: "s"\n    parts:\n{parts}')
+    run = tmp / "run"
+    run.mkdir(parents=True, exist_ok=True)
+    (run / "content.yaml").write_text(
+        'id_seed: "synthetic"\nlessons:\n  L07: placeholder\nquestions:\n' + "".join(qs),
+        encoding="utf-8")
+    return run
+
+
 class PrecriticLintTest(unittest.TestCase):
     # ---- (a) not_taught probes ----------------------------------------------
     def test_probe_in_stem_fails(self):
@@ -238,6 +262,83 @@ class PrecriticLintTest(unittest.TestCase):
             run = make_run(tmp, stem="Colour the numerator.", approach=None, final="2")
             r = lint(run, tmp)
             self.assertNotIn("WARN Q1 tags", r.stdout)   # stem carries "numerator"
+
+    # ---- (d) --rubric medium-hard reads the leaf `level:` keys ---------------
+    def test_rubric_passes_a_clean_set(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_levels_run(Path(td), ["R", "M", "H"], ["M", "H", "H"])
+            r = lint_plain(run, "--rubric", "medium-hard")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("0 fail(s)", r.stdout)
+
+    def test_rubric_fails_under_3_parts(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_levels_run(Path(td), ["M", "H"])
+            r = lint_plain(run, "--rubric", "medium-hard")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("FAIL Q1: 2 leaf part(s)", r.stdout)
+
+    def test_rubric_fails_two_r_parts_and_r_not_first(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_levels_run(Path(td), ["R", "R", "M", "M", "H"])
+            r = lint_plain(run, "--rubric", "medium-hard")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("2 R parts", r.stdout)
+            run2 = write_levels_run(Path(td) / "b", ["M", "R", "H"])
+            r2 = lint_plain(run2, "--rubric", "medium-hard")
+            self.assertEqual(r2.returncode, 1)
+            self.assertIn("the R part is Q1.b — medium-hard allows it only as the first",
+                          r2.stdout)
+
+    def test_rubric_fails_last_not_h(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_levels_run(Path(td), ["R", "M", "M", "H", "M"])
+            r = lint_plain(run, "--rubric", "medium-hard")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("ends on H", r.stdout)
+
+    def test_rubric_fails_under_60_percent_mh(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_levels_run(Path(td), ["R", "M", None, None, "H"])
+            r = lint_plain(run, "--rubric", "medium-hard")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("medium-hard wants ≥60%", r.stdout)
+
+    def test_rubric_fails_under_30_percent_h_overall(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_levels_run(Path(td), ["R", "M", "M", "M", "H"])
+            r = lint_plain(run, "--rubric", "medium-hard")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("medium-hard wants ≥30% H overall", r.stdout)
+
+    def test_rubric_missing_level_is_a_warn_not_a_fail(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_levels_run(Path(td), ["R", None, "M", "H"])
+            r = lint_plain(run, "--rubric", "medium-hard")
+            self.assertIn("WARN Q1.b: no level", r.stdout)
+
+    # ---- (e) --existing: digits-masked Jaccard duplicate warn ----------------
+    def test_existing_duplicate_warns(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run(tmp, stem="Shade 3 of 5 cells in the strip.")
+            ex = write(tmp / "existing.json",
+                       '[{"question_id": "qqq-1", "stem_excerpt": '
+                       '"Shade 9 of 12 cells in the strip."}]')
+            r = lint_plain(run, "--existing", str(ex))
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("WARN Q1 ≈ existing.json:qqq-1", r.stdout)
+            self.assertIn("digits masked", r.stdout)
+
+    def test_existing_unrelated_stem_is_quiet(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run(tmp, stem="Compute the perimeter of the rectangle.")
+            ex = write(tmp / "existing.json",
+                       '[{"question_id": "qqq-1", "stem_excerpt": '
+                       '"Shade 9 of 12 cells in the strip."}]')
+            r = lint_plain(run, "--existing", str(ex))
+            self.assertNotIn("≈", r.stdout)
 
     # ---- usage ---------------------------------------------------------------
     def test_bad_card_spec_and_missing_card_die(self):

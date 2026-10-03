@@ -63,8 +63,11 @@ NAMESPACE = uuid.UUID("6b1c9c6e-3d5e-4f2a-9b8c-7d0e1f2a3b4c")
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 BARE_LABEL = re.compile(r"^[0-9A-Za-z]+$")   # "(a)", "a)", "a.", "a :" — anything punctuated is not bare
 
-Q_KEYS = {"n", "lessons", "stem", "figure", "approach", "final", "parts"}
-P_KEYS = {"label", "text", "figure", "approach", "final", "parts"}
+# `check`/`level` are actor-only keys on leaves — the answers-as-code expression and the R/M/H
+# rubric level (tools/check-answers.py, precritic-lint --rubric). build-staged validates their
+# shape and never emits them into staged.json.
+Q_KEYS = {"n", "lessons", "stem", "figure", "approach", "final", "parts", "check", "level"}
+P_KEYS = {"label", "text", "figure", "approach", "final", "parts", "check", "level"}
 TOP_KEYS = {"id_seed", "lessons", "figures", "questions"}
 
 
@@ -139,12 +142,23 @@ def check_sibling_labels(children, where):
         seen.add(lab)
 
 
+def check_meta(node, where):
+    """`level` ∈ {R,M,H} wherever present; `check` a string expression."""
+    lvl = node.get("level")
+    if lvl is not None and lvl not in ("R", "M", "H"):
+        die(f"{where}: level must be one of R, M, H (got {lvl!r})")
+    chk = node.get("check")
+    if chk is not None and not isinstance(chk, str):
+        die(f"{where}: check must be a string expression (got {chk!r})")
+
+
 def build_part(node, base_id, sort_order, depth, figures, base, where):
     if not isinstance(node, dict):
         die(f"{where}: a part must be a mapping")
     unknown = set(node) - P_KEYS
     if unknown:
         die(f"{where}: unknown part keys {sorted(unknown)} (allowed: {sorted(P_KEYS)})")
+    check_meta(node, where)
     label = node.get("label")
     if not isinstance(label, str) or not BARE_LABEL.match(label.strip() or " "):
         die(f'{where}: label must be BARE text — write "a" not "(a)", "a)" or "a." (got {label!r})')
@@ -185,6 +199,7 @@ def build_question(node, index, figures, lessons, base, seed):
     unknown = set(node) - Q_KEYS
     if unknown:
         die(f"{where}: unknown question keys {sorted(unknown)} (allowed: {sorted(Q_KEYS)})")
+    check_meta(node, f"{where} (q{node.get('n')})")
     n = node.get("n")
     if not isinstance(n, int) or isinstance(n, bool):
         die(f"{where}: 'n' must be an integer question number (got {n!r})")

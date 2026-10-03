@@ -85,6 +85,12 @@ Plan: [`plans/2026-09-29-question-generation-plugin.md`](https://github.com/DevT
    (`PATCH {status: "active"}`), which the tool does not offer. Re-open on Admin `/generate`, or create a new session.
 9. **The critic gets paths, never hints, never actor files (T25).** Keep every actor artefact where the critic is not
    pointed (§2 layout).
+10. **Production runs never repair tools.** On tool friction mid-run (a refusal you route around, a flag that is
+    missing, a gate that skipped), write ONE line to `wt/<topic>/FRICTION.md` — `symptom · workaround · suspected
+    fix` — and continue with the workaround. Tool fixes land in a separate tooling session and their own PR.
+11. **Blueprint variants: at most one per batch** (owner ruling 2026-10-03). A question family reused with new
+    numbers counts as distinct across sessions but never twice in one session — vary the task, not only the digits
+    (precritic-lint `--existing` watches for exactly this).
 
 ## 1. Stable facts — and how to re-verify them
 
@@ -158,7 +164,12 @@ same two checkout paths in the critic's spawn prompt.
      depth ≤ 2. Choose `id_seed`, `n` and labels once — they are the row identity.
    - **Answers** — [`author-question-answers`](../author-question-answers/SKILL.md) §3 (independent derivation + a
      genuine second method), §4 (`approach` + `final` only; provenance goes to `notes.md`, never to `approach`), §5a.
-     Write both methods' results into `notes.md` per leaf.
+     Two actor-only keys now ride on every leaf: `check:` — a small arithmetic expression that must be True
+     (`check: "40 * 23 == 920"`, or `divmod(925, 40) == (23, 5)`; numbers, `+ - * / // % **`, comparisons,
+     `and/or/not`, `ceil floor divmod min max abs sum round sorted int` — check-answers.py's docstring is the
+     whitelist) and `level:` — `R`|`M`|`H`, the rubric level. Every number in `final` should be reachable from the
+     check. Leaves whose answer is not numeric (classify, name) keep their second-method derivation in `notes.md`
+     instead. `build-staged` never emits either key.
    - **Figure specs** — for each planned figure, one entry in `$A/specs/figures.json` per
      [`figure-templates`](../figure-templates/SKILL.md) (the stem's own numbers; the builder refuses any it cannot find).
      ⚠️ **`figure_id` = the figure's staged id** — `Q<n>` for a question figure, `Q<n>.<label>` for a part figure
@@ -181,9 +192,11 @@ same two checkout paths in the critic's spawn prompt.
                                                                    # figures: files (hand-drawn ones too);
                                                                    # a missing <id>-claims.txt fails here
    python3 tools/build-staged.py $A/content.yaml --out $A/staged.json --ids-out $A/ids.json
+   python3 tools/check-answers.py $A                                 # every leaf's `check:` must be True
    node tools/markdown-gate.mjs --fields $A/fields.json              # every text field; any BLOCKED fails (T-QG-7)
    node tools/visual-check.mjs $A/staged.json --claims-dir $A/figures --out wt/<topic>/vc   # mode 1, incl. contact sheet
    python3 tools/precritic-lint.py $A --card <key>=<NN> --grade <g>                          # when --card was passed
+                     [--rubric medium-hard] [--existing $A/existing*.json]                   # auto-added by run-gates
    ```
    A failing gate is fixed in the spec or the builder input, never by hand-editing an emitted file (T-QG-2).
 6. **visual-check mode 1** (inside `run-gates build`; standalone:
@@ -263,7 +276,8 @@ same two checkout paths in the critic's spawn prompt.
     questions, spawn one critic per chunk of ≤ 8, in parallel (profile §7), and merge the reports yourself. The critic is
     **image-blind**: its could-not-check list names the figure look, which step 6b already covered — say so in the
     ledger, do not re-open the PNGs. Compare its R/M/H with your plan line: a gap of more than one level on a part is a
-    MINOR.
+    MINOR. `critic-read.py` also writes `brief.txt` beside the rows — the session's own scope pack — so the critic
+    opens the lesson Markdown only at the sections a finding needs, never whole.
 14. **Fix and re-critique until SATISFIED.** Every BLOCKER/MAJOR/MINOR is fixed or written down as an owner question
     (with the reason). A fix is: edit `content.yaml` (same `id_seed`, `n`, labels) → `run-gates.py build` → 6b (only
     for a figure that changed) → `run-gates.py ship` (`doc put`; `--session-check` only if a figure or stem changed)
@@ -284,7 +298,8 @@ same two checkout paths in the critic's spawn prompt.
 - [ ] 2 dedup: existing.json rows = __ ; stems compared: __
 - [ ] 3 plan: N lines, rubric checked, rule 3 checked
 - [ ] 4 content.yaml + second-method results per leaf in notes.md
-- [ ] 5 run-gates build exit 0 — gates.json: audit + vdd-check per figure (hand-drawn too), staged.json, ids.json = N ids, markdown-gate 0 BLOCKED, mode 1, lint
+- [ ] 5 run-gates build exit 0 — gates.json: audit + vdd-check per figure (hand-drawn too), staged.json, ids.json = N ids, check-answers, markdown-gate 0 BLOCKED, mode 1, lint
+- [ ] FRICTION.md lines: __
 - [ ] 6 contact-light-375.png logged — one line per figure (__ of __)
 - [ ] 7 session id: ________ (in ledger.json AND here — before any further write, T9)
 - [ ] 8–11 run-gates ship exit 0: validate clean · doc get matches staged · --session no CLIPPED · signatures_at_risk 0
