@@ -29,13 +29,16 @@ Each chain STOPS at the first failing stage, prints that stage's exit code plus 
 here too). On success build prints one line per figure (`Q1 audit ok · vdd-check ok ·
 vc PASS 375×131`) then `gates: ok — N figures, M questions, contact sheet <path>`; ship
 quotes the key lines (validate summary, published k/n, read-back 1, t77, provenance, every
-q3: line, the q2 line) then `ship: ok`. Every run writes <run>/gates.json — {stage: rc}.
+q3: line, the q2 line) then `ship: ok`. Every run that reaches stage 1 writes
+<run>/gates.json — {stage: rc} (a die before stage 1 — missing inputs, `--card` sans
+`--grade` — exits 2 without one).
 
 Exit: 0 ok · the first failing stage's code otherwise · 2 usage/missing input.
 """
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import re
 import subprocess
@@ -48,6 +51,10 @@ TAIL = 15
 
 PUBLISH = TOOLS / "playground-publish.py"
 SQLPROOF = TOOLS / "sql-proof.py"
+
+_pl = importlib.util.spec_from_file_location("precritic_lint", TOOLS / "precritic-lint.py")
+pl = importlib.util.module_from_spec(_pl)            # figure_specs — the shared specs normaliser
+_pl.loader.exec_module(pl)
 
 
 def die(msg: str) -> "None":
@@ -108,10 +115,11 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
         die(f"no specs/figures.json in {run}")
     if content is None:
         die(f"no content.yaml in {run}")
-    specs = json.loads(specs_path.read_text(encoding="utf-8"))
-    if isinstance(specs, dict):
-        specs = [specs]
+    specs = pl.figure_specs(json.loads(specs_path.read_text(encoding="utf-8")))
     fig_ids = [s.get("figure_id") for s in specs if isinstance(s, dict) and s.get("figure_id")]
+    if specs and not fig_ids:
+        die("specs/figures.json is non-empty but yielded no figure ids — "
+            "nothing would be audited or vdd-checked")
     gates: dict = {}
     per_fig: dict[str, dict] = {f: {} for f in fig_ids}
 
@@ -193,10 +201,20 @@ def doc_diff(staged_path: Path, server_path: Path) -> tuple[list[str], list[str]
     got = json.loads(server_path.read_text(encoding="utf-8")).get("questions")
     if not isinstance(want, list) or not isinstance(got, list):
         return ["<doc shape: questions is not a list>"], []
-    got_by_id = {g.get("question_id"): g for g in got if isinstance(g, dict)}
     diffs: list[str] = []
-    for w in want:
-        wid, qn = w.get("question_id"), w.get("question_number", "?")
+    got_by_id: dict = {}
+    for i, g in enumerate(got):
+        if not isinstance(g, dict) or not g.get("question_id"):
+            diffs.append(f"server question[{i}]: not a question object with a question_id")
+            continue
+        got_by_id[g["question_id"]] = g
+    want_ids: set = set()
+    for i, w in enumerate(want):
+        if not isinstance(w, dict) or not w.get("question_id"):
+            diffs.append(f"staged question[{i}]: not a question object with a question_id")
+            continue
+        wid, qn = w["question_id"], w.get("question_number", "?")
+        want_ids.add(wid)
         g = got_by_id.get(wid)
         if g is None:
             diffs.append(f"Q{qn} ({wid}): missing on the server")
@@ -206,9 +224,9 @@ def doc_diff(staged_path: Path, server_path: Path) -> tuple[list[str], list[str]
         if w2 != g2:
             keys = sorted({k for k in set(w2) | set(g2) if w2.get(k) != g2.get(k)})
             diffs.append(f"Q{qn}: {keys}")
-    want_ids = {w.get("question_id") for w in want}
-    extras = [f"Q{g.get('question_number', '?')} ({g.get('question_id')})"
-              for g in got if g.get("question_id") not in want_ids]
+    extras = [f"Q{g.get('question_number', '?')} ({g['question_id']})"
+              for g in got
+              if isinstance(g, dict) and g.get("question_id") and g["question_id"] not in want_ids]
     return diffs, extras
 
 

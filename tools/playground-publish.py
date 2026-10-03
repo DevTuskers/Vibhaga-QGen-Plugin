@@ -365,12 +365,14 @@ def q3_after_logout(api: PlaygroundApi, *, sid: str | None, ledger: Path | None,
     block = sqlp.slice_proof(sqlp.QUERIES.read_text(encoding="utf-8"), "Q3")
     try:
         row = sqlp.run_proof(sqlp.cr.pg_env_from_url(url), block, [("actor_id", uid)], "q3")
-    except SystemExit:
+    except SystemExit as e:
         row = None                                      # run_proof printed the psql error above
+        q3_why = "psql failed (its error is above)" if e.code == 1 \
+            else f"the proof could not run (exit {e.code})"   # e.g. psql not on PATH
     ok = bool(row) and row.get("ok") is True
     counts = {k: v for k, v in (row or {}).items() if k != "ok"}
     if row is None:
-        log("q3: NOT ok — psql failed (its error is above)")
+        log(f"q3: NOT ok — {q3_why}")
     else:
         log(" ".join(f"{k}={sqlp.show(v)}" for k, v in row.items()))
         bad = sqlp.failing_q3(counts)

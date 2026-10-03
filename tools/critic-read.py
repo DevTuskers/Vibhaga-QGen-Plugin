@@ -454,8 +454,9 @@ def main(argv: list[str] | None = None) -> int:
         changed = sorted((q for q in cur if prev.get(q) != cur[q]), key=qnum)
         carried = sorted((q for q in cur if prev.get(q) == cur[q]), key=qnum)
         gone = sorted((q for q in prev if q not in cur), key=qnum)
+        changed_set = set(changed)
         for qid, f, g in per_q:
-            if qid in set(changed):
+            if qid in changed_set:
                 fields += f
                 figs += g
         (out_dir / "carried.txt").write_text(

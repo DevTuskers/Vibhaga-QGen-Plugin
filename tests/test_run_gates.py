@@ -162,6 +162,36 @@ class BuildTest(unittest.TestCase):
             self.assertIn("precritic-lint: skipped — no --card", out.getvalue())
             self.assertFalse(any("precritic" in " ".join(c) for c in stub.calls))
 
+    def test_dict_keyed_specs_gate_every_figure(self):
+        # a {figure_id: spec} map yields its values — the shared normalisation, so stage 2
+        # audits/vdd-checks each figure instead of silently gating zero
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "specs" / "figures.json").write_text(json.dumps(
+                {"Q1": {"template": "shaded_grid", "figure_id": "Q1"},
+                 "Q2": {"template": "number_line", "figure_id": "Q2"}}), encoding="utf-8")
+            stub = StubRunner()
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run), runner=stub)
+            self.assertEqual(rc, 0, out.getvalue())
+            gates = json.loads((run / "gates.json").read_text())
+            for k in ("audit:Q1", "audit:Q2", "vdd-check:Q1", "vdd-check:Q2"):
+                self.assertIn(k, gates)
+            self.assertIn("2 figures", out.getvalue())
+
+    def test_nonempty_specs_with_no_figure_ids_dies_before_stage_1(self):
+        # a non-empty file that yields zero figure ids must not report "gates: ok — 0 figures"
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "specs" / "figures.json").write_text(
+                json.dumps([{"template": "shaded_grid"}]), encoding="utf-8")  # no figure_id
+            stub = StubRunner()
+            with self.assertRaises(SystemExit) as e:
+                rg.cmd_build(build_args(run), runner=stub)
+            self.assertEqual(e.exception.code, 2)
+            self.assertEqual(stub.calls, [])
+
     def test_card_without_grade_is_usage_error(self):
         with tempfile.TemporaryDirectory() as td:
             run = make_run(Path(td))
@@ -270,6 +300,23 @@ class ShipTest(unittest.TestCase):
                 rc = rg.cmd_ship(ship_args(run), runner=stub)
             self.assertEqual(rc, 1)
             self.assertIn("missing on the server", out.getvalue())
+            self.assertFalse(any(" publish " in f" {' '.join(c)} " for c in stub.calls))
+
+    def test_doc_diff_fails_cleanly_on_malformed_entries(self):
+        # a non-dict staged entry or a server row without question_id → FAIL lines + exit 1,
+        # never a traceback
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            staged = json.loads((run / "staged.json").read_text())
+            staged["questions"].append("not-a-dict")
+            (run / "staged.json").write_text(json.dumps(staged), encoding="utf-8")
+            stub = StubRunner()
+            stub.doc_get_questions = [dict(q) for q in staged["questions"][:2]] + [{"no_id": 1}]
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_ship(ship_args(run), runner=stub)
+            self.assertEqual(rc, 1)
+            self.assertIn("not a question object", out.getvalue())
             self.assertFalse(any(" publish " in f" {' '.join(c)} " for c in stub.calls))
 
     def test_publish_q3_not_ok_propagates_exit_5(self):

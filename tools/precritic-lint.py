@@ -64,6 +64,16 @@ DIGIT_TOKEN = re.compile(r"\d+(?:\.\d+)?")
 WORD_RE = re.compile(r"[^\W\d_]+")        # letters only, any script
 
 
+def figure_specs(specs) -> list:
+    """Normalise a specs/figures.json payload to a list of spec dicts: a bare list passes
+    through, a dict keyed by figure_id yields its values, any other dict is one spec.
+    run-gates.py imports this so both tools read the same file the same way."""
+    if isinstance(specs, dict):
+        return list(specs.values()) if all(isinstance(v, dict) for v in specs.values()) \
+            else [specs]
+    return specs if isinstance(specs, list) else []
+
+
 def die(msg: str) -> "None":
     print(f"{PROG}: {msg}", file=sys.stderr)
     sys.exit(2)
@@ -207,10 +217,7 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
     # (b) figure spec descriptions must not hand over readable values (T125)
     specs_path = run / "specs" / "figures.json"
     if specs_path.is_file():
-        specs = json.loads(specs_path.read_text(encoding="utf-8"))
-        if isinstance(specs, dict):
-            specs = list(specs.values()) if all(isinstance(v, dict) for v in specs.values()) \
-                else [specs]
+        specs = figure_specs(json.loads(specs_path.read_text(encoding="utf-8")))
         for spec in specs:
             if not isinstance(spec, dict):
                 continue
