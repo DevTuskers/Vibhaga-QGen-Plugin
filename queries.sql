@@ -94,16 +94,18 @@ FROM r;
 -- ⚠️ Runs on the ADMIN AUTH project, never the content project: zero sessions for a user that
 -- does not exist there proves nothing. `ok` therefore demands actor_exists = 1, and refuses a
 -- database that has the content schema (public.question_batches present = wrong project).
--- Counts only — no token, no email, no row is selected. `sessions` deliberately counts EVERY row,
+-- The counts come from qgen.q3(actor uuid) — a counts-only SECURITY DEFINER function owned by
+-- postgres, installed once per skills/generate/SKILL.md step 11: RLS is enabled on auth.users /
+-- auth.sessions / auth.refresh_tokens with NO policies, so a reader role (never BYPASSRLS) sees
+-- zero rows and a direct count would lie "revoked". On the content project the function does not
+-- exist — this query errors, which reads as NOT ok.
+-- Counts only — no token, no email, no row is returned. `sessions` deliberately counts EVERY row,
 -- expired ones included: a global logout deletes them all, so any surviving row means "not revoked".
 -- ============================================================================================
 
-SELECT u.actor_exists, s.sessions, t.active_refresh_tokens, w.wrong_project,
-       (u.actor_exists = 1 AND s.sessions = 0 AND t.active_refresh_tokens = 0 AND NOT w.wrong_project) AS ok
-FROM (SELECT count(*) AS actor_exists FROM auth.users WHERE id = :'actor_id'::uuid) u,
-     (SELECT count(*) AS sessions FROM auth.sessions WHERE user_id = :'actor_id'::uuid) s,
-     (SELECT count(*) AS active_refresh_tokens FROM auth.refresh_tokens
-       WHERE user_id = (:'actor_id')::uuid::text AND revoked IS NOT TRUE) t,
+SELECT f.actor_exists, f.sessions, f.active_refresh_tokens, w.wrong_project,
+       (f.actor_exists = 1 AND f.sessions = 0 AND f.active_refresh_tokens = 0 AND NOT w.wrong_project) AS ok
+FROM qgen.q3(:'actor_id'::uuid) f,
      (SELECT to_regclass('public.question_batches') IS NOT NULL AS wrong_project) w;
 
 -- ============================================================================================

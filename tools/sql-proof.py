@@ -6,7 +6,9 @@
 
 q2 runs queries.sql Q2 — the post-publish proof — on the CONTENT database; q3 runs Q3 — the auth
 revocation proof — on the ADMIN AUTH project (a different Supabase project: zero sessions for a user
-that does not exist there proves nothing, which is why Q3 carries the wrong_project check). Each block
+that does not exist there proves nothing, which is why Q3 carries the wrong_project check; and the
+counts come from `qgen.q3(actor)`, a counts-only SECURITY DEFINER function — RLS on auth.* has no
+policies, so a non-BYPASSRLS reader would silently see zero rows). Each block
 is sliced out of the REAL queries.sql (from its `-- Q2` / `-- Q3` header comment to the statement's
 terminating `;`), then guarded locally: ONE statement starting WITH or SELECT — Q2 opens `WITH`, so
 critic-read's SELECT-only assertion does not apply — and no write token (a smoke check; the read-only
@@ -82,29 +84,63 @@ def slice_proof(sql_text: str, marker: str) -> str:
     return raw  # sent to psql WITH its comments, same as critic-read
 
 
-def resolve_auth_url(auth_env: str | None) -> str:
+def find_auth_url(auth_env: str | None, env_path: Path | None = None) -> tuple[str | None, str]:
     """`--auth-env` file → VIBHAGA_ADMIN_AUTH_DB_URL env → that key's line in the admin env file
-    (VIBHAGA_ADMIN_ENV wins, else _admin_auth.ENV_PATH). Prints the SOURCE — never the value."""
+    (env_path when given, else VIBHAGA_ADMIN_ENV, else _admin_auth.ENV_PATH). Returns
+    (url, source) or (None, reason); prints nothing — callers announce the source or the miss.
+    Shared with playground-publish.py's post-logout Q3 — resolution order is never copied."""
     if auth_env:
         p = Path(auth_env)
         if not p.is_file():
-            die(f"--auth-env {auth_env} is not a readable file")
+            return None, f"--auth-env {auth_env} is not a readable file"
         url = cr.read_env(p).get("VIBHAGA_ADMIN_AUTH_DB_URL")
         if not url:
-            die(f"--auth-env {auth_env} has no VIBHAGA_ADMIN_AUTH_DB_URL line")
-        print(f"{PROG}: auth DB URL from --auth-env {auth_env}", file=sys.stderr)
-        return url
+            return None, f"--auth-env {auth_env} has no VIBHAGA_ADMIN_AUTH_DB_URL line"
+        return url, f"--auth-env {auth_env}"
     if os.environ.get("VIBHAGA_ADMIN_AUTH_DB_URL"):
-        print(f"{PROG}: auth DB URL from VIBHAGA_ADMIN_AUTH_DB_URL env", file=sys.stderr)
-        return os.environ["VIBHAGA_ADMIN_AUTH_DB_URL"]
-    env_path = (Path(os.environ["VIBHAGA_ADMIN_ENV"]) if os.environ.get("VIBHAGA_ADMIN_ENV")
-                else _auth.ENV_PATH)
-    url = cr.read_env(env_path).get("VIBHAGA_ADMIN_AUTH_DB_URL") if env_path.is_file() else None
-    if not url:
-        die("no VIBHAGA_ADMIN_AUTH_DB_URL — not in the environment, no --auth-env file, and no line "
-            f"in {env_path} (the Admin Auth project URL lives in Vibhaga-Admin/.env.local or the environment)")
-    print(f"{PROG}: auth DB URL from {env_path}", file=sys.stderr)
-    return url
+        return os.environ["VIBHAGA_ADMIN_AUTH_DB_URL"], "VIBHAGA_ADMIN_AUTH_DB_URL env"
+    ep = env_path or (Path(os.environ["VIBHAGA_ADMIN_ENV"]) if os.environ.get("VIBHAGA_ADMIN_ENV")
+                      else _auth.ENV_PATH)
+    url = cr.read_env(ep).get("VIBHAGA_ADMIN_AUTH_DB_URL") if ep.is_file() else None
+    if url:
+        return url, str(ep)
+    return None, ("not in the environment, no --auth-env file, and no line in "
+                  f"{ep} (the Admin Auth project URL lives in Vibhaga-Admin/.env.local or the environment)")
+
+
+def resolve_auth_url(auth_env: str | None) -> str:
+    """The CLI wrapper over find_auth_url — prints the SOURCE (never the value) or dies."""
+    url, src = find_auth_url(auth_env)
+    if url:
+        print(f"{PROG}: auth DB URL from {src}", file=sys.stderr)
+        return url
+    die(src if auth_env else f"no VIBHAGA_ADMIN_AUTH_DB_URL — {src}")
+
+
+# psql connection errors echo the server's host and resolved IP (`connection to server at
+# "db.<ref>.example.co" (1.2.3.4) …`, `could not translate host name "…"`) — and these lines are
+# printed into transcripts, so every echoed stderr line passes through redact() first.
+DNS_RE = re.compile(r"(?<![\w.])(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b")        # a dotted DNS name
+QUOTED_HOST_RE = re.compile(r'((?:server at|host name)\s+")[^"]*"')  # psql quotes the dialled host
+IPV4_RE = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
+IPV6_RE = re.compile(r"\b(?:[0-9A-Fa-f]{0,4}:){2,}[0-9A-Fa-f:]*")
+USER_RE = re.compile(r'user\s+"[^"]*"')
+
+
+def redact(line: str, host: str | None = None) -> str:
+    """Blank anything that could identify the DB before a psql stderr line is echoed: the URL's
+    own host, whatever `server at "…"`/`host name "…"` quotes (custom domains included), any DNS
+    name containing "supabase" (a dotted name like `auth.users` survives — identifiers are not
+    hosts), IP literals, and `user "<name>"`. The error wording itself — ERROR:/FATAL:/permission
+    denied — is what we keep."""
+    if host:
+        line = line.replace(host, "<host>")
+    line = QUOTED_HOST_RE.sub(r'\1<host>"', line)
+    line = DNS_RE.sub(lambda m: "<host>" if "supabase" in m.group(0).lower() else m.group(0),
+                      line)
+    line = IPV4_RE.sub("<ip>", line)
+    line = IPV6_RE.sub("<ip>", line)
+    return USER_RE.sub('user "<user>"', line)
 
 
 def run_proof(pg: dict[str, str], block: str, variables: list[tuple[str, str]], tag: str) -> dict:
@@ -121,9 +157,25 @@ def run_proof(pg: dict[str, str], block: str, variables: list[tuple[str, str]], 
     except FileNotFoundError:
         die("psql is not on PATH")
     if proc.returncode != 0:
-        err = proc.stderr.strip().splitlines()
+        # psql stderr carries no URL and no password, but a connection failure DOES carry the
+        # host and its IP — every echoed line is redact()ed first. Lead with the ERROR:/FATAL:
+        # line (psql prefixes it "psql: error:" so it may sit mid-line), then up to the last 3
+        # stderr lines — the owner once saw only `^`, the caret under a psql position marker.
+        err = [redact(l.strip(), pg.get("PGHOST"))
+               for l in proc.stderr.splitlines() if l.strip()]
+        flagged = next((l for l in err if re.search(r"(ERROR|FATAL):", l)), None)
+        tail = err[-3:]
+        shown = ([flagged] if flagged and flagged not in tail else []) + tail
         print(f"{PROG}: psql failed on {tag} (exit {proc.returncode})"
-              + (f" — {err[-1]}" if err else ""), file=sys.stderr)
+              + ("" if shown else " — no stderr"), file=sys.stderr)
+        for l in shown:
+            print(f"{PROG}:   {l}", file=sys.stderr)
+        if any("qgen" in l and "does not exist" in l for l in err):
+            print(f"{PROG}: qgen.q3 missing — wrong project, or the setup SQL in "
+                  "skills/generate/SKILL.md step 11 was not run", file=sys.stderr)
+        elif any("permission denied" in l for l in err):
+            print(f"{PROG}: the Q3 role needs USAGE on schema qgen and EXECUTE on qgen.q3 — "
+                  "see the one-time setup in skills/generate/SKILL.md step 11", file=sys.stderr)
         raise SystemExit(1)
     lines = [l for l in proc.stdout.splitlines() if l.strip()]
     if len(lines) != 2:

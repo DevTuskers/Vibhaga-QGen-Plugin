@@ -49,7 +49,7 @@ case "$data" in
   *) echo "no Q marker in stdin" >&2; exit 8;;
 esac
 if [ -n "$FAKE_PSQL_EXIT" ]; then
-  echo "psql: synthetic failure" >&2
+  if [ -n "$FAKE_PSQL_ERR" ]; then printf '%s' "$FAKE_PSQL_ERR" >&2; else echo "psql: synthetic failure" >&2; fi
   exit "$FAKE_PSQL_EXIT"
 fi
 printf '%s\\n' "$FAKE_PSQL_OUT"
@@ -134,6 +134,7 @@ class EndToEnd(unittest.TestCase):
             # empty defaults: the stub treats "" as unset and ambient leakage can't reach a test
             "FAKE_PSQL_OUT": "",
             "FAKE_PSQL_EXIT": "",
+            "FAKE_PSQL_ERR": "",
         }
 
     def tearDown(self):
@@ -177,6 +178,62 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("psql failed on q2", err)
         self.assertIn("synthetic failure", err)
+
+    def test_psql_failure_shows_the_error_line_and_the_tail(self):
+        # the owner once saw only `^` — the caret under psql's position marker. The ERROR/FATAL
+        # line plus up to the last 3 stderr lines must print.
+        canned = ("psql: error: connection to server failed\n"
+                  'FATAL:  password authentication failed for user "proof"\n'
+                  "LINE 1: SELECT bogus\n"
+                  "       ^\n")
+        rc, _, err = self.run_main("q3", "--actor", ACTOR,
+                                   extra={"FAKE_PSQL_EXIT": "2", "FAKE_PSQL_ERR": canned})
+        self.assertEqual(rc, 1)
+        self.assertIn('FATAL:  password authentication failed for user "<user>"', err)
+        self.assertIn("LINE 1: SELECT bogus", err)
+        self.assertIn("^", err)
+        self.assertNotIn("s3cret", err)
+        self.assertNotIn('"proof"', err)
+
+    def test_psql_failure_redacts_host_ip_and_user(self):
+        # a connection failure echoes the server host + resolved IP — they must be blanked
+        canned = ('psql: error: connection to server at "db.abc123.supabase.example.test" '
+                  '(203.0.113.7), port 6543 failed: Connection refused\n'
+                  'psql: error: could not translate host name "auth.invalid.test" to address\n'
+                  'FATAL:  password authentication failed for user "proof"\n')
+        rc, _, err = self.run_main("q3", "--actor", ACTOR,
+                                   extra={"FAKE_PSQL_EXIT": "2", "FAKE_PSQL_ERR": canned})
+        self.assertEqual(rc, 1)
+        self.assertNotIn("db.abc123.supabase.example.test", err)
+        self.assertNotIn("auth.invalid.test", err)   # the URL's own host is redacted too
+        self.assertNotIn("203.0.113.7", err)
+        self.assertNotIn('"proof"', err)
+        self.assertIn("<host>", err)
+        self.assertIn("<ip>", err)
+        self.assertIn('user "<user>"', err)
+        self.assertIn("Connection refused", err)     # the error wording survives
+
+    def test_psql_missing_qgen_function_adds_the_setup_hint(self):
+        # on the content project (or before the one-time setup) qgen.q3 is absent
+        canned = ('ERROR:  function qgen.q3(uuid) does not exist\n'
+                  "LINE 1: ...FROM qgen.q3('00000000-0000-4000-8000-0000000000f0'::uuid) f\n"
+                  "                 ^\n"
+                  "HINT:  No function matches the given name and argument types.\n")
+        rc, _, err = self.run_main("q3", "--actor", ACTOR,
+                                   extra={"FAKE_PSQL_EXIT": "3", "FAKE_PSQL_ERR": canned})
+        self.assertEqual(rc, 1)
+        self.assertIn("qgen.q3 missing", err)
+        self.assertIn("step 11", err)
+
+    def test_psql_permission_denied_adds_the_grant_hint(self):
+        canned = ("ERROR:  permission denied for function q3\n"
+                  "LINE 1: ...qgen.q3(...\n"
+                  "                 ^\n")
+        rc, _, err = self.run_main("q3", "--actor", ACTOR,
+                                   extra={"FAKE_PSQL_EXIT": "3", "FAKE_PSQL_ERR": canned})
+        self.assertEqual(rc, 1)
+        self.assertIn("USAGE on schema qgen and EXECUTE on qgen.q3", err)
+        self.assertIn("step 11", err)
 
     def test_q2_argv_never_carries_the_url(self):
         vals = [1, 4, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, "t"]

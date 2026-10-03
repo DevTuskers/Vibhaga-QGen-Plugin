@@ -137,6 +137,27 @@ test("target: ONE result per label — the least-quantised width governs rows an
   assert.ok(good.labels.every((row) => row.target_u === 25.9 && row.ok === true));
 });
 
+test("aspect: a figure over 2× as tall as wide fails — a phone screen can't hold it", () => {
+  const tall = doc([]);
+  tall.canvas = { width: 66, height: 426 }; // the W8 1×10 shaded grid — rendered 375×2253
+  const bad = assess({ doc: tall, widths: W([]) });
+  assert.equal(bad.verdict, "FAIL");
+  assert.ok(rules(bad).has("aspect"));
+  assert.equal(bad.aspect.ratio, 6.45);
+  const wide = doc([]);
+  wide.canvas = { width: 426, height: 213 };
+  const good = assess({ doc: wide, widths: W([]) });
+  assert.equal(good.aspect.ratio, 0.5);
+  assert.ok(!rules(good).has("aspect"));
+});
+
+test("aspect: the measured 375 viewBox governs when present, not doc.canvas", () => {
+  const d = doc([]); // canvas 300×260 — under 2.0 by itself
+  const tall = assess({ doc: d, widths: [{ width: 375, pxPerUnit: 1, viewBox: [0, 0, 100, 250], labels: [] }] });
+  assert.equal(tall.aspect.ratio, 2.5);
+  assert.ok(rules(tall).has("aspect"));
+});
+
 test("arc (explicit sweep): numeral inside the drawn span passes, opposite side fails", () => {
   const d = doc([
     { id: "arcB", type: "arc", center: [100, 100], r: 40, start: 0, end: 90, sweep: "cw" },

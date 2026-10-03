@@ -33,9 +33,10 @@ Plan: [`plans/2026-09-29-question-generation-plugin.md`](https://github.com/DevT
 > clicks **Go live** on the Admin `/generate` page. Nothing in this skill, and nothing the tools can do, lowers that
 > flag.
 
-**Tools (all existing, none forked):** `tools/build-staged.py` · `tools/vdd_templates.py` · `tools/audit-claim-set.py` ·
-`tools/vdd-check.mjs` · `tools/visual-check.mjs` · `tools/playground-publish.py` · `tools/sql-proof.py` (Q2/Q3) ·
-`tools/critic-read.py` (the critic runs it). **Rule skills:** [`scope-cards`](../scope-cards/SKILL.md) ·
+**Tools (all existing, none forked):** `tools/run-gates.py` (the build and ship chains) · `tools/scope-cards.py`
+(`brief`, `draft`, `check`) · `tools/build-staged.py` · `tools/vdd_templates.py` · `tools/audit-claim-set.py` ·
+`tools/vdd-check.mjs` · `tools/visual-check.mjs` · `tools/precritic-lint.py` · `tools/playground-publish.py` ·
+`tools/sql-proof.py` (Q2/Q3) · `tools/critic-read.py` (the critic runs it). **Rule skills:** [`scope-cards`](../scope-cards/SKILL.md) ·
 [`author-question-text`](../author-question-text/SKILL.md) (S4) · [`structure-question-parts`](../structure-question-parts/SKILL.md) (S5) ·
 [`figure-templates`](../figure-templates/SKILL.md) · [`read-figure-claim-set`](../read-figure-claim-set/SKILL.md) (S6a) ·
 [`draw-and-verify-question-vdd`](../draw-and-verify-question-vdd/SKILL.md) (S6b) · [`visual-check`](../visual-check/SKILL.md) ·
@@ -49,6 +50,11 @@ Plan: [`plans/2026-09-29-question-generation-plugin.md`](https://github.com/DevT
 > while re-threading the session id, scope, ledger and ids that `playground-publish` already owns — the fork the plan
 > forbids. The two steps with no tool were the ones done by hand and got wrong: Q2/Q3 typed into `psql` (W4's critic
 > found a DB URL on psql's argv) and the publish ids file. Those got `tools/sql-proof.py` and `build-staged --ids-out`.
+>
+> **W9 (2026-10-02):** `tools/run-gates.py` now drives the two segments that have no lead step inside them —
+> `build` covers steps 5–6 (and the pre-critic lint when `--card` is given), `ship` covers 8–11. Every lead-only step
+> still sits between them — the plan, the spec, the PNG look, the critic judgment — so the W7 decision stands: a chain
+> of existing commands, never a forked driver.
 
 ---
 
@@ -101,9 +107,9 @@ Plan: [`plans/2026-09-29-question-generation-plugin.md`](https://github.com/DevT
 |---|---|---|
 | 1 scope statement · 2 dedup judgment · 3 plan | **lead** | judgment: what the lesson teaches, what counts as a copy |
 | 4 `content.yaml` — stems, parts, answers, figure specs (which template, which stem numbers) | **lead** | the content *is* the product; a delegated stem or answer is unreviewed authorship |
-| 5 template build, audit, vdd-check · 6 visual-check mode 1 · 7–9 session, validate, `doc put`, mode 2 · 10 publish · 11 proofs | mechanical (delegable: give exact commands and the run dir; ask for exit codes + the quoted lines) | each is one command whose exit code is the verdict |
-| 6b one `light-375.png` look per figure | **lead** | the five metric rules miss wrong-edge labels, legibility, the wrong arc (visual-check "LOOK") |
-| 12 critic spawn, finding triage, R/M/H comparison · 13 fix decisions · 14 logbook line | **lead** | independence and judgment; the critic is not told what you doubt |
+| 5–6 `run-gates.py build` · 7 session create · 8–11 `run-gates.py ship` · 12 pre-critic lint FAILs | mechanical (delegable: give exact commands and the run dir; ask for exit codes + the quoted lines) | each is one command whose exit code is the verdict |
+| 6b the contact sheet look | **lead** | the six metric rules miss wrong-edge labels, legibility, the wrong arc (visual-check "LOOK") |
+| 13 critic spawn, finding triage, R/M/H comparison · 14 fix decisions · 15 logbook line | **lead** | independence and judgment; the critic is not told what you doubt |
 
 ### Run layout (set once)
 
@@ -122,11 +128,13 @@ same two checkout paths in the critic's spawn prompt.
 
 ### The steps
 
-1. **Read the scope card, then the lesson.** Open `maths/grade-NN/scope-cards/<NN>-<slug>.yaml` first. The card *is*
-   the scope statement: `sections` + `summary` + `vocabulary` + `not_taught` say what is and is not taught;
-   `worked_examples` + `exercises` are the don't-copy list; `figure_kinds` are reusable *kinds* of figure;
-   `difficulty_hooks` anchor R/M/H. Then read the lesson file whole, every figure `**Description:**` included. Write the
-   scope statement into `notes.md`.
+1. **Read the scope card, then the lesson.** `python3 tools/scope-cards.py brief <NN> --grade <g>` prints the
+   ~80-line brief for the card — sections, vocabulary, worked examples, exercises, activities, `figure_kinds` and the
+   whole curated block. The card *is* the scope statement: `sections` + `summary` + `vocabulary` + `not_taught` say
+   what is and is not taught; `worked_examples` + `exercises` are the don't-copy list; `figure_kinds` are reusable
+   *kinds* of figure; `difficulty_hooks` anchor R/M/H. Then open the lesson file **only at the sections and anchors
+   the plan uses** — `grep -n` the card's `source.file` for the section headings and each figure's
+   `**Description:**` — never read it whole. Write the scope statement into `notes.md`.
    - **O/L:** composed from the G10 + G11 *scope cards* via Vibhaga-Docs `lessons/ol/mathematics.md`, tagged with O/L
      lesson ids (owner ruling 2026-09-29). **Refused until BOTH card sets exist** (plan OD-3). Never copy a card into
      this public repo.
@@ -161,23 +169,35 @@ same two checkout paths in the critic's spawn prompt.
      ([`read-figure-claim-set`](../read-figure-claim-set/SKILL.md) §2.3), then
      [`draw-and-verify-question-vdd`](../draw-and-verify-question-vdd/SKILL.md) §3–§5. A real `a11y.title` and
      `a11y.description`, and the description never states what is asked (**T125**).
-5. **Build figures, then the doc** (mechanical):
+5. **Build figures, then the doc** (mechanical) — one command runs the whole segment:
+   `python3 tools/run-gates.py build $A --medium <medium> --card <lesson-key>=<NN> --grade <g>` — stops at the
+   first failing stage with its last ~15 lines, prints one `Q<n> audit ok · vdd-check ok · vc PASS WxH` line per
+   figure, and writes `$A/gates.json`. (Drop `--card` and the pre-critic lint is skipped — say so.) What it runs:
    ```
    python3 tools/vdd_templates.py build $A/specs/figures.json --out $A/figures/
    python3 tools/audit-claim-set.py $A/figures/<id>-claims.txt                    # each: exit 0
    node tools/vdd-check.mjs $A/figures/<id>.json --claims $A/figures/<id>-claims.txt --medium <medium>  # each: 0 findings
    python3 tools/build-staged.py $A/content.yaml --out $A/staged.json --ids-out $A/ids.json
+   node tools/visual-check.mjs $A/staged.json --claims-dir $A/figures --out wt/<topic>/vc   # mode 1, incl. contact sheet
+   python3 tools/precritic-lint.py $A --card <key>=<NN> --grade <g>                          # when --card was passed
    ```
    A failing gate is fixed in the spec or the builder input, never by hand-editing an emitted file (T-QG-2).
-6. **visual-check mode 1** (mechanical) — `node tools/visual-check.mjs $A/staged.json --claims-dir $A/figures --out wt/<topic>/vc`
-   → exit 0, and no `no claim set` warning. **6b, lead:** open each figure's `wt/<topic>/vc/<id>/light-375.png` **once,
-   one per `read`**, and write one line per figure
-   into `notes.md` the moment it is seen (what it shows; anything wrong). Check the PNG's dimensions too — a
-   canvas far taller than wide renders huge at 375 px (the W8 1×10 shaded grid came out 375×2253) and no gate
-   flags it; respecify the grid if it does. A defect → back to step 4/5.
+6. **visual-check mode 1** (inside `run-gates build`; standalone:
+   `node tools/visual-check.mjs $A/staged.json --claims-dir $A/figures --out wt/<topic>/vc`)
+   → exit 0, and no `no claim set` warning. **6b, lead:** open `wt/<topic>/vc/contact-light-375.png` **once** —
+   every figure's light-375 render at native size with its id captioned — and write one line per figure into
+   `notes.md` the moment it is seen (what it shows; anything wrong; its pixel dimensions from the verdict line).
+   Open a single figure's `light-375.png` only when the sheet shows a problem or is too small to judge — still one
+   image per `read`. A defect → back to step 4/5.
 7. **Create the session** (once): `python3 $T session create --name "<what> — G<g> <lesson> <date>" --scope grade=<g>,subject=Mathematics,medium=<medium> --lessons <ids> --ledger $A/ledger.json`.
    Copy the printed id into `RUN.md` now.
-8. **Validate until clean:** `python3 $T validate <sid> --staged $A/staged.json` → exit 0. Fix every error; fix every
+8. **Validate until clean** — steps 8–11 in one command (the default):
+   `python3 tools/run-gates.py ship $A --sid <sid> --scope <same as step 7> --session-check` — runs validate →
+   `doc put` → `doc get` (compares against `staged.json`, ignoring the server-added `published`/`published_at`) →
+   visual-check `--session` → publish dry-run → publish → Q2, quoting each tool's key lines and stopping at the
+   first failure; exit 5 propagates a `q3: NOT ok`. The per-step commands below are what it runs — use them singly
+   when only one stage needs re-running.
+   `python3 $T validate <sid> --staged $A/staged.json` → exit 0. Fix every error; fix every
    warning or write why it stays.
 9. **Save and see it:** `python3 $T doc put <sid> --staged $A/staged.json --ledger $A/ledger.json`, then
    `doc get <sid> --out $A/server.json` and confirm it is the doc you meant. Then
@@ -189,14 +209,42 @@ same two checkout paths in the critic's spawn prompt.
     `--accept-signatures 0` on the real publish too; it refuses (exit 4) without it. Exit 0 is the only success; quote
     "published k/n", "read-back 1: staged doc confirms …", `t77: N question(s) · N comparisons · 0 mismatch(es)` and
     "provenance: N id(s) · OK". Exit 1 = staged and live disagree; the run is failed until they agree (**T77**).
+    After the logout the tool runs Q3 itself when `VIBHAGA_ADMIN_AUTH_DB_URL` resolves: `q3: ok` (counts land in the
+    ledger under the session) · `q3: PENDING — no VIBHAGA_ADMIN_AUTH_DB_URL; …` (prove by hand, step 11) ·
+    `q3: NOT ok — <counts>` turns an otherwise-successful write into exit 5.
 11. **Prove it by SQL:** `python3 tools/sql-proof.py q2 <sid> --expected <N> --out $A/q2.json` → `q2: ok` (count,
-    flagged, published, paperless, scope, 0 signed, 0 unanswered leaves). After the **last** network subcommand,
-    `python3 tools/sql-proof.py q3 --actor <user id printed on logout> --out $A/q3.json` → `q3: ok` on the Admin Auth
-    project. `q3` exits 2 when no `VIBHAGA_ADMIN_AUTH_DB_URL` is provisioned (true on the owner's laptop on
-    2026-10-02): then run the Q3 `SELECT`, actor id substituted, through the Supabase MCP `execute_sql` on the **Admin
-    Auth** project, and record its row (`actor_exists`, `sessions`, `active_refresh_tokens`, `wrong_project`, `ok`) in `q3.json` by hand — same `ok` rule; never `PENDING` at done.
-    Leave the questions published and flagged.
-12. **Critique — a fresh `qgen-critic`** ([`agents/qgen-critic.md`](../../agents/qgen-critic.md)). Spawn it with
+    flagged, published, paperless, scope, 0 signed, 0 unanswered leaves). Q3 is now automatic: every **write**
+    subcommand's logout runs it (step 10) — on a `q3: PENDING` line (no `VIBHAGA_ADMIN_AUTH_DB_URL`, true on the
+    owner's laptop on 2026-10-02) run the Q3 `SELECT`, actor id substituted, through the Supabase MCP `execute_sql`
+    on the **Admin Auth** project, and record its row (`actor_exists`, `sessions`, `active_refresh_tokens`,
+    `wrong_project`, `ok`) in `q3.json` by hand — same `ok` rule; never `PENDING` at done. A psql
+    `function qgen.q3 does not exist` or a `permission denied` means the one-time setup below was
+    not run (or psql landed on the wrong project). Leave the questions published and flagged.
+
+    **One-time Admin Auth setup** (run once as `postgres`): Q3 reads through `qgen.q3`, a
+    counts-only SECURITY DEFINER function — RLS on `auth.*` has no policies, so a plain reader
+    role would see zero rows, and the reader must not be BYPASSRLS. The MCP fallback still works:
+    postgres can execute the function.
+
+    ```sql
+    create schema if not exists qgen;
+    create or replace function qgen.q3(actor uuid)
+    returns table(actor_exists bigint, sessions bigint, active_refresh_tokens bigint)
+    language sql stable security definer set search_path = '' as $$
+      select (select count(*) from auth.users where id = actor),
+             (select count(*) from auth.sessions where user_id = actor),
+             (select count(*) from auth.refresh_tokens where user_id = actor::text and revoked is not true);
+    $$;
+    revoke all on function qgen.q3(uuid) from public, anon, authenticated, service_role;
+    create role qgen_auth_reader login password '<strong password>';   -- skip if it exists
+    grant usage on schema qgen to qgen_auth_reader;
+    grant execute on function qgen.q3(uuid) to qgen_auth_reader;
+    ```
+12. **Pre-critic lint** — `run-gates build --card` already ran `tools/precritic-lint.py`; re-run it standalone
+    (`python3 tools/precritic-lint.py $A --card <key>=<NN> --grade <g>`) after any `content.yaml` edit. Fix every
+    FAIL (`not_taught` probe found in a stem/part/approach/final) and look at each WARN (a11y `description`
+    carrying a figure's readable number — T125; the vocabulary heuristic) before the critic sees the batch.
+13. **Critique — a fresh `qgen-critic`** ([`agents/qgen-critic.md`](../../agents/qgen-critic.md)). Spawn it with
     **paths only**, in exactly this shape:
     ```
     Critique playground batch <sid> per your profile. Paths: plugin <plugin checkout>; corpus <corpus checkout>;
@@ -209,12 +257,15 @@ same two checkout paths in the critic's spawn prompt.
     **image-blind**: its could-not-check list names the figure look, which step 6b already covered — say so in the
     ledger, do not re-open the PNGs. Compare its R/M/H with your plan line: a gap of more than one level on a part is a
     MINOR.
-13. **Fix and re-critique until SATISFIED.** Every BLOCKER/MAJOR/MINOR is fixed or written down as an owner question
-    (with the reason). A fix is: edit `content.yaml` (same `id_seed`, `n`, labels) → step 5 → 6 (+ 6b only for a figure
-    that changed) → 8 → 9 (`doc put`; mode 2 only if a figure or stem changed) → 10 → 11 (Q2 each time; Q3 again after the **last** republish,
-    for the actor that logout printed). Then a **new** critic with
-    the previous report (profile §6: carried / FIXED / OPEN / REGRESSED by hash). Never ask the same critic twice.
-14. **Logbook line** — one dated entry in the plan logbook (private Docs repo): session id, N questions / parts /
+14. **Fix and re-critique until SATISFIED.** Every BLOCKER/MAJOR/MINOR is fixed or written down as an owner question
+    (with the reason). A fix is: edit `content.yaml` (same `id_seed`, `n`, labels) → `run-gates.py build` → 6b (only
+    for a figure that changed) → `run-gates.py ship` (`doc put`; `--session-check` only if a figure or stem changed)
+    → Q2 each time; Q3 runs itself after every write, or by MCP after the **last** republish on a `q3: PENDING`
+    laptop. Then `python3 tools/critic-read.py hashes <sid>` prints `Q<n> <sha256>` per question — diff it against
+    the previous round's hashes and re-spawn a **fresh** critic, with `Previous report: <path>`, only for chunks
+    holding ≥1 changed question; a chunk with no changes carries its verdict (record that in the ledger — profile
+    §6: CARRIED / FIXED / OPEN / REGRESSED by hash). Never ask the same critic twice.
+15. **Logbook line** — one dated entry in the plan logbook (private Docs repo): session id, N questions / parts /
     figures, the publish and Q2/Q3 lines, critic rounds and verdicts, owner questions, effort. Add a line under "Runs so
     far" above — without ids.
 
@@ -226,16 +277,16 @@ same two checkout paths in the critic's spawn prompt.
 - [ ] 2 dedup: existing.json rows = __ ; stems compared: __
 - [ ] 3 plan: N lines, rubric checked, rule 3 checked
 - [ ] 4 content.yaml + second-method results per leaf in notes.md
-- [ ] 5 audit 0 + vdd-check 0 per figure; build-staged exit 0; ids.json = N ids
-- [ ] 6 visual-check mode 1 exit 0 · 6b one look per figure logged (__ of __)
+- [ ] 5 run-gates build exit 0 — gates.json: audit + vdd-check per figure, staged.json, ids.json = N ids, mode 1, lint
+- [ ] 6 contact-light-375.png logged — one line per figure (__ of __)
 - [ ] 7 session id: ________ (in ledger.json AND here — before any further write, T9)
-- [ ] 8 validate exit 0 · warnings: fixed / explained
-- [ ] 9 doc put + doc get match · visual-check --session exit 0
-- [ ] 10 dry-run signatures_at_risk = 0 · publish exit 0 · quoted lines in notes.md · ledger holds the publish set
-- [ ] 11 q2: ok · q3: ok (actor exists, 0 sessions, 0 active refresh tokens)
-- [ ] 12 critic r1 spawned with paths only · verdict ____
-- [ ] 13 rounds: r__ SATISFIED · every finding FIXED or an owner question · Q2 + Q3 ok after the last republish
-- [ ] 14 logbook line written · "Runs so far" line added
+- [ ] 8–11 run-gates ship exit 0: validate clean · doc get matches staged · --session no CLIPPED · signatures_at_risk 0
+      · publish k/n + read-back + t77 + provenance quoted in notes.md · q2: ok · q3: ok (auto) or PENDING → MCP noted
+- [ ] 12 precritic-lint: 0 FAIL · every WARN read
+- [ ] 13 critic r1 spawned with paths only · verdict ____
+- [ ] 14 rounds: r__ SATISFIED · critic-read hashes diffed · unchanged chunks CARRIED in ledger · every finding FIXED
+      or an owner question · Q2 + Q3 ok after the last republish
+- [ ] 15 logbook line written · "Runs so far" line added
 ```
 
 ## 3. What makes a generated question fit

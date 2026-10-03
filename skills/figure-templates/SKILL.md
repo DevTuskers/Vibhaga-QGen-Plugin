@@ -48,6 +48,9 @@ geometry is computed from those numbers, and the claim set is emitted by the sam
 Every builder is keyword-only; every spec also takes `figure_id`, `stem`, `medium`
 (`"english"`, `"sinhala"`), `ask` (`[["a","text"],…]`), `title`, `description`.
 `finish` fits a canvas (the margin grows with the span so the tightest render keeps ≥9 px edge clearance),
+refuses a canvas more than **2× as tall as wide** (`aspect` — a 1×10 shaded grid renders ~375×2253,
+taller than a phone screen; re-lay it out, e.g. 5×2 — `vdd-check` and visual-check's `aspect` rule
+fail it too),
 runs the **label-clearance pre-flight** (every label ≥6 rendered px to stroke edges, ≥8 px
 to the canvas edge — measured in RENDERED px on the narrowest plate, `PLATE_INNER` = 294 px =
 320 − 2×12 pad − 2×1 border, thresholds scaling by `1/s` with `s = min(1, 294/canvas_width)`;

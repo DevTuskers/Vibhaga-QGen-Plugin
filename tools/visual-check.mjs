@@ -57,6 +57,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 import { assess } from "./visual-metrics.mjs";
 import { q3Block, pgEnvFromUrl, pushFigure, claimsForWarn } from "./session-db.mjs";
+import { contactSheetHtml } from "./contact-sheet.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN = path.resolve(HERE, "..");
@@ -510,6 +511,31 @@ async function runBatch(figures, { out, widths, themes, headed }) {
       }
       await ctx.close();
     }
+    // The contact sheet (W9-C): every figure's light-375.png at native size, 2 per row with its
+    // id captioned above, on white — one PNG the lead can read instead of N. Composed in a bare
+    // page off the already-open browser; the PNGs are inlined as data URIs because a setContent
+    // page may not load file:// subresources. Skipped silently when no light-375 shot exists
+    // (a --widths/--themes that excludes them, or every figure invalid before render).
+    const items = [];
+    for (const fig of figures) {
+      const png = (fig.pngs ?? []).find((p) => /light-375\.png$/.test(p));
+      if (png && fs.existsSync(png)) items.push({ id: fig.id, data: fs.readFileSync(png).toString("base64") });
+    }
+    if (items.length) {
+      const sheetPath = path.join(out, "contact-light-375.png");
+      // Start tiny: body.scrollWidth floors at the viewport, so a small initial viewport lets the
+      // 2-tile grid overflow and reveals its real width — the fullPage shot then has no 1280×720
+      // floor of whitespace under a small batch.
+      const page = await browser.newPage({ viewport: { width: 100, height: 100 } });
+      await page.setContent(contactSheetHtml(items));
+      await page.waitForFunction(() => [...document.images].every((i) => i.complete));
+      const w = await page.evaluate(() => document.body.scrollWidth);
+      await page.setViewportSize({ width: w, height: 100 });
+      await page.screenshot({ path: sheetPath, fullPage: true });
+      await page.close();
+      const b = fs.readFileSync(sheetPath);
+      figures.sheet = { path: sheetPath, dims: b.length > 24 ? `${b.readUInt32BE(16)}×${b.readUInt32BE(20)}` : "?" };
+    }
   } finally {
     await browser.close();
     if (server.proc) { server.proc.kill("SIGTERM"); }
@@ -542,6 +568,15 @@ function figureLine(fig, pad) {
   parts.push(`arc ${a.arcs ? (failsOf("arc").length ? `${failsOf("arc").length} fail` : "ok") : "—"}`);
   const shadedF = failsOf("shaded");
   parts.push(`shaded ${a.shaded ? (shadedF.length ? `measured ${a.shaded.measured} ≠ claimed ${a.shaded.claimed}` : "ok") : "—"}`);
+  parts.push(`aspect ${a.aspect ? (failsOf("aspect").length ? "FAIL" : "ok") : "—"}`);
+  // the light-375 PNG's pixel dimensions — a tall plate is exactly what the aspect rule guards
+  let dims = "—";
+  const png375 = fig.pngs?.find((p) => /light-375\.png$/.test(p));
+  if (png375 && fs.existsSync(png375)) {
+    const b = fs.readFileSync(png375);
+    if (b.length > 24) dims = `${b.readUInt32BE(16)}×${b.readUInt32BE(20)}`;
+  }
+  parts.push(dims);
   const other = failsOf("parse").concat(failsOf("render")).map((f) => f.message).join("; ");
   return `${fig.id.padEnd(pad)}  ${fig.result.verdict.padEnd(4)}  ${parts.join(" · ")}${other ? ` · ${other}` : ""}  → ${fig.outDir}/`;
 }
@@ -582,7 +617,7 @@ async function batchMode() {
     pngs += fig.pngs.length;
     console.log(figureLine(fig, pad));
   }
-  console.log(`${figures.length} figures · ${pass} pass · ${figures.length - pass} fail${claimsDir ? ` · ${noClaims} without claims` : ""} · PNGs: ${pngs} · report: ${path.join(out, "report.json")}`);
+  console.log(`${figures.length} figures · ${pass} pass · ${figures.length - pass} fail${claimsDir ? ` · ${noClaims} without claims` : ""} · PNGs: ${pngs} · report: ${path.join(out, "report.json")}${figures.sheet ? ` · contact: ${figures.sheet.path} ${figures.sheet.dims}` : ""}`);
   fs.mkdirSync(out, { recursive: true });
   const report = {
     tool: "visual-check",
@@ -599,6 +634,7 @@ async function batchMode() {
       shaded: f.result.shaded,
       font: f.result.font,
       arcs: f.result.arcs,
+      aspect: f.result.aspect,
       pngs: f.pngs,
     })),
   };

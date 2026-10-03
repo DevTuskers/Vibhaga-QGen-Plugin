@@ -34,6 +34,7 @@ a stale cache, an unrecorded id, a flag that lives on the row but not the doc.
 | T-QG-2 | a claim set that records the DRAWN ratio passes every audit line — the stem's own numbers must drive the figure, and the value be justified by them |
 | T-QG-4 | a drift check whose READ side knows a narrower shape than the write path reports a clean publish as failed |
 | T-QG-5 | a width-invariant rule measured per width can straddle its own threshold — a label row says `ok:false` while the figure verdict says PASS |
+| T-QG-6 | a reader role with SELECT on `auth.*` sees ZERO rows under policy-less RLS — a revocation count reads "revoked" while sessions are live |
 
 ---
 ## T4 — A `204` from `/auth/v1/logout` is not proof of revocation
@@ -795,3 +796,17 @@ retuned to the measured DOM box reach (~0.5·fontSize, not the text-run bound) �
 `tests/test_visual_metrics.mjs` and `tests/test_vdd_templates.py`.
 
 *Source: this plugin — W8 dogfood, 2026-10-02.*
+
+## T-QG-6 — The revocation check that saw zero rows: policy-less RLS hides `auth.*` entirely
+
+**Looked true:** Q3's direct `count(*)` over `auth.sessions`/`auth.refresh_tokens` returned 0 —
+"a clean logout".
+**Actually:** RLS is enabled on `auth.users`, `auth.sessions` and `auth.refresh_tokens` with **no
+policies**, so any role that is not BYPASSRLS sees zero rows — sessions or no sessions. A plain
+reader role cannot observe revocation at all.
+**The check:** Q3's `actor_exists = 1` guard is what caught it — the same reader saw zero users
+too, so `ok` went false instead of silently passing. The fix is `qgen.q3(actor uuid)`, a
+counts-only SECURITY DEFINER function owned by postgres (one-time setup: generate step 11); the
+reader gets USAGE on schema `qgen` + EXECUTE, never a grant on `auth.*` — and never BYPASSRLS.
+
+*Source: this plugin — W9, 2026-10-03.*

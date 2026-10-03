@@ -468,10 +468,13 @@ def t77_subprocess(env_path: Path | None, log=print):
     return run
 
 
-def finish(api: Api, log=print) -> None:
-    """Guard-rail 6: logout everything, then print what the ORCHESTRATOR must run (the tool has no SQL access)."""
+def finish(api: Api, *, write: bool = True, log=print) -> None:
+    """Guard-rail 6: logout everything; only after a WRITE does the orchestrator still have a
+    revocation to prove by hand (the tool has no SQL access) — reads print nothing more."""
     st = api.logout_global(); uid = api.user_id or "<actor user_id>"
     log(f"logout?scope=global → HTTP {st} (a 204 is NOT the proof — agent-identities §3)")
+    if not write:
+        return
     log("orchestrator: run these on the ADMIN Supabase project and write both counts to sessions.json (must be 0 / 0):")
     log(f"  SELECT count(*) FROM auth.sessions WHERE user_id = '{uid}';")
     log(f"  SELECT count(*) FROM auth.refresh_tokens WHERE user_id = '{uid}';")
@@ -758,7 +761,7 @@ def main() -> int:
             if a.cmd == "publish":
                 return run_publish(api, a.job, Path(a.staged), parse_kv(a.scope), a.accept_signatures, Path(a.ids) if a.ids else None, a.sub, Path(a.ids_out), a.dry_run, t77_subprocess(env_path))
         finally:
-            finish(api)
+            finish(api, write=a.cmd != "get")
     except Refuse as e:
         print(e); return e.code
     return 2

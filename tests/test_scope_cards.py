@@ -390,5 +390,117 @@ class ScopeCardsTest(unittest.TestCase):
         self.assertIn("no corpus", r.stderr)
 
 
+class BriefTest(unittest.TestCase):
+    """`brief` (W9-D): a ~80-line reading brief per card — path or NN+--grade, pure read."""
+
+    def draft(self, corpus):
+        r = run_tool(["draft", "--grade", "6", "--corpus", str(corpus)])
+        assert r.returncode == 0, r.stderr
+
+    def curate(self, corpus, stem):
+        p = corpus / "maths" / "grade-06" / "scope-cards" / f"{stem}.yaml"
+        doc = yaml.safe_load(p.read_text(encoding="utf-8"))
+        doc["curated"] = {
+            **CURATED,
+            "prerequisites": [{"lesson": "grade-06/00", "why": "synthetic prereq"}],
+        }
+        p.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False, width=1_000_000),
+                     encoding="utf-8")
+        return p
+
+    def corpus_with_cards(self, tmp) -> Path:
+        corpus = Path(tmp) / "corpus"
+        shutil.copytree(FIXTURE, corpus)
+        self.draft(corpus)
+        self.curate(corpus, "01-Alpha")
+        self.curate(corpus, "02-Beta")
+        return corpus
+
+    def test_brief_by_lesson_number(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.corpus_with_cards(tmp)
+            r = run_tool(["brief", "1", "--grade", "6", "--corpus", str(corpus)])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            out = r.stdout
+            card = yaml.safe_load((corpus / "maths" / "grade-06" / "scope-cards"
+                                   / "01-Alpha.yaml").read_text(encoding="utf-8"))
+            self.assertIn("01-Alpha.yaml", out)
+            self.assertIn("Alpha", out)                       # title_en
+            import hashlib
+            card_sha = hashlib.sha256(
+                (corpus / "maths" / "grade-06" / "scope-cards" / "01-Alpha.yaml")
+                .read_bytes()).hexdigest()[:8]
+            self.assertIn(f"card {card_sha}", out)
+            self.assertIn(f"lesson {card['source']['sha256'][:8]}", out)
+            self.assertIn("sections (", out)
+            self.assertIn("1.1 First topic", out)
+            self.assertIn("vocabulary", out)
+            self.assertIn("alpha term", out)
+            self.assertIn("worked examples:", out)
+            self.assertIn("නිදසුන 1", out)
+            self.assertIn("zebra", out[:20000])
+            self.assertIn("exercises:", out)
+            self.assertIn("item(s)", out)
+            self.assertIn("Do the first drill.", out)
+            self.assertIn("activities:", out)
+            self.assertIn("ක්‍රියාකාරකම", out)
+            self.assertIn("figure_kinds:", out)
+            self.assertIn("not_taught[0] quokka-counting — not part of this lesson", out)
+            self.assertIn("probes: qq-not-a-word", out)
+            self.assertIn("prerequisite grade-06/00 — synthetic prereq", out)
+            self.assertIn("hook M: a routine-then-twist hook", out)
+            self.assertIn("status: drafted", out)
+            # aim: ~80 lines per card
+            self.assertLessEqual(len(out.strip().splitlines()), 100, out)
+
+    def test_brief_by_path_and_multiple_cards(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.corpus_with_cards(tmp)
+            p1 = corpus / "maths" / "grade-06" / "scope-cards" / "01-Alpha.yaml"
+            p2 = corpus / "maths" / "grade-06" / "scope-cards" / "02-Beta.yaml"
+            r = run_tool(["brief", str(p1), str(p2)])          # no --grade needed for paths
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(r.stdout.count("== "), 2)
+            self.assertIn("01-Alpha.yaml", r.stdout)
+            self.assertIn("02-Beta.yaml", r.stdout)
+
+    def test_brief_vocab_cap_and_dedup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = Path(tmp) / "corpus"
+            shutil.copytree(FIXTURE, corpus)
+            self.draft(corpus)
+            p = corpus / "maths" / "grade-06" / "scope-cards" / "01-Alpha.yaml"
+            doc = yaml.safe_load(p.read_text(encoding="utf-8"))
+            doc["generated"]["vocabulary"] = \
+                [f"term{i}" for i in range(25)] + ["term0", "**•** bullet-term"]
+            doc["curated"] = CURATED
+            p.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False,
+                                        width=1_000_000), encoding="utf-8")
+            r = run_tool(["brief", str(p)])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            vline = next(l for l in r.stdout.splitlines() if l.startswith("vocabulary"))
+            self.assertIn("+6", vline)                       # 26 unique → 20 shown, 6 hidden
+            self.assertEqual(vline.count("term0"), 1)        # deduped
+            self.assertNotIn("**•**", vline)                 # glyph bullets stripped
+
+    def test_brief_refusals(self):
+        r = run_tool(["brief"])                              # no card args at all
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("needs at least one card", r.stderr)
+        r = run_tool(["brief", "7"])                         # bare number without --grade
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("pass --grade", r.stderr)
+        r = run_tool(["brief", "/nonexistent/nope.yaml"])    # a path that is not a file
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("no such card file", r.stderr)
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = Path(tmp) / "corpus"
+            shutil.copytree(FIXTURE, corpus)
+            run_tool(["draft", "--grade", "6", "--corpus", str(corpus)])
+            r = run_tool(["brief", "9", "--grade", "6", "--corpus", str(corpus)])
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("0 card(s) match", r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
