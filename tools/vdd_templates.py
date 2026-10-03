@@ -63,6 +63,11 @@ PLATE_INNER = 294.0
 # +0.543·size below. The old ±size/2 estimate under-measures the top by ~3 units and real renders
 # failed the edge rule while the estimate passed (rebuild Q4: 7.9 px at 320).
 MID_UP, MID_DOWN = 0.70, 0.58
+# …but a lone point label reaches only ~0.50·size below its dominant-baseline middle anchor —
+# measured on the rendered DOM box (2026-10-02, Inter capital "P"/"Q" at 18: point→box distance
+# mark_off − 9.0, i.e. +0.50·size; DiagramRenderer's own label box uses ±0.5·size). Modelled at
+# 0.53 to keep a small pad over the measurement. A descender glyph (gjpqy…) reaches ~MID_DOWN.
+POINT_LABEL_DOWN = 0.53
 
 COMPASS = {"N": -90.0, "NE": -45.0, "E": 0.0, "SE": 45.0,
            "S": 90.0, "SW": 135.0, "W": 180.0, "NW": -135.0}
@@ -90,6 +95,11 @@ class Built:
         anch = out / f"{self.figure_id}.anchors.json"
         cl = out / f"{self.figure_id}-claims.txt"
         vc.write_figure(str(fig), self.doc, anchors=self.anchors)   # writes <id>.anchors.json itself
+        if not anch.exists():
+            # write_figure skips an empty anchors dict (a figure with no named points —
+            # dot_pattern, pictograph); every template still emits the trio so the
+            # printed list is always true
+            anch.write_text("{}\n", encoding="utf-8")
         cl.write_text(self.claims, encoding="utf-8")
         return {"figure": fig, "anchors": anch, "claims": cl}
 
@@ -218,8 +228,12 @@ def label_boxes(elements: list[dict], font_size: float = FS) -> list[tuple[str, 
             size = font_size                      # the point label ignores el.fontSize — always defaults
             ox, oy = el.get("labelOffset", [8, -8])
             w = _label_width(el["label"], size)
+            # the rendered box is shallower below the anchor than the text-run MID_DOWN bound —
+            # a lone capital has no descender (measured ~0.50·size); keep MID_DOWN for labels
+            # carrying a descender letter.
+            down = size * (MID_DOWN if re.search(r"[gjpqy]", str(el["label"])) else POINT_LABEL_DOWN)
             out.append((el["label"], el["at"][0] + ox, el["at"][1] + oy - size * MID_UP,
-                        el["at"][0] + ox + w, el["at"][1] + oy + size * MID_DOWN))
+                        el["at"][0] + ox + w, el["at"][1] + oy + down))
         elif t == "angleMark" and el.get("label"):
             size = font_size * 0.9
             r = el["r"] * (math.sqrt(2) if el.get("variant") == "right" else 1)
@@ -1005,6 +1019,13 @@ def build_rays_from_point(*, figure_id, stem, ask=None, title=None, description=
 # ────────────────────────────────────────────────────────────────────────────────
 # 4. number_line — a subdivided scale with marked points
 # ────────────────────────────────────────────────────────────────────────────────
+# numeral steps a reader expects, nicest-first: the 1·2·5 decades plus the 25s
+# (60 65 70 …, 730 735 740 …) — never the smallest fitting divisor, which labels
+# 60 63 66 … 90 and lands on no round ten
+_NICE_STEPS = sorted({m * 10 ** e for e in range(4) for m in (1, 2, 5)}
+                     | {25 * 10 ** e for e in range(3)})
+
+
 def build_number_line(*, figure_id, stem, ask=None, title=None, description=None, medium="english",
                       v0, v1, parts_per_unit, points=None, unit_px=None, overhang=30.0):
     require_stem(stem, v0=v0, v1=v1, parts_per_unit=parts_per_unit)
@@ -1035,8 +1056,10 @@ def build_number_line(*, figure_id, stem, ask=None, title=None, description=None
     est_span = span_v * unit_px + 2 * overhang + 12
     num_gap = _clearance_units(4.0, est_span)
     wlab = max(_label_width(f"{v:g}", 16) for v in (v0, v1, v0 + 1))
-    num_step = next((k for k in range(1, n_units + 1)
-                     if n_units % k == 0 and k * unit_px >= wlab + num_gap), n_units)
+    fits = lambda k: n_units % k == 0 and k * unit_px >= wlab + num_gap   # noqa: E731
+    num_step = next((k for k in _NICE_STEPS if fits(k)), None)
+    if num_step is None:                                # no nice divisor fits
+        num_step = next((k for k in range(1, n_units + 1) if fits(k)), n_units)
     elements: list[dict] = []
     elements.append({"id": "axis", "type": "arrow", "head": "both",
                      "points": [[-overhang, axis_y], [span_v * unit_px + overhang, axis_y]]})
@@ -1057,11 +1080,17 @@ def build_number_line(*, figure_id, stem, ask=None, title=None, description=None
     u, vv = _unused_letters(set(marks), 2)
     anchors[u] = (x_of(v0), axis_y)
     anchors[vv] = (x_of(v1), axis_y)
-    # the point label must clear its own major tick (top at 11 units + half its stroke) by
-    # 6 px + slack ON THE RENDER — on a wide canvas that is more canvas units than a fixed
-    # offset provides, so size the lift from the figure's own width
+    # the point label sits in a pinched window: its box bottom — POINT_LABEL_DOWN·FS below the
+    # anchor, the real DOM reach of a lone capital (the text-run MID_DOWN overstates it, and the
+    # extra lift pushed point→label past the target bound) — must clear the tick's top stroke
+    # edge (11 + half its 2-unit stroke) by 6 px + slack ON THE RENDER, while the point→box
+    # distance stays inside visual-check's target rule: 1.5 × fontSize from the named point.
     est_span = span_v * unit_px + 2 * overhang + 12
-    mark_off = 21.0 + FS * (MID_DOWN - 0.5) + _clearance_units(STROKE_PX + SLACK_STROKE, est_span)
+    mark_off = 12.0 + POINT_LABEL_DOWN * FS + _clearance_units(STROKE_PX + SLACK_STROKE, est_span)
+    if mark_off - 0.5 * FS > 1.5 * FS:   # target bound on the measured DOM reach (~0.5·size)
+        raise TemplateError(f"number_line: the stroke-cleared point-label lift puts the label "
+                            f"~{mark_off - 0.5 * FS:.1f} units from its point (> {1.5 * FS:g} = "
+                            f"1.5×fontSize {FS:g}) — the range is too wide for one canvas")
     for n, v in marks.items():
         anchors[n] = (x_of(v), axis_y)
         elements.append({"id": f"dot{n}", "type": "point", "at": vc.P((x_of(v), axis_y)), "r": 3,
@@ -1490,6 +1519,16 @@ def build_dot_pattern(*, figure_id, stem, ask=None, title=None, description=None
             "rectangle": lambda n: f"{n} * {n + 1}"}[kind]
     elements: list[dict] = []
     anchors: dict[str, XY] = {}
+    # the stage label must clear the lowest dot row's stroke by 6 px + slack ON THE
+    # RENDER — the fixed 22-unit drop shrinks under the narrow-surface scale once the
+    # stages row runs wider than the plate, so widen it when the figure's own span
+    # demands (number_line's mark_off and pictograph's x0 size gaps the same way;
+    # +1 ≈ the dot circle's half-stroke)
+    est_span = (sum((((n + 1) if kind == "rectangle" else n) - 1) * dx + gap
+                    for n in range(1, stages + 1))
+                - gap + 2 * dot_r + _label_width(f"({stages})", 13))
+    lab_drop = dot_r + max(22.0, MID_UP * 13.0 +
+                           _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, est_span))
     x = 0.0
     for n in range(1, stages + 1):
         cols_n = n if kind != "rectangle" else n + 1
@@ -1503,7 +1542,7 @@ def build_dot_pattern(*, figure_id, stem, ask=None, title=None, description=None
                 elements.append(vc.circle(
                     (cx + (d_ - (dots_in_row - 1) / 2) * dx, base - (n - 1 - r_) * dy), dot_r,
                     fill=vc.INK, id=f"t{n}r{r_}d{d_}"))
-        elements.append(vc.text((cx, base + dot_r + 22), f"({n})", id=f"lbl{n}", size=13))
+        elements.append(vc.text((cx, base + lab_drop), f"({n})", id=f"lbl{n}", size=13))
         x += block_w + gap
     claims: list[tuple[str, str, str]] = []
 
@@ -1520,13 +1559,18 @@ def build_dot_pattern(*, figure_id, stem, ask=None, title=None, description=None
     amb = None if _has_stem(nums, stages) else \
         [f"K1 - the stage count {stages} is a construction choice — the stem does not state it "
          f"as a number (stem numbers {', '.join(f'{v:g}' for v in nums)})"]
+    elements_n = len(elements)
     return finish(kind="dot_pattern", figure_id=figure_id, stem=stem, elements=elements,
                   anchors=anchors, points=[], segments=[], claims=claims, ask=ask,
                   title=title or f"A dot pattern of {stages} stages",
                   description=description or (
                       f"The first {stages} figures of a dot pattern shown side by side; the dot "
                       f"counts are {kind} numbers."),
-                  scale="dots are uniform — the count is the content", ambiguous=amb, medium=medium)
+                  scale="dots are uniform — the count is the content", ambiguous=amb,
+                  budget=elements_n if elements_n > 32 else None,
+                  departures=([f"{elements_n} elements — one circle per dot is the honest "
+                               "drawing (S6b §3.4)"] if elements_n > 32 else None),
+                  medium=medium)
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -1649,18 +1693,21 @@ def main() -> int:
         specs = json.loads(spec_path.read_text(encoding="utf-8"))
         if isinstance(specs, dict):
             specs = [specs]
-        try:
-            for spec in specs:
-                spec = dict(spec)
-                kind = spec.pop("template")
+        for spec in specs:
+            spec = dict(spec)
+            kind = spec.pop("template")
+            try:
                 b = BUILDERS[kind](**spec)
-                paths = b.write(out)
-                print(f"{kind:<17} {paths['figure']}")
-                print(f"{'':17} {paths['anchors']}")
-                print(f"{'':17} {paths['claims']}")
-        except TemplateError as e:
-            print(f"TemplateError: {e}", file=sys.stderr)
-            return 2
+            except TemplateError as e:
+                # name the spec — in a multi-figure build a bare "dot_pattern: label …"
+                # leaves the reader to guess which figure refused
+                print(f"TemplateError: {spec.get('figure_id', '<no figure_id>')}: {e}",
+                      file=sys.stderr)
+                return 2
+            paths = b.write(out)
+            print(f"{kind:<17} {paths['figure']}")
+            print(f"{'':17} {paths['anchors']}")
+            print(f"{'':17} {paths['claims']}")
         return 0
     print(__doc__)
     return 2

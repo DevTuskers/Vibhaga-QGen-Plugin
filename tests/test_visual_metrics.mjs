@@ -107,6 +107,36 @@ test("target: a point label measured against ITS point, not the nearest paint", 
   assert.equal(near.verdict, "PASS"); // geom_u=40 is ignored — the point target governs
 });
 
+test("target: ONE result per label — the least-quantised width governs rows and the finding", () => {
+  // A canvas-unit distance is width-invariant, but the DOM box is re-measured per width and px
+  // rounding wobbles it: a number-line point label read 26.8u at 320 (inside the 27u bound) and
+  // 27.1u at 768 (outside) — rows and finding disagreed. The largest pxPerUnit is the least
+  // quantised measurement, so it governs every row AND the finding.
+  const d = doc([{ id: "pA", type: "point", at: [50, 50], r: 3, label: "A" }]);
+  const at = (distU) => [45, 50 - distU - 10, 10, 10];   // point's x inside the box: pure dy
+  const bad = assess({
+    doc: d,
+    widths: [
+      { width: 320, pxPerUnit: 0.66, labels: [L({ text: "A", bbox: at(26.8) })] },
+      { width: 375, pxPerUnit: 0.78, labels: [L({ text: "A", bbox: at(27.5) })] },
+      { width: 768, pxPerUnit: 1.7, labels: [L({ text: "A", bbox: at(27.1) })] },
+    ],
+  });
+  assert.equal(bad.verdict, "FAIL");
+  assert.ok(rules(bad).has("target"));
+  assert.ok(bad.labels.every((row) => row.target_u === 27.1 && row.ok === false));
+  // …and agreement in the other direction: governed under the bound, every row ok.
+  const good = assess({
+    doc: d,
+    widths: [
+      { width: 320, pxPerUnit: 0.66, labels: [L({ text: "A", bbox: at(26.8) })] },
+      { width: 768, pxPerUnit: 1.7, labels: [L({ text: "A", bbox: at(25.9) })] },
+    ],
+  });
+  assert.equal(good.verdict, "PASS");
+  assert.ok(good.labels.every((row) => row.target_u === 25.9 && row.ok === true));
+});
+
 test("arc (explicit sweep): numeral inside the drawn span passes, opposite side fails", () => {
   const d = doc([
     { id: "arcB", type: "arc", center: [100, 100], r: 40, start: 0, end: 90, sweep: "cw" },

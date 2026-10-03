@@ -33,6 +33,7 @@ a stale cache, an unrecorded id, a flag that lives on the row but not the doc.
 | T-QG-1 | a skill whose frontmatter is not valid YAML is silently dropped by the CLI — `devin plugins info` + the frontmatter lint are the check |
 | T-QG-2 | a claim set that records the DRAWN ratio passes every audit line — the stem's own numbers must drive the figure, and the value be justified by them |
 | T-QG-4 | a drift check whose READ side knows a narrower shape than the write path reports a clean publish as failed |
+| T-QG-5 | a width-invariant rule measured per width can straddle its own threshold — a label row says `ok:false` while the figure verdict says PASS |
 
 ---
 ## T4 — A `204` from `/auth/v1/logout` is not proof of revocation
@@ -779,3 +780,18 @@ warns about. Pinned by `tests/test_t77_sub_answer_shapes.py`.
 
 *Source: this plugin — W6, 2026-10-02; found on the first publish of a batch whose parts all carried
 the singular form.*
+
+## T-QG-5 — The label row that disagreed with the verdict: one rule, three measurements
+
+**Looked true:** visual-check reported a number-line figure `verdict: PASS` with `findings: []` —
+while its own per-width label rows said `ok:false` at 375 and 768 for every point label.
+**Actually:** the `target` rule is a canvas-unit invariant (a point label >1.5×fontSize from its
+own point), but the DOM box was re-measured at every render width and px quantisation moved the
+distance across the bound — 26.8u at 320, 27.5u at 375. Rows folded each width's measurement; the
+finding sampled only width[0], so the same label both failed and passed.
+**The check:** one target result per label, computed on the least-quantised width, now governs the
+rows and the finding alike (`visual-metrics.mjs`); `build_number_line`'s point-label lift was
+retuned to the measured DOM box reach (~0.5·fontSize, not the text-run bound) — pinned by
+`tests/test_visual_metrics.mjs` and `tests/test_vdd_templates.py`.
+
+*Source: this plugin — W8 dogfood, 2026-10-02.*

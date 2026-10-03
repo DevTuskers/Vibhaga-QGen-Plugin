@@ -116,6 +116,21 @@ class PerTemplateClaims(unittest.TestCase):
         self.assertAlmostEqual(float(m.group(2)), b.anchors["P"][1], places=4)
         self.assertIn("budget:", b.claims)               # 39 elements > 32
 
+    def test_number_line_prefers_round_numeral_steps(self):
+        # W8 dogfood: the smallest-fitting-divisor rule labelled 60 63 66 … 90 and
+        # 730 734 … 750 — a round-to-ten line must land on the tens
+        b = vt.build_number_line(figure_id="t1",
+                                 stem="A number line shows 60 to 90, each unit in 1 part.",
+                                 v0=60, v1=90, parts_per_unit=1)
+        self.assertRegex(b.claims, r"tick [A-Z][A-Z] step 5")
+        numerals = re.findall(r'label "(\d+)" names \1', b.claims)
+        self.assertEqual(numerals, [str(v) for v in range(60, 91, 5)])
+        b = vt.build_number_line(figure_id="t1",
+                                 stem="A number line shows 730 to 750, each unit in 1 part.",
+                                 v0=730, v1=750, parts_per_unit=1)
+        m = re.search(r"tick [A-Z][A-Z] step (\d+)", b.claims)
+        self.assertIn(int(m.group(1)), (5, 10))
+
     def test_rays_marks_each_angle_and_reflex(self):
         b = vt.build_rays_from_point(figure_id="t1", stem="Angles 1, 2 and 3 are marked.",
                                      rays={"A": "NE", "B": "S", "C": "W"},
@@ -169,6 +184,21 @@ class PerTemplateClaims(unittest.TestCase):
         for n, c in ((1, 1), (2, 3), (3, 6), (4, 10)):
             self.assertIn(f"stage {n} shows {c} dots", b.claims)
         self.assertEqual(len([e for e in b.doc["elements"] if e["type"] == "circle"]), 20)
+
+    def test_dot_pattern_budget_line_over_32_elements(self):
+        # 5 square stages = 55 dots + 5 labels = 60 elements > the 32-element budget —
+        # the claim set must carry the justification (vdd-check honours a `budget:` line)
+        b = vt.build_dot_pattern(figure_id="t1", stem="The first 5 figures are shown.",
+                                 stages=5, kind="square")
+        n = len(b.doc["elements"])
+        self.assertEqual(n, 60)
+        self.assertRegex(b.claims, rf"(?m)^budget:\s+{n}$")
+        self.assertRegex(b.claims, rf"(?m)^  {n} elements — one circle per dot")
+        # a small pattern under the budget stays silent
+        small = vt.build_dot_pattern(figure_id="t1", stem="The first 3 figures are shown.",
+                                     stages=3, kind="triangle")
+        self.assertNotIn("budget:", small.claims)
+        self.assertIn("departures: (none)", small.claims)
 
 
 class RedTeam(unittest.TestCase):
@@ -568,6 +598,38 @@ class CLI(unittest.TestCase):
             self.assertEqual(r.returncode, 2)
             self.assertIn("not a number the stem states", r.stderr)
 
+    def test_build_refusal_names_the_figure_id(self):
+        # a bare "dot_pattern: label …" in a multi-spec build left the reader guessing
+        # which figure died — the CLI names the failing spec's figure_id
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "spec.json"
+            spec.write_text(json.dumps([
+                {"template": "cuboid", "figure_id": "ok1", "stem": CUBOID_52,
+                 "length": 5, "width": 3, "height": 2},
+                {"template": "cuboid", "figure_id": "bad7", "stem": "no numbers",
+                 "length": 5, "width": 3, "height": 2}]))
+            r = subprocess.run([sys.executable, str(TOOLS / "vdd_templates.py"),
+                                "build", str(spec), "--out", tmp],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("bad7:", r.stderr)
+
+    def test_pointless_figure_still_writes_the_anchors_trio(self):
+        # dot_pattern/pictograph have no named points — write_figure omits an empty
+        # anchors dict, so the CLI printed a path that never landed (W8 dogfood)
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "spec.json"
+            spec.write_text(json.dumps([{"template": "dot_pattern", "figure_id": "t2",
+                                         "stem": "The first 2 figures are shown.",
+                                         "stages": 2}]))
+            r = subprocess.run([sys.executable, str(TOOLS / "vdd_templates.py"),
+                                "build", str(spec), "--out", tmp],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            for suffix in ("t2.json", "t2.anchors.json", "t2-claims.txt"):
+                self.assertTrue((Path(tmp) / suffix).exists(), suffix)
+            self.assertEqual(json.loads((Path(tmp) / "t2.anchors.json").read_text()), {})
+
 
 class RenderedClearance(unittest.TestCase):
     """The clearance model is rendered px on the 294 px plate (PLATE_INNER), not canvas units —
@@ -588,6 +650,41 @@ class RenderedClearance(unittest.TestCase):
             self.assertGreaterEqual(
                 edge, vt.EDGE_PX,
                 f"label {txt!r} renders {edge:.1f} px from the canvas edge (< {vt.EDGE_PX})")
+
+    def test_dot_pattern_stage_labels_clear_at_every_size(self):
+        # W8 dogfood: stages=5 square at default dx/gap was refused — '(1)' rendered
+        # ~6.8 px from the dots (< 8). The label drop is now sized from the figure's
+        # own span; every kind × stages 1..8 at defaults must pass the pre-flight.
+        for kind in ("triangle", "square", "rectangle"):
+            for stages in range(1, 9):
+                with self.subTest(kind=kind, stages=stages):
+                    b = vt.build_dot_pattern(
+                        figure_id=f"t{stages}",
+                        stem=f"The first {stages} figures of a dot pattern are shown.",
+                        stages=stages, kind=kind)
+                    lbl = next(e for e in b.doc["elements"] if e["id"] == f"lbl{stages}")
+                    dots = [e for e in b.doc["elements"]
+                            if e["type"] == "circle" and e["id"].startswith(f"t{stages}r")]
+                    self.assertGreater(lbl["at"][1],
+                                       max(d["center"][1] for d in dots))
+
+    def test_number_line_point_label_in_the_stroke_target_window(self):
+        # W8 dogfood round 2: a MID_DOWN-modelled lift put the label 36.1 units up — the real
+        # DOM box (a capital reaches ~0.5·size below the anchor, not 0.58·size) left it 27.1u
+        # from its point, over visual-check's 1.5×fontSize target bound. The lift must satisfy
+        # BOTH rules: point→box stays ≤ 1.5·fontSize AND the box clears the tick's top stroke
+        # edge (11 + half its stroke) by ≥ 6 px + slack rendered.
+        b = vt.build_number_line(figure_id="t1",
+                                 stem="A number line shows 730 to 750, each unit in 1 part.",
+                                 v0=730, v1=750, parts_per_unit=1, points={"P": 736})
+        dot = next(e for e in b.doc["elements"] if e["id"] == "dotP")
+        mark_off = -dot["labelOffset"][1]
+        self.assertLessEqual(mark_off - 0.5 * vt.FS, 1.5 * vt.FS)      # target on the DOM reach
+        W = b.doc["canvas"]["width"]
+        s = min(1.0, vt.PLATE_INNER / W)
+        y1 = next(bx[3] for t, *bx in vt.label_boxes(b.doc["elements"]) if t == "P")
+        gap_px = (dot["at"][1] - 11 - 1 - y1) * s                      # box bottom → tick top edge
+        self.assertGreaterEqual(gap_px, vt.STROKE_PX + vt.SLACK_STROKE - 1e-6)
 
     def test_cuboid_height_label_within_target_distance(self):
         # visual-check's target rule: a label sits within 1.5 × fontSize of the edge it names —

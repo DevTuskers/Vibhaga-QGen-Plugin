@@ -11,7 +11,8 @@ argument-hint: "[grade] [lesson number or name] [how many questions]"
 > this file holds the *order*, who does each step, and the per-run checklist.
 >
 > Runs so far (ids are kept in the private plan logbook, never here): 2026-09-27 and 2026-09-29 through the
-> source skill; 2026-10-02 the W6 red-team batch (4 questions, planted errors — the critic caught both).
+> source skill; 2026-10-02 the W6 red-team batch (4 questions, planted errors — the critic caught both);
+> 2026-10-02 W8 dogfood (G6, 10 questions, 8 template figures, 2 critic rounds → SATISFIED).
 > Distilled lessons are folded into the steps below: a lesson that teaches angle types *without degrees*
 > demands comparison-with-a-right-angle reasoning; measure label↔canvas-edge clearance, not only
 > label↔stroke; a constructed claim set takes its ratios from the **stem** (T-QG-2); the critic is
@@ -164,14 +165,16 @@ same two checkout paths in the critic's spawn prompt.
    ```
    python3 tools/vdd_templates.py build $A/specs/figures.json --out $A/figures/
    python3 tools/audit-claim-set.py $A/figures/<id>-claims.txt                    # each: exit 0
-   node tools/vdd-check.mjs $A/figures/<id>.json --claims $A/figures/<id>-claims.txt --medium <medium> --json  # each: 0 findings
+   node tools/vdd-check.mjs $A/figures/<id>.json --claims $A/figures/<id>-claims.txt --medium <medium>  # each: 0 findings
    python3 tools/build-staged.py $A/content.yaml --out $A/staged.json --ids-out $A/ids.json
    ```
    A failing gate is fixed in the spec or the builder input, never by hand-editing an emitted file (T-QG-2).
 6. **visual-check mode 1** (mechanical) — `node tools/visual-check.mjs $A/staged.json --claims-dir $A/figures --out wt/<topic>/vc`
    → exit 0, and no `no claim set` warning. **6b, lead:** open each figure's `wt/<topic>/vc/<id>/light-375.png` **once,
    one per `read`**, and write one line per figure
-   into `notes.md` the moment it is seen (what it shows; anything wrong). A defect → back to step 4/5.
+   into `notes.md` the moment it is seen (what it shows; anything wrong). Check the PNG's dimensions too — a
+   canvas far taller than wide renders huge at 375 px (the W8 1×10 shaded grid came out 375×2253) and no gate
+   flags it; respecify the grid if it does. A defect → back to step 4/5.
 7. **Create the session** (once): `python3 $T session create --name "<what> — G<g> <lesson> <date>" --scope grade=<g>,subject=Mathematics,medium=<medium> --lessons <ids> --ledger $A/ledger.json`.
    Copy the printed id into `RUN.md` now.
 8. **Validate until clean:** `python3 $T validate <sid> --staged $A/staged.json` → exit 0. Fix every error; fix every
@@ -182,7 +185,8 @@ same two checkout paths in the critic's spawn prompt.
    student preview light + dark, signs out, runs Q3) → exit 0, no `CLIPPED`.
 10. **Publish, flagged:**
     `python3 $T publish <sid> --staged $A/staged.json --scope <same as step 7> --ids-file $A/ids.json --ledger $A/ledger.json --dry-run --accept-signatures 0`
-    — `signatures_at_risk` is 0 on a new session. Then the same without `--dry-run`. Exit 0 is the only success; quote
+    — `signatures_at_risk` is 0 on a new session. Then the same without `--dry-run` — keep
+    `--accept-signatures 0` on the real publish too; it refuses (exit 4) without it. Exit 0 is the only success; quote
     "published k/n", "read-back 1: staged doc confirms …", `t77: N question(s) · N comparisons · 0 mismatch(es)` and
     "provenance: N id(s) · OK". Exit 1 = staged and live disagree; the run is failed until they agree (**T77**).
 11. **Prove it by SQL:** `python3 tools/sql-proof.py q2 <sid> --expected <N> --out $A/q2.json` → `q2: ok` (count,
