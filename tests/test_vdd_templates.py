@@ -732,5 +732,234 @@ class RenderedClearance(unittest.TestCase):
         self.assertLessEqual(dist, 1.5 * slh["fontSize"])
 
 
+def _dot(id_, x, y):
+    return {"type": "circle", "id": id_, "center": [x, y], "r": 4.0,
+            "fill": {"color": "#000"}, "stroke": {"width": 0}}
+
+
+def _floater(id_, value, near, **kw):
+    return {"type": "text", "id": id_, "at": [0.0, 0.0], "value": value,
+            "align": "middle", "baseline": "middle", "_near": list(near), **kw}
+
+
+def _finish_two_rings(d_dot, ring_r=100.0, gap=None):
+    """Two overlapping unfilled rings + a dot + one floating label (W10a test fig)."""
+    cl, cr = (0.0, 0.0), (140.0, 0.0)
+    el = [{"type": "circle", "id": "L", "center": list(cl), "r": ring_r},
+          {"type": "circle", "id": "R", "center": list(cr), "r": ring_r},
+          _dot("dotD", *d_dot),
+          _floater("lblD", "D", d_dot, **({"_gap": gap} if gap else {}))]
+    return vt.finish(
+        kind="two_circles", figure_id="tf", stem="Two overlapping circles, point D.",
+        elements=el, anchors={"D": tuple(d_dot)}, points=["D"], segments=[],
+        ask=[["a", "the point"]],
+        claims=[('circle centre L radius 100', "inferred", "the left circle"),
+                ('circle centre R radius 100', "inferred", "the right circle"),
+                ('label "D" names D', "stem", "the dot")] +
+               vt.membership_claims("D", d_dot, {"left": (cl, ring_r), "right": (cr, ring_r)}),
+        title=None, description=None, scale="1 unit = 1 unit")
+
+
+class FloatingLabels(unittest.TestCase):
+    """W10a: `_near`/`_gap` on a text element asks finish() to place it."""
+
+    def _lbl(self, b):
+        return next(e for e in b.doc["elements"] if e["id"] == "lblD")
+
+    def test_floats_clear_of_a_dot_inside_a_circle(self):
+        b = _finish_two_rings((140.0, 0.0))          # dot at the right circle's centre
+        lbl = self._lbl(b)
+        ring_r = next(e for e in b.doc["elements"] if e["id"] == "R")
+        ring_l = next(e for e in b.doc["elements"] if e["id"] == "L")
+        dot = next(e for e in b.doc["elements"] if e["id"] == "dotD")
+        # placed, clear of the dot's ink, and inside the ring that holds the dot
+        self.assertGreater(math.hypot(lbl["at"][0] - dot["center"][0],
+                                      lbl["at"][1] - dot["center"][1]), 8)
+        self.assertLess(math.hypot(lbl["at"][0] - ring_r["center"][0],
+                                   lbl["at"][1] - ring_r["center"][1]), ring_r["r"])
+        self.assertGreater(math.hypot(lbl["at"][0] - ring_l["center"][0],
+                                      lbl["at"][1] - ring_l["center"][1]), ring_l["r"])
+
+    def test_dot_on_the_outline_floats_outside(self):
+        cl, cr, R = (0.0, 0.0), (140.0, 0.0), 100.0
+        d = vt.on_circle_point(cr, R, 200.0)          # on the right circle's lower-left arc
+        b = _finish_two_rings(d)
+        lbl = self._lbl(b)
+        ring = next(e for e in b.doc["elements"] if e["id"] == "R")
+        self.assertGreater(math.hypot(lbl["at"][0] - ring["center"][0],
+                                      lbl["at"][1] - ring["center"][1]), ring["r"])
+
+    def test_dot_in_right_only_stays_in_right_only(self):
+        cl, cr, R = (0.0, 0.0), (140.0, 0.0), 100.0
+        p = vt.region_point({"left": (cl, R), "right": (cr, R)},
+                            inside=["right"], outside=["left"],
+                            prefer=(140.0, 0.0), avoid=[cr], min_sep=25.0)
+        b = _finish_two_rings(p)
+        lbl = self._lbl(b)
+        ring_l = next(e for e in b.doc["elements"] if e["id"] == "L")
+        ring_r = next(e for e in b.doc["elements"] if e["id"] == "R")
+        self.assertLess(math.hypot(lbl["at"][0] - ring_r["center"][0],
+                                   lbl["at"][1] - ring_r["center"][1]), ring_r["r"])
+        self.assertGreater(math.hypot(lbl["at"][0] - ring_l["center"][0],
+                                      lbl["at"][1] - ring_l["center"][1]), ring_l["r"])
+
+    def test_internal_keys_never_reach_the_doc(self):
+        b = _finish_two_rings((140.0, 0.0), gap=20.0)
+        for e in b.doc["elements"]:
+            self.assertFalse([k for k in e if k.startswith("_")],
+                             f"{e['id']} kept internal keys")
+
+    def test_no_clear_spot_raises_naming_the_rule(self):
+        # two dots 5 units apart: every candidate for A's label sits nearer B's anchor
+        # than the 6 px own-anchor margin allows
+        el = [_dot("dotA", 0.0, 0.0), _dot("dotB", 5.0, 0.0),
+              _floater("lblA", "A", (0.0, 0.0)), _floater("lblB", "B", (5.0, 0.0))]
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.finish(kind="t", figure_id="tf", stem="Points A and B.", elements=el,
+                      anchors={"A": (0.0, 0.0), "B": (5.0, 0.0)}, points=["A", "B"],
+                      segments=[], ask=[["a", "x"]],
+                      claims=[('label "A" names A', "stem", ""), ('label "B" names B', "stem", "")],
+                      title=None, description=None, scale="x")
+        self.assertIn("own-anchor", str(cm.exception))
+        self.assertIn("'A'", str(cm.exception))
+
+    def test_fixed_label_nearer_another_named_anchor_raises(self):
+        el = [_dot("dotA", 0.0, 0.0), _dot("dotB", 60.0, 0.0),
+              {"type": "text", "id": "lblA", "at": [42.0, -20.0], "value": "A",
+               "align": "middle", "baseline": "middle"},     # nearer B than A
+              {"type": "text", "id": "lblB", "at": [66.0, 26.0], "value": "B",
+               "align": "middle", "baseline": "middle"}]
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.finish(kind="t", figure_id="tf", stem="Points A and B.", elements=el,
+                      anchors={"A": (0.0, 0.0), "B": (60.0, 0.0)}, points=["A", "B"],
+                      segments=[], ask=[["a", "x"]],
+                      claims=[('label "A" names A', "stem", ""), ('label "B" names B', "stem", "")],
+                      title=None, description=None, scale="x")
+        self.assertIn("nearer anchor B than its own A", str(cm.exception))
+
+    def test_a_failed_finish_never_mutates_the_caller(self):
+        # the unsatisfiable pair above — a raise must not eat the caller's
+        # `_near`/`at` (finish() works on deep copies so retries are safe)
+        el = [_dot("dotA", 0.0, 0.0), _dot("dotB", 5.0, 0.0),
+              _floater("lblA", "A", (0.0, 0.0)), _floater("lblB", "B", (5.0, 0.0))]
+        anchors = {"A": (0.0, 0.0), "B": (5.0, 0.0)}
+        with self.assertRaises(vt.TemplateError):
+            vt.finish(kind="t", figure_id="tf", stem="Points A and B.", elements=el,
+                      anchors=anchors, points=["A", "B"], segments=[], ask=[["a", "x"]],
+                      claims=[('label "A" names A', "stem", ""),
+                              ('label "B" names B', "stem", "")],
+                      title=None, description=None, scale="x")
+        self.assertEqual(el[2]["at"], [0.0, 0.0])
+        self.assertEqual(el[2]["_near"], [0.0, 0.0])
+        self.assertNotIn("_floater", el[2])
+        self.assertEqual(anchors, {"A": (0.0, 0.0), "B": (5.0, 0.0)})
+
+    def test_region_false_frees_a_label_trapped_by_a_marker(self):
+        # a tight unfilled outline around the anchor is decorative ink, not a
+        # region — without `_region: false` the same-region rule traps the
+        # label inside an outline too small to hold it; rects count too
+        for marker in (
+            {"type": "polygon", "id": "mk",
+             "points": [[-12.0, -8.0], [12.0, -8.0], [12.0, 8.0], [-12.0, 8.0]]},
+            {"type": "rect", "id": "mk", "x": -12.0, "y": -8.0,
+             "width": 24.0, "height": 16.0},
+        ):
+            with self.subTest(marker=marker["type"]):
+                def build(flag):
+                    return vt.finish(
+                        kind="t", figure_id="tf", stem="A marked dot.",
+                        elements=[_dot("dotD", 0.0, 0.0),
+                                  dict(marker, **({"_region": False} if flag else {})),
+                                  _floater("lblD", "D", (0.0, 0.0))],
+                        anchors={"D": (0.0, 0.0)}, points=["D"], segments=[],
+                        ask=[["a", "x"]], claims=[('label "D" names D', "stem", "")],
+                        title=None, description=None, scale="x")
+                with self.assertRaises(vt.TemplateError) as cm:
+                    build(False)
+                self.assertIn("same-region", str(cm.exception))
+                b = build(True)
+                lbl = next(e for e in b.doc["elements"] if e["id"] == "lblD")
+                self.assertNotEqual(lbl["at"], [0.0, 0.0])          # it moved, and placed
+                self.assertNotIn("_region", next(e for e in b.doc["elements"]
+                                                 if e["id"] == "mk"))
+
+
+class RegionPoints(unittest.TestCase):
+    def test_inside_outside_avoid(self):
+        cl, cr, R = (0.0, 0.0), (140.0, 0.0), 100.0
+        p = vt.region_point({"left": (cl, R), "right": (cr, R)},
+                            inside=["right"], outside=["left"],
+                            prefer=(140.0, 0.0), avoid=[cr], min_sep=25.0)
+        self.assertLessEqual(math.hypot(p[0] - cr[0], p[1] - cr[1]), R - 15.0)
+        self.assertGreaterEqual(math.hypot(p[0] - cl[0], p[1] - cl[1]), R + 15.0)
+        self.assertGreaterEqual(math.hypot(p[0] - cr[0], p[1] - cr[1]), 25.0)
+
+    def test_nearest_to_prefer_wins(self):
+        p = vt.region_point({"c": ((0.0, 0.0), 50.0)}, inside=["c"], outside=[],
+                            prefer=(20.0, 0.0), step=2.0)
+        self.assertEqual(p, (20.0, 0.0))                 # prefer itself already qualifies
+
+    def test_impossible_region_raises(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.region_point({"c": ((0.0, 0.0), 20.0)}, inside=["c"], outside=[],
+                            prefer=(5000.0, 5000.0))
+        with self.assertRaises(vt.TemplateError):
+            vt.region_point({"c": ((0.0, 0.0), 20.0)}, inside=["c"], outside=["c"],
+                            prefer=(0.0, 0.0))
+
+    def test_unknown_circle_named(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.region_point({"c": ((0.0, 0.0), 20.0)}, inside=["nope"], outside=[],
+                            prefer=(0.0, 0.0))
+        self.assertIn("nope", str(cm.exception))
+
+    def test_on_circle_point_and_membership(self):
+        c, r = (10.0, 20.0), 50.0
+        p = vt.on_circle_point(c, r, 90.0)               # 90° is DOWN (y down)
+        self.assertAlmostEqual(p[0], 10.0)
+        self.assertAlmostEqual(p[1], 70.0)
+        claims = vt.membership_claims("D", p, {"main": (c, r)})
+        self.assertEqual(len(claims), 1)
+        self.assertIn('describe "D lies on the main circle"', claims[0][0])
+        inside = vt.membership_claims("D", c, {"main": (c, r)})[0][0]
+        self.assertIn("inside the main circle", inside)
+
+
+class ByteIdentity(unittest.TestCase):
+    """The floating-label machinery must not change any existing template's bytes —
+    sha256 over each self-test spec's three emitted files, captured on origin/main."""
+
+    GOLDEN = {
+        "selftest-cuboid": "05f09debdef31ece88cfbc7ffc0036095112bab21c2ff513ffd1afa5b8f58c9c",
+        "selftest-dots": "7ed9088e060208c13050f2dddfb4e846ab7c7a859f364ebd64f94d4230dea166",
+        "selftest-grid": "397021ddea0b1ea650bb7103578ea6155e3c230991228040c9fd6416f0ab2abf",
+        "selftest-house": "b7efe080cc9db6bc8e028b0ec5e7ca2e0a5a12757295489d7c663f8512762f38",
+        "selftest-line": "aaabd2c6e476e4cb67c22dcb3c1f506aba59e7e2fc29764635bd886a52279851",
+        "selftest-pict": "c39c157a1f4fcbedcad1e30515b71184db67d234930e96ec51d7c515245ccdd3",
+        "selftest-rays": "606bb0917cb0316a0b89f910ccc14c2c4305a9ca065af4f42b4d49f65b4a59ab",
+        "selftest-rect": "18af540590a9ef7abc046ad8c7700a13d149195b7781dc9f3d6dac5ad0cbea0a",
+        "selftest-shade": "208fef9855980d20d4b8ba21d3af491e46c6174029102596dec707439cea88e2",
+    }
+
+    def test_self_test_outputs_unchanged(self):
+        import hashlib
+        import vdd_cookbook as vc
+        with tempfile.TemporaryDirectory() as tmp:
+            for spec in vt.SELF_TEST:
+                spec = dict(spec)
+                kind = spec.pop("template")
+                with self.subTest(kind=kind):
+                    # auto-ids (right-angle squares) come from a module counter — the
+                    # golden bytes are each spec's FIRST build in a fresh process
+                    vc.reset_ids()
+                    b = vt.BUILDERS[kind](**spec)
+                    b.write(tmp)
+                    h = hashlib.sha256()
+                    for f in sorted(Path(tmp).glob(spec["figure_id"] + "*")):
+                        h.update(f.read_bytes())
+                    self.assertEqual(h.hexdigest(), self.GOLDEN[spec["figure_id"]],
+                                     f"{kind}: emitted bytes changed")
+
+
 if __name__ == "__main__":
     unittest.main()

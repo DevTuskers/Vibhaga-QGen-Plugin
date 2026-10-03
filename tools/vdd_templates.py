@@ -30,6 +30,7 @@ rendered measurement in `tools/vdd-check.mjs` remains the truth; this is the pre
 """
 from __future__ import annotations
 
+import copy
 import json
 import math
 import re
@@ -72,6 +73,15 @@ MID_UP, MID_DOWN = 0.70, 0.58
 # mark_off − 9.0, i.e. +0.50·size; DiagramRenderer's own label box uses ±0.5·size). Modelled at
 # 0.53 to keep a small pad over the measurement. A descender glyph (gjpqy…) reaches ~MID_DOWN.
 POINT_LABEL_DOWN = 0.53
+
+# Floating labels — a `text` element carrying `_near` asks finish() to place it (W10a).
+FLOAT_GAP = 14.0          # default `_gap`: units from the anchor to the box's NEAR edge
+FLOAT_REACH, FLOAT_STEP = 36.0, 6.0   # candidates try _gap, _gap+6, …, _gap+36
+FLOAT_DIRS = [0.0, -45.0, -90.0, -135.0, 180.0, 135.0, 90.0, 45.0,     # E NE N NW W SW S SE
+              -22.5, -67.5, -112.5, -157.5, 157.5, 112.5, 67.5, 22.5]  # ENE NNE NNW WNW WSW SSW SSE ESE
+OWN_PX = 6.0              # a floater's centre must beat other anchors/dots by this many px
+OWN_FIXED_PX = 3.0        # …and a fixed label its claim's anchor by this much (pre-flight)
+ON_TOL = 2.0              # a point this close to an outline lies ON it (the same-region case)
 
 COMPASS = {"N": -90.0, "NE": -45.0, "E": 0.0, "SE": 45.0,
            "S": 90.0, "SW": 135.0, "W": 180.0, "NW": -135.0}
@@ -343,24 +353,24 @@ def stroke_segments(elements: list[dict], stroke_w: float = 2.0) -> list[tuple[X
     return segs
 
 
+def _pt_seg(a: XY, u: XY, v: XY) -> float:
+    dx, dy = v[0] - u[0], v[1] - u[1]
+    L2 = dx * dx + dy * dy
+    if L2 == 0:
+        return math.hypot(a[0] - u[0], a[1] - u[1])
+    t = max(0.0, min(1.0, ((a[0] - u[0]) * dx + (a[1] - u[1]) * dy) / L2))
+    return math.hypot(a[0] - u[0] - t * dx, a[1] - u[1] - t * dy)
+
+
 def _seg_seg_dist(p: XY, q: XY, r: XY, s: XY) -> float:
     """0 when the segments cross, else the smallest endpoint-to-segment distance."""
-
-    def pt_seg(a, u, v):
-        dx, dy = v[0] - u[0], v[1] - u[1]
-        L2 = dx * dx + dy * dy
-        if L2 == 0:
-            return math.hypot(a[0] - u[0], a[1] - u[1])
-        t = max(0.0, min(1.0, ((a[0] - u[0]) * dx + (a[1] - u[1]) * dy) / L2))
-        return math.hypot(a[0] - u[0] - t * dx, a[1] - u[1] - t * dy)
-
     den = (q[0] - p[0]) * (s[1] - r[1]) - (q[1] - p[1]) * (s[0] - r[0])   # cross(d1, d2)
     if den:
         t = ((r[0] - p[0]) * (s[1] - r[1]) - (r[1] - p[1]) * (s[0] - r[0])) / den
         u = ((r[0] - p[0]) * (q[1] - p[1]) - (r[1] - p[1]) * (q[0] - p[0])) / den
         if 0 <= t <= 1 and 0 <= u <= 1:
             return 0.0
-    return min(pt_seg(p, r, s), pt_seg(q, r, s), pt_seg(r, p, q), pt_seg(s, p, q))
+    return min(_pt_seg(p, r, s), _pt_seg(q, r, s), _pt_seg(r, p, q), _pt_seg(s, p, q))
 
 
 def _seg_rect_dist(p: XY, q: XY, box_: tuple[float, float, float, float]) -> float:
@@ -381,6 +391,208 @@ def _clearance_units(px: float, span_x: float) -> float:
     # clearance in units = px / s with s = min(1, PLATE_INNER/(span+2m+60)) — a canvas narrower
     # than the plate renders ABOVE 1 px/unit but earns no credit for it (never under `px` units).
     return px * max(1.0, (span_x + 2 * margin + 60.0) / PLATE_INNER)
+
+
+def _fit_extent(strokes: list[tuple[XY, XY, float]], boxes: list[tuple]) -> tuple[float, float, int, int]:
+    """(dx, dy, W, H) — the canvas fit finish() computes for this ink, factored out so the
+    floating-label search can estimate rendered px on the SAME scale the final pre-flight
+    uses: the margin must still clear the edge after the render scales down to the narrowest
+    surface — a fixed 12 units drops under 8 rendered px once the canvas widens (critic R3
+    finding 3: number line 0–10+ refused). Solve edge ≥ EDGE_PX + SLACK_EDGE on the TIGHTER
+    card scale:  margin·294/(span + 2·margin + 60) ≥ 9  ⇒  margin ≥ (9·span + 540)/276."""
+    xs, ys = [], []
+    for a, b, w in strokes:
+        xs += [a[0] - w / 2, b[0] - w / 2, a[0] + w / 2, b[0] + w / 2]
+        ys += [a[1] - w / 2, b[1] - w / 2, a[1] + w / 2, b[1] + w / 2]
+    for _s, x0, y0, x1, y1 in boxes:
+        xs += [x0, x1]
+        ys += [y0, y1]
+    minx, miny, maxx, maxy = min(xs), min(ys), max(xs), max(ys)
+    span_x, span_y = maxx - minx, maxy - miny
+    margin = max(MARGIN, (EDGE_PX + SLACK_EDGE) *
+                 (span_x + 60.0) / (PLATE_INNER - 2 * (EDGE_PX + SLACK_EDGE)) + 0.05)
+    return (margin - minx, margin - miny,
+            math.ceil(span_x + 2 * margin), math.ceil(span_y + 2 * margin))
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Floating labels — a `text` element carrying `_near` (+ optional `_gap`) asks finish()
+# to place it: the pre-flight already knows the constraints, so it solves them too.
+# ────────────────────────────────────────────────────────────────────────────────
+def _pt_in_poly(p: XY, pts: list[XY]) -> bool:
+    x, y = p
+    inside, j = False, len(pts) - 1
+    for i in range(len(pts)):
+        xi, yi, xj, yj = pts[i][0], pts[i][1], pts[j][0], pts[j][1]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _regions(elements: list[dict]) -> list[tuple]:
+    """("c", centre, r) | ("p", pts) outlines the same-region rule respects — unfilled
+    circles, unfilled closed polygons and unfilled rects (a FILLED circle is a dot, not
+    a region). Any of these may carry `_region: false` to stay decorative — a small
+    unfilled marker around an anchor must not trap its label inside it."""
+    out = []
+    for el in elements:
+        if el.get("_region") is False:
+            continue
+        if el["type"] == "circle" and not el.get("fill") and el.get("r", 0) > 0:
+            out.append(("c", (float(el["center"][0]), float(el["center"][1])), float(el["r"])))
+        elif el["type"] == "polygon" and not el.get("fill") and len(el.get("points") or []) >= 3:
+            out.append(("p", [tuple(map(float, p)) for p in el["points"]]))
+        elif el["type"] == "rect" and not el.get("fill") and \
+                all(isinstance(el.get(k), (int, float)) for k in ("x", "y", "width", "height")):
+            x, y, w, h = (float(el[k]) for k in ("x", "y", "width", "height"))
+            out.append(("p", [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]))
+    return out
+
+
+def _side_of(p: XY, reg) -> str:
+    """'on' | 'in' | 'out' — 'on' means within ON_TOL of the outline itself."""
+    if reg[0] == "c":
+        d = math.hypot(p[0] - reg[1][0], p[1] - reg[1][1])
+        return "on" if abs(d - reg[2]) <= ON_TOL else ("in" if d < reg[2] else "out")
+    pts = reg[1]
+    if min(_pt_seg(p, a, b) for a, b in zip(pts, pts[1:] + pts[:1])) <= ON_TOL:
+        return "on"
+    return "in" if _pt_in_poly(p, pts) else "out"
+
+
+def _dot_centres(elements: list[dict]) -> list[XY]:
+    """Positions a floating label must beat for its own anchor: `point` marks and
+    filled circles (the dots a hand-drawn figure's `_near` points sit on)."""
+    return [tuple(map(float, el["at"])) if el["type"] == "point"
+            else tuple(map(float, el["center"]))
+            for el in elements
+            if el["type"] == "point" or (el["type"] == "circle" and el.get("fill"))]
+
+
+def _union_centre(boxes: list[tuple]) -> XY:
+    return ((min(b[1] for b in boxes) + max(b[3] for b in boxes)) / 2,
+            (min(b[2] for b in boxes) + max(b[4] for b in boxes)) / 2)
+
+
+FLOAT_RULES = ("the stroke-clearance rule", "the label-gap rule", "the own-anchor rule",
+               "the same-region rule")
+
+
+def _floater_bad(cbs: list[tuple], near: XY, rivals: list[XY], strokes: list[tuple],
+                 others: list[tuple], regions: list[tuple], s: float) -> int:
+    """Bitmask of the four placement rules for a floater's candidate boxes `cbs` at rendered
+    scale s — 1 stroke clearance · 2 label gap · 4 own-anchor · 8 same-region. `others` is
+    every label box that is not this floater's (fixed labels + the other floaters')."""
+    bad = 0
+    if strokes and min(_seg_rect_dist(a, b, cb[1:5]) - w / 2
+                       for a, b, w in strokes for cb in cbs
+                       ) * s < STROKE_PX + SLACK_STROKE:
+        bad |= 1
+    if any(_rect_gap(cb[1:5], pb[1:5]) * s < 4.0 for cb in cbs for pb in others):
+        bad |= 2
+    ctr = _union_centre(cbs)
+    own = math.hypot(ctr[0] - near[0], ctr[1] - near[1])
+    if any((math.hypot(ctr[0] - o[0], ctr[1] - o[1]) - own) * s < OWN_PX for o in rivals):
+        bad |= 4
+    for r in regions:
+        sn = _side_of(near, r)
+        if _side_of(ctr, r) != ("out" if sn == "on" else sn):
+            bad |= 8
+            break
+    return bad
+
+
+def _search_floater(kind: str, el: dict, near: XY, gap: float, off: XY,
+                    rivals: list[XY], strokes: list[tuple], others: list[tuple],
+                    regions: list[tuple], fs: float) -> tuple[list, list]:
+    """Sweep FLOAT_DIRS × `_gap … _gap+FLOAT_REACH` for `el` against the given fixed boxes;
+    (at, label boxes) of the first candidate passing all four rules, or a TemplateError
+    naming the rule that rejected most candidates."""
+    size = float(el.get("fontSize", fs))
+    tally = [0] * len(FLOAT_RULES)
+    for k in range(int(FLOAT_REACH / FLOAT_STEP) + 1):
+        d = gap + FLOAT_STEP * k
+        for deg in FLOAT_DIRS:
+            ux, uy = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+            half = _label_half_along(str(el["value"]), size, ux, uy)
+            want = (near[0] + (d + half) * ux, near[1] + (d + half) * uy)
+            at = [vc.r2(want[0] - off[0]), vc.r2(want[1] - off[1])]
+            cbs = label_boxes([dict(el, at=at)], fs)
+            _dx, _dy, W, _H = _fit_extent(strokes, others + cbs)
+            bad = _floater_bad(cbs, near, rivals, strokes, others, regions,
+                               min(1.0, PLATE_INNER / (W + 60.0)))
+            if not bad:
+                return at, cbs
+            for i in range(len(FLOAT_RULES)):
+                if bad & (1 << i):
+                    tally[i] += 1
+    n_cand = (int(FLOAT_REACH / FLOAT_STEP) + 1) * len(FLOAT_DIRS)
+    i = tally.index(max(tally))
+    raise TemplateError(
+        f"{kind}: floating label {el.get('value')!r} found no clear spot near "
+        f"{near} — {FLOAT_RULES[i].removeprefix('the ')} rejected {tally[i]} of "
+        f"{n_cand} candidates")
+
+
+def _place_floaters(kind: str, elements: list[dict], fs: float) -> None:
+    """Place each `text` carrying `_near` (and optional `_gap`) clear of the figure.
+
+    For every floater, in element order, candidates sweep FLOAT_DIRS × distances
+    `_gap … _gap + FLOAT_REACH` — the box's near edge sits that many units off the
+    anchor. The first candidate keeping, in RENDERED px on the fitted card scale:
+    (a) ≥ STROKE_PX + SLACK_STROKE to every stroke edge, (b) ≥ 4 px to every other
+    placed label box, (c) a centre ≥ OWN_PX nearer `_near` than every other floater's
+    anchor and every dot centre, and (d) the centre on the same side of every region
+    outline as `_near` — OUTSIDE one `_near` sits ON (within ON_TOL) — wins.
+
+    Each placed floater keeps a `_floater` marker (its chosen `at`) so the pre-flight's
+    refusals can name them honestly. After all floaters are placed the placement scale is
+    re-derived with EVERY label box — a later floater can widen the canvas and shrink the
+    rendered px under an earlier one's marginal pass — and any floater now failing a–d is
+    re-searched with every other label fixed, twice at most. The normal fit + pre-flight
+    then re-check everything and stay the final word."""
+    floaters = [el for el in elements if el["type"] == "text" and "_near" in el]
+    if not floaters:
+        return
+    strokes = stroke_segments(elements)
+    fixed = label_boxes([el for el in elements if el not in floaters], fs)
+    dots = _dot_centres(elements)
+    regions = _regions(elements)
+    prep: dict[int, tuple] = {}
+    placed_of: dict[int, list] = {}
+    for el in floaters:
+        near = tuple(map(float, el["_near"]))
+        gap = float(el.get("_gap", FLOAT_GAP))
+        # where this element's box centre sits relative to its `at` (align/baseline/lines)
+        off = _union_centre(label_boxes([dict(el, at=[0.0, 0.0])], fs))
+        rivals = [tuple(map(float, f["_near"])) for f in floaters if f is not el] + \
+                 [c for c in dots if math.hypot(c[0] - near[0], c[1] - near[1]) > ON_TOL]
+        prep[id(el)] = (near, gap, off, rivals)
+
+    def others_of(el) -> list:
+        return fixed + [b for f in floaters if f is not el for b in placed_of.get(id(f), [])]
+
+    for el in floaters:
+        near, gap, off, rivals = prep[id(el)]
+        at, cbs = _search_floater(kind, el, near, gap, off, rivals, strokes,
+                                  others_of(el), regions, fs)
+        el["at"], el["_floater"], placed_of[id(el)] = at, list(at), cbs
+
+    for _pass in range(2):
+        _dx, _dy, W, _H = _fit_extent(
+            strokes, fixed + [b for cbs in placed_of.values() for b in cbs])
+        s = min(1.0, PLATE_INNER / (W + 60.0))
+        redo = [el for el in floaters
+                if _floater_bad(placed_of[id(el)], prep[id(el)][0], prep[id(el)][3],
+                                strokes, others_of(el), regions, s)]
+        for el in redo:
+            near, gap, off, rivals = prep[id(el)]
+            at, cbs = _search_floater(kind, el, near, gap, off, rivals, strokes,
+                                      others_of(el), regions, fs)
+            el["at"], el["_floater"], placed_of[id(el)] = at, list(at), cbs
+        if not redo:
+            break
 
 
 def _check_label_texts(elements: list[dict], extra: list[str], medium: str) -> None:
@@ -432,7 +644,12 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
            departures: list[str] | None = None, budget: int | None = None,
            contested: list[tuple[str, str]] | None = None,
            medium: str = "english") -> Built:
-    """Fit the figure to its canvas, run the label-clearance pre-flight, emit the claim set."""
+    """Fit the figure to its canvas, run the label-clearance pre-flight, emit the claim set.
+
+    `elements`/`anchors` are never mutated — the caller may reuse the same lists across
+    retried finish() calls even after a raise."""
+    elements = copy.deepcopy(elements)
+    anchors = copy.deepcopy(anchors)
     if not FIG_ID.fullmatch(figure_id):
         raise TemplateError(f"figure_id {figure_id!r} must be one token (letters/digits/._-)")
     if not stem.strip():
@@ -444,28 +661,21 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
     _check_label_texts(elements, [title or "", description or ""], medium)
 
     fs = FS
+    _place_floaters(kind, elements, fs)      # `_near` texts get their `at` + `_floater` mark
+
     # 1. fit — bbox over ALL ink (shape outlines incl. half the stroke) plus the label boxes
-    boxes = label_boxes(elements, fs)
+    # `owners` maps each label box back to its element, so a pre-flight refusal on a placed
+    # floater can say so instead of telling the author to "move" a label it placed itself.
+    owners: list[dict] = []
+    boxes: list[tuple] = []
+    for el in elements:
+        for b in label_boxes([el], fs):
+            boxes.append(b)
+            owners.append(el)
     strokes = stroke_segments(elements)
-    xs, ys = [], []
-    for a, b, w in strokes:
-        xs += [a[0] - w / 2, b[0] - w / 2, a[0] + w / 2, b[0] + w / 2]
-        ys += [a[1] - w / 2, b[1] - w / 2, a[1] + w / 2, b[1] + w / 2]
-    for _s, x0, y0, x1, y1 in boxes:
-        xs += [x0, x1]
-        ys += [y0, y1]
-    minx, miny, maxx, maxy = min(xs), min(ys), max(xs), max(ys)
-    # the margin must still clear the edge after the render scales down to the narrowest
-    # surface — a fixed 12 units drops under 8 rendered px once the canvas widens (critic R3
-    # finding 3: number line 0–10+ refused). Solve edge ≥ EDGE_PX + SLACK_EDGE on the TIGHTER
-    # card scale:  margin·294/(span + 2·margin + 60) ≥ 9  ⇒  margin ≥ (9·span + 540)/276.
-    span_x, span_y = maxx - minx, maxy - miny
-    margin = max(MARGIN, (RENDER_EDGE := EDGE_PX + SLACK_EDGE) *
-                 (span_x + 60.0) / (PLATE_INNER - 2 * RENDER_EDGE) + 0.05)
-    dx, dy = margin - minx, margin - miny
+    dx, dy, W, H = _fit_extent(strokes, boxes)
     _translate(elements, dx, dy)
     anchors = {k: (vc.r2(v[0] + dx), vc.r2(v[1] + dy)) for k, v in anchors.items()}
-    W, H = math.ceil(maxx - minx + 2 * margin), math.ceil(maxy - miny + 2 * margin)
     if H > MAX_ASPECT * W:
         raise TemplateError(
             f"{kind}: canvas is {H}×{W} (h/w {H / W:.1f} > {MAX_ASPECT:g}) — renders "
@@ -480,27 +690,73 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
     scale_stroke = min(1.0, PLATE_INNER / (W + 60.0))
     boxes = [(_s, x0 + dx, y0 + dy, x1 + dx, y1 + dy) for _s, x0, y0, x1, y1 in boxes]
     strokes = [((a[0] + dx, a[1] + dy), (b[0] + dx, b[1] + dy), w) for a, b, w in strokes]
-    for txt, x0, y0, x1, y1 in boxes:
+
+    def refuse_label(i: int, rule: str, msg: str):
+        """A floater that still fails at the final scale gets the honest error — the author
+        cannot 'move' a label finish() placed; only `_gap` or the geometry moves it."""
+        el = owners[i]
+        if el.get("_floater") is not None:
+            raise TemplateError(
+                f"{kind}: floating label {boxes[i][0]!r} was placed at {el['_floater']} but "
+                f"fails {rule} at the final scale — raise _gap or widen the figure")
+        raise TemplateError(msg)
+
+    for i, (txt, x0, y0, x1, y1) in enumerate(boxes):
         edge = min(x0, y0, W - x1, H - y1) * scale_edge
         if edge < EDGE_PX + SLACK_EDGE:
-            raise TemplateError(
-                f"{kind}: label {txt!r} is ~{edge:.1f} rendered px from the canvas edge "
-                f"(needs {EDGE_PX}px + slack) — move it inward")
+            refuse_label(i, "the edge rule",
+                         f"{kind}: label {txt!r} is ~{edge:.1f} rendered px from the canvas "
+                         f"edge (needs {EDGE_PX}px + slack) — move it inward")
         worst = min(_seg_rect_dist(a, b, (x0, y0, x1, y1)) - w / 2 for a, b, w in strokes) if strokes else 99
         if worst * scale_stroke < STROKE_PX + SLACK_STROKE:
-            raise TemplateError(
-                f"{kind}: label {txt!r} is ~{worst * scale_stroke:.1f} rendered px from stroke "
-                f"geometry (needs {STROKE_PX}px + slack) — move it clear")
+            refuse_label(i, "the stroke-clearance rule",
+                         f"{kind}: label {txt!r} is ~{worst * scale_stroke:.1f} rendered px "
+                         f"from stroke geometry (needs {STROKE_PX}px + slack) — move it clear")
     # labels must also clear EACH OTHER — two numerals on one wedge or a crowded number line
     # otherwise overlap silently until the render (needs ≥ 4 rendered px between boxes)
     for i in range(len(boxes)):
         _t1, ax0, ay0, ax1, ay1 = boxes[i]
-        for _t2, bx0, by0, bx1, by1 in boxes[i + 1:]:
+        for j, (_t2, bx0, by0, bx1, by1) in enumerate(boxes[i + 1:], i + 1):
             gap = _rect_gap((ax0, ay0, ax1, ay1), (bx0, by0, bx1, by1))
             if gap * scale_stroke < 4.0:
-                raise TemplateError(
-                    f"{kind}: labels {_t1!r} and {_t2!r} are ~{gap * scale_stroke:.1f} "
-                    f"rendered px apart (need 4) — move one clear")
+                k = i if owners[i].get("_floater") is not None else j
+                refuse_label(k, "the label-gap rule",
+                             f"{kind}: labels {_t1!r} and {_t2!r} are ~{gap * scale_stroke:.1f} "
+                             f"rendered px apart (need 4) — move one clear")
+
+    # own-anchor — a fixed label must sit nearer the anchor its claim names than any
+    # OTHER anchor a label claim names (a letter nearer the wrong dot mislabels silently)
+    named: dict[str, list[str]] = {}                     # anchor -> glyphs claimed for it
+    for pred, _e, _n in claims:
+        m = re.match(r'^label "(.+)" names (\S+)$', pred)
+        if m and m.group(2) in anchors:
+            named.setdefault(m.group(2), []).append(m.group(1))
+    if named:
+        centres: dict[str, list[tuple[XY, dict]]] = {}
+        for i, (txt, x0, y0, x1, y1) in enumerate(boxes):
+            centres.setdefault(txt, []).append((((x0 + x1) / 2, (y0 + y1) / 2), owners[i]))
+        for target, glyphs in named.items():
+            for g in glyphs:
+                for (cx, cy), el in centres.get(g, []):
+                    own = math.hypot(cx - anchors[target][0], cy - anchors[target][1])
+                    other = min(((math.hypot(cx - anchors[o][0], cy - anchors[o][1]), o)
+                                 for o in named if o != target), default=None)
+                    if other and (other[0] - own) * scale_stroke < OWN_FIXED_PX:
+                        if el.get("_floater") is not None:
+                            raise TemplateError(
+                                f"{kind}: floating label {g!r} was placed at "
+                                f"{el['_floater']} but fails the own-anchor rule at the "
+                                f"final scale — raise _gap or widen the figure")
+                        raise TemplateError(
+                            f"{kind}: label {g!r} is nearer anchor {other[1]} than its own "
+                            f"{target} (~{other[0] * scale_stroke:.1f} vs "
+                            f"{own * scale_stroke:.1f} rendered px, needs {OWN_FIXED_PX:g} "
+                            f"clear) — move it or give it `_near` so finish() places it")
+
+    for el in elements:                      # internal `_…` keys never reach the VDD doc —
+        for key in [k for k in el if k.startswith("_")]:   # `_near`/`_gap`/`_floater`/`_region`
+            del el[key]                                    # kept until now so the pre-flight
+                                                           # could word floater refusals
 
     # 3. the claim set (audit-claim-set grammar; order is the corpus convention)
     if points and any(not re.fullmatch(r"[A-Z]", p) for p in points):
@@ -716,6 +972,82 @@ def _derive_backed(add, need: list[float], stem: str) -> dict[float, str]:
             backed.add(val)
             emitted[val] = cid
     return emitted
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Points inside/outside regions — for hand-drawn figures (circles holding dots)
+# ────────────────────────────────────────────────────────────────────────────────
+def on_circle_point(centre: XY, r: float, deg: float) -> XY:
+    """A point ON a circle — the cookbook's polar convention (0° = east, y down, so
+    90° points DOWN on the canvas). Pair with a `circle centre X radius r` claim."""
+    return vc.polar(centre, r, deg)
+
+
+def region_point(circles: dict[str, tuple[XY, float]], inside: list[str], outside: list[str],
+                 prefer: XY, margin: float = 15.0, avoid: list[XY] = (),
+                 min_sep: float = 30.0, step: float = 2.0) -> XY:
+    """The point nearest `prefer` ON THE FIRST expanding Chebyshev ring (outward at `step`
+    resolution) that holds any valid point — nearest within that ring, not globally
+    nearest. Valid = ≥`margin` inside every `inside` circle, ≥`margin` outside every
+    `outside` circle and ≥`min_sep` from every `avoid` point. No valid point within 400
+    units → TemplateError. Pure geometry — no elements, same canvas frame as the doc."""
+    for n in (*inside, *outside):
+        if n not in circles:
+            raise TemplateError(f"region_point: unknown circle {n!r} — known: {sorted(circles)}")
+
+    def ok(x: float, y: float) -> bool:
+        for n in inside:
+            (cx, cy), r = circles[n]
+            if math.hypot(x - cx, y - cy) > r - margin:
+                return False
+        for n in outside:
+            (cx, cy), r = circles[n]
+            if math.hypot(x - cx, y - cy) < r + margin:
+                return False
+        return all(math.hypot(x - ax, y - ay) >= min_sep for ax, ay in avoid)
+
+    px, py = float(prefer[0]), float(prefer[1])
+    k = 0
+    while k * step <= 400.0:
+        if k == 0:
+            ring = [(px, py)]
+        else:
+            r_ = k * step
+            ring = [(px + i * step, py - r_) for i in range(-k, k + 1)] + \
+                   [(px + i * step, py + r_) for i in range(-k, k + 1)] + \
+                   [(px - r_, py + i * step) for i in range(-k + 1, k)] + \
+                   [(px + r_, py + i * step) for i in range(-k + 1, k)]
+        best = None
+        for x, y in ring:
+            if ok(x, y):
+                d = math.hypot(x - px, y - py)
+                if best is None or d < best[0]:
+                    best = (d, x, y)
+        if best:
+            return (vc.r2(best[1]), vc.r2(best[2]))
+        k += 1
+    raise TemplateError(
+        f"region_point: no spot within 400 units of {prefer} that is inside {inside}, "
+        f"outside {outside} and {min_sep:g} from {len(avoid)} point(s) — widen the geometry")
+
+
+def membership_claims(name: str, point: XY, circles: dict[str, tuple[XY, float]],
+                      ) -> list[tuple[str, str, str]]:
+    """The `describe` claim tuple(s) recording which of `circles` `point` lies in/on/out
+    of — 'on the X circle' within ON_TOL of the outline, else inside/outside by side.
+    The words are decided by the point's actual side; the margin region_point placed it
+    with belongs to that call, not to this claim."""
+    words = []
+    for cname, (c, r) in circles.items():
+        d = math.hypot(point[0] - c[0], point[1] - c[1])
+        if abs(d - r) <= ON_TOL:
+            words.append(f"on the {cname} circle")
+        elif d < r:
+            words.append(f"inside the {cname} circle")
+        else:
+            words.append(f"outside the {cname} circle")
+    return [(f'describe "{name} lies {" and ".join(words)}"',
+             "inferred", "the point's drawn position")]
 
 
 # ────────────────────────────────────────────────────────────────────────────────

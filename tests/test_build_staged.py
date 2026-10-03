@@ -253,6 +253,59 @@ class BuildStagedTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self.assert_refuses(spec, tmp, "as a pair")
 
+    # ---- actor-only leaf keys: check / level (W10) --------------------------
+
+    def test_check_and_level_keys_never_reach_staged(self):
+        """Golden: staged output is byte-identical whether or not the leaves carry
+        `check:`/`level:` — the keys are actor-only, never emitted."""
+        import yaml
+        spec = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
+        spec["questions"][0]["check"] = "5 * 2 == 10"
+        spec["questions"][0]["level"] = "R"
+        nested = spec["questions"][1]["parts"][1]["parts"][0]
+        nested["check"] = "10 / 2 == 5"
+        nested["level"] = "M"
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "figures").mkdir()          # figure paths resolve beside the spec
+            (Path(tmp) / "figures" / "q3.json").write_bytes(FIG.read_bytes())
+            spec_path = Path(tmp) / "content.yaml"
+            spec_path.write_text(yaml.safe_dump(spec, allow_unicode=True, sort_keys=False),
+                                 encoding="utf-8")
+            a, b = Path(tmp) / "plain.json", Path(tmp) / "with-keys.json"
+            self.assertEqual(run_tool(FIXTURE, a).returncode, 0)
+            self.assertEqual(run_tool(spec_path, b).returncode, 0)
+            self.assertEqual(a.read_bytes(), b.read_bytes())
+
+    def test_bad_level_refused(self):
+        spec = copy.deepcopy(BASE)
+        spec["questions"][0]["level"] = "X"
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec, tmp, "one of R, M, H")
+
+    def test_nonstring_check_refused(self):
+        spec = copy.deepcopy(BASE)
+        spec["questions"][0]["check"] = ["40 * 23 == 920"]
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec, tmp, "string expression")
+
+    def test_meta_keys_on_a_container_are_refused(self):
+        """`check:`/`level:` on a node WITH parts would be silently ignored — the walkers
+        only visit leaves — so build-staged refuses instead of letting it look checked."""
+        spec = copy.deepcopy(BASE)
+        spec["questions"][0]["parts"] = [
+            {"label": "a", "text": "t", "approach": "x", "final": "1"}]
+        del spec["questions"][0]["approach"], spec["questions"][0]["final"]
+        spec["questions"][0]["check"] = "1 == 1"
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec, tmp, "leaf-only")
+        spec2 = copy.deepcopy(BASE)
+        spec2["questions"][0]["parts"] = [
+            {"label": "a", "text": "t", "level": "M", "parts": [
+                {"label": "i", "text": "t", "approach": "x", "final": "1"}]}]
+        del spec2["questions"][0]["approach"], spec2["questions"][0]["final"]
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec2, tmp, "leaf-only")
+
 
 if __name__ == "__main__":
     unittest.main()

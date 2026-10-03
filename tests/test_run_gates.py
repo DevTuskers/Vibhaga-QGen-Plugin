@@ -87,7 +87,7 @@ class StubRunner:
 def build_args(run, **over):
     import argparse
     base = {"run": str(run), "medium": "sinhala", "vc_out": None, "card": [],
-            "grade": None, "cards_dir": None}
+            "grade": None, "cards_dir": None, "rubric": None}
     base.update(over)
     return argparse.Namespace(**base)
 
@@ -122,13 +122,18 @@ class BuildTest(unittest.TestCase):
             i_aud1 = next(i for i, c in enumerate(stages) if "audit-claim-set" in c)
             i_vdd1 = next(i for i, c in enumerate(stages) if "vdd-check" in c)
             i_staged = next(i for i, c in enumerate(stages) if "build-staged" in c)
+            i_chk = next(i for i, c in enumerate(stages) if "check-answers" in c)
+            i_mgate = next(i for i, c in enumerate(stages) if "markdown-gate" in c)
             i_vc = next(i for i, c in enumerate(stages) if "visual-check" in c)
             i_lint = next(i for i, c in enumerate(stages) if "precritic-lint" in c)
             self.assertLess(i_tpl, i_aud1)
             self.assertLess(i_aud1, i_vdd1)
             self.assertLess(i_vdd1, i_staged)
-            self.assertLess(i_staged, i_vc)
+            self.assertLess(i_staged, i_chk)
+            self.assertLess(i_chk, i_mgate)
+            self.assertLess(i_mgate, i_vc)
             self.assertLess(i_vc, i_lint)
+            self.assertIn(str(run), stages[i_chk])
             # both figures audited before either is vdd-checked? No — per figure, audit then check
             audit_calls = [c for c in stages if "audit-claim-set" in c]
             vdd_calls = [c for c in stages if "vdd-check" in c]
@@ -176,8 +181,27 @@ class BuildTest(unittest.TestCase):
             with redirect_stdout(out):
                 rc = rg.cmd_build(build_args(run), runner=stub)
             self.assertEqual(rc, 0, out.getvalue())
-            self.assertIn("precritic-lint: skipped — no --card", out.getvalue())
+            self.assertIn("precritic-lint: skipped — no --card/--rubric/existing*.json",
+                          out.getvalue())
             self.assertFalse(any("precritic" in " ".join(c) for c in stub.calls))
+
+    def test_rubric_and_existing_json_reach_precritic_argv(self):
+        # --rubric passes through, and every <run>/existing*.json becomes --existing —
+        # the lint then runs even with no --card bound
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "existing.json").write_text("[]", encoding="utf-8")
+            (run / "existing-ol.json").write_text("[]", encoding="utf-8")
+            stub = StubRunner()
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run, rubric="medium-hard"), runner=stub)
+            self.assertEqual(rc, 0, out.getvalue())
+            lint_argv = next(" ".join(c) for c in stub.calls if "precritic-lint" in " ".join(c))
+            self.assertIn("--rubric medium-hard", lint_argv)
+            self.assertIn("--existing", lint_argv)
+            self.assertIn("existing.json", lint_argv)
+            self.assertIn("existing-ol.json", lint_argv)
 
     def test_dict_keyed_specs_gate_every_figure(self):
         # a {figure_id: spec} map yields its values — the shared normalisation, so stage 2

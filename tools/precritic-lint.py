@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """precritic-lint.py — the mechanical pre-critic pass over a generate run dir (W9 item G).
 
-    precritic-lint.py <run> --card KEY=NN [--card …] --grade N [--cards-dir DIR]
+    precritic-lint.py <run> [--card KEY=NN …] [--grade N] [--cards-dir DIR]
+                            [--rubric medium-hard] [--existing FILE …]
 
 `<run>` is the generate §2 actor dir (`content.yaml`, `specs/figures.json`, `figures/`). Each
 `--card KEY=NN` binds a `content.yaml` `lessons:` key to a lesson's scope card, resolved as
@@ -27,6 +28,18 @@ Checks:
       (a part-less question: stem + approach + final) contains any of that card's cleaned
       vocabulary terms or a section-title word of ≥4 characters. A smell, not a proof —
       printed as `heuristic` so nobody treats it as a gate.
+
+  (d) `--rubric medium-hard` — the plan appendix's set rules, read off the leaf `level:`
+      keys (R|M/H, actor-only — build-staged never emits them): every question ≥3 leaf
+      parts; at most one R per question and only as part (a), i.e. its first leaf in
+      document order; the last leaf is H; ≥60 % of the set's RATED leaves M/H and ≥30 % H —
+      both fractions are set-wide. A leaf with no `level` is a WARN and counts in no
+      denominator, so it can never drive a FAIL.
+
+  (e) `--existing FILE …` — duplicate fingerprint: digits masked (`42`→`##`), whitespace
+      tokens, Jaccard of each question's stem+part texts against every existing row's
+      `stem_excerpt`. ≥0.6 → WARN naming the row — the same task with new numbers is a
+      duplicate even when the digits differ (decision 0001: no embeddings).
 
 Output: one FAIL/WARN line each, then `precritic-lint: F fail(s) · W warn(s)`.
 Exit 1 on any FAIL, else 0 — warns never block, same contract as validate.
@@ -169,6 +182,122 @@ def part_texts(q: dict) -> list[str]:
     return texts
 
 
+def leaf_levels(q: dict) -> list[tuple[str, object]]:
+    """(leaf id, level-or-None) in document order — a part-less question is one leaf `Q<n>`."""
+    out = []
+
+    def walk(parts, prefix):
+        for p in parts or []:
+            if not isinstance(p, dict):
+                continue
+            pid = f"{prefix}.{p.get('label')}"
+            if p.get("parts"):
+                walk(p["parts"], pid)
+            else:
+                out.append((pid, p.get("level")))
+
+    if q.get("parts"):
+        walk(q["parts"], f"Q{q.get('n')}")
+    else:
+        out.append((f"Q{q.get('n')}", q.get("level")))
+    return out
+
+
+STRIP_PUNCT = ".,;:!?()[]{}'\"$*_`~—–-"
+
+
+def mask_tokens(text: str) -> set[str]:
+    """Check (e)'s fingerprint: digits masked to `#` (so a numbers-only variant keeps the same
+    token set), whitespace-split, edge punctuation stripped."""
+    return {w for raw in re.sub(r"\d+", "#", str(text or "")).split()
+            if (w := raw.strip(STRIP_PUNCT))}
+
+
+def question_surface(q: dict) -> str:
+    """The stem + every part's text — check (e)'s fingerprint haystack."""
+    out = [str(q.get("stem") or "")]
+
+    def walk(parts):
+        for p in parts or []:
+            if not isinstance(p, dict):
+                continue
+            out.append(str(p.get("text") or ""))
+            walk(p.get("parts"))
+
+    walk(q.get("parts"))
+    return " ".join(out)
+
+
+def jaccard(a: set, b: set) -> float:
+    return len(a & b) / len(a | b) if a and b else 0.0
+
+
+def load_existing(path: Path) -> list[dict]:
+    """An existing-questions dump → row dicts. Accepts a JSON list, a JSON object holding a
+    questions/rows list, or JSONL (one row per line)."""
+    text = path.read_text(encoding="utf-8")
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = [json.loads(line) for line in text.splitlines() if line.strip()]
+    if isinstance(data, dict):
+        for k in ("questions", "rows", "results"):
+            if isinstance(data.get(k), list):
+                data = data[k]
+                break
+        else:
+            data = [data]
+    return [r for r in data if isinstance(r, dict)]
+
+
+def rubric_medium_hard(questions: list, log) -> tuple[int, int]:
+    """Check (d) — the plan appendix's medium–hard set rules from leaf `level:` keys.
+    "Part (a)" is document order's first leaf; the M/H and H fractions are SET-wide over
+    the rated leaves — a leaf with no `level` is a WARN and counts in no denominator."""
+    fails = warns = 0
+    all_rated = []
+    for q in questions:
+        lv = leaf_levels(q)
+        names = [n for n, _ in lv]
+        levels = [l for _, l in lv]
+        qn = f"Q{q.get('n')}"
+        if len(lv) < 3:
+            fails += 1
+            log(f"  FAIL {qn}: {len(lv)} leaf part(s) — medium-hard wants ≥3")
+        r_at = [i for i, l in enumerate(levels) if l == "R"]
+        if len(r_at) > 1:
+            fails += 1
+            log(f"  FAIL {qn}: {len(r_at)} R parts — medium-hard allows one, and only as "
+                f"part (a), i.e. the first part")
+        elif r_at and r_at[0] != 0:
+            fails += 1
+            log(f"  FAIL {qn}: the R part is {names[r_at[0]]} — medium-hard allows it "
+                f"only as part (a), i.e. the first part")
+        if levels and levels[-1] not in (None, "H"):
+            fails += 1
+            log(f"  FAIL {qn}: last part {names[-1]} is {levels[-1]} — medium-hard ends on H")
+        elif levels and levels[-1] is None:
+            warns += 1
+            log(f"  WARN {qn}: last part has no level — cannot check it is H")
+        for name, l in lv:
+            if l is None:
+                warns += 1
+                log(f"  WARN {name}: no level — the rubric cannot see it")
+            else:
+                all_rated.append(l)
+    mh = sum(1 for l in all_rated if l in ("M", "H"))
+    if all_rated and mh / len(all_rated) < 0.6:
+        fails += 1
+        log(f"  FAIL set: {mh}/{len(all_rated)} rated leaves are M/H — medium-hard wants "
+            f"≥60%")
+    h = sum(1 for l in all_rated if l == "H")
+    if all_rated and h / len(all_rated) < 0.3:
+        fails += 1
+        log(f"  FAIL set: {h}/{len(all_rated)} rated leaves are H — medium-hard wants "
+            f"≥30% H overall")
+    return fails, warns
+
+
 def card_terms(card: dict) -> list[str]:
     """The card's cleaned vocabulary + section-title words of ≥4 characters (check c)."""
     gen = card.get("generated") or {}
@@ -248,6 +377,29 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
                 warns += 1
                 log(f"  WARN Q{q.get('n')} tags {key} ({cards[key]['name']}) but no part's "
                     f"text/approach uses its vocabulary or section words — heuristic")
+
+    # (d) set rubric — the leaf `level:` keys against the plan appendix's rules
+    if args.rubric == "medium-hard":
+        f, w = rubric_medium_hard(questions, log)
+        fails += f
+        warns += w
+
+    # (e) duplicate fingerprint — digits masked, Jaccard vs each existing row's stem_excerpt
+    for path in getattr(args, "existing", []) or []:
+        p = Path(path)
+        if not p.is_file():
+            die(f"--existing {path}: no such file")
+        rows = load_existing(p)
+        for q in questions:
+            qt = mask_tokens(question_surface(q))
+            for row in rows:
+                rt = mask_tokens(row.get("stem_excerpt") or row.get("question_text") or "")
+                j = jaccard(qt, rt)
+                if j >= 0.6:
+                    warns += 1
+                    rid = row.get("question_id") or row.get("id") or "?"
+                    log(f"  WARN Q{q.get('n')} ≈ {p.name}:{rid} (Jaccard {j:.2f}, digits "
+                        f"masked) — the same task with new numbers is still a duplicate")
     return fails, warns
 
 
@@ -258,10 +410,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("run", help="the generate §2 actor dir (content.yaml, specs/, figures/)")
     ap.add_argument("--card", action="append", default=[],
                     help="KEY=NN — bind a content.yaml lessons key to scope card NN (repeatable)")
-    ap.add_argument("--grade", type=int, required=True,
-                    help="grade number — cards resolve under maths/grade-NN/scope-cards/")
+    ap.add_argument("--grade", type=int,
+                    help="grade number — cards resolve under maths/grade-NN/scope-cards/ "
+                         "(required with --card unless --cards-dir is given)")
     ap.add_argument("--cards-dir", help="read cards from DIR/<NN>-*.yaml instead of the corpus")
+    ap.add_argument("--rubric", choices=["medium-hard"], default=None,
+                    help="check the leaf `level:` keys against a set rubric (check d — R "
+                         "only as part (a), i.e. the first part in document order)")
+    ap.add_argument("--existing", action="append", nargs="+", default=[], metavar="FILE",
+                    help="existing-question dumps (JSON list or JSONL) — digits-masked Jaccard "
+                         "duplicate warn against each row's stem_excerpt (check e)")
     args = ap.parse_args(argv)
+    args.existing = [str(p) for grp in args.existing for p in grp]
+    if args.card and args.grade is None and not args.cards_dir:
+        die("--card needs --grade N (or --cards-dir DIR)")
     run = Path(args.run)
     if not run.is_dir():
         die(f"no run dir {run}")

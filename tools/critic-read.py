@@ -40,6 +40,12 @@ Writes into DIR:
                1-based index into the node's answer list. The uuid column exists because
                visual-check numbers ans<k> by STAGED order while q4b's arrays are ordered by
                created_at,id — on a multi-answer node the two can disagree, so map by uuid.
+  brief.txt    the critic pack: `scope-cards.py brief` for exactly this session's lessons —
+               Q4a's session_lessons mapped to cards by lesson number (a G6 lesson's
+               sort_order is its number ×10) under <corpus>/maths/grade-NN/scope-cards/, the
+               grade taken from the session row. A lesson with no card gets a line saying
+               so. The corpus resolves --corpus → VIBHAGA_CORPUS → the sibling checkout; an
+               unresolvable corpus leaves a reason line, never a failure.
 
 A part whose parent_sub_question_id is not in the batch's part set is never dropped: it lands under
 `Q<n>.ORPHAN<k>` (fields + figures + part count) with a `critic-read: WARNING …` line on stderr.
@@ -66,6 +72,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _admin_auth as _auth  # noqa: E402  (shared env-file resolver; ENV_PATH is resolved at import)
 from publish import load_db_url, read_env  # noqa: E402  (the W1 loader — reused, not copied)
+
+import importlib.util  # noqa: E402
+_spec_sc = importlib.util.spec_from_file_location(
+    "scope_cards", Path(__file__).resolve().parent / "scope-cards.py")
+sc = importlib.util.module_from_spec(_spec_sc)   # brief_card + corpus resolution — reused
+_spec_sc.loader.exec_module(sc)
 
 HERE = Path(__file__).resolve().parent
 QUERIES = HERE.parent / "queries.sql"
@@ -275,6 +287,57 @@ def question_artefacts(q: dict) -> tuple[list[dict], list[str], int]:
     return fields, figs, len(parts)
 
 
+# ---------------------------------------------------------------------------------- critic pack
+def lesson_cards(session: dict, cards_dir: Path | None) -> list[tuple[dict, int, Path | None]]:
+    """Q4a's session_lessons → [(lesson, NN, matching card file or None)] — NN = the lesson's
+    sort_order ÷ 10 (G6's convention), matched against NN-*.yaml under the grade's
+    scope-cards dir. cards_dir None (no corpus/grade resolved) maps every lesson to None."""
+    out = []
+    for l in session.get("session_lessons") or []:
+        so = l.get("sort_order")
+        nn = int(so) // 10 if isinstance(so, (int, float)) and not isinstance(so, bool) else None
+        card = None
+        if nn is not None and nn > 0 and cards_dir is not None and cards_dir.is_dir():
+            hits = sorted(cards_dir.glob(f"{nn:02d}-*.yaml"))
+            card = hits[0] if hits else None   # NN prefixes are unique per grade — one hit
+        out.append((l, nn, card))
+    return out
+
+
+def write_brief(out_dir: Path, session: dict, corpus: Path | None) -> Path:
+    """Write <out>/brief.txt — the session's own scope pack so the critic never opens an
+    actor file: `scope-cards.py brief` per tagged lesson, or a 'no scope card' line. A card
+    whose title_en disagrees with the DB lesson name gets a warn line (the NN mapping is
+    only as good as the sort_order convention). Always written — an empty pack is a fact."""
+    grade = session.get("grade")
+    cards_dir = sc.grade_dir(corpus, grade) / "scope-cards" \
+        if corpus is not None and isinstance(grade, int) else None
+    lines: list[str] = []
+    lessons = lesson_cards(session, cards_dir)
+    if not lessons:
+        lines.append("== no session_lessons in Q4a — nothing to brief")
+    for lesson, nn, card in lessons:
+        name = lesson.get("name") or lesson.get("lesson_id") or "?"
+        if card is None:
+            why = f"no NN-*.yaml under {cards_dir}" if cards_dir else \
+                "no scope-cards dir — grade/corpus unresolved"
+            lines.append(f"== lesson {nn:02d} ({name}) — no scope card found: {why}"
+                         if nn else f"== lesson ? ({name}) — no scope card found: {why}")
+            continue
+        lines += sc.brief_card(card)
+        try:
+            doc = sc.import_yaml().safe_load(card.read_text(encoding="utf-8")) or {}
+        except Exception:
+            doc = {}
+        title = doc.get("title_en")
+        if name and title and title != name:
+            lines.append(f"  warn: card title_en {title!r} ≠ lesson name {name!r} — "
+                         f"check the NN mapping before trusting this brief")
+    p = out_dir / "brief.txt"
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return p
+
+
 # -----------------------------------------------------------------------------------------------
 HASHES_HEADER = "# critic-read hashes v1"   # the provenance stamp --previous insists on
 
@@ -390,6 +453,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", required=True, help="output directory for q4a.json, q4b/q4c.jsonl, …")
     ap.add_argument("--db-env", help="a dotenv file to read DATABASE_URL from (wins over DATABASE_URL in the environment)")
     ap.add_argument("--queries", default=str(QUERIES), help="queries.sql path (default: the plugin's)")
+    ap.add_argument("--corpus", help="lesson corpus checkout for the brief.txt scope pack "
+                                     "(default: VIBHAGA_CORPUS → the sibling checkout)")
     ap.add_argument("--previous", help="the previous round's report dir (its hashes.txt) or a "
                                        "`Q<n> <sha256>` file — fields.json/figures.txt then cover "
                                        "only changed-or-new questions, the rest land in carried.txt")
@@ -475,6 +540,13 @@ def main(argv: list[str] | None = None) -> int:
     (out_dir / "hashes.txt").write_text(
         f"{HASHES_HEADER} sid={a.batch_id}\n" + "\n".join(hashes) + "\n", encoding="utf-8")
     (out_dir / "figures.txt").write_text(("\n".join(figs) + "\n") if figs else "", encoding="utf-8")
+
+    # the critic pack — brief.txt is a derived artefact of THIS tool's read, not an actor file
+    corpus = Path(a.corpus) if a.corpus else \
+        (Path(os.environ["VIBHAGA_CORPUS"]) if os.environ.get("VIBHAGA_CORPUS")
+         else HERE.parent / "Vibhaga-Maths-Corpus")
+    brief = write_brief(out_dir, session, corpus if corpus.is_dir() else None)
+    print(f"  brief: {brief}")
 
     print(f"{PROG}: {len(questions)} question(s) · {parts_total} part(s) · {len(figs)} figure(s) · "
           f"{len(q4c_lines)} other row(s) on the same lessons → {out_dir}")
