@@ -1,9 +1,10 @@
 ---
 name: figure-templates
 description: >-
-  Build a generated question's figure from ONE of the nine stem-checked templates in
+  Build a generated question's figure from ONE of the fifteen stem-checked templates in
   `tools/vdd_templates.py` — grid polygon, shaded grid, rays-from-a-point, number line,
-  pictograph, rectangle-with-points, house pentagon, cuboid, dot pattern — instead of
+  pictograph, rectangle-with-points, house pentagon, cuboid, dot pattern, circle points,
+  two-circle points, circles in a circle, abacus, sorting rings, shape row — instead of
   hand-drawing VDD. The builder takes the stem's own numbers (refusing any it cannot find
   there), computes the geometry from them, and emits the `channel: constructed` claim set
   itself, so the figure and the claim set can never drift apart (T-QG-2). Use at the
@@ -82,8 +83,9 @@ vt.finish(kind=…, figure_id=<staged id>, stem=…, elements, anchors, points, 
   `vt.membership_claims("D", p, circles)` → the `describe "D lies inside the right circle
   and outside the left circle"` claim tuple to append to `claims`.
 - **Claim forms** — `label "g" names <token>` (one distinct token per drawn glyph —
-  `names ringA` on six numerals binds nothing), `circle centre X radius r` (the checkable
-  circle form; `centre X through P` audits as an advisory forever), `describe "…"`,
+  `names ringA` on six numerals binds nothing), `circle centre X through A B` (≥2
+  on-outline anchors — the form vdd-check actually evaluates; `radius r` only declares),
+  `describe "…"`,
   `derive a op b = v`, `none …`, plus `shaded`/`grid`/`stage`/`paint`/`tick`/`right` as the
   templates use them.
 - **Errors → fix**: `~N rendered px from stroke geometry` / `…from the canvas edge` /
@@ -127,6 +129,12 @@ b = vt.finish(kind="two_circles", figure_id="Q3", stem=stem, elements=el, anchor
 | `house_pentagon` | `AB`,`BC`,`DA`,`CP`,`PD`, `unit`, `labels={CP:"x m"}` | a side whose label carries a **letter** (`"x m"`) — its numeric value must be a stem number; printed numeric labels are figure content and the geometry is computed from them (the drawing cannot disagree with its own labels — the audit's LABEL-RATIO check enforces it) | `right` ×2, `equal` pairs, stem-justified `ratio`s, side `label` claims (a letter side renders as plain `text` — VDD has no italic and a serif KaTeX label would clash), perimeter `derive` | slants must meet above the body |
 | `cuboid` | `length`, `width`, `height`, `unit`, `depth_angle=35`, `depth_scale=0.5` | all three | `derive` + `ratio len DC / len DA` on the LABELLED front-face sides (label-ratio check owns it), `right` ×4, `parallel` classes, `paint` on dashed hidden edges, side `label`s | oblique projection; depth foreshortened — `scale:` says so and the width label on CG is declared in `ambiguous:`; depth_angle ∈ (0,90), depth_scale ∈ (0,1] |
 | `dot_pattern` | `stages`, `kind=triangle\|square\|rectangle` | nothing — the counts are the kind's own formula | `stage n shows k dots`, `derive` closed form per stage, `label "(n)"` | 1–8 stages; if `stages` is not a stem number the claim declares that freedom in `ambiguous:` |
+| `circle_points` | `points={P:{where:"in"\|"on"\|"out", label?, deg?}}`, `r`, `labelled=False` for unlabelled stones | nothing — counts are figure content | `circle centre Z through <on-dots>` (invisible outline anchors mint the shortfall), a membership `describe` per dot, `label` per glyph, `derive in+on+out=total` | point names are single capitals; on-dots pin `deg` or take the fixed angle pattern |
+| `two_circles_points` | `points={P:{in:["L","R"], on:"L"\|"R"\|null, label?}}`, `r`, `overlap` | nothing — counts are figure content | `circle centre L/R through <on-dots>`, membership `describe`s via `membership_claims` ("left"/"right" circle), `label`s, `derive` | overlap ∈ (0,1); a point can't be `on` a circle it's also `in`; `L`/`R` are reserved names |
+| `circles_in_circle` | `n_in`, `n_out`, `R`, `r` | nothing — counts are figure content | `circle centre Z through <2 outline anchors>`, `describe` per side, `derive n_in+n_out` | small circles stay ≥10 units clear of the big stroke and each other — overcrowd refuses |
+| `abacus` | `place_values=[…]` left→right, `beads=[…]` parallel, `bead_r` | nothing — printed values are figure content | `label "<v>" names rod<i>`, `describe` per rod's bead count, `derive Σ beads·value` | a rod holds 0–9 beads — >9 refuses (the lesson's own rule); distinct place values |
+| `sorting_rings` | `groups=[(name, [items])]`, `ring_gap` | nothing — item texts are figure content | `label` per ring + per item card (`names ring<i>`/`it<i>_<j>`), `describe` per ring, `derive` count sum | 2–3 rings (three lay out 2 + 1); default-size text, cards/rings grow to fit; distinct names and item glyphs |
+| `shape_row` | `shapes=[(letter, kind)]`, `cell_w`, `row_h` | nothing — kinds are figure content | `circle centre` for round kinds, `describe` per shape (sides/corners/curved), `label` per letter, `derive` curved+straight | kinds: circle, small_circle, square, rectangle, triangle, oval, semicircle; 3 per row; letters are single capitals |
 
 Every builder is keyword-only; every spec also takes `figure_id`, `stem`, `medium`
 (`"english"`, `"sinhala"`), `ask` (`[["a","text"],…]`), `title`, `description`.
@@ -195,5 +203,5 @@ Then run the batch render — `node tools/visual-check.mjs out/` —
 and measures labels against its five rules; it is the live check before the figure joins a
 staged doc.
 
-`python3 tools/vdd_templates.py --self-test` builds all nine from synthetic stems and runs
+`python3 tools/vdd_templates.py --self-test` builds all fifteen from synthetic stems and runs
 the audit on each — it's wired into `check-suite.py` Part B.

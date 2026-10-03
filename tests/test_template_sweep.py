@@ -140,6 +140,73 @@ def case_grid() -> list[dict]:
         cases.append(C("cuboid",
                        stem=f"A cuboid has length {L} cm, width {Wd} cm and height {H} cm.",
                        length=L, width=Wd, height=H))
+    # circle_points — in/on/out mixes, stones (unlabelled), a non-capital-name refusal
+    cases.append(C("circle_points", stem="A circle with points P, Q and R.",
+                   points={"P": {"where": "in"}, "Q": {"where": "on"},
+                           "R": {"where": "out"}}))
+    cases.append(C("circle_points", stem="A circle with points P, Q, R and S.",
+                   points={"P": {"where": "in"}, "Q": {"where": "in"},
+                           "R": {"where": "on", "deg": 120},
+                           "S": {"where": "on", "deg": 250}}))
+    cases.append(C("circle_points", stem="Stones are scattered around a circle.",
+                   points={"P": {"where": "out"}, "Q": {"where": "out"},
+                           "R": {"where": "in"}}, labelled=False))
+    cases.append(C("circle_points", stem="A circle with a dot.",
+                   points={"p1": {"where": "in"}}))   # lower-case name — a stated refusal
+    # two_circles_points — lens/L-only/R-only/outside/on-outline mixes, refusals
+    cases.append(C("two_circles_points", stem="Two overlapping circles with points.",
+                   points={"P": {"in": ["L"]}, "Q": {"in": ["L", "R"]},
+                           "S": {"in": ["R"]}, "T": {"in": []}}))
+    cases.append(C("two_circles_points", stem="Two overlapping circles with points.",
+                   points={"P": {"on": "L", "in": ["R"]}, "Q": {"on": "R", "in": []}}))
+    cases.append(C("two_circles_points", stem="Two overlapping circles.",
+                   overlap=0.7, points={"P": {"in": ["L", "R"]}, "Q": {"in": ["L"]}}))
+    cases.append(C("two_circles_points", stem="Two overlapping circles.",
+                   points={"P": {"on": "L", "in": ["L"]}}))   # on AND in — a stated refusal
+    cases.append(C("two_circles_points", stem="Two circles.",
+                   overlap=1.0, points={"P": {"in": ["L"]}}))  # overlap out of (0,1)
+    # circles_in_circle — several counts; a zero-total refusal; an overcrowd refusal
+    for n_in, n_out in ((5, 4), (8, 0), (0, 6), (3, 9)):
+        cases.append(C("circles_in_circle", stem="A big circle with small rings.",
+                       n_in=n_in, n_out=n_out))
+    cases.append(C("circles_in_circle", stem="A big circle.", n_in=0, n_out=0))
+    cases.append(C("circles_in_circle", stem="A big circle with small rings.",
+                   n_in=40, n_out=0, extreme=True))   # cannot all fit — stated refusal OK
+    # abacus — a few rod sets incl. max beads; a >9-bead refusal; mismatched lengths
+    cases.append(C("abacus", stem="The abacus shows a number.",
+                   place_values=[1000, 100, 10, 1], beads=[3, 0, 5, 7]))
+    cases.append(C("abacus", stem="The abacus shows a number.",
+                   place_values=[100, 10, 1], beads=[9, 9, 9]))
+    cases.append(C("abacus", stem="The abacus shows a number.",
+                   place_values=[10, 1], beads=[0, 0]))
+    cases.append(C("abacus", stem="The abacus shows a number.",
+                   place_values=[100, 10, 1], beads=[10, 0, 0]))   # 10 beads — refusal
+    cases.append(C("abacus", stem="The abacus shows a number.",
+                   place_values=[100, 10, 1], beads=[1, 2]))       # length mismatch
+    # sorting_rings — 2 and 3 groups; refusals for 1 group, 4 groups, a duplicate item
+    cases.append(C("sorting_rings", stem="Sort the cards.",
+                   groups=[["Even", ["2", "8", "14"]], ["Odd", ["3", "9"]]]))
+    cases.append(C("sorting_rings", stem="Sort the cards.",
+                   groups=[["Round", ["ball", "wheel"]],
+                           ["Flat", ["mat"]],
+                           ["Long", ["pole", "stick", "rail"]]]))
+    cases.append(C("sorting_rings", stem="Sort the cards.",
+                   groups=[["Only", ["a", "b"]]]))                      # 1 group — refusal
+    cases.append(C("sorting_rings", stem="Sort the cards.",
+                   groups=[["A", ["1"]], ["B", ["2"]], ["C", ["3"]], ["D", ["4"]]]))
+    cases.append(C("sorting_rings", stem="Sort the cards.",
+                   groups=[["Even", ["2", "2"]], ["Odd", ["3"]]]))      # dup glyph — refusal
+    # shape_row — all seven kinds in one 2-row build; refusals for bad kind/dup letter
+    cases.append(C("shape_row", stem="Name each shape.",
+                   shapes=[["A", "circle"], ["B", "square"], ["C", "triangle"],
+                           ["D", "oval"], ["E", "rectangle"], ["F", "semicircle"],
+                           ["G", "small_circle"]]))
+    cases.append(C("shape_row", stem="Name each shape.",
+                   shapes=[["A", "triangle"], ["B", "circle"], ["C", "square"]]))
+    cases.append(C("shape_row", stem="Name each shape.",
+                   shapes=[["A", "hexagon"], ["B", "circle"]]))          # bad kind — refusal
+    cases.append(C("shape_row", stem="Name each shape.",
+                   shapes=[["A", "circle"], ["A", "square"]]))           # dup letter — refusal
     return cases
 
 
