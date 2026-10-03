@@ -17,8 +17,15 @@ Usage:
 
     scope-cards.py draft --grade 6 [--lessons 1,7] [--corpus PATH]
     scope-cards.py check --grade 6 [--corpus PATH]
+    scope-cards.py brief <card> [<card>…] [--grade 6] [--corpus PATH]
     scope-cards.py draft|check --exam ol      # refused — O/L composition is plan OD-3
     scope-cards.py --self-test
+
+`brief` (W9-D) prints a ~80-line reading brief per card — header with both titles and the card +
+lesson sha256 prefixes, sections, ≤20 deduped vocabulary terms, worked-example excerpts (80 chars),
+exercise item lists (≤12 items at 70 chars), activities, figure_kinds and the whole `curated:` block.
+A card argument is a path, or a lesson number NN resolved with `--grade` as
+`maths/grade-NN/scope-cards/NN-*.yaml` under the corpus. `brief` is a pure read — it never writes.
 
 Corpus resolution: `--corpus` → `VIBHAGA_CORPUS` → sibling `<plugin>/../Vibhaga-Maths-Corpus`.
 
@@ -761,6 +768,96 @@ def cmd_check(args) -> int:
 
 
 # -------------------------------------------------------------------------------------------------
+# brief — the generate step-1 read (W9-D): ~80 lines per card, everything the plan needs at a glance.
+# -------------------------------------------------------------------------------------------------
+BRIEF_VOCAB_MAX = 20
+BRIEF_ITEMS_MAX = 12
+
+
+def resolve_card_arg(spec: str, args) -> Path:
+    """A card argument is a path to a .yaml, or a bare lesson number resolved as
+    `maths/grade-NN/scope-cards/NN-*.yaml` — that form needs --grade."""
+    p = Path(spec)
+    if p.is_file():
+        return p
+    if not re.fullmatch(r"\d+", spec):
+        die(f"brief: no such card file {spec} (a bare lesson number needs --grade)")
+    if args.grade is None:
+        die(f"brief: {spec} is a lesson number — pass --grade N")
+    corpus = resolve_corpus(args)
+    cards_dir = grade_dir(corpus, args.grade) / "scope-cards"
+    cands = sorted(cards_dir.glob(f"{int(spec):02d}-*.yaml")) if cards_dir.is_dir() else []
+    if len(cands) != 1:
+        die(f"brief: {len(cands)} card(s) match {int(spec):02d}-*.yaml in {cards_dir}")
+    return cands[0]
+
+
+def brief_card(cpath: Path) -> list[str]:
+    """One card → the printed brief lines (a pure read; the corpus is never written)."""
+    yaml = import_yaml()
+    try:
+        data = yaml.safe_load(cpath.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        die(f"{cpath.name}: card does not parse ({exc})")
+    if not isinstance(data, dict):
+        die(f"{cpath.name}: card is not a YAML mapping")
+    gen = data.get("generated") or {}
+    cur = data.get("curated") or {}
+    card_sha = sha256_file(cpath)[:8]
+    lesson_sha = str((data.get("source") or {}).get("sha256") or "?")[:8]
+
+    lines = [f"== {cpath.name} — {data.get('title_en')} / {data.get('title_si')} · "
+             f"card {card_sha} · lesson {lesson_sha}"]
+    secs = gen.get("sections") or []
+    lines.append(f"sections ({len(secs)}):")
+    for s in secs:
+        lines.append(f"  {s.get('number') or '—'} {s.get('title')}")
+    vocab, seen = [], set()
+    for v in gen.get("vocabulary") or []:
+        t = GLYPH_BULLET_RE.sub("", str(v)).strip()
+        if t and t not in seen:
+            seen.add(t)
+            vocab.append(t)
+    more = len(vocab) - BRIEF_VOCAB_MAX
+    lines.append(f"vocabulary ({len(vocab)}): {', '.join(vocab[:BRIEF_VOCAB_MAX])}"
+                 + (f" … +{more}" if more > 0 else ""))
+    lines.append("worked examples:")
+    for w in gen.get("worked_examples") or []:
+        lines.append(f"  {w.get('heading')} — {clip(clean(w.get('excerpt') or ''), 80)}")
+    lines.append("exercises:")
+    for e in gen.get("exercises") or []:
+        items = e.get("items") or []
+        lines.append(f"  {e.get('heading')} — {len(items)} item(s)")
+        for it in items[:BRIEF_ITEMS_MAX]:
+            lines.append(f"    · {clip(clean(it), 70)}")
+        if len(items) > BRIEF_ITEMS_MAX:
+            lines.append(f"    · … {len(items) - BRIEF_ITEMS_MAX} more")
+    lines.append("activities:")
+    for a in gen.get("activities") or []:
+        lines.append(f"  {a.get('heading')} — {clip(clean(a.get('excerpt') or ''), 70)}")
+    fk = ", ".join(f"{f.get('concept')} ×{f.get('count')}" for f in gen.get("figure_kinds") or [])
+    lines.append(f"figure_kinds: {fk or '(none)'}")
+    lines.append(f"curated (status: {cur.get('status', '?')}):")
+    for i, nt in enumerate(cur.get("not_taught") or []):
+        lines.append(f"  not_taught[{i}] {nt.get('concept')} — {nt.get('why')}")
+        lines.append(f"    probes: {', '.join(str(p) for p in nt.get('probes') or [])}")
+    for p in cur.get("prerequisites") or []:
+        lines.append(f"  prerequisite {p.get('lesson')} — {p.get('why')}")
+    for h in cur.get("difficulty_hooks") or []:
+        lines.append(f"  hook {h.get('level')}: {h.get('hook')}")
+    return lines
+
+
+def cmd_brief(args) -> int:
+    if not args.cards:
+        die("brief needs at least one card: a path, or a lesson number NN with --grade N")
+    for spec in args.cards:
+        for line in brief_card(resolve_card_arg(spec, args)):
+            print(line)
+    return 0
+
+
+# -------------------------------------------------------------------------------------------------
 # --self-test — the real suite is tests/test_scope_cards.py; this is a smoke run over the fixture.
 # -------------------------------------------------------------------------------------------------
 def self_test() -> int:
@@ -806,7 +903,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         prog="scope-cards.py",
         description="lesson scope cards: draft from corpus lessons, then check curated cards")
-    ap.add_argument("command", nargs="?", choices=["draft", "check"])
+    ap.add_argument("command", nargs="?", choices=["draft", "check", "brief"])
+    ap.add_argument("cards", nargs="*", help="brief: card paths, or lesson numbers with --grade")
     ap.add_argument("--grade", type=int, help="grade number (e.g. 6 → maths/grade-06)")
     ap.add_argument("--exam", choices=["ol"], help="exam scope — only 'ol' is defined, and it is refused until plan OD-3")
     ap.add_argument("--lessons", help="draft only these lesson numbers, e.g. 1,7")
@@ -818,7 +916,9 @@ def main(argv=None) -> int:
     if args.exam:
         refuse_ol(resolve_corpus(args))
     if not args.command:
-        die("a command is required: draft | check")
+        die("a command is required: draft | check | brief")
+    if args.command == "brief":
+        return cmd_brief(args)          # --grade needed only by the bare-NN card form
     if args.grade is None:
         die("--grade N is required for draft/check")
     if args.command == "draft":
