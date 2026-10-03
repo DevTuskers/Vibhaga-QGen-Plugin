@@ -3,8 +3,8 @@ name: visual-check
 description: >-
   Render VDD figures and whole student-preview questions through the REAL Admin app and MEASURE
   them — labels vs canvas edge/stroke/the geometry they name, angle numerals vs their arcs,
-  claimed shaded cells vs painted fill, serif-vs-sans label mixes — then LOOK at one PNG per
-  figure. Mode 1 batches staged docs / VDD files through /diagtest headlessly; mode 2
+  claimed shaded cells vs painted fill, serif-vs-sans label mixes — then LOOK at the contact
+  sheet it writes. Mode 1 batches staged docs / VDD files through /diagtest headlessly; mode 2
   (`--session <id>`) drives a headed browser through the playground student preview, signs out,
   and proves the revocation. Use after authoring or templating a figure (before `validate`), and
   after `doc put` when you need rendered evidence — not for authoring, that is the tools' job.
@@ -44,25 +44,28 @@ node tools/visual-check.mjs <staged.json | dir | figure.json …> \
   a 500 after spawn means the env file is incomplete). `--admin` = the Admin CHECKOUT
   (`--admin` > `VIBHAGA_ADMIN` > `<plugin>/../Vibhaga-Admin`).
 - **Output** — one line per figure, then a summary; `<out>/<id>/<theme>-<w>.png` (default
-  `$TMPDIR/visual-check-out`) and `<out>/report.json` (the measured label↔edge / label↔stroke
-  distances — the W4 deliverable). Exit `1` any FAIL · `2` usage/env · `0` clean.
+  `$TMPDIR/visual-check-out`), `<out>/report.json` (the measured label↔edge / label↔stroke
+  distances — the W4 deliverable) and `<out>/contact-light-375.png` — every figure's
+  light-375 render at native size, captioned, for the step-6b look. Each verdict line ends
+  with the light-375 PNG's pixel size (`375×131`). Exit `1` any FAIL · `2` usage/env · `0` clean.
 
 ```
 Q7  FAIL  font: KaTeX math ×1 + text ×4 · labels 5 (min edge 4.7px, min stroke -2.5px) ·
-    target ok · arc — · shaded —  → <out>/Q7/
-9 figures · 2 pass · 7 fail · PNGs: 54 · report: <out>/report.json
+    target ok · arc — · shaded — · aspect ok · 375×131  → <out>/Q7/
+9 figures · 2 pass · 7 fail · PNGs: 54 · contact sheet: <out>/contact-light-375.png (384×800) · report: <out>/report.json
 ```
 
-### The five rules (visual-metrics.mjs — every width, rendered px)
+### The six rules (visual-metrics.mjs — every width, rendered px)
 
 | rule | fails when | claim-set downgrade |
 |---|---|---|
 | `edge` | label bbox < **8 px** from the canvas edge | `allow: label:"<text>"` → warn |
 | `stroke` | label bbox < **6 px** from a stroke's EDGE | same |
-| `target` | label sits > **1.5 × fontSize** from what it names (a `point` label → its own point, always; else the nearest paint). **Word labels (≥3-letter run, any script — pictograph rows, headers) are exempt.** | `allow: label:"<text>"` → warn |
+| `target` | label sits > **1.5 × fontSize** from what it names (a `point` label → its own point, always; else the nearest paint). One target result per label, measured at the least-quantised width, governs the per-width rows AND the finding. **Word labels (≥3-letter run, any script — pictograph rows, headers) are exempt.** | `allow: label:"<text>"` → warn |
 | `arc` | each angle numeral (`1`, `2`°, `x°`, `θ°`) resolves to its **owner arc** — the candidate whose drawn curve (sampled along the real span) is nearest among arcs whose span contains the label's polar angle — and fails if no near arc covers its direction, or if ≥2 numerals share one owner (`arc <id> carries N numerals`). Labelled angleMarks are candidates too (only their own renderer-placed label is exempt). ⚠️ a **bare side-length number near a wedge** (e.g. `60` next to an arc) can trip this — move the label or declare `allow: label:"60"` | `allow: label:"<text>"` → warn |
 | `shaded` | only with a `shaded N of M cells` claim + `grid R by C` anchors: painted fill inside the grid vs claimed N + 0.5×halves, tolerance 0.1 cell | — |
 | `font` | KaTeX `math` and `<text>` labels coexist, or two text fontFamilies | — |
+| `aspect` | the 375 render's figure height > **2.0 ×** its width — taller than a phone screen; re-lay the figure out (a 1×10 shaded grid as 5×2). `vdd_templates finish` and `vdd-check` refuse the same canvas, so a built figure can only trip this from a hand-drawn spec | — |
 
 ### `--self-test` — the live check after editing the tool
 
@@ -74,7 +77,9 @@ no env file.
 
 ## LOOK — the rule the metrics cannot replace
 
-**Open ONE PNG per figure once — the `light-375.png` — and log what you saw.** A PASS is "no rule
+**Open `contact-light-375.png` once — every figure at native 375 px, captioned — and log one line
+per figure.** Open a single figure's `light-375.png` only when the sheet shows a problem or is too
+small to judge. A PASS is "no rule
 fired", not "looks right". ⚠️ **The look is the lead's job, never the critic's:** the `qgen-critic`
 subagent is image-blind (probed 2026-10-02 — a PNG read returns a placeholder), so it consumes
 `report.json` only and lists every visual conclusion as could-not-check. Point it at the output
