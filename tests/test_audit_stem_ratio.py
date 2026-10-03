@@ -73,7 +73,8 @@ class StemRatioCheckTests(unittest.TestCase):
 
 class CircleThroughGrammarTests(unittest.TestCase):
     """`circle centre X through` takes one to three on-outline anchors — the
-    spelling vdd-check evaluates from two up (the W10c builders emit it)."""
+    spelling vdd-check evaluates from two up (the W10c builders emit it). A lone
+    through-point parses but is recognised-not-verifiable: nothing to compare."""
 
     BASE = """figure:   t — t
 source:   constructed; frame is the figure's own canvas, 80 x 80, y down
@@ -107,12 +108,19 @@ ambiguous:  (none)
         return subprocess.run([sys.executable, str(TOOL), name],
                               capture_output=True, text=True)
 
-    def test_one_two_and_three_throughs_pass(self):
-        for claim in ("circle centre Z through A",
-                      "circle centre Z through A B",
+    def test_one_through_is_recognised_not_verifiable(self):
+        # one through-point has nothing to compare — parsed, anchors checked,
+        # but it lands in the footer's not-verifiable list, not anchor-checked
+        r = self.run_claims(["circle centre Z through A"])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertRegex(r.stdout, r"NOT verifiable here: \d+ \([^)]*K1")
+
+    def test_two_and_three_throughs_are_anchor_checked(self):
+        for claim in ("circle centre Z through A B",
                       "circle centre Z through A B C"):
             r = self.run_claims([claim])
             self.assertEqual(r.returncode, 0, claim + "\n" + r.stdout + r.stderr)
+            self.assertNotRegex(r.stdout, r"NOT verifiable here: \d+ \([^)]*K1")
 
     def test_four_throughs_and_repeats_fail(self):
         r = self.run_claims(["circle centre Z through A B C D"])

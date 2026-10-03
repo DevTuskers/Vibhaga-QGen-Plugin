@@ -2114,30 +2114,16 @@ def _spread_deg(i: int) -> float:
     return (-90.0 + 137.508 * i) % 360.0
 
 
-def _outline_marks(kind: str, anchors: dict, elements: list, centre: XY, r: float,
-                   have: list[str], avoid: list, taken=frozenset()) -> list[str]:
-    """Anchor names ON a circle's outline for a `circle centre X through …` claim —
-    vdd-check evaluates that spelling only with ≥2 through-points, so real
-    on-outline anchors (an `on` dot, a letter's bottom point) lead and invisible
-    `point` markers (r 0 — the coverage check counts an element's coordinates)
-    fill the shortfall on a fixed deg fan ≥24 units from `avoid` positions.
-    `taken` reserves names minted later (shape letters, centre names)."""
-    names = list(have)[:3]                       # the claim grammar tops out at three
-    while len(names) < 2:
-        nm = _unused_letters(set(anchors) | set(taken), 1)[0]
-        for deg in _ON_DEG_CANDS:
-            p = vc.polar(centre, r, deg)
-            if all(math.hypot(p[0] - o[0], p[1] - o[1]) >= 24.0 for o in avoid):
-                anchors[nm] = p
-                elements.append({"id": f"a{nm}", "type": "point",
-                                 "at": vc.P(p), "r": 0})
-                avoid.append(p)
-                names.append(nm)
-                break
-        else:
-            raise TemplateError(f"{kind}: no clear spot left on the outline for a "
-                                "through-anchor — drop a dot")
-    return names
+def _circle_claim(add, cname: str, r: float, on_names: list[str]) -> None:
+    """The circle claim vdd-check actually evaluates: `through` names two or three
+    REAL on-outline anchors (their distances to the centre are compared — a lone
+    through-point is recognised but unverifiable); with fewer, `radius r` is
+    measured straight against the drawn circle element."""
+    if len(on_names) >= 2:
+        add(f"circle centre {cname} through {' '.join(on_names[:3])}", "inferred",
+            "the ring drawn through the on-dots")
+    else:
+        add(f"circle centre {cname} radius {r:g}", "inferred", "the drawn circle's radius")
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -2231,8 +2217,10 @@ def build_circle_points(*, figure_id, stem, ask=None, title=None, description=No
         if spec["where"] == "in":
             rad = (r - 30.0) * math.sqrt((in_i + 0.5) / n_in)
             prefer = vc.polar(centre, max(rad, 0.0), _spread_deg(in_i))
+            # dots are circle elements — off the centre so a `radius` claim sees
+            # one circle at C, not the dot too
             p = region_point(circles, inside=["main"], outside=[], prefer=prefer,
-                             margin=18.0, avoid=placed, min_sep=34.0)
+                             margin=18.0, avoid=placed + [centre], min_sep=34.0)
             in_i += 1
         else:
             prefer = vc.polar(centre, r + 55.0, _spread_deg(out_i + 1) + 45.0)
@@ -2255,11 +2243,7 @@ def build_circle_points(*, figure_id, stem, ask=None, title=None, description=No
         if labelled:
             elements.append(_float_label(f"lb{nm}", glyphs[i], p))
             add(f'label "{glyphs[i]}" names {nm}', "stem", f"the label on dot {nm}")
-    through = _outline_marks("circle_points", anchors, elements, centre, r,
-                             [nm for nm in names if specs[nm]["where"] == "on"],
-                             placed)
-    add(f"circle centre {cname} through {' '.join(through)}", "inferred",
-        "the one circle's outline anchors")
+    _circle_claim(add, cname, r, [nm for nm in names if specs[nm]["where"] == "on"])
     add(f"derive {n_in} + {len(used_degs)} + {n_out} = {len(names)}", "inferred",
         "inside + on + outside counts make the dot total")
     add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
@@ -2349,6 +2333,10 @@ def build_two_circles_points(*, figure_id, stem, ask=None, title=None, descripti
                     continue
                 if not inside_other and d_other < r + 12.0:
                     continue
+                # a dot is itself a circle element — sitting within the checker's
+                # 1.5-unit centre window would hijack the other circle's `radius` claim
+                if d_other <= 3.0:
+                    continue
                 if any(math.hypot(p[0] - o[0], p[1] - o[1]) < 30.0 for o in placed):
                     continue
                 return p
@@ -2382,7 +2370,7 @@ def build_two_circles_points(*, figure_id, stem, ask=None, title=None, descripti
         out_names = [n for n in ("left", "right") if n not in in_names]
         pos[nm] = region_point(circles, inside=in_names, outside=out_names,
                                prefer=region_prefer(inside, i_free),
-                               margin=18.0, avoid=placed, min_sep=34.0)
+                               margin=18.0, avoid=placed + [cL, cR], min_sep=34.0)
         i_free += 1
         placed.append(pos[nm])
 
@@ -2404,10 +2392,7 @@ def build_two_circles_points(*, figure_id, stem, ask=None, title=None, descripti
         else:
             n_out += 1
     for cn, cx in (("L", cL), ("R", cR)):
-        through = _outline_marks("two_circles_points", anchors, elements, cx, r,
-                                 [nm for nm in names if specs[nm][1] == cn], placed)
-        add(f"circle centre {cn} through {' '.join(through)}", "inferred",
-            f"the {'left' if cn == 'L' else 'right'} circle's outline anchors")
+        _circle_claim(add, cn, r, [nm for nm in names if specs[nm][1] == cn])
     add(f"derive {n_in} + {n_on} + {n_out} = {len(names)}", "inferred",
         "inside + on + outside counts make the dot total")
     add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
@@ -2447,8 +2432,8 @@ def build_circles_in_circle(*, figure_id, stem, ask=None, title=None, descriptio
     centre = (0.0, 0.0)
     circles = {"big": (centre, float(R))}
     elements = [vc.circle(centre, R, id="big")]
-    placed: list[XY] = []
-    for i in range(n_in):
+    placed: list[XY] = [centre]     # keep a small circle off the claimed centre —
+    for i in range(n_in):           # `radius` checks every circle element at Z
         rad = (R - r - 14.0) * math.sqrt(i / max(n_in, 1))
         prefer = vc.polar(centre, rad, _spread_deg(i))
         p = region_point(circles, inside=["big"], outside=[], prefer=prefer,
@@ -2468,10 +2453,7 @@ def build_circles_in_circle(*, figure_id, stem, ask=None, title=None, descriptio
         return f"K{len(claims)}"
 
     anchors: dict[str, XY] = {"Z": centre}
-    through = _outline_marks("circles_in_circle", anchors, elements, centre, R,
-                             [], placed)
-    add(f"circle centre Z through {' '.join(through)}", "inferred",
-        "the big circle's outline anchors")
+    _circle_claim(add, "Z", R, [])   # no on-dots — `radius` names the drawn circle
     if n_in:
         add(f'describe "{n_in} small circles lie inside the big circle"', "inferred",
             "count the inner rings")
@@ -2793,20 +2775,12 @@ def build_shape_row(*, figure_id, stem, ask=None, title=None, description=None,
             bottom = (cx, cy + 17.0)
         anchors[letter] = bottom
         if kind in ("circle", "small_circle"):
-            # a circle's outline is invisible to the coverage check (it sees the
-            # centre only) — mark the letter's bottom anchor with an r:0 point
-            elements.append({"id": f"a{letter}", "type": "point",
-                             "at": vc.P(bottom), "r": 0})
+            # the letter anchor sits on the rim — the coverage check reads outlines,
+            # and `radius` is measured against this drawn circle element
             cname = centre_pool.pop(0)
             rad = 34.0 if kind == "circle" else 22.0
-            # mint the second through-anchor before the centre lands in `anchors` —
-            # every outline point is exactly `rad` from it, under the 24-unit floor —
-            # but `taken` reserves the centre's own name so the aux can't steal it
-            through = _outline_marks("shape_row", anchors, elements, (cx, cy), rad,
-                                     [letter], list(anchors.values()),
-                                     taken={cname} | set(letters) | set(centre_pool))
             anchors[cname] = (cx, cy)
-            add(f"circle centre {cname} through {' '.join(through)}", "inferred",
+            add(f"circle centre {cname} radius {rad:g}", "inferred",
                 f"the outline of circle {letter}")
         elements.append(_float_label(f"lb{letter}", letter, bottom, gap=10.0, size=16))
         add(f'label "{letter}" names {letter}', "stem", f"the letter under the {kind}")

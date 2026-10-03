@@ -80,6 +80,19 @@ class EveryBuilderAuditsClean(unittest.TestCase):
                     self.assertTrue(0 <= x <= W and 0 <= y <= H,
                                     f"{kind}: anchor {name}=({x},{y}) outside {W}x{H}")
 
+    def test_no_invisible_elements(self):
+        # an r:0 element with no label renders nothing — banned from student-facing
+        # docs (vdd-check coverage now reads outlines); a labelled r:0 point draws
+        # its letter, so `lbl*` markers stay
+        for spec in vt.SELF_TEST:
+            spec = dict(spec)
+            kind = spec.pop("template")
+            with self.subTest(kind=kind):
+                b = vt.BUILDERS[kind](**spec)
+                for el in b.doc["elements"]:
+                    self.assertFalse(el.get("r") == 0 and not el.get("label"),
+                                     f"{kind}: invisible element {el['id']}")
+
 
 class PerTemplateClaims(unittest.TestCase):
     """Spot-check that each template's claim set carries its load-bearing geometry."""
@@ -1183,25 +1196,28 @@ class MembershipTemplates(unittest.TestCase):
         self.assertGreater(math.hypot(lbl["at"][0] - circ["center"][0],
                                       lbl["at"][1] - circ["center"][1]), circ["r"])
         self.assertGreater(lbl["at"][1], circ["center"][1])
-        self.assertIn("circle centre H through A J", b.claims)   # A's centre + outline
-        self.assertIn("circle centre I through G K", b.claims)   # small_circle's
+        self.assertIn("circle centre H radius 34", b.claims)     # A's circle — no on-dots
+        self.assertIn("circle centre I radius 22", b.claims)     # small_circle's
         self.assertIn('describe "D is an oval', b.claims)
         self.assertIn("derive 4 + 3 = 7", b.claims)
 
     def test_shape_row_letter_anchors_sit_on_drawn_geometry(self):
-        """vdd-check's coverage rule sees vertices/corner-pairs/centres only — a
-        letter anchor on a circle's outline needs an r:0 marker point, and the
-        rect kinds draw as polygons so the bottom edge counts as geometry."""
+        """vdd-check's coverage reads rims and edges — a letter anchor sits ON its
+        shape's outline (rim for the round kinds, an edge for the polygonal
+        kinds), so no marker elements are needed or emitted."""
         b = self._b("shape_row", shapes=[["A", "circle"], ["B", "square"],
                                          ["E", "rectangle"], ["G", "small_circle"]])
         sh = {e["id"]: e["type"] for e in b.doc["elements"]
               if e["id"].startswith("sh")}
         self.assertEqual(sh["shB"], "polygon")
         self.assertEqual(sh["shE"], "polygon")
-        marks = {tuple(e["at"]) for e in b.doc["elements"]
-                 if e["type"] == "point" and e["r"] == 0}
-        self.assertIn(tuple(b.anchors["A"]), marks)
-        self.assertIn(tuple(b.anchors["G"]), marks)
+        for letter, eid in (("A", "shA"), ("G", "shG")):
+            el = next(e for e in b.doc["elements"] if e["id"] == eid)
+            d = math.hypot(b.anchors[letter][0] - el["center"][0],
+                           b.anchors[letter][1] - el["center"][1])
+            self.assertAlmostEqual(d, el["r"], places=2)         # on the rim
+        self.assertFalse([e for e in b.doc["elements"]
+                          if e.get("r") == 0 and not e.get("label")])
 
     def test_shape_row_refuses(self):
         with self.assertRaises(vt.TemplateError):
@@ -1236,12 +1252,12 @@ class ByteIdentity(unittest.TestCase):
         "selftest-rect": "18af540590a9ef7abc046ad8c7700a13d149195b7781dc9f3d6dac5ad0cbea0a",
         "selftest-shade": "208fef9855980d20d4b8ba21d3af491e46c6174029102596dec707439cea88e2",
         # W10c — generated when the six membership/collection templates landed
-        "selftest-cpts": "11f9d6867c10f2defebae506fc2a6535fdf75de38e5a7218db8516fe61cf06d4",
-        "selftest-2cpts": "e777f14a60ec4d3ec39458b874fe88d970b369171a0328e6e13d04a4d4194e7d",
-        "selftest-cin": "d3045254e44a6c4be98724846129b8f2ccdf7d00edfc1d0fdb97a0288108ff47",
+        "selftest-cpts": "f6f52491500af3b52ce05db0379deb8c686de86db2f248705510e16e71afa2df",
+        "selftest-2cpts": "c6f90d6816b62148e3bc3f27c3e9df37f26849fd1d1b1dc54cf18960d7b99647",
+        "selftest-cin": "5d058ef51ebeda22d66c7b9da33885891a240e33975174310a518cfe636a4674",
         "selftest-abacus": "e373396ae5831ac3b59e197ee58d303bf0b8f5825efd4c0d440d55c4f4512f0e",
         "selftest-rings": "6e0ffc326d1bd899b702a9a1eea4a9c5ce0927258f7155c083bdf6a7f8edbc07",
-        "selftest-shapes": "825776c0f58e258aa549bcfe497af6d7f379b06b579bbd68c87aaa934041a1c1",
+        "selftest-shapes": "f3fdfa398f181216902d858288b9e4b5255179ded2e4627dddcaf44b12621e9a",
     }
 
     def test_self_test_outputs_unchanged(self):

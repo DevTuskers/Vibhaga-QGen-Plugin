@@ -619,8 +619,9 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
                 stats["anchor_checked"] += 1
         elif (m := re.match(r"^circle centre ([A-Z]) "
                             r"(?:through ([A-Z](?: [A-Z]){0,2})|radius (\d+(?:\.\d+)?))$", pred)):
-            # `through` takes one to three outline anchors — vdd-check only EVALUATES
-            # the claim from two up, but a single through-point still declares the dot
+            # `through` takes one to three outline anchors — the equal-distance check needs
+            # at least two, so a single through-point is recognised but not verifiable here
+            # (vdd-check makes the same call); `radius` declares centre + a positive r.
             thr = m[2].split() if m[2] else []
             ok = bool(pt(m[1], cid))
             for g in thr:
@@ -635,7 +636,9 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
             if ok and not thr:
                 ok = check(m[3] is None or float(m[3]) > 0,
                            f"{cid}: {pred} -> a radius of {m[3]} is no circle", cid)
-            if ok:
+            if ok and len(thr) == 1:
+                stats["recognised_unverifiable"].append(cid)
+            elif ok:
                 check(True, f"{cid}: {pred} -> centre declared" +
                       (f", {' '.join(thr)} on it" if thr else ""), cid)
                 stats["anchor_checked"] += 1

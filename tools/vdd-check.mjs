@@ -135,6 +135,27 @@ function onSegment(X, P, Q, tol) {
   if (t < -tol || t > 1 + tol) return false;
   return offLine(P, X, Q) <= tol;
 }
+/** The closed edge chain a point-coverage check walks — rect corners, closed polygon, else the points. */
+function edgeChain(el) {
+  if (el.type === "rect")
+    return [[el.x, el.y], [el.x + el.width, el.y], [el.x + el.width, el.y + el.height], [el.x, el.y + el.height], [el.x, el.y]];
+  if (el.type === "polygon") return [...el.points, el.points[0]];
+  return el.points;
+}
+/** Is P within 1.5 units of a curved rim — circle, ellipse (radial) or arc (also inside its sweep)? */
+function onRim(el, P) {
+  if (el.type === "circle") return Math.abs(len(el.center, P) - el.r) <= 1.5;
+  if (el.type === "ellipse") {
+    const d = Math.hypot((P[0] - el.center[0]) / el.rx, (P[1] - el.center[1]) / el.ry);
+    return Math.abs((d - 1) * Math.min(el.rx, el.ry)) <= 1.5;
+  }
+  if (el.type === "arc") {
+    if (Math.abs(len(el.center, P) - el.r) > 1.5) return false;
+    const a = (angDeg(sub(P, el.center)) + 360) % 360, s = (el.start + 360) % 360, e = (el.end + 360) % 360;
+    return s <= e ? a >= s && a <= e : a >= s || a <= e;
+  }
+  return false;
+}
 
 // ── Claim-set parsing (the subset the drawing can be checked against; S6a §3) ─────────────────────
 function parseClaimSet(text) {
@@ -170,7 +191,7 @@ function parseClaimSet(text) {
 }
 
 /** Evaluate the geometric claims this tool understands against a {name:[x,y]} anchor map. */
-function evalClaims(cs, A) {
+function evalClaims(cs, A, elements = []) {
   const out = [];
   const has = (...ps) => ps.every((p) => A[p]);
   for (const c of cs.claims) {
@@ -196,6 +217,13 @@ function evalClaims(cs, A) {
       const pts = [m[2], m[3], m[4]].filter(Boolean);
       if (has(m[1], ...pts) && pts.length > 1) for (const p of pts.slice(1))
         out.push({ id: c.id, kind: "ratio", claim: `circle ${m[1]}: |${m[1]}${p}| / |${m[1]}${pts[0]}|`, stated: 1, value: len(A[m[1]], A[p]) / len(A[m[1]], A[pts[0]]), evidence: c.evidence });
+    } else if (c.pred === "circle" && (m = c.args.match(/^centre ([A-Z]) radius (\d+(?:\.\d+)?)$/))) {
+      // `radius` is measured against the DRAWN element, not against anchors — every circle
+      // element whose centre sits at the anchor is compared (concentric rings each get a row)
+      if (has(m[1])) for (const el of elements) {
+        if (el.type === "circle" && len(el.center, A[m[1]]) <= 1.5)
+          out.push({ id: c.id, kind: "ratio", claim: `circle ${m[1]}: ${el.id}.r / stated ${m[2]}`, stated: 1, value: el.r / +m[2], evidence: c.evidence });
+      }
     }
   }
   return out;
@@ -362,13 +390,14 @@ function checkDocument(doc, cs, canvasAnchors) {
     }
     for (const p of anchored) {
       const hit = d.elements.some((el) => coords(el).some((c) => len(c, A[p]) <= 1.5)) ||
-        d.elements.some((el) => ["line", "polyline", "polygon", "arrow"].includes(el.type) && (() => { const pts = el.type === "polygon" ? [...el.points, el.points[0]] : el.points; for (let i = 0; i + 1 < pts.length; i++) if (onSegment(A[p], pts[i], pts[i + 1], 0.01)) return true; return false; })());
+        d.elements.some((el) => ["line", "polyline", "polygon", "arrow", "rect"].includes(el.type) && (() => { const pts = edgeChain(el); for (let i = 0; i + 1 < pts.length; i++) if (onSegment(A[p], pts[i], pts[i + 1], 0.01)) return true; return false; })()) ||
+        d.elements.some((el) => onRim(el, A[p]));
       if (!hit && cs.points.includes(p)) fails.push(`coverage: point ${p} is anchored at (${A[p]}) but no element passes within 1.5 px of it`);
     }
     if (cs.segments.length) notes.push(`coverage: segments ${cs.segments.length} checked · labels ${cs.labels.length} checked · points ${cs.points.length}`);
     // numeric — drawn canvas geometry vs BOTH the claim set's STATED value (the stem-derived
     // number) and its CLAIM-SET anchors (canvas coordinates for a constructed set)
-    const claimed = evalClaims(cs, cs.anchors), drawn = evalClaims(cs, A);
+    const claimed = evalClaims(cs, cs.anchors, d.elements), drawn = evalClaims(cs, A, d.elements);
     // a claim with a numeric-capable pred that produced no evaluation was silently skipped — a typo'd
     // args string or a missing anchor would otherwise be invisible (the hole W15's grammar fix exposed)
     const evaluated = new Set(claimed.map((p) => p.id));
@@ -640,6 +669,26 @@ async function selfTest() {
   t("canvas 66×426 (h/w 6.5) → aspect fails", checkDocument(tall, cs, anchors).fails.some((f) => f.startsWith("aspect:")));
   const wide = { ...tri, canvas: { width: 426, height: 213 } };
   t("canvas 426×213 (h/w 0.5) → no aspect fail", !checkDocument(wide, cs, anchors).fails.some((f) => f.startsWith("aspect:")));
+  // an anchor ON a drawn outline is covered without an r:0 marker — circle rim, ellipse rim,
+  // rect edge, arc inside its sweep (the W10c shape_row letter anchors sit on outlines)
+  const ringDoc = { ...tri, elements: [{ id: "c1", type: "circle", center: [150, 130], r: 80 }] };
+  const onePt = (x, y, extra) => parseClaimSet(`points: A\nanchors:\n A ${x} ${y}\nclaims:\n${extra ?? ""}`);
+  const noCover = (fails) => fails.some((f) => f.startsWith("coverage: point A"));
+  t("anchor on a circle rim counts as covered", !noCover(checkDocument(ringDoc, onePt(230, 130), { A: [230, 130] }).fails));
+  t("anchor 6 px off the rim is uncovered", noCover(checkDocument(ringDoc, onePt(236, 130), { A: [236, 130] }).fails));
+  const ellDoc = { ...tri, elements: [{ id: "e1", type: "ellipse", center: [150, 130], rx: 60, ry: 30 }] };
+  t("anchor on an ellipse rim counts as covered", !noCover(checkDocument(ellDoc, onePt(150, 160), { A: [150, 160] }).fails));
+  const rectDoc = { ...tri, elements: [{ id: "r1", type: "rect", x: 100, y: 100, width: 80, height: 40 }] };
+  t("anchor on a rect edge counts as covered", !noCover(checkDocument(rectDoc, onePt(140, 140), { A: [140, 140] }).fails));
+  const arcDoc = { ...tri, elements: [{ id: "a1", type: "arc", center: [150, 130], r: 80, start: -180, end: 0 }] };
+  t("anchor on an arc inside its sweep counts as covered", !noCover(checkDocument(arcDoc, onePt(150, 50), { A: [150, 50] }).fails));
+  t("anchor on the arc's circle but outside its sweep is uncovered", noCover(checkDocument(arcDoc, onePt(150, 210), { A: [150, 210] }).fails));
+  // `circle centre X radius r` is evaluated against the drawn element with that centre
+  const radCs = onePt(150, 130, " K1 circle centre A radius 80 | inferred |\n");
+  const radOk = checkDocument(ringDoc, radCs, { A: [150, 130] });
+  t("radius claim evaluates when drawn r matches", radOk.numeric.length === 1 && radOk.numeric[0].ok && !radOk.fails.some((f) => f.startsWith("numeric")));
+  const radBad = checkDocument({ ...tri, elements: [{ id: "c1", type: "circle", center: [150, 130], r: 90 }] }, radCs, { A: [150, 130] });
+  t("radius claim fails when drawn r disagrees", radBad.fails.some((f) => f.startsWith("numeric K1")));
   // normalize consistency has no reachable failure with the current Admin (every type translates) — assert the pass
   t("normalize: uniform translation on the correct triangle", good.notes.some((n) => n.startsWith("normalize: every element")));
   const leader = { id: "PQ", type: "arrow", head: "end", points: [[60, 40], [100, 20], [140, 70], [180, 100]] };
