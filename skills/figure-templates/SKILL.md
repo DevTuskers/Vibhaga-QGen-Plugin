@@ -1,10 +1,11 @@
 ---
 name: figure-templates
 description: >-
-  Build a generated question's figure from ONE of the fifteen stem-checked templates in
+  Build a generated question's figure from ONE of the eighteen stem-checked templates in
   `tools/vdd_templates.py` — grid polygon, shaded grid, rays-from-a-point, number line,
   pictograph, rectangle-with-points, house pentagon, cuboid, dot pattern, circle points,
-  two-circle points, circles in a circle, abacus, sorting rings, shape row — instead of
+  two-circle points, circles in a circle, abacus, sorting rings, shape row, coordinate
+  plane, parallel lines, bar chart — instead of
   hand-drawing VDD. The builder takes the stem's own numbers (refusing any it cannot find
   there), computes the geometry from them, and emits the `channel: constructed` claim set
   itself, so the figure and the claim set can never drift apart (T-QG-2). Use at the
@@ -25,9 +26,13 @@ geometry is computed from those numbers, and the claim set is emitted by the sam
 
 - **Match the catalogue below** → use the template. It emits `<id>.json` (the VDD doc),
   `<id>.anchors.json` and `<id>-claims.txt` in one step — the claim set needs no editing.
-- **The figure's SHAPE doesn't match any entry** (a triangle net, a bar chart, a clock face)
-  → hand-draw with `vdd_cookbook.py` and author the claim set yourself per
+- **The figure's SHAPE doesn't match any entry** (a triangle net, a clock face, a
+  thermometer) → hand-draw with `vdd_cookbook.py` and author the claim set yourself per
   `read-figure-claim-set` §3. Never stretch a template past its contract to force a match.
+  (Bar charts and coordinate planes used to be hand-draw examples — both are templates
+  now, including the **read-the-figure mode**: `coords="figure"` / `values="figure"` marks
+  the values `ev inferred` instead of stem-checking them, so a "read the graph" question
+  is honest about the student reading them off.)
 - **The stem doesn't state a number the template needs** → the builder raises
   `TemplateError` (`length=1.5 is not a number the stem states`). Fix the spec — pass the
   stem's value — or drop the figure. Do not retype the drawn number into a spec.
@@ -86,7 +91,9 @@ vt.finish(kind=…, figure_id=<staged id>, stem=…, elements, anchors, points, 
   `names ringA` on six numerals binds nothing), `circle centre X radius r` (measured
   against the drawn circle element) or `circle centre X through A B` (2–3 REAL
   on-outline anchors whose centre distances are compared — one verifies nothing),
-  `describe "…"`,
+  `describe "…"`, `reads P v on XY` (a marked/printed value read off an axis segment —
+  point names are `[A-Z]\d*` so `T1`…`Tn` bar-top anchors work), `nonparallel AB CD`
+  (the two segments stay ≥5° off parallel),
   `derive a op b = v`, `none …`, plus `shaded`/`grid`/`stage`/`paint`/`tick`/`right` as the
   templates use them.
 - **Errors → fix**: `~N rendered px from stroke geometry` / `…from the canvas edge` /
@@ -136,6 +143,9 @@ b = vt.finish(kind="two_circles", figure_id="Q3", stem=stem, elements=el, anchor
 | `abacus` | `place_values=[…]` left→right, `beads=[…]` parallel, `bead_r` | nothing — printed values are figure content | `label "<v>" names rod<i>`, `describe` per rod's bead count, `derive Σ beads·value` | a rod holds 0–9 beads — >9 refuses (the lesson's own rule); distinct place values |
 | `sorting_rings` | `groups=[(name, [items])]`, `ring_gap` | nothing — item texts are figure content | `label` per ring + per item card (`names ring<i>`/`it<i>_<j>`), `describe` per ring, `derive` count sum | 2–3 rings (three lay out 2 + 1); default-size text, cards/rings grow to fit; distinct names and item glyphs |
 | `shape_row` | `shapes=[(letter, kind)]`, `cell_w`, `row_h` | nothing — kinds are figure content | `circle centre` for round kinds, `describe` per shape (sides/corners/curved), `label` per letter, `derive` curved+straight | kinds: circle, small_circle, square, rectangle, triangle, oval, semicircle; 3 per row; letters are single capitals |
+| `coordinate_plane` | `x_max`,`y_max` ≤10, `points={A:(x,y)}`, `join=[[…]]`, `closed`, `sym_axis={"x"\|"y":k}`, `guides=[…]`, `grid`, `origin_label`, `coords="stem"\|"figure"` | each point's x,y (and the `sym_axis` value) when `coords="stem"` | `axis`/`tick`/`right` on OX/OY, `reads P v on OX`/`OY` per coordinate (and the sym midline's two ends), `paint dashed` on the sym axis, `describe` for guides and the figure-mode declaration, `label` per point/axis letter/numeral; join edges are declared `segments` only | integer first-quadrant points; points can't sit on the axis anchors (O/X/Y); grid lines are real strokes — a crowded interior point's letter refuses |
+| `parallel_lines` | `lines=["AB",…]` 2–4, `parallel=[[class],…]` 1–2, `direction`, `crossing="PQ"`, `distance={"between","value","unit"}`, `length` | `distance.value` | `parallel`/`nonparallel` per pair + the transversal's, `label` per letter, distance: `on M/N`, `right M N D`, `label "v unit" names MN` | unclassed lines tilt ≥12° without crossing others; crossing must stay ≥5° off every line; distance needs the pair adjacent in `lines` |
+| `bar_chart` | `categories` 2–8, `series=[{"name","values"}]` 1–3, `step`, `v_max`, `values="stem"\|"figure"`, `value_title`, `category_title`, `gridlines` | `step`; every value when `values="stem"` | `reads T<i> v on OY` per bar (0-value bars read the baseline), `axis OY … step`, `label`s for category/title/legend glyphs | every value a multiple of step/2 and ≤ v_max; numerals never thin — crowded axis refuses; series/category/other-glyph names must be glyph-distinct |
 
 Every builder is keyword-only; every spec also takes `figure_id`, `stem`, `medium`
 (`"english"`, `"sinhala"`), `ask` (`[["a","text"],…]`), `title`, `description`.
@@ -204,5 +214,5 @@ Then run the batch render — `node tools/visual-check.mjs out/` —
 and measures labels against its five rules; it is the live check before the figure joins a
 staged doc.
 
-`python3 tools/vdd_templates.py --self-test` builds all fifteen from synthetic stems and runs
+`python3 tools/vdd_templates.py --self-test` builds all eighteen from synthetic stems and runs
 the audit on each — it's wired into `check-suite.py` Part B.

@@ -423,6 +423,10 @@ PREDICATES = {
     # the MOVE on an answer-side figure, i.e. the one check 2c has to project onto the scale. It still
     # reports as recognised-not-verifiable when there is no scale to project onto.
     "arrow": "anchor",
+    # W11 additions: `reads` = a point reads a value off a declared `axis` (the read-the-figure
+    # chart templates); `nonparallel` = two segments drawn ≥5° apart (the crossing line's honesty
+    # claim — under 5° a hand-drawn tilt is invisible). Both are anchor-verified below.
+    "reads": "anchor", "nonparallel": "anchor",
     "shaded": "text", "grid": "text", "stage": "text", "describe": "text",
 }
 
@@ -515,7 +519,8 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
     named = set()
     for c in cs["claims"]:
         if not c["pred"].startswith(("label ", "free-text ", "none ", "describe ")):
-            named |= set(re.findall(r"(?<![A-Za-z])[A-Z](?![A-Za-z])", c["pred"]))
+            # [A-Z]\d* — W11 figure points may be digit-suffixed (bar-top anchors T1..Tn)
+            named |= set(re.findall(r"(?<![A-Za-z])[A-Z]\d*(?![A-Za-z])", c["pred"]))
     unknown = sorted(named - set(cs["points"]))
     check(not unknown, f"every point named in a claim is declared (unknown: {unknown})")
     for seg in cs["segments"]:
@@ -538,6 +543,7 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
     # whole loop to have run.
     pending_ticks: list = []       # (cid, pred, P, Q, step)
     pending_intervals: list = []   # (cid, pred, kind, lo, hi, P, Q)
+    pending_reads: list = []       # (cid, claim, P, value, X, Y) from `reads P v on XY`
 
     # 2. claims vs anchors — the check that finds a MISREAD with no other input.
     #    ⚠️ FAILS CLOSED: the final `else` is a failure, not a pass.
@@ -588,6 +594,24 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
                 off = abs((math.degrees(math.atan2(v1[1], v1[0]) - math.atan2(v2[1], v2[0])) + 90) % 180 - 90)
                 check(off < 1.0, f"{cid}: {pred} -> {off:.2f} deg apart", cid)
                 stats["anchor_checked"] += 1
+        elif (m := re.match(r"^nonparallel ([A-Z])([A-Z]) ([A-Z])([A-Z])$", pred)):
+            # the crossing-line claim: under 5° a tilt is invisible at render size, so
+            # `nonparallel` refuses what a `parallel` claim could misread as. Unlike
+            # `parallel`, SHARING one endpoint is the common case (two axes meeting at O) —
+            # degenerate only when a segment collapses or the pair is the same segment.
+            if all(pt(g, cid) for g in m.groups()) and \
+                    check(m[1] != m[2] and m[3] != m[4] and {m[1], m[2]} != {m[3], m[4]},
+                          f"{cid}: {pred} -> a degenerate or identical segment pair is "
+                          f"vacuous, not evidence", cid):
+                v1 = (a[m[2]][0] - a[m[1]][0], a[m[2]][1] - a[m[1]][1])
+                v2 = (a[m[4]][0] - a[m[3]][0], a[m[4]][1] - a[m[3]][1])
+                off = abs((math.degrees(math.atan2(v1[1], v1[0]) - math.atan2(v2[1], v2[0])) + 90) % 180 - 90)
+                check(off >= 5.0, f"{cid}: {pred} -> anchors give only {off:.2f} deg apart "
+                                  f"(a nonparallel claim needs ≥5°)", cid)
+                stats["anchor_checked"] += 1
+        elif (m := re.match(r"^reads ([A-Z]\d*) (-?\d+(?:\.\d+)?) on ([A-Z])([A-Z])$", pred)):
+            # deferred like `tick`: the axis claim may come later in the file
+            pending_reads.append((cid, c, m.group(1), float(m.group(2)), m.group(3), m.group(4)))
         elif (m := re.match(r"^equal ([A-Z])([A-Z]) ([A-Z])([A-Z])$", pred)):
             # `equal AK KB` — adjacent segments sharing one endpoint — is a real claim (the
             # corpus uses it for K a midpoint). Degenerate only when a segment collapses or the
@@ -755,6 +779,25 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
                   f"{cid}: {pred} -> {'(' if kind == 'open' else '['}{lo:g}, {hi:g}"
                   f"{')' if kind == 'open' else ']'} must be non-empty (an open interval needs "
                   f"lo < hi) and inside [{ax['v0']:g}, {ax['v1']:g}]", cid)
+    for cid, c, P4, v, X4, Y4 in pending_reads:
+        if not all(pt(g, cid) for g in (P4, X4, Y4)):
+            continue
+        stats["anchor_checked"] += 1
+        ax = axes.get((X4, Y4)) or axes.get((Y4, X4))
+        if ax is None:
+            check(False, f"{cid}: {c['pred']} -> there is no `axis {X4}{Y4} from … to …` claim "
+                         f"to read {P4} against", cid)
+        else:
+            lo, hi = min(ax["v0"], ax["v1"]), max(ax["v0"], ax["v1"])
+            if check(lo - 1e-9 <= v <= hi + 1e-9,
+                     f"{cid}: {c['pred']} -> {v:g} inside the axis's range [{lo:g}, {hi:g}]", cid):
+                # `on XY` names the segment, not the scale's direction — `reads P v on YX`
+                # resolves `axis XY` too (same convention as `tick`/`interval` above)
+                A_, B_ = (a[X4], a[Y4]) if (X4, Y4) in axes else (a[Y4], a[X4])
+                got = project_value(a[P4], A_, B_, ax["v0"], ax["v1"])
+                check(abs(got - v) <= 0.005 * abs(ax["v1"] - ax["v0"]) + 1e-9,
+                      f"{cid}: {c['pred']} -> {P4}'s anchor reads {got:g} on the axis "
+                      f"(need {v:g} ±{0.005 * abs(ax['v1'] - ax['v0']):g})", cid)
 
     # 2a. ⚠️ THE SCALE PASS (MAJOR 2, 2026-08-28). `axis` + `tick` DETERMINE every tick's coordinate,
     #     so a numbered scale is fully auditable and used not to be: the two checks it got were
@@ -828,6 +871,15 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
     stepped = [ax2 for ax2 in axes.values() if ax2["step"] is not None]
     if stepped:
         printed = {t for t in cs["labels"] if re.fullmatch(r"-?\d+(\.\d+)?", t)}
+        # W11: a numeral glyph whose `label` claim names a NON-numeric target is a category or
+        # series name printed on the figure (a bar chart's "2008" names cat0), not a scale
+        # numeral — exclude it. A numeric label with no claim, or naming a numeric target,
+        # still counts (and glyph-uniqueness keeps the two roles apart anyway).
+        bound_nonnumeric = {m2[1] for c2 in cs["claims"]
+                            if (m2 := re.match(r'^label "(.+)" names (\S+)$', c2["pred"]))
+                            and re.fullmatch(r"-?\d+(\.\d+)?", m2[1])
+                            and not re.fullmatch(r"-?\d+(\.\d+)?", m2[2])}
+        printed -= bound_nonnumeric
         if len(stepped) == len(axes):
             check(printed == all_expect,
                   f"axes: the numeric labels must be the union of every axis's arithmetic "
@@ -964,6 +1016,26 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
                       f"{c['id']}: {c['pred']} -> {v:g} is not justified by the stem "
                       f"(stem numbers {stem_nums}; drawn ratio copied? — cite a matching "
                       f"`derive` if the value is derived)", c["id"])
+
+        # `reads` (W11) is the third bare value the stem must own: `reads P v on XY` with
+        # ev `stem` asserts the figure's printed reading IS the stem's number. There is no
+        # derive door — a read-off value is a datum, not a computed result. An ev that
+        # ISN'T `stem` is honest only in read-the-figure mode, declared by a `describe`
+        # claim whose text calls the read values figure content — without it a flipped
+        # evidence word silently unhooks the value from the stem (W11 review, MAJOR 1).
+        fig_declared = any(c3["pred"].startswith("describe ") and
+                           "figure content" in c3["pred"] for c3 in cs["claims"])
+        for cid2, c2, _p, v2, _x, _y in pending_reads:
+            if c2["ev"] == "stem":
+                check(any(abs(v2 - s) <= 1e-9 for s in stem_nums),
+                      f"{cid2}: {c2['pred']} -> {v2:g} is not justified by the stem "
+                      f"(stem numbers {stem_nums})", cid2)
+            else:
+                check(fig_declared,
+                      f"{cid2}: {c2['pred']} -> ev {c2['ev']!r} unhooks the read value "
+                      "from the stem — allowed only in read-the-figure mode, which this "
+                      "set never declared (no `describe` claim calls the values figure "
+                      "content)", cid2)
 
         # 2e. TWO DOORS the stem-pair check alone leaves open (the 2026-09-29 cuboid: the stem
         #     states 5, 3 and 2, so the FORGED drawn ratio 1.5 = 3/2 is "stem-justified" — the
@@ -1945,6 +2017,80 @@ TRAIL_MUTATIONS = [
      "# RE-READ v2 — K-lines unchanged\n# - K3 stands corrected"),
 ]
 
+# ⭐ THE CHART FIXTURE (W11): a CONSTRUCTED bar chart in the shape build_bar_chart emits —
+# `reads` claims on digit-suffixed bar-top anchors, a stepped value axis, numeric category
+# labels bound to NON-numeric targets (years naming cat0/cat1 — the numeral-set exclusion),
+# and `nonparallel` on the two axis segments. Anchors: OY runs 200 units up for a 0..5 scale,
+# so T1 at 0.6 of the way reads 3 and T2 at the top reads 5.
+SELF_TEST_CHART = """\
+figure:   selftest-chart
+source:   constructed; a small bar chart (synthetic coordinates)
+channel:  constructed
+stem:     The bar chart shows 3 units in 2008 and 5 units in 2009.
+ask:      a the value each bar shows
+labels:   0 1 2 3 4 5 2008 2009
+points:   O X Y T1 T2
+segments: OX OY
+anchors:
+  O 40 220
+  X 220 220
+  Y 40 20
+  T1 90 100
+  T2 170 20
+claims:
+  K1  axis OY from 0 to 5      | stem     | the value axis
+  K2  tick OY step 1           | stem     | a numeral at every step
+  K3  reads T1 3 on OY         | stem     | the first bar reads 3
+  K4  reads T2 5 on OY         | stem     | the second bar reads 5
+  K5  label "0" names 0        | stem     |
+  K6  label "1" names 1        | stem     |
+  K7  label "2" names 2        | stem     |
+  K8  label "3" names 3        | stem     |
+  K9  label "4" names 4        | stem     |
+  K10 label "5" names 5        | stem     |
+  K11 label "2008" names cat0  | stem     | a year category — NOT a scale numeral
+  K12 label "2009" names cat1  | stem     | a year category — NOT a scale numeral
+  K13 nonparallel OX OY        | inferred | the axes cross
+  K14 derive 3 + 5 = 8         | inferred | the bars' total
+  K15 none tickMark parallelMark angleMark angleArc dashed shaded | inferred | the chart
+                                             draws no marks at all
+load-bearing:
+  a -> K3, K4
+unreadable: (none)
+ambiguous:  (none)
+"""
+
+CHART_MUTATIONS = [
+    # (name, [(old, new), ...], must_pass)
+    ("a `reads` value off its own anchor (claims 4 where T1 reads 3)",
+     [("K3  reads T1 3 on OY", "K3  reads T1 4 on OY")], False),
+    ("a `reads` value the stem never states (ev stem — the stem now says 'three', not 3)",
+     [("stem:     The bar chart shows 3 units in 2008 and 5 units in 2009.",
+       "stem:     The bar chart shows three units in 2008 and 5 units in 2009.")], False),
+    ("`nonparallel` on anchors that draw PARALLEL (Y moved onto OX's line)",
+     [("  Y 40 20", "  Y 220 220")], False),
+    ("a `reads` claim with no `axis` on the segment",
+     [("K1  axis OY from 0 to 5      | stem     | the value axis",
+       "K1  paint OY solid           | stem     |")], False),
+    ("`reads` resolves the axis named the other way around (must PASS)",
+     [("K3  reads T1 3 on OY", "K3  reads T1 3 on YO")], True),
+    ("a year-category label rebound to a NUMERIC name — it rejoins the printed-numeral set "
+     "and the strict numeral equality fails",
+     [('K11 label "2008" names cat0', 'K11 label "2008" names 2008')], False),
+    # W11 review, MAJOR 1: ev != stem on a `reads` must be backed by a figure-content
+    # `describe` declaration — without it the flip unhooks the value from the stem.
+    ("a `reads` ev flipped to `inferred` with NO figure-content declaration",
+     [("K3  reads T1 3 on OY         | stem     |",
+       "K3  reads T1 3 on OY         | inferred |")], False),
+    ("a `reads` ev flipped to `inferred` WITH the figure-content declaration (must PASS)",
+     [("K3  reads T1 3 on OY         | stem     |",
+       "K3  reads T1 3 on OY         | inferred |"),
+      ("K14 derive 3 + 5 = 8         | inferred | the bars' total",
+       "K14 derive 3 + 5 = 8         | inferred | the bars' total\n"
+       "  K14b describe \"the bar heights are figure content — the question asks the "
+       "student to read them\" | inferred | read-the-figure mode")], True),
+]
+
 def self_test() -> int:
     print("--- baseline (must PASS)")
     out, fails, stats = audit(parse(SELF_TEST))
@@ -2074,6 +2220,35 @@ def self_test() -> int:
         print("      SELF-TEST BROKEN: the planted-bad fixture must FAIL and the failure must cite K2")
     for name, replacements, want_pass in STEM_RATIO_MUTATIONS:
         text = SELF_TEST_STEM_RATIO
+        stale = [old for old, _ in replacements if old not in text]
+        if stale:
+            print(f"    STALE     {name}: {stale[0][:50]!r} not in fixture")
+            bad += 1
+            continue
+        for old, new in replacements:
+            text = text.replace(old, new, 1)
+        try:
+            out, fails, _ = audit(parse(text))
+        except SystemExit as exc:
+            print(f"    caught (parse error, exit {exc.code})   <- {name}")
+            bad += 0 if not want_pass else 1
+            continue
+        ok = (fails == 0) if want_pass else fails > 0
+        print(f"    {'ok      ' if ok else 'MISSED  '} {fails:>2} failure(s)  <- {name}")
+        if not ok:
+            bad += 1
+            print("      " + "\n      ".join(l for l in out if l.startswith("  FAIL")))
+
+    print("\n--- the CHART fixture (W11: `reads`/`nonparallel`, digit-suffixed points, "
+          "numeric category labels)")
+    out, fails, stats = audit(parse(SELF_TEST_CHART))
+    print(f"    baseline: {len(out)} assertions, {fails} failures, "
+          f"{stats['anchor_checked']} anchor-checked")
+    if fails:
+        print("\n".join(l for l in out if l.startswith("  FAIL")))
+        bad += 1
+    for name, replacements, want_pass in CHART_MUTATIONS:
+        text = SELF_TEST_CHART
         stale = [old for old, _ in replacements if old not in text]
         if stale:
             print(f"    STALE     {name}: {stale[0][:50]!r} not in fixture")

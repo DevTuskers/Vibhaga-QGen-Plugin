@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""vdd_templates.py — the fifteen figure TEMPLATES of the vibhaga-qgen plugin.
+"""vdd_templates.py — the eighteen figure TEMPLATES of the vibhaga-qgen plugin.
 
 A template turns a question's STEM NUMBERS into a finished figure — a VDD document, an
 anchors sidecar and a `channel: constructed` claim set — in one `Built` object:
@@ -335,21 +335,29 @@ def stroke_segments(elements: list[dict], stroke_w: float = 2.0) -> list[tuple[X
         elif t == "tickMark":
             m = vc.lerp(tuple(el["on"][0]), tuple(el["on"][1]), el.get("at", 0.5))
             nx, ny = vc.normal(tuple(el["on"][0]), tuple(el["on"][1]))
+            ux, uy = vc.unit(tuple(el["on"][0]), tuple(el["on"][1]))
             s = el.get("size", 8)
+            # the renderer spreads `count` strokes 6 units apart, each a FULL-size
+            # perpendicular stroke — under-modelling this lets a label sit inside ink
             for k in range(el.get("count", 1)):
-                off = (k - (el.get("count", 1) - 1) / 2) * 4
-                ux, uy = vc.unit(tuple(el["on"][0]), tuple(el["on"][1]))
+                off = (k - (el.get("count", 1) - 1) / 2) * 6
                 c = (m[0] + ux * off, m[1] + uy * off)
-                add([(c[0] - nx * s / 2, c[1] - ny * s / 2), (c[0] + nx * s / 2, c[1] + ny * s / 2)], w_of(el))
+                add([(c[0] - nx * s, c[1] - ny * s), (c[0] + nx * s, c[1] + ny * s)],
+                    w_of(el))
         elif t == "parallelMark":
             m = vc.lerp(tuple(el["on"][0]), tuple(el["on"][1]), el.get("at", 0.5))
             ux, uy = vc.unit(tuple(el["on"][0]), tuple(el["on"][1]))
             nx, ny = -uy, ux
             s = el.get("size", 8)
-            tip = (m[0] + ux * s / 2, m[1] + uy * s / 2)
-            for sign in (1, -1):
-                tail = (m[0] - ux * s / 2 + sign * nx * s / 2, m[1] - uy * s / 2 + sign * ny * s / 2)
-                add([tail, tip], w_of(el))
+            # `count` chevrons, 6 units apart along the line, tip a FULL size ahead —
+            # the class-2 double-arrow is wider than a single-chevron model admits
+            for k in range(el.get("count", 1)):
+                off = (k - (el.get("count", 1) - 1) / 2) * 6
+                cx, cy = m[0] + ux * off, m[1] + uy * off
+                tip = (cx + ux * s, cy + uy * s)
+                for sign in (1, -1):
+                    tail = (cx - ux * s + sign * nx * s, cy - uy * s + sign * ny * s)
+                    add([tail, tip], w_of(el))
     return segs
 
 
@@ -621,6 +629,10 @@ def _check_label_texts(elements: list[dict], extra: list[str], medium: str) -> N
                 f"medium='sinhala' when the question is sinhala-medium")
         if "$" in s or "`" in s:
             raise TemplateError(f"label {s!r} contains `$` or a backtick — it reaches the student raw")
+        if "|" in s or '"' in s or "\n" in s:
+            raise TemplateError(f"label {s!r} contains a claim-separator character (`|`, "
+                                f"a double quote or a newline) — it would corrupt the "
+                                f"claim set's `label \"{s}\" …` line")
 
 
 def _translate(elements: list[dict], dx: float, dy: float) -> None:
@@ -630,8 +642,9 @@ def _translate(elements: list[dict], dx: float, dy: float) -> None:
                 v = el[key]
                 if isinstance(v, list) and v and isinstance(v[0], (list, tuple)):
                     el[key] = [[vc.r2(p[0] + dx), vc.r2(p[1] + dy)] for p in v]
-                else:
+                elif isinstance(v, (list, tuple)):
                     el[key] = [vc.r2(v[0] + dx), vc.r2(v[1] + dy)]
+                # a scalar (parallelMark's fractional `at`) is not a coordinate
         if "x" in el and "y" in el:                 # rect
             el["x"], el["y"] = vc.r2(el["x"] + dx), vc.r2(el["y"] + dy)
 
@@ -759,8 +772,10 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
                                                            # could word floater refusals
 
     # 3. the claim set (audit-claim-set grammar; order is the corpus convention)
-    if points and any(not re.fullmatch(r"[A-Z]", p) for p in points):
-        raise TemplateError(f"{kind}: point names are single capitals — got {points}")
+    # [A-Z]\d* — W11: bar-chart bar tops and other generated anchors may be digit-suffixed
+    if points and any(not re.fullmatch(r"[A-Z]\d*", p) for p in points):
+        raise TemplateError(f"{kind}: point names are capitals, optionally digit-suffixed "
+                            f"— got {points}")
     drawn, math_labels = [], []
     for el in elements:
         if el["type"] == "math":
@@ -829,7 +844,7 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
             if n not in anchors:
                 raise TemplateError(f"{kind}: claim @{n} names no anchor")
             return f"{anchors[n][0]:g} {anchors[n][1]:g}"
-        return re.sub(r"@([A-Z])\b", rep, pred)
+        return re.sub(r"@([A-Z]\d*)\b", rep, pred)
 
     L.append("claims:")
     for i, (pred, ev, note) in enumerate(claims, 1):
@@ -2802,11 +2817,1113 @@ def build_shape_row(*, figure_id, stem, ask=None, title=None, description=None,
                   medium=medium)
 
 
+# ────────────────────────────────────────────────────────────────────────────────
+# W11 — Grade 7 scale figures. The coordinate plane and the bar chart ride the
+# audit's `axis` + `tick` + `reads` machinery (every claimed number projects onto a
+# declared scale), and `parallel_lines` is the first template whose claim set uses
+# `nonparallel` — the ≥5° tilt that makes a crossing honest.
+# ────────────────────────────────────────────────────────────────────────────────
+def _pick_label_spot(kind: str, text: str, size: float, anchor_xy: XY | None,
+                     candidates: list[XY], strokes: list[tuple],
+                     others: list[tuple], rivals: list[XY],
+                     s_est: float) -> tuple[XY, tuple] | None:
+    """First candidate centre whose `size`-pt box clears every stroke and label and —
+    when `anchor_xy` is given — sits nearer it than any `rivals` anchor, all at the
+    same rendered-px tolerances finish() applies. Fixed-label counterpart of the
+    floater sweep, for spots the sweep's fixed steps can't reach."""
+    w = _label_width(text, size)
+    need_stroke = (STROKE_PX + SLACK_STROKE + 1.0) / s_est
+    need_label = 4.0 / s_est
+    need_own = OWN_FIXED_PX / s_est
+    for cx, cy in candidates:
+        box = (cx - w / 2, cy - MID_UP * size, cx + w / 2, cy + MID_DOWN * size)
+        if strokes and min(_seg_rect_dist(a, b, box) - sw / 2
+                           for a, b, sw in strokes) < need_stroke:
+            continue
+        if any(_rect_gap(box, pb[1:5]) < need_label for pb in others):
+            continue
+        if anchor_xy is not None and rivals:
+            own = math.hypot(cx - anchor_xy[0], cy - anchor_xy[1])
+            if min((math.hypot(cx - r[0], cy - r[1]) - own
+                    for r in rivals), default=99.0) < need_own:
+                continue
+        return (cx, cy), box
+    return None
+
+
+_GRID_INK = "#d1d5db"          # light ruling ink — same convention as grid_polygon
+_PL_TILT = (0.0, 16.0, 34.0, 52.0)   # tilt off `direction`: class-1 0°, class-2 16°,
+                                     # unclassed lines take 34° then 52° — every pair
+                                     # stays ≥12° apart by construction
+_PL_GAP_MIN = 44.0             # smallest centre-to-centre stack gap (units)
+_PL_DIST_PPU = 18.0            # perpendicular-distance label -> drawn units per unit
+_PL_MARK_ATS = (0.5, 0.4, 0.6, 0.32, 0.68, 0.24, 0.76, 0.18, 0.82)
+                               # fractional `at` positions tried for a parallelMark —
+                               # the transversal hits every line's centre, so 0.5 is
+                               # rarely legal when `crossing` is drawn
+_BAR_FILLS = ("#1d4ed8", "#f59e0b", "#10b981")   # blue / amber / emerald
+_BAR_OUTLINE = vc.INK
+_PLACE_FAIL = re.compile(r"rendered px|no clear spot|canvas is .*past|h/w .*>")
+
+
+def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description=None,
+                           medium="english", x_max=None, y_max=None, points=None,
+                           join=None, closed=False, sym_axis=None, guides=None,
+                           grid=True, coords="stem", origin_label=False, unit_px=None):
+    """A first-quadrant coordinate plane (L23 scope: INTEGER coords, axes from 0, no
+    equation text). `points` = {letter: (x, y)}; `join` = lists of point names drawn
+    as polylines (or polygons when `closed`); `sym_axis` = {"x": k} draws the vertical
+    midline x = k dashed, {"y": k} the horizontal one; `guides` = point names that get
+    dashed perpendiculars to both axes; `coords` = "stem" (each coordinate must be a
+    stem number) or "figure" (read-the-figure mode — `reads` carry ev `inferred`)."""
+    vc.reset_ids()
+    for nm, v in (("x_max", x_max), ("y_max", y_max)):
+        if isinstance(v, bool) or not isinstance(v, int) or not (1 <= v <= 10):
+            raise TemplateError(f"coordinate_plane: {nm} must be an integer in 1..10 "
+                                f"— got {v!r}")
+    if coords not in ("stem", "figure"):
+        raise TemplateError(f"coordinate_plane: coords must be 'stem' or 'figure' — got "
+                            f"{coords!r}")
+    pts: dict[str, tuple[int, int]] = {}
+    for n, xy in (points or {}).items():
+        if not isinstance(n, str) or not re.fullmatch(r"[A-Z]", n):
+            raise TemplateError(f"coordinate_plane: point name {n!r} is not a single capital")
+        if n in "OXY":
+            raise TemplateError(f"coordinate_plane: {n} is reserved for the axes — pick "
+                                f"another letter")
+        try:
+            px, py = xy
+        except (TypeError, ValueError):
+            raise TemplateError(f"coordinate_plane: point {n} must be an (x, y) pair — "
+                                f"got {xy!r}") from None
+        if not all(isinstance(c, (int, float)) and not isinstance(c, bool)
+                   and float(c).is_integer() for c in (px, py)):
+            raise TemplateError(f"coordinate_plane: {n} = {xy!r} — integer coordinates "
+                                f"only (first-quadrant scope)")
+        px, py = int(px), int(py)
+        if not (0 <= px <= x_max and 0 <= py <= y_max):
+            raise TemplateError(f"coordinate_plane: {n} = ({px}, {py}) lies outside "
+                                f"[0, {x_max}] x [0, {y_max}]")
+        if (px, py) in pts.values():
+            raise TemplateError(f"coordinate_plane: two points sit at ({px}, {py}) — one "
+                                f"dot cannot wear two letters")
+        if (px, py) in ((0, 0), (x_max, 0), (0, y_max)):
+            raise TemplateError(f"coordinate_plane: {n} = ({px}, {py}) sits on an axis "
+                                f"anchor (O, X or Y) — its letter can never own the "
+                                f"anchor; shift it off the axis end")
+        pts[n] = (px, py)
+    if coords == "stem":
+        for n, (px, py) in pts.items():
+            require_stem(stem, **{f"{n}'s x": px, f"{n}'s y": py})
+    joins: list[list[str]] = []
+    for path in (join or []):
+        if not isinstance(path, (list, tuple)) or len(path) < 2:
+            raise TemplateError("coordinate_plane: each `join` entry is a list of at "
+                                "least two point names")
+        for n in path:
+            if n not in pts:
+                raise TemplateError(f"coordinate_plane: join names {n!r}, which is not "
+                                    f"one of the points")
+        for a_, b_ in zip(path, path[1:]):
+            if a_ == b_:
+                raise TemplateError(f"coordinate_plane: a join step visits {a_} twice "
+                                    f"in a row — a zero-length segment")
+        joins.append(list(path))
+    sym = None
+    if sym_axis is not None:
+        if not isinstance(sym_axis, dict) or len(sym_axis) != 1 or \
+                next(iter(sym_axis)) not in ("x", "y"):
+            raise TemplateError("coordinate_plane: sym_axis is {\"x\": k} (the vertical "
+                                "midline) or {\"y\": k} (the horizontal one)")
+        sk, sv = next(iter(sym_axis.items()))
+        lim = x_max if sk == "x" else y_max
+        if not isinstance(sv, (int, float)) or isinstance(sv, bool) or not (0 < sv < lim):
+            raise TemplateError(f"coordinate_plane: the symmetry midline {sk}={sv!r} must "
+                                f"be a number strictly inside (0, {lim})")
+        if coords == "stem":
+            require_stem(stem, **{f"the {sk} midline": float(sv)})
+        sym = (sk, float(sv))
+    gset: list[str] = []
+    for n in (guides or []):
+        if n not in pts:
+            raise TemplateError(f"coordinate_plane: guide point {n!r} is not one of "
+                                f"the points")
+        gset.append(n)
+
+    def assemble(unit: float):
+        ov = max(10.0, 0.3 * unit)                    # arrowhead overhang past x_max/y_max
+        elements: list[dict] = []
+        if grid:
+            for i in range(1, x_max + 1):
+                elements.append({"id": f"gv{i}", "type": "line", "stroke":
+                                 {"color": _GRID_INK, "width": 1},
+                                 "points": [[i * unit, 0], [i * unit, -y_max * unit]]})
+            for j in range(1, y_max + 1):
+                elements.append({"id": f"gh{j}", "type": "line", "stroke":
+                                 {"color": _GRID_INK, "width": 1},
+                                 "points": [[0, -j * unit], [x_max * unit, -j * unit]]})
+        elements.append({"id": "axX", "type": "arrow", "head": "end",
+                         "points": [[0, 0], [x_max * unit + ov, 0]]})
+        elements.append({"id": "axY", "type": "arrow", "head": "end",
+                         "points": [[0, 0], [0, -y_max * unit - ov]]})
+        for i in range(1, x_max + 1):                 # the lattice marks on each axis
+            elements.append(vc.line((i * unit, -5), (i * unit, 5), id=f"tx{i}", width=1.5))
+        for j in range(1, y_max + 1):
+            elements.append(vc.line((-5, -j * unit), (5, -j * unit), id=f"ty{j}",
+                                    width=1.5))
+        # numerals — number_line's crowding rule, per axis: the printed set must equal
+        # the union of the two arithmetic sequences, and the last numeral IS the axis
+        # end, so the step must divide the max
+        span_x = x_max * unit + 2 * ov + 2 * (26 + _label_width(f"{y_max:g}", 16))
+        span_y = y_max * unit + 2 * ov + 80.0
+        num_gap_x = _clearance_units(4.0, span_x)
+        wlab_x = max(_label_width(f"{v:g}", 16) for v in range(0, x_max + 1))
+        fits_x = lambda k: x_max % k == 0 and k * unit >= wlab_x + num_gap_x  # noqa: E731
+        step_x = next((k for k in _NICE_STEPS if fits_x(k)),
+                      next((k for k in range(1, x_max + 1) if fits_x(k)), x_max))
+        num_gap_y = _clearance_units(4.0, span_y)
+        hlab = (MID_UP + MID_DOWN) * 16.0
+        fits_y = lambda k: y_max % k == 0 and k * unit >= hlab + num_gap_y  # noqa: E731
+        step_y = next((k for k in _NICE_STEPS if fits_y(k)),
+                      next((k for k in range(1, y_max + 1) if fits_y(k)), y_max))
+        nclr_x = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, span_x)
+        for k in range(step_x, x_max + 1, step_x):    # 0 is the single origin numeral
+            elements.append(vc.text((k * unit, 5 + MID_UP * 16.0 + nclr_x),
+                                    f"{k:g}", id=f"nx{k}", size=16))
+        wlab_y = max(_label_width(f"{v:g}", 16) for v in range(0, y_max + 1))
+        nx_ = -(wlab_y / 2 + 5 + nclr_x)
+        for k in range(step_y, y_max + 1, step_y):
+            elements.append(vc.text((nx_, -k * unit), f"{k:g}", id=f"ny{k}", size=16))
+        anchors: dict[str, XY] = {"O": (0.0, 0.0), "X": (x_max * unit, 0.0),
+                                  "Y": (0.0, -y_max * unit)}
+        for n in gset:                                # guides first — dots sit on top
+            px, py = pts[n]
+            cx, cy = px * unit, -py * unit
+            if px:
+                elements.append(vc.line((cx, cy), (cx, 0.0), id=f"gd{n}x", dashed=True))
+            if py:
+                elements.append(vc.line((cx, cy), (0.0, cy), id=f"gd{n}y", dashed=True))
+        sym_pts: list[str] = []
+        if sym:
+            sk, sv = sym
+            S, T = _unused_letters(set(pts) | {"O", "X", "Y"}, 2)
+            s_a, s_b = ((sv * unit, 0.0), (sv * unit, -y_max * unit)) if sk == "x" \
+                else ((0.0, -sv * unit), (x_max * unit, -sv * unit))
+            anchors[S], anchors[T] = s_a, s_b
+            elements.append(vc.line(s_a, s_b, id="sym", dashed=True, width=1.5))
+            sym_pts = [S, T]
+        for n, (px, py) in pts.items():
+            cx, cy = px * unit, -py * unit
+            anchors[n] = (cx, cy)
+            elements.append({"id": f"pt{n}", "type": "point", "at": vc.P((cx, cy)),
+                             "r": 3.5})
+        join_segs: list[str] = []
+        for pi, path in enumerate(joins):
+            cpts = [(pts[n][0] * unit, -pts[n][1] * unit) for n in path]
+            if closed and len(path) > 2:
+                elements.append(vc.polygon(cpts, id=f"jn{pi}", stroke_width=2))
+                ring = path + [path[0]]
+            else:
+                elements.append(vc.polyline(cpts, id=f"jn{pi}"))
+                ring = path
+            for a_, b_ in zip(ring, ring[1:]):
+                if f"{a_}{b_}" not in join_segs:
+                    join_segs.append(f"{a_}{b_}")
+        elements.append(_float_label("axlX", "x", (x_max * unit + ov, 0.0),
+                                     gap=4.0, size=16))
+        elements.append(_float_label("axlY", "y", (0.0, -y_max * unit - ov),
+                                     gap=4.0, size=16))
+        # point letters and the shared "0" sit in SCORED pockets — fixed spots, not
+        # `_near` floaters: a grid point's only clear pockets are slivers between the
+        # ruling lines and join edges, and a floater's fixed-step sweep lands in them
+        # by luck only. Each pocket is scored by the same clearances finish() applies,
+        # PLUS visual-check's target rule — a label box must come within
+        # 1.5·fontSize of SOME painted ink (stroke centrelines and dots both count),
+        # which the far pockets of a wide-scaled canvas break.
+        strokes = stroke_segments(elements)
+        s_est = min(1.0, PLATE_INNER / (span_x + 1.6 * unit + 60.0))
+        need_stroke = (STROKE_PX + SLACK_STROKE) / s_est
+        need_label = 4.0 / s_est
+        need_own = OWN_FIXED_PX / s_est
+        placed: list[tuple] = []                  # boxes this pass committed
+        fixed_boxes = label_boxes(elements, FS)
+
+        def seat(cx, cy, text, size, offsets, rivals=(), first_ok=False):
+            """(score, bx, by) — score <0 fails a rule. `first_ok` returns the FIRST
+            legal offset (the list is then a preference order); otherwise the best."""
+            w = _label_width(text, size)
+            best = None
+            for dx, dy in offsets:
+                bx, by = cx + dx, cy + dy
+                box = (bx - w / 2, by - MID_UP * size,
+                       bx + w / 2, by + MID_DOWN * size)
+                stroke_gap = min((_seg_rect_dist(a, b, box) - sw / 2
+                                  for a, b, sw in strokes), default=99.0)
+                paint_gap = min((_seg_rect_dist(a, b, box)
+                                 for a, b, _s in strokes), default=99.0)
+                label_gap = min((_rect_gap(box, pb[1:5])
+                                 for pb in fixed_boxes + placed), default=99.0)
+                own = math.hypot(bx - cx, by - cy)
+                own_gap = min((math.hypot(bx - r[0], by - r[1]) - own
+                               for r in rivals), default=99.0)
+                score = min(stroke_gap - need_stroke, label_gap - need_label,
+                            own_gap - need_own, 1.5 * size - 2.0 - paint_gap)
+                if first_ok and score >= 0:
+                    return (score, bx, by)
+                if best is None or score > best[0]:
+                    best = (score, bx, by)
+            return best
+
+        # the single "0" serves both axes (the audit unions the two sequences) — it sits
+        # on the x-numeral row centred UNDER the origin first (the classic position —
+        # the y-axis above it never reaches its box), then slightly off-centre seats,
+        # then plain pockets outside the plot quadrant as a last resort.
+        zw, zup, zdn = _label_width("0", 16), MID_UP * 16.0, MID_DOWN * 16.0
+        zs = max(_clearance_units(STROKE_PX + SLACK_STROKE, span_x),
+                 need_stroke) + 2.5
+        z_off = [(0.0, zs + zup), (-(zw / 2 + 2.0), zs + zup),
+                 (zw / 2 + 2.0, zs + zup), (-(zs + zw / 2), zs + zup),
+                 (-(zs + zw / 2), 2.0)]
+        z_off += [(sx * f * unit, sy * f * unit)
+                  for f in (0.5, 0.42, 0.62, 0.72, 0.85)
+                  for sx, sy in ((-1, 1), (-1, 0), (0, 1), (1, 1), (-1, -1))]
+        best = seat(0.0, 0.0, "0", 16, z_off, first_ok=True)
+        if best is None or best[0] < 0:
+            raise TemplateError(
+                "coordinate_plane: the shared \"0\" numeral found no seat that both "
+                f"clears the axes and stays within 1.5×fontSize of the painted corner "
+                f"(~{(best[0] if best else 0) * s_est:.1f} rendered px short)")
+        elements.append(vc.text((best[1], best[2]), "0", id="n0", size=16))
+        placed.append(("0", best[1] - zw / 2, best[2] - zup,
+                       best[1] + zw / 2, best[2] + zdn))
+        if origin_label:
+            # the capital "O" is pocket-seated like the numerals, preferring the
+            # classic corner down-LEFT of the origin — a floater's sweep stacks it
+            # over the "0" instead (W11 review). Down-left first, then the rest of
+            # the outside-quadrant ring; the "0"'s committed box is already in
+            # `placed`, so the two can never collide.
+            ow = _label_width("O", 16)
+            o_off = [(sx * f * unit, sy * f * unit)
+                     for f in (0.42, 0.33, 0.55, 0.68, 0.85)
+                     for sx, sy in ((-1, 1), (-1, 0), (0, 1), (-1, -1), (1, 1))]
+            rivals_o = [p for nm_, p in anchors.items() if nm_ != "O"]
+            best = seat(0.0, 0.0, "O", 16, o_off, rivals_o, first_ok=True)
+            if best is None or best[0] < 0:
+                raise TemplateError(
+                    "coordinate_plane: origin_label's \"O\" found no seat clear of the "
+                    "axes, the \"0\" and the point letters — drop origin_label")
+            elements.append(vc.text((best[1], best[2]), "O", id="org", size=16))
+            placed.append(("O", best[1] - ow / 2, best[2] - MID_UP * 16.0,
+                           best[1] + ow / 2, best[2] + MID_DOWN * 16.0))
+        ring = tuple((sx * f * unit, sy * f * unit)
+                     for f in (0.5, 0.42, 0.6, 0.72, 0.85, 0.33)
+                     for sx, sy in ((1, -1), (-1, -1), (1, 1), (-1, 1),
+                                    (1, 0), (-1, 0), (0, -1), (0, 1)))
+        for n, (px, py) in pts.items():
+            cx, cy = px * unit, -py * unit
+            rivals = [anchors[m] for m in pts if m != n] + \
+                     ([anchors["O"]] if origin_label else [])
+            best = seat(cx, cy, n, 14, ring, rivals)
+            if best is not None and best[0] >= 0:
+                w = _label_width(n, 14)
+                elements.append(vc.text((best[1], best[2]), n, id=f"lb{n}", size=14))
+                placed.append((n, best[1] - w / 2, best[2] - MID_UP * 14.0,
+                               best[1] + w / 2, best[2] + MID_DOWN * 14.0))
+            else:
+                raise TemplateError(
+                    f"coordinate_plane: point {n}'s letter found no clear half-cell "
+                    f"pocket (~{(best[0] if best else 0) * s_est:.1f} rendered px "
+                    f"short) — the labels need room the strokes don't leave")
+        return elements, anchors, sym_pts, join_segs, step_x, step_y, span_x
+
+    ev_pts = "stem" if coords == "stem" else "inferred"
+    units = [float(unit_px)] if unit_px is not None else \
+        [u for u in (min(52.0, 430.0 / x_max, 300.0 / y_max) * f
+                     for f in (1.0, 0.8, 0.62, 0.48)) if u >= 14]
+    if not units:
+        raise TemplateError("coordinate_plane: unit_px must be a positive number")
+    err = None
+    for u in units:
+        elements, anchors, sym_pts, join_segs, step_x, step_y, span_x = assemble(u)
+        claims: list[tuple[str, str, str]] = []
+
+        def add(pred, ev, note=""):
+            claims.append((pred, ev, note))
+            return f"K{len(claims)}"
+
+        add(f"axis OX from 0 to {x_max:g}", "inferred", "the x extent is layout")
+        add(f"axis OY from 0 to {y_max:g}", "inferred", "the y extent is layout")
+        add(f"tick OX step {step_x}", "inferred",
+            "a numeral at every integer" if step_x == 1 else
+            f"numerals every {step_x} integers — closer would crowd at this canvas width")
+        add(f"tick OY step {step_y}", "inferred",
+            "a numeral at every integer" if step_y == 1 else
+            f"numerals every {step_y} integers — closer would crowd at this canvas width")
+        add("right X O Y", "inferred", "the axes are perpendicular")
+        for n, (px, py) in pts.items():
+            add(f"reads {n} {px:g} on OX", ev_pts, f"{n}'s x coordinate")
+            add(f"reads {n} {py:g} on OY", ev_pts, f"{n}'s y coordinate")
+        if sym:
+            sk, sv = sym
+            ax_ = "OX" if sk == "x" else "OY"
+            add(f"reads {sym_pts[0]} {sv:g} on {ax_}", ev_pts,
+                "the dashed midline's lower end")
+            add(f"reads {sym_pts[1]} {sv:g} on {ax_}", ev_pts,
+                "the dashed midline's upper end")
+            add(f"paint {sym_pts[0]}{sym_pts[1]} dashed", "inferred",
+                "the symmetry axis is drawn broken")
+        for n in gset:
+            add(f'describe "dashed guides run from {n} to both axes"', "inferred",
+                "the guide pair under the point")
+        add(f"derive {x_max:g} + {y_max:g} = {x_max + y_max:g}", "inferred",
+            "the two axis extents bound the plane")
+        if coords == "figure":
+            add('describe "the marked positions are figure content — the question asks '
+                'the student to read them"', "inferred", "read-the-figure mode")
+        # labels — one claim per drawn glyph; the numeral claims bind numeric targets so
+        # the scale check sees them, "x"/"y" name the axis segments, "0" serves both axes
+        add('label "x" names OX', "inferred", "the axis letter")
+        add('label "y" names OY', "inferred", "the axis letter")
+        claimed_nums = set()
+        for k in range(0, x_max + 1, step_x):
+            claimed_nums.add(k)
+        for k in range(0, y_max + 1, step_y):
+            claimed_nums.add(k)
+        for k in sorted(claimed_nums):
+            add(f'label "{k:g}" names {k:g}', ev_pts, "a printed numeral")
+        for n in pts:
+            add(f'label "{n}" names {n}', ev_pts, "a marked point")
+        if origin_label:
+            add('label "O" names O', "stem", "the origin letter")
+        dashed_drawn = bool(sym or gset)
+        add("none tickMark parallelMark angleMark angleArc" +
+            (" " if dashed_drawn else " dashed ") + "shaded", "inferred",
+            "no marks beyond the axis arrowheads" +
+            ("" if dashed_drawn else " — nothing is dashed"))
+        elements_n = len(elements)
+        try:
+            return finish(kind="coordinate_plane", figure_id=figure_id, stem=stem,
+                          elements=elements, anchors=anchors,
+                          points=["O", "X", "Y"] + list(pts) + sym_pts,
+                          segments=["OX", "OY"] + join_segs +
+                                   ([f"{sym_pts[0]}{sym_pts[1]}"] if sym else []),
+                          claims=claims, ask=ask,
+                          title=title or "A coordinate plane",
+                          description=description or (
+                              f"A coordinate plane with the axes running 0 to {x_max} "
+                              f"and 0 to {y_max}" +
+                              (f"; points {', '.join(pts)} are marked" if pts else "") +
+                              (" and joined" if joins else "") +
+                              ("; a dashed symmetry line crosses the plane" if sym else "")
+                              + "."),
+                          scale="to scale — both axes are true linear maps",
+                          budget=elements_n if elements_n > 32 else None,
+                          departures=([f"{elements_n} elements — one short line per grid "
+                                       "cell edge and tick"] if elements_n > 32 else None),
+                          medium=medium)
+        except TemplateError as e:
+            if unit_px is not None or not _PLACE_FAIL.search(str(e)) or \
+                    "canvas is" in str(e):   # an aspect refusal is not a cell-size issue
+                raise
+            err = e
+    raise TemplateError(f"coordinate_plane: no cell size inside the width cap lays the "
+                        f"figure out cleanly ({err}) — pass grid=False or fewer points")
+
+
+def build_parallel_lines(*, figure_id, stem, ask=None, title=None, description=None,
+                         medium="english", lines=None, parallel=None, direction=0.0,
+                         crossing=None, distance=None, length=None):
+    """A stack of straight lines, some parallel. `lines` = 2–4 two-capital names with
+    all endpoint letters distinct; `parallel` = 1–2 classes of line names (each ≥2);
+    `direction` = degrees of the first class (0 = horizontal, screen-clockwise);
+    `crossing` = a two-capital name for a transversal through every line;
+    `distance` = {"between": [two ADJACENT same-class lines], "value": v, "unit": "cm"}
+    draws the perpendicular MN with the right-angle mark at its foot N and the spacing
+    drawn at value x _PL_DIST_PPU. Unclassed lines tilt ≥12° off every other; drawn
+    segments never cross except `crossing`."""
+    vc.reset_ids()
+    if not isinstance(lines, (list, tuple)) or not (2 <= len(lines) <= 4):
+        raise TemplateError("parallel_lines: `lines` must be a list of 2–4 segment names")
+    seen: dict[str, str] = {}
+    for nm in lines:
+        if not isinstance(nm, str) or not re.fullmatch(r"[A-Z]{2}", nm) or nm[0] == nm[1]:
+            raise TemplateError(f"parallel_lines: line name {nm!r} must be two DISTINCT "
+                                f"capitals")
+        for ch in nm:
+            if ch in seen:
+                raise TemplateError(f"parallel_lines: letter {ch} is used by both "
+                                    f"{seen[ch]} and {nm} — every endpoint letter must "
+                                    f"be distinct")
+            seen[ch] = nm
+    if not isinstance(parallel, (list, tuple)) or not (1 <= len(parallel) <= 2):
+        raise TemplateError("parallel_lines: `parallel` must be a list of 1–2 classes")
+    cls_of: dict[str, int] = {}
+    for ci, cls in enumerate(parallel):
+        if not isinstance(cls, (list, tuple)) or len(cls) < 2:
+            raise TemplateError("parallel_lines: each parallel class needs ≥2 lines")
+        for nm in cls:
+            if nm not in lines:
+                raise TemplateError(f"parallel_lines: class member {nm!r} is not in `lines`")
+            if nm in cls_of:
+                raise TemplateError(f"parallel_lines: {nm} is in two parallel classes")
+            cls_of[nm] = ci
+    if not isinstance(direction, (int, float)) or isinstance(direction, bool):
+        raise TemplateError(f"parallel_lines: direction must be degrees — got "
+                            f"{direction!r}")
+    tilt: dict[str, float] = {}
+    extra = [34.0, 52.0]
+    for nm in lines:
+        tilt[nm] = _PL_TILT[cls_of[nm]] if nm in cls_of else extra.pop(0)
+    if crossing is not None:
+        if not isinstance(crossing, str) or not re.fullmatch(r"[A-Z]{2}", crossing) \
+                or crossing[0] == crossing[1] or any(ch in seen for ch in crossing):
+            raise TemplateError(f"parallel_lines: crossing {crossing!r} must be two "
+                                f"distinct capitals not used by any line")
+        for ch in crossing:
+            seen[ch] = crossing
+    dist_idx = None
+    if distance is not None:
+        if not isinstance(distance, dict):
+            raise TemplateError("parallel_lines: distance is a dict "
+                                "{\"between\": [l1, l2], \"value\": n, \"unit\": s}")
+        pair = distance.get("between")
+        val, unit_s = distance.get("value"), distance.get("unit")
+        if (not isinstance(pair, (list, tuple)) or len(pair) != 2 or
+                pair[0] not in lines or pair[1] not in lines or pair[0] == pair[1]):
+            raise TemplateError("parallel_lines: distance['between'] must be two "
+                                "different lines")
+        if cls_of.get(pair[0]) is None or cls_of.get(pair[0]) != cls_of.get(pair[1]):
+            raise TemplateError(f"parallel_lines: a perpendicular distance only exists "
+                                f"between two PARALLEL lines — {pair[0]} and {pair[1]} "
+                                f"are not in one class")
+        i0, i1 = sorted(lines.index(nm) for nm in pair)
+        if i1 - i0 != 1:
+            raise TemplateError(f"parallel_lines: {pair[0]} and {pair[1]} are not "
+                                f"adjacent in `lines` — the perpendicular would cross "
+                                f"the line(s) between them")
+        if not isinstance(val, (int, float)) or isinstance(val, bool) or val <= 0:
+            raise TemplateError("parallel_lines: distance['value'] must be a positive "
+                                "number")
+        if not isinstance(unit_s, str) or not unit_s.strip():
+            raise TemplateError("parallel_lines: distance['unit'] must be a non-empty "
+                                "string like 'cm'")
+        _check_label_texts([], [unit_s], medium)   # it prints inside the "v unit" label
+        require_stem(stem, distance_value=val)
+        for ch in "MN":
+            if ch in seen:
+                raise TemplateError("parallel_lines: letters M and N are reserved for "
+                                    "the perpendicular's feet")
+        seen["M"] = seen["N"] = "MN"
+        dist_idx = (i0, i1, float(val), unit_s.strip())
+    L = float(length or 170.0)
+    if L <= 0:
+        raise TemplateError(f"parallel_lines: length must be positive — got {length!r}")
+
+    d = math.radians(float(direction))
+    u_n = (-math.sin(d), math.cos(d))                  # the stack direction
+    u_dir = {nm: (math.cos(d + math.radians(tilt[nm])),
+                  math.sin(d + math.radians(tilt[nm]))) for nm in lines}
+    centres: list[XY] = []
+    seg_pts: dict[str, tuple[XY, XY]] = {}
+    for L in (L, L * 0.78, L * 0.6):        # a near-vertical stack is bounded by the
+        centres = [(0.0, 0.0)]              # canvas aspect — shorten the lines instead
+        for i in range(1, len(lines)):
+            h_prev = (L / 2) * abs(math.sin(math.radians(tilt[lines[i - 1]])))
+            h_cur = (L / 2) * abs(math.sin(math.radians(tilt[lines[i]])))
+            need = max(_PL_GAP_MIN, h_prev + h_cur + 20.0)
+            if dist_idx and dist_idx[1] == i:         # the named pair's gap carries its label
+                forced = dist_idx[2] * _PL_DIST_PPU / \
+                    math.cos(math.radians(tilt[lines[i]]))
+                if forced < need:
+                    raise TemplateError(
+                        f"parallel_lines: distance {dist_idx[2]:g} draws the lines "
+                        f"{forced:.0f} units apart — the tilted lines need ≥ "
+                        f"{need:.0f} to stay clear; raise the distance value")
+                need = forced
+            centres.append((centres[-1][0] + need * u_n[0],
+                            centres[-1][1] + need * u_n[1]))
+        seg_pts = {}
+        for i, nm in enumerate(lines):
+            ux, uy = u_dir[nm]
+            seg_pts[nm] = ((centres[i][0] - ux * L / 2, centres[i][1] - uy * L / 2),
+                           (centres[i][0] + ux * L / 2, centres[i][1] + uy * L / 2))
+        # endpoint letters name ENDS — two different lines' ends nearer than ~1.5×font
+        # size in the render make a letter read on the wrong line (W11 review). Sliding
+        # a line along its own direction moves its ENDS but not its axis — the stack
+        # gaps, the drawn MN spacing and every parallel/nonparallel claim survive.
+        shifts = [0.0] * len(lines)
+        for _sep in range(12):
+            xs = [p[0] for ab in seg_pts.values() for p in ab]
+            s_it = min(1.0, PLATE_INNER / (max(xs) - min(xs) + 130.0))
+            sep = (1.5 * FS + 2.0) / s_it               # ~24 rendered px, as units
+            worst = None
+            for i in range(len(lines)):
+                for j in range(i + 1, len(lines)):
+                    for pa in seg_pts[lines[i]]:
+                        for pb in seg_pts[lines[j]]:
+                            dd = vc.dist(pa, pb)
+                            if dd < sep and (worst is None or dd < worst[0]):
+                                worst = (dd, i, j)
+            if worst is None:
+                break
+            dd, i, j = worst
+            ux, uy = u_dir[lines[j]]
+            pa = min(seg_pts[lines[i]],
+                     key=lambda p: min(vc.dist(p, q) for q in seg_pts[lines[j]]))
+            pb = min(seg_pts[lines[j]], key=lambda p: vc.dist(p, pa))
+            sgn = 1.0 if (pb[0] - pa[0]) * ux + (pb[1] - pa[1]) * uy >= 0 else -1.0
+            step = sep - dd + 4.0
+            if abs(shifts[j] + sgn * step) > L * 0.22:
+                raise TemplateError(
+                    f"parallel_lines: {lines[i]} and {lines[j]}'s ends sit ~{dd:.0f} "
+                    f"units apart — too close to letter unambiguously, and sliding "
+                    f"{lines[j]} further would unseat its marks; try fewer lines or "
+                    f"a shallower `direction`")
+            shifts[j] += sgn * step
+            centres[j] = (centres[j][0] + ux * sgn * step,
+                          centres[j][1] + uy * sgn * step)
+            seg_pts[lines[j]] = ((centres[j][0] - ux * L / 2,
+                                  centres[j][1] - uy * L / 2),
+                                 (centres[j][0] + ux * L / 2,
+                                  centres[j][1] + uy * L / 2))
+        else:
+            raise TemplateError("parallel_lines: the endpoint letters cannot be kept "
+                                "1.5×fontSize apart — the tilts pack the ends too "
+                                "tightly; try fewer lines or another `direction`")
+        xs = [p[0] for ab in seg_pts.values() for p in ab]
+        ys = [p[1] for ab in seg_pts.values() for p in ab]
+        est_w = max(xs) - min(xs) + 70.0
+        est_h = max(ys) - min(ys) + 70.0
+        if max(est_w, est_h) <= 1.9 * min(est_w, est_h):
+            break
+    else:
+        raise TemplateError("parallel_lines: no line length keeps this stack inside "
+                            "the canvas aspect — try a shallower `direction` or "
+                            "fewer lines")
+    for i in range(len(lines)):                       # defensive: the gap rule is exact,
+        for j in range(i + 1, len(lines)):            # verify it anyway
+            if cls_of.get(lines[i]) is not None and \
+                    cls_of.get(lines[i]) == cls_of.get(lines[j]):
+                continue                              # parallel — never cross
+            if _seg_seg_dist(*seg_pts[lines[i]], *seg_pts[lines[j]]) < 2.0:
+                raise TemplateError(f"parallel_lines: the layout cannot keep {lines[i]} "
+                                    f"and {lines[j]} from touching")
+    cr_pts = None
+    if crossing:
+        c_mid = ((centres[0][0] + centres[-1][0]) / 2,
+                 (centres[0][1] + centres[-1][1]) / 2)
+        th_c = d + math.pi / 2            # perpendicular to the STACK — crosses every
+        for nm in lines:                  # line at its centre whatever its tilt
+            off = abs((math.degrees(th_c - d - math.radians(tilt[nm])) + 90)
+                      % 180 - 90)
+            if off < 5.0:
+                raise TemplateError(f"parallel_lines: the crossing sits only {off:.1f}° "
+                                    f"off {nm} — `nonparallel` needs ≥5°")
+        uc = (math.cos(th_c), math.sin(th_c))
+        half = (vc.dist(centres[0], centres[-1])) / 2 + 30.0
+        cr_pts = ((c_mid[0] - uc[0] * half, c_mid[1] - uc[1] * half),
+                  (c_mid[0] + uc[0] * half, c_mid[1] + uc[1] * half))
+        for nm in lines:
+            ix = vc.intersect(cr_pts[0], cr_pts[1], *seg_pts[nm])
+            if _pt_seg(ix, *seg_pts[nm]) > 1.0:
+                raise TemplateError(f"parallel_lines: crossing {crossing} cannot reach "
+                                    f"{nm} inside its drawn length")
+    # a parallelMark is real ink — with a transversal or the MN perpendicular drawn its
+    # chevrons must stand ≥8 rendered px clear of those strokes or the mark reads
+    # struck-through. The crossing hits each line's centre, so the default `at` = 0.5
+    # is usually illegal — probe positions along the line until the marks clear
+    # (W11 review, MAJOR 2). The MN candidates are then filtered against the CHOSEN
+    # mark positions, so whichever perpendicular the label probing picks stays clear.
+    s_est = min(1.0, PLATE_INNER / (est_w + 60.0))
+    pm_need = (8.0 + 2.0) / s_est           # 8 rendered px + the two strokes' half-widths
+
+    def _mark_clears(nm, t):
+        a_, b_ = seg_pts[nm]
+        probe = stroke_segments(
+            vc.parallel_marks(a_, b_, cls_of[nm] + 1, at=t, size=10))
+        return cr_pts is None or all(
+            _seg_seg_dist(p, q, cr_pts[0], cr_pts[1]) >= pm_need
+            for p, q, _w in probe)
+
+    # same class ⇒ same `at`: the chevrons of parallel lines must sit on the same
+    # side of a transversal or the mark reads as decoration, not a class symbol
+    # (W11 review round 3). Try every candidate as a SHARED position first; only
+    # when no single `at` clears the crossing for every member does a class fall
+    # back to per-line picks.
+    mark_at: dict[str, float] = {}
+    by_class: dict[int, list[str]] = {}
+    for nm in lines:
+        if nm in cls_of:
+            by_class.setdefault(cls_of[nm], []).append(nm)
+    for members in by_class.values():
+        shared = next((t for t in _PL_MARK_ATS
+                       if all(_mark_clears(nm, t) for nm in members)), None)
+        if shared is not None:
+            for nm in members:
+                mark_at[nm] = shared
+            continue
+        for nm in members:
+            for t in _PL_MARK_ATS:
+                if _mark_clears(nm, t):
+                    mark_at[nm] = t
+                    break
+            else:
+                raise TemplateError(
+                    f"parallel_lines: no spot on {nm} keeps its parallel mark 8 px "
+                    f"clear of the crossing — drop `crossing` or give the lines "
+                    f"another `direction`")
+    mark_strokes = stroke_segments([el for nm in lines if nm in cls_of
+                                    for el in vc.parallel_marks(
+                                        *seg_pts[nm], cls_of[nm] + 1,
+                                        at=mark_at[nm], size=10)])
+    mn_cands: list[tuple] = []
+    if dist_idx:
+        i0, i1, val, unit_s = dist_idx
+        lm, ln = lines[i0], lines[i1]
+        m_seg, n_seg = seg_pts[lm], seg_pts[ln]
+        # with a transversal the channel's mid-zone is crossed — park the
+        # perpendicular near a line end so the value label gets the long run
+        t_opts = ((0.15, 0.22, 0.85, 0.78, 0.10, 0.90, 0.30, 0.70, 0.45, 0.55)
+                  if cr_pts else
+                  (0.62, 0.70, 0.55, 0.78, 0.45, 0.85, 0.35, 0.30, 0.90))
+        for t_par in t_opts:
+            M_ = vc.lerp(m_seg[0], m_seg[1], t_par)
+            N_ = vc.foot_of_perpendicular(M_, *n_seg)
+            t_n = ((N_[0] - n_seg[0][0]) * (n_seg[1][0] - n_seg[0][0]) +
+                   (N_[1] - n_seg[0][1]) * (n_seg[1][1] - n_seg[0][1])) / (L * L)
+            if not (0.08 <= t_n <= 0.92):
+                continue
+            # the value label lives in the channel beside MN — keep the crossing
+            # (which runs parallel to MN) a label-width away
+            if cr_pts and _seg_seg_dist(M_, N_, *cr_pts) < 30.0:
+                continue
+            if any(_seg_seg_dist(M_, N_, p, q) < pm_need
+                   for p, q, _w in mark_strokes):
+                continue                            # would strike through a mark
+            if abs(vc.dist(M_, N_) - val * _PL_DIST_PPU) > 1e-6 * L:
+                continue
+            mn_cands.append((M_, N_))
+        if not mn_cands:
+            raise TemplateError(f"parallel_lines: the perpendicular between {lm} and "
+                                f"{ln} cannot land inside both drawn segments (the "
+                                f"crossing and the tilt leave no room)")
+    elements: list[dict] = []
+    anchors: dict[str, XY] = {}
+    for nm in lines:
+        a_, b_ = seg_pts[nm]
+        elements.append(vc.line(a_, b_, id=f"ln{nm}", width=2.5))
+        if nm in cls_of:
+            elements += vc.parallel_marks(a_, b_, cls_of[nm] + 1, at=mark_at[nm],
+                                          size=10)
+        for k, p in ((0, a_), (1, b_)):
+            anchors[nm[k]] = p
+            elements.append(_float_label(f"lb{nm[k]}", nm[k], p, gap=8.0, size=16))
+    if cr_pts:
+        elements.append(vc.line(*cr_pts, id=f"ln{crossing}", width=2))
+        for k, p in enumerate(cr_pts):
+            anchors[crossing[k]] = p
+            elements.append(_float_label(f"lb{crossing[k]}", crossing[k], p,
+                                         gap=8.0, size=16))
+    mn = None
+    if mn_cands:
+        # the junctions are where every stroke meets — fixed spots, not floaters:
+        # feet letters outside the strip, the value text sliding along the channel.
+        # Probe each candidate perpendicular for label room before committing.
+        u_par = vc.unit(m_seg[0], m_seg[1])
+        base_boxes = label_boxes(elements, FS)
+        for M_, N_ in mn_cands:
+            probe = [{"id": "dist", "type": "line", "points": [list(M_), list(N_)],
+                      "stroke": {"width": 2}}] + \
+                    vc.right_angle_mark(N_, M_, seg_pts[ln][1], r=12)
+            strokes = stroke_segments(elements + probe)
+            u_mn = vc.unit(M_, N_)
+            placed: list[tuple] = []
+            spots: list[tuple[str, XY]] = []
+            for letter, base, u_out in (("M", M_, (-u_mn[0], -u_mn[1])),
+                                        ("N", N_, u_mn)):
+                cands = [(base[0] + u_out[0] * t + u_par[0] * s_,
+                          base[1] + u_out[1] * t + u_par[1] * s_)
+                         for t in (14.0, 20.0, 27.0, 36.0)
+                         for s_ in (0.0, 14.0, -14.0, 26.0, -26.0, 42.0, -42.0,
+                                    58.0, -58.0)]
+                cands += [(base[0] - u_out[0] * t + u_par[0] * s_,   # inside the
+                           base[1] - u_out[1] * t + u_par[1] * s_)  # strip
+                          for t in (13.0, 20.0, 27.0, 34.0, 44.0)
+                          for s_ in (26.0, -26.0, 38.0, -38.0, 14.0, -14.0,
+                                     52.0, -52.0, 66.0, -66.0)]
+                other_foot = N_ if letter == "M" else M_
+                rivals = [p for nm, p in anchors.items()] + [other_foot]
+                spot = _pick_label_spot("parallel_lines", letter, 16, base, cands,
+                                        strokes, base_boxes + placed, rivals, s_est)
+                if spot is None:
+                    break
+                spots.append((letter, spot[0]))
+                placed.append((letter, *spot[1]))
+            else:
+                mid = ((M_[0] + N_[0]) / 2, (M_[1] + N_[1]) / 2)
+                half_mn = vc.dist(M_, N_) / 2
+                v_cands = [(mid[0] + u_par[0] * s_ + u_mn[0] * t,
+                            mid[1] + u_par[1] * s_ + u_mn[1] * t)
+                           for s_ in (0.0, 15.0, -15.0, 25.0, -25.0, 38.0, -38.0,
+                                      52.0, -52.0, 66.0, -66.0)
+                           for t in (0.0, 9.0, -9.0)]
+                # outside the strip on either side, sliding past the foot letters
+                v_cands += [(M_[0] - u_mn[0] * t + u_par[0] * s_,
+                             M_[1] - u_mn[1] * t + u_par[1] * s_)
+                            for t in (18.0, 28.0)
+                            for s_ in (26.0, -26.0, 40.0, -40.0, 55.0, -55.0)]
+                v_cands += [(N_[0] + u_mn[0] * t + u_par[0] * s_,
+                             N_[1] + u_mn[1] * t + u_par[1] * s_)
+                            for t in (18.0, 28.0)
+                            for s_ in (26.0, -26.0, 40.0, -40.0, 55.0, -55.0)]
+                v_cands += [(mid[0] + u_mn[0] * t, mid[1] + u_mn[1] * t)
+                            for t in (half_mn + 16.0, -(half_mn + 16.0))]
+                vspot = _pick_label_spot("parallel_lines",
+                                         f"{dist_idx[2]:g} {dist_idx[3]}", 14, None,
+                                         v_cands, strokes, base_boxes + placed,
+                                         [], s_est)
+                if vspot is not None:
+                    elements += probe
+                    anchors["M"], anchors["N"] = M_, N_
+                    for letter, at_ in spots:
+                        elements.append(vc.text(at_, letter, id=f"lb{letter}",
+                                                size=16))
+                    elements.append(vc.text(vspot[0], f"{dist_idx[2]:g} "
+                                            f"{dist_idx[3]}", id="lbMN", size=14))
+                    mn = (M_, N_, lm, ln)
+                    break
+        if mn is None:
+            raise TemplateError(
+                f"parallel_lines: no position for the perpendicular between {lm} and "
+                f"{ln} leaves room for its letters and the distance label — fewer "
+                f"lines, or no crossing")
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    def off_deg(m1, m2):
+        return abs((tilt[m1] - tilt[m2] + 90) % 180 - 90)
+
+    n_par = n_non = 0
+    for i in range(len(lines)):
+        for j in range(i + 1, len(lines)):
+            if cls_of.get(lines[i]) is not None and \
+                    cls_of.get(lines[i]) == cls_of.get(lines[j]):
+                add(f"parallel {lines[i]} {lines[j]}", "inferred",
+                    "one parallel class — the marks say so")
+                n_par += 1
+            else:
+                add(f"nonparallel {lines[i]} {lines[j]}", "inferred",
+                    f"drawn {off_deg(lines[i], lines[j]):g}° apart")
+                n_non += 1
+    for ci, cls in enumerate(parallel):
+        arrows = ("one arrow", "two arrows")[ci] if ci < 2 else f"{ci + 1} arrows"
+        add(f'describe "the parallel mark on {" and ".join(cls)} is {arrows}"',
+            "inferred", f"parallelMark count {ci + 1} identifies this class")
+    if cr_pts:
+        for nm in lines:
+            add(f"nonparallel {crossing} {nm}", "inferred",
+                "the transversal meets every line — no angle marks claimed (L07 scope)")
+    for nm in lines:
+        for ch in nm:
+            add(f'label "{ch}" names {ch}', "stem", "an endpoint letter")
+    if cr_pts:
+        for ch in crossing:
+            add(f'label "{ch}" names {ch}', "stem", "the transversal's endpoint")
+    if mn:
+        M_, N_, lm, ln = mn
+        add(f"on M {lm}", "inferred", "the perpendicular starts on the first line")
+        add(f"on N {ln}", "inferred", "the perpendicular ends on the second")
+        add('label "M" names M', "stem", "the perpendicular's foot letter")
+        add('label "N" names N', "stem", "the perpendicular's other foot letter")
+        add(f"right M N {ln[1]}", "inferred",
+            "the right-angle mark sits at the foot of the perpendicular")
+        add(f'label "{dist_idx[2]:g} {dist_idx[3]}" names MN', "stem",
+            "the perpendicular distance the stem states")
+        add(f'describe "MN is the perpendicular distance between {lm} and {ln}"',
+            "inferred", "the lambawa (perpendicular) segment")
+    n = len(lines)
+    add(f"derive {n} * {n - 1} / 2 = {n * (n - 1) // 2}", "inferred",
+        f"the {n} lines make {n * (n - 1) // 2} unordered pairs — {n_par} claimed "
+        f"parallel, {n_non} nonparallel"
+        + (f"; the transversal adds {n} further nonparallel claims" if cr_pts else ""))
+    add("none tickMark angleArc dashed arrow shaded" + ("" if mn else " angleMark"),
+        "inferred", "parallel marks only" +
+        (", plus the one right-angle mark at N" if mn else " — no angle marks at all"))
+    elements_n = len(elements)
+    return finish(kind="parallel_lines", figure_id=figure_id, stem=stem,
+                  elements=elements, anchors=anchors, points=list(anchors),
+                  segments=list(lines) + ([crossing] if cr_pts else []) +
+                           (["MN"] if mn else []),
+                  claims=claims, ask=ask,
+                  title=title or "Parallel lines",
+                  description=description or (
+                      f"{n} straight line{'s are' if n != 1 else ' is'} shown, each "
+                      f"endpoint lettered" +
+                      (f"; {n_par} parallel pair{'s are' if n_par != 1 else ' is'} "
+                       f"marked with arrow marks" if n_par else "") +
+                      (f"; a transversal {crossing} crosses all of them" if cr_pts
+                       else "") +
+                      (f"; the perpendicular distance between {mn[2]} and {mn[3]} is "
+                       f"marked with a right-angle square" if mn else "") + "."),
+                  scale="the drawn angles are the claimed ones; segment lengths are not "
+                        "to scale" + (", except the marked perpendicular spacing"
+                                    if mn else ""),
+                  budget=elements_n if elements_n > 32 else None,
+                  departures=([f"{elements_n} elements — letter floaters, marks and "
+                               "the dashed/transversal strokes"] if elements_n > 32
+                              else None),
+                  medium=medium)
+
+
+def build_bar_chart(*, figure_id, stem, ask=None, title=None, description=None,
+                    medium="english", categories=None, series=None, step=None,
+                    v_max=None, values="stem", value_title=None, category_title=None,
+                    gridlines=True):
+    """A vertical bar chart (L26 scope: simple or grouped bars only). `categories` =
+    2–8 label strings printed under the groups; `series` = 1–3 dicts
+    {"name": str, "values": [one per category]} — one series draws no legend; `step`
+    is the value-axis interval (stem-checked, always); `v_max` defaults to the smallest
+    multiple of step ≥ the largest bar. Every bar top is anchor T1..Tn — the `reads`
+    claim is what makes the height auditable. `values="figure"` is the honest
+    read-the-figure mode (ev `inferred`, no stem check)."""
+    vc.reset_ids()
+    if not isinstance(categories, (list, tuple)) or not (2 <= len(categories) <= 8):
+        raise TemplateError("bar_chart: categories must be a list of 2–8 label strings")
+    cats = []
+    for c in categories:
+        if not isinstance(c, str) or not c.strip():
+            raise TemplateError(f"bar_chart: a category label must be non-empty text — "
+                                f"got {c!r}")
+        cats.append(c.strip())
+    if not isinstance(series, (list, tuple)) or not (1 <= len(series) <= 3):
+        raise TemplateError("bar_chart: series must be a list of 1–3 "
+                            "{\"name\": str, \"values\": [...]} dicts")
+    srs = []
+    for i, s in enumerate(series):
+        if not isinstance(s, dict) or not isinstance(s.get("values"), (list, tuple)):
+            raise TemplateError(f"bar_chart: series {i} must be a dict with a values list")
+        vals = list(s["values"])
+        if len(vals) != len(cats):
+            raise TemplateError(f"bar_chart: series {i} has {len(vals)} values for "
+                                f"{len(cats)} categories")
+        name = s.get("name") or ""
+        if not isinstance(name, str):
+            raise TemplateError(f"bar_chart: series {i} name must be text — got {name!r}")
+        if len(series) > 1 and not name.strip():
+            raise TemplateError("bar_chart: every series in a multi-series chart needs a "
+                                "name — the legend prints it")
+        srs.append((name.strip(), vals))
+    n_cat, n_ser = len(cats), len(srs)
+    if values not in ("stem", "figure"):
+        raise TemplateError(f"bar_chart: values must be 'stem' or 'figure' — got "
+                            f"{values!r}")
+    if not isinstance(step, (int, float)) or isinstance(step, bool) or step <= 0:
+        raise TemplateError(f"bar_chart: step must be a positive number — got {step!r}")
+    require_stem(stem, step=step)
+    vmax = max((v for _n, vs in srs for v in vs), default=0)
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0
+               for v in [v for _n, vs in srs for v in vs]):
+        raise TemplateError("bar_chart: every bar value must be a non-negative number")
+    half = step / 2
+    for _n, vs in srs:
+        for v in vs:
+            if abs(v / half - round(v / half)) > 1e-9:
+                raise TemplateError(f"bar_chart: value {v:g} is not a multiple of "
+                                    f"step/2 ({half:g}) — a bar must land on the axis's "
+                                    f"half-step lattice to be readable")
+    if v_max is None:
+        v_max = step * max(2, math.ceil(vmax / step))
+    if not isinstance(v_max, (int, float)) or isinstance(v_max, bool) or v_max <= 0:
+        raise TemplateError(f"bar_chart: v_max must be a positive number — got {v_max!r}")
+    n_steps = v_max / step
+    if abs(n_steps - round(n_steps)) > 1e-9 or not (2 <= round(n_steps) <= 12):
+        raise TemplateError(f"bar_chart: v_max {v_max:g} must be a multiple of step "
+                            f"{step:g} giving 2–12 steps — got {n_steps:g} steps")
+    n_steps = int(round(n_steps))
+    if vmax > v_max + 1e-9:
+        raise TemplateError(f"bar_chart: a bar value ({vmax:g}) exceeds v_max "
+                            f"({v_max:g}) — raise v_max")
+    if values == "stem":
+        require_stem(stem, **{f"bar {i + 1}": v
+                              for i, v in enumerate(v for _n, vs in srs for v in vs)})
+    for lbl, wh_ in (("value_title", value_title), ("category_title", category_title)):
+        if wh_ is not None and (not isinstance(wh_, str) or not wh_.strip()):
+            raise TemplateError(f"bar_chart: {lbl} must be non-empty text when given")
+    # every user text below becomes a VDD label — check the raw-character/medium rules
+    # up front so a `$` or a backtick is a stated refusal, not vc.text's assert
+    _check_label_texts([], cats + [nm for nm, _v in srs] +
+                       [t for t in (value_title, category_title) if t], medium)
+    _distinct_glyphs("bar_chart",
+                     [f"{k * step:g}" for k in range(int(round(n_steps)) + 1)] + cats +
+                     ([nm for nm, _v in srs] if n_ser > 1 else []) +
+                     ([value_title] if value_title else []) +
+                     ([category_title] if category_title else []))
+
+    # ── layout — bar sizes adapt to the category count, bounded by the 560-unit cap ──
+    plot_h = 240.0
+    uv = plot_h / v_max                       # canvas units per unit of value
+    cat_w = [_label_width(c, 14) for c in cats]
+    title_w = _label_width(value_title, 16) if value_title else 0.0
+    # the head row (value title + legend swatches/names) sits ABOVE the plot and may
+    # outrun the baseline's width — the cap sees whichever is wider
+    head_end = 8.0 + title_w
+    # swatch -> name gap must clear the stroke rule at the final scale; the estimate
+    # (a typical canvas) errs by a unit or two, which the +1.0 px margin absorbs
+    sw_gap = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, 460.0)
+    if n_ser > 1:
+        head_end += (26.0 if title_w else 0.0) + \
+            sum(14.0 + sw_gap + _label_width(nm, 14) + 24.0 for nm, _v in srs)
+    chosen = None
+    for bw in (30.0, 26.0, 22.0, 18.0, 15.0, 12.0):
+        ig, gg = max(4.0, bw * 0.28), max(16.0, bw * 0.9)
+        grp = n_ser * bw + (n_ser - 1) * ig
+        pitch = grp + gg
+        for i in range(n_cat - 1):
+            pitch = max(pitch, cat_w[i] / 2 + cat_w[i + 1] / 2 + 14)
+        plot_w = n_cat * pitch + 12.0
+        if plot_w < 260.0:                    # keep the canvas from going tall (aspect)
+            plot_w = 260.0
+            pitch = (plot_w - 12.0) / n_cat
+        span_x = max(plot_w, head_end)
+        est_w = (max(_label_width(f"{k * step:g}", 16) for k in range(n_steps + 1))
+                 + 22 + span_x + 2 * MARGIN + 20)
+        if est_w <= 540.0:
+            chosen = (bw, ig, pitch, grp, plot_w, est_w)
+            break
+    if chosen is None:
+        raise TemplateError(f"bar_chart: {n_cat} categories x {n_ser} series need "
+                            f"~{est_w:.0f} canvas units — the 560-unit cap admits "
+                            f"~540; shorten the labels or drop categories")
+    bw, ig, pitch, grp, plot_w, est_w = chosen
+    num_size = 16.0
+    num_h = (MID_UP + MID_DOWN) * num_size
+    if plot_h / n_steps < num_h + _clearance_units(4.0, est_w):
+        for num_size in (14.0, 12.0):
+            num_h = (MID_UP + MID_DOWN) * num_size
+            if plot_h / n_steps >= num_h + _clearance_units(4.0, est_w):
+                break
+        else:
+            raise TemplateError(f"bar_chart: {n_steps + 1} numerals crowd the value axis "
+                                f"at {plot_h / n_steps:.0f} units a step — raise step or "
+                                f"lower v_max (no thinning: every step numeral must print)")
+    wlab_y = max(_label_width(f"{k * step:g}", num_size) for k in range(n_steps + 1))
+    elements: list[dict] = []
+    anchors: dict[str, XY] = {"O": (0.0, 0.0), "X": (plot_w, 0.0), "Y": (0.0, -plot_h)}
+    if gridlines:
+        for k in range(1, n_steps + 1):
+            y = -k * step * uv
+            elements.append({"id": f"gl{k}", "type": "line", "stroke":
+                             {"color": _GRID_INK, "width": 1},
+                             "points": [[0, y], [plot_w, y]]})
+    elements.append({"id": "axY", "type": "arrow", "head": "end",
+                     "points": [[0, 0], [0, -plot_h - 12]]})
+    elements.append(vc.line((0, 0), (plot_w, 0), id="axX", width=2))
+    numclr = _clearance_units(STROKE_PX + SLACK_STROKE, est_w)
+    for k in range(n_steps + 1):
+        y = -k * step * uv
+        elements.append(vc.line((-5, y), (5, y), id=f"tk{k}", width=1.5))
+        elements.append(vc.text((-(wlab_y / 2 + 5 + numclr), y), f"{k * step:g}",
+                                id=f"nm{k}", size=num_size))
+    tops: list[tuple[int, int, float]] = []           # (T index, series, value)
+    for i in range(n_cat):
+        gx = i * pitch + (pitch - grp) / 2            # group centred in its pitch
+        for j, (_nm, vals) in enumerate(srs):
+            v = vals[i]
+            left = gx + j * (bw + ig)
+            if v > 0:
+                elements.append({"id": f"bar{i}_{j}", "type": "rect",
+                                 "x": vc.r2(left), "y": vc.r2(-v * uv),
+                                 "width": vc.r2(bw), "height": vc.r2(v * uv),
+                                 "fill": {"color": _BAR_FILLS[j]},
+                                 "stroke": {"color": _BAR_OUTLINE, "width": 1.5}})
+            tops.append((i * n_ser + j + 1, j, v))
+            anchors[f"T{i * n_ser + j + 1}"] = (left + bw / 2, -v * uv)
+    # a short label (digit/1–2 letters) must ALSO stay within 1.5·fontSize of the
+    # baseline ink (visual-check's target rule) — on a wide canvas the rendered-px
+    # clearance inflates in units, so pad just past it, not a fixed 6 units more
+    cat_y = 2.0 + MID_UP * 14.0 + _clearance_units(STROKE_PX + SLACK_STROKE, est_w)
+    for i, c in enumerate(cats):
+        elements.append(vc.text((i * pitch + pitch / 2, cat_y), c, id=f"cat{i}",
+                                size=14))
+    if category_title:
+        elements.append(vc.text((plot_w / 2, cat_y + 30), category_title,
+                                id="ctitle", size=16))
+    head_y = -plot_h - 12 - MID_UP * 16.0 - _clearance_units(STROKE_PX + SLACK_STROKE,
+                                                           est_w) - 10
+    lx = 8.0
+    if value_title:
+        elements.append(vc.text((lx, head_y), value_title, id="vtitle",
+                                align="start", size=16))
+        lx += title_w + 26
+    if n_ser > 1:
+        for j, (nm, _v) in enumerate(srs):
+            elements.append({"id": f"sw{j}", "type": "rect", "x": vc.r2(lx),
+                             "y": vc.r2(head_y - 7), "width": 14, "height": 14,
+                             "fill": {"color": _BAR_FILLS[j]},
+                             "stroke": {"color": _BAR_OUTLINE, "width": 1.5}})
+            elements.append(vc.text((lx + 14 + sw_gap, head_y), nm, id=f"lg{j}",
+                                    align="start", size=14))
+            lx += 14 + sw_gap + _label_width(nm, 14) + 24
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    add(f"axis OY from 0 to {v_max:g}", "inferred", "the value axis")
+    add(f"tick OY step {step:g}", "stem", f"a numeral every {step:g} — all {n_steps + 1} "
+                                          f"printed, none thinned")
+    ev_v = "stem" if values == "stem" else "inferred"
+    for t_i, _j, v in tops:
+        add(f"reads T{t_i} {v:g} on OY", ev_v, "the bar's top edge reads its value")
+    if values == "figure":
+        add('describe "the bar heights are figure content — the question asks the '
+            'student to read them"', "inferred", "read-the-figure mode")
+    add(f"derive {v_max:g} / {step:g} = {n_steps}", "inferred", "the axis's step count")
+    for k in range(n_steps + 1):
+        add(f'label "{k * step:g}" names {k * step:g}', "stem", "a scale numeral")
+    for i, c in enumerate(cats):
+        add(f'label "{c}" names cat{i}', ev_v, "a category label under its group")
+    if n_ser > 1:
+        for j, (nm, _v) in enumerate(srs):
+            add(f'label "{nm}" names series{j}', ev_v, "a legend name by its swatch")
+    if value_title:
+        add(f'label "{value_title}" names OY', "stem", "the value axis's title")
+    if category_title:
+        add(f'label "{category_title}" names OX', "stem", "the category axis's title")
+    for j, (nm, _v) in enumerate(srs):
+        add(f'describe "the {nm or "only"} series bars are filled {_BAR_FILLS[j]} '
+            f'outlined {_BAR_OUTLINE}"', "inferred", "the series paint")
+    add("none tickMark parallelMark angleMark angleArc dashed shaded", "inferred",
+        "bars, numerals and the axis arrowhead — no marks")
+    elements_n = len(elements)
+    return finish(kind="bar_chart", figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=anchors, points=["O", "X", "Y"] +
+                                         [f"T{t}" for t, _j, _v in tops],
+                  segments=["OX", "OY"], claims=claims, ask=ask,
+                  title=title or "A bar chart",
+                  description=description or (
+                      f"A vertical bar chart over {n_cat} categories" +
+                      (f" in {n_ser} series (legend at the top)" if n_ser > 1 else "") +
+                      f"; the value axis runs 0 to {v_max:g} in steps of {step:g} and "
+                      f"each bar's top edge reads its value on it."),
+                  scale="to scale — the value axis is a true linear map of the bar "
+                        "heights",
+                  budget=elements_n if elements_n > 32 else None,
+                  departures=([f"{elements_n} elements — one rect per bar plus the "
+                               "ruling gridlines"] if elements_n > 32 else None),
+                  medium=medium)
+
+
 BUILDERS = {fn.__name__[6:]: fn for fn in
             (build_grid_polygon, build_shaded_grid, build_rays_from_point, build_number_line,
              build_pictograph, build_rectangle_points, build_house_pentagon, build_cuboid,
              build_dot_pattern, build_circle_points, build_two_circles_points,
-             build_circles_in_circle, build_abacus, build_sorting_rings, build_shape_row)}
+             build_circles_in_circle, build_abacus, build_sorting_rings, build_shape_row,
+             build_coordinate_plane, build_parallel_lines, build_bar_chart)}
 
 CATALOGUE = """
 template            stem-checked numbers                          inputs
@@ -2825,6 +3942,9 @@ circles_in_circle   none — counts are figure content              n_in, n_out,
 abacus              none — printed values are figure content      place_values=[10000,…,1], beads=[b per rod 0–9] — >9 refuses
 sorting_rings       none — item texts are figure content          groups=[(name,[items])] 2–3 rings; cards stack inside each ring
 shape_row           none — shape kinds are figure content         shapes=[(letter,kind)] kind in circle small_circle square rectangle triangle oval semicircle — 3 per row
+coordinate_plane    each point's x,y when coords="stem"           x_max,y_max≤10, points={A:(x,y)}, join, closed, sym_axis={"x"|"y":k}, guides, grid, origin_label
+parallel_lines      distance.value                                lines=["AB","CD"], parallel=[[…]], direction, crossing="PQ", distance={"between","value","unit"}
+bar_chart           step; every value when values="stem"          categories 2–8, series 1–3 {"name","values"}, step, v_max, value_title, category_title, gridlines
 """.strip()
 
 SELF_TEST = [
@@ -2907,6 +4027,28 @@ SELF_TEST = [
      "ask": [["a", "the shape names"], ["b", "the curved ones"]],
      "shapes": [["A", "circle"], ["B", "square"], ["C", "triangle"], ["D", "oval"],
                 ["E", "rectangle"], ["F", "semicircle"]]},
+    {"template": "coordinate_plane", "figure_id": "selftest-plane",
+     "stem": "On the coordinate plane A is (2, 4), B is (5, 3) and C is (3, 1). "
+             "(a) Write the coordinates of each marked point.",
+     "ask": [["a", "the coordinates"]],
+     "x_max": 6, "y_max": 5, "points": {"A": [2, 4], "B": [5, 3], "C": [3, 1]},
+     "join": [["A", "B", "C"]], "closed": True, "sym_axis": {"x": 3},
+     "guides": ["A"], "origin_label": True},
+    {"template": "parallel_lines", "figure_id": "selftest-parallel",
+     "stem": "The lines AB, CD and EF are drawn; AB and CD are parallel. The "
+             "perpendicular distance between AB and CD is 3 cm. (a) Say which pairs "
+             "are parallel.",
+     "ask": [["a", "the parallel pair"]],
+     "lines": ["AB", "CD", "EF"], "parallel": [["AB", "CD"]], "direction": 12,
+     "distance": {"between": ["AB", "CD"], "value": 3, "unit": "cm"}},
+    {"template": "bar_chart", "figure_id": "selftest-bars",
+     "stem": "The bar chart shows books borrowed over four months: 4 in Jan, 7 in "
+             "Feb, 5 in Mar and 8 in Apr, on a scale of 2 per step up to 10. "
+             "(a) Which month had most borrowings?",
+     "ask": [["a", "the busiest month"]],
+     "categories": ["Jan", "Feb", "Mar", "Apr"],
+     "series": [{"name": "", "values": [4, 7, 5, 8]}],
+     "step": 2, "v_max": 10, "value_title": "Books", "category_title": "Month"},
 ]
 
 
