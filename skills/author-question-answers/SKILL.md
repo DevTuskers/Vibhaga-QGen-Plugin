@@ -283,6 +283,13 @@ publishes the question **with no answer**, which makes it unservable (no `'verif
 builder's uuid5 ids make the hand-typed-UUID class impossible on the build path; on any hand-edited
 doc, record ids **before** publishing (T9).
 
+**The leaf's `check:` is the second method made mechanical** (§3, W12): a small arithmetic
+expression that must be True — `check: "40 * 23 == 920"`, `divmod(925, 40) == (23, 5)`, or with
+`len()`/tuple comparisons — `check-answers.py`'s docstring is the whitelist. A leaf whose answer
+computes nothing (classify, name) declares `check: "none — <reason>"` with a ≥10-character reason
+after the dash — counted as *unchecked (check: none)*, not WARNed; an absent `check:` still WARNs.
+Every number in `final` should be reachable from the check.
+
 ### 4.5 ⭐ Does this answer need a FIGURE? The trigger, and its negative
 
 ⚠️ **The capability exists at both answer levels and almost nothing uses it — decide anyway, and

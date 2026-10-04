@@ -37,8 +37,12 @@ answer is right, and whether a Grade-N child who learned this lesson can do it.
    from its `diagram_dsl` numbers and from visual-check's `report.json`; **the PNG look belongs to
    the lead** (visual-check skill, "LOOK"). Put every visual conclusion you could not reach in the
    could-not-check list.
-6. ⚠️ **Checkpoint after every question.** Write the report to the path you were given, top block
-   first, and update its `state:` line after each question — interruption is expected.
+6. ⚠️ **Checkpoint after every question.** Write the report to **exactly the file path you were
+   given** — it is a FILE path, not a directory: create the parent dir if needed, but never nest a
+   folder of your own or append the filename again (a real run given `…/r1-b.md` wrote
+   `…/r1-b/r1-b.md` — invisible to the lead). Write the top block first, record the absolute path
+   you wrote on the `report:` line, and update `state:` after each question — interruption is
+   expected.
 
 ## 1. Your inputs — exactly four
 
@@ -51,7 +55,7 @@ Admin/Web checkouts (`VIBHAGA_ADMIN`, `VIBHAGA_WEB` — for markdown-gate), a ch
 |---|---|---|
 | 1 | **Scope card(s)** of every lesson the rows are tagged with | **Read `brief.txt` first** — `critic-read.py` writes it beside the rows: `scope-cards.py brief` for exactly this session's lessons, in one file (a lesson with no card gets a line saying so). To see a card itself: `<corpus>/maths/grade-NN/scope-cards/<NN>-<Slug>.yaml`. `NN` = the lesson's `sort_order` ÷ 10 from Q4a's `session_lessons` (G6: 70 → 07); confirm the card's `title_en` equals the lesson `name` (brief.txt warns when it does not). The card holds `generated` (sections, vocabulary, worked_examples, exercises, summary) and `curated` (`not_taught`, `prerequisites`, `difficulty_hooks`). |
 | 2 | **The lesson Markdown** | the card's `source.file`, relative to `maths/grade-NN/`. Open it **only at the sections/anchors you need to rule on a specific part** — `grep -n` the headings and each figure's `**Description:**`. For an *absence* ruling (does the lesson teach X anywhere?) `grep -in` the whole file for X's terms instead of reading it end to end — a section-anchored read cannot establish absence. It is the ground truth for what is taught and in which words. |
-| 3 | **The published rows** | `python3 <plugin>/tools/critic-read.py <batch_id> --out <report dir>/rows --db-env <db.env>` — runs `queries.sql` **Q4** read-only (Q4a session row → `q4a.json`; Q4b one JSON line per question with parts/answers/sub-answers/`diagram_dsl` nested → `q4b.jsonl`; Q4c other rows on the same lessons → `q4c.jsonl`) and writes `fields.json` (every stored student string, the markdown-gate input), `figures.txt` (every `diagram_dsl`: report.json's id scheme, tab, the answer/sub-answer uuid where it hangs on one) and `hashes.txt`. `fields.json` ids name a node's single answer without `ans<k>` (`Q2.b.final`); `figures.txt` always writes `ans<k>`. Rebuild each part tree from `parent_sub_question_id`. If the tool is unavailable, run the Q4 blocks yourself exactly as written in a read-only transaction. |
+| 3 | **The published rows** | `python3 <plugin>/tools/critic-read.py <batch_id> --out <report dir>/rows --db-env <db.env> --corpus <corpus checkout>` — pass the corpus path from your spawn prompt through every time (it also backs brief.txt; without it the pack reads "no scope cards found"). Runs `queries.sql` **Q4** read-only (Q4a session row → `q4a.json`; Q4b one JSON line per question with parts/answers/sub-answers/`diagram_dsl` nested → `q4b.jsonl`; Q4c other rows on the same lessons → `q4c.jsonl`) and writes `fields.json` (every stored student string, the markdown-gate input), `figures.txt` (every `diagram_dsl`: report.json's id scheme, tab, the answer/sub-answer uuid where it hangs on one) and `hashes.txt`. `fields.json` ids name a node's single answer without `ans<k>` (`Q2.b.final`); `figures.txt` always writes `ans<k>`. Rebuild each part tree from `parent_sub_question_id`. If the tool is unavailable, run the Q4 blocks yourself exactly as written in a read-only transaction. |
 | 4 | **visual-check output** (W4) | `<out>/report.json` only — measured label↔edge / label↔stroke distances, rule verdicts per figure id (`Q<n>[.<label>][.ans<k>]`). Do not open the PNGs (§0.5). If the report is missing, every figure check is could-not-check. ⚠️ Two id hazards: visual-check numbers `ans<k>` in the actor's staged order, Q4b in `created_at` order — on a node with **more than one** answer the mapping is not reliable, so report that node's metrics together and say so; and a duplicate id gets a `~k` suffix in report.json (`Q1.a~2`) that figures.txt cannot express — treat it the same way. `shaded.claimed` and any other claim-derived number in report.json is the **actor's** number: compare it with the stem, never use it as the reference. |
 
 **The session row (Q4a) plays the paper's role**: its grade XOR exam, subject and medium are the
@@ -111,6 +115,7 @@ fixes** — never merge them.
 
 ```
 state: Q<n> of <N> done | complete
+report: <absolute path this file was written to>
 batch: <batch_id> · <session name> · grade/exam · medium · lessons <NN name, …>
 inputs read: card(s) <files> · lesson <file> · Q4a/Q4b/Q4c (<N> questions, <M> other rows) · report.json <yes/no>
 contamination: none | <what was opened by accident>
@@ -172,7 +177,8 @@ the process, reported first.
 ## 7. Large batches — chunking
 
 Above **8 questions**, the lead spawns one fresh critic per chunk of ≤ 8 `question_number`s, all
-in parallel, each with the same four inputs and its own report path. A chunk critic reads the whole
+in parallel, each with the same four inputs — the corpus checkout included, passed to critic-read
+with `--corpus` — and its own report path (a file path, per §0.6). A chunk critic reads the whole
 Q4b (needed for within-batch duplicates and self-containment) but writes findings only for its chunk.
 The lead merges: totals, one combined OUT OF SCOPE list, and the union of could-not-check. A chunk
 critic never sees another chunk's report.

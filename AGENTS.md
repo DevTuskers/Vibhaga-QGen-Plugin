@@ -16,6 +16,11 @@ stem you author. These rules hold in every session that loads the plugin.
 4. **Stay inside the scope card.** Nothing on its `not_taught` list, no later-grade notation.
 5. **Prove by SQL, not by the API.** Use `queries.sql` (Q2 post-publish proof, Q3 Auth revocation on
    the Admin Auth project, actor asserted to exist first). Never select token values.
+6. **Drawn diagram text is simple English on every medium** (ADR 0021 —
+   `Vibhaga-Docs/decisions/0021-english-only-diagram-text.md`). Point letters, labels, text
+   elements, math latex, axis/category/series/value titles, units — never Sinhala, whatever the
+   question's `medium` (the old T-S6b-6 medium condition is superseded; TRAPS T-QG-12). The a11y
+   `title`/`description` are not drawn and keep the question's medium.
 
 ## Session discipline
 - **One image per `read` call.** An image is seen only if the result shows it. Log what you saw at

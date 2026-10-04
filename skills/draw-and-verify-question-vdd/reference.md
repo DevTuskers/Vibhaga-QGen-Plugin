@@ -227,19 +227,28 @@ which renders the figure on **white**.
 **The check:** judge stroke colours against the **Live preview** panel (white), never the canvas.
 
 ### T-S6b-6 — The bilingual figure that cannot exist (rescoped: medium decides, not "never")
+> ⚠️ **Superseded 2026-10-04 by ADR 0021** (`Vibhaga-Docs/decisions/0021-english-only-diagram-text.md`):
+> the medium condition below is gone — *every* piece of text **drawn** in a figure is simple English
+> on **every** medium now (the first G7 run shipped Sinhala bar-chart categories under this rule —
+> TRAPS T-QG-12). The a11y `title`/`description` are still exempt (not drawn). The trap's core —
+> *one `diagram_dsl` per node → a figure cannot be bilingual* — is exactly why the ADR went
+> English-only rather than continuing to allow medium-matched labels.
+
 **Looked true:** the question is bilingual, so the figure gets Sinhala labels for the Sinhala medium.
 **Actually:** `text.value` is one `z.string()` and there is one `diagram_dsl` per node — a figure
 cannot be bilingual. That is the whole constraint; it was over-applied once as *"figures never carry
 Sinhala prose"*, which stripped a tally table's headers into declared stem prose and left the
-rendered table visibly broken — caught on sight. **On a mono-medium Sinhala question the figure's
-structural labels belong IN the figure**: table column headers, row labels, axis/category names —
-anything inside the figure border. What stays forbidden: Sinhala inside `math.latex` (KaTeX cannot
-shape it), prose captions that belong in the stem regardless of medium, and any Sinhala label on a
-figure whose question is not sinhala-medium. `a11y` stays English per **OD-12**. `vdd-check.mjs`
-enforces this via `--medium sinhala`; `build-staged` threads the run's scope medium automatically.
+rendered table visibly broken — caught on sight. ⚠️ *(The next sentences are superseded by ADR 0021 —
+drawn labels are simple English on every medium; kept for history.)* **On a mono-medium Sinhala
+question the figure's structural labels belong IN the figure**: table column headers, row labels,
+axis/category names — anything inside the figure border. What stays forbidden: Sinhala inside
+`math.latex` (KaTeX cannot shape it), prose captions that belong in the stem regardless of medium, and
+any Sinhala label on a figure whose question is not sinhala-medium. `a11y` stays English per
+**OD-12**. `vdd-check.mjs` enforces this via `--medium sinhala`; `build-staged` threads the run's
+scope medium automatically.
 **The check:** if a figure needs *prose* to be understood it is the wrong figure; but if removing a
-*label* makes a table or chart unreadable, the label was structural — draw it in the question's
-medium.
+*label* makes a table or chart unreadable, the label was structural — draw it in **simple English**
+*(updated for ADR 0021 — the medium no longer matters to drawn text)*.
 
 ### T-S6b-7 — A refused paint value is NEUTRALISED, and the two surfaces disagreed about it
 **Looked true:** the colour hardening landed in both repos, so both show the same figure.

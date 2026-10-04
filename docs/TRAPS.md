@@ -37,6 +37,7 @@ a stale cache, an unrecorded id, a flag that lives on the row but not the doc.
 | T-QG-6 | a reader role with SELECT on `auth.*` sees ZERO rows under policy-less RLS — a revocation count reads "revoked" while sessions are live |
 | T-QG-7 | a gate that is never wired into the chain cannot fail it — a `$$…$$` on one line passed build, validate, publish and both visual checks; only the critic's standalone markdown-gate saw it |
 | T-QG-8 | two variants of one blueprint in a batch read as ONE question to a student — build-staged refuses a second question carrying a batch-mate's `blueprint_id` (across sessions variants count as distinct) |
+| T-QG-12 | a medium-conditional label rule ships figures that can never render on the other medium — drawn diagram text is simple English on EVERY medium (ADR 0021) |
 
 ---
 ## T4 — A `204` from `/auth/v1/logout` is not proof of revocation
@@ -637,7 +638,9 @@ misspellings — a printed non-word resolves to the standard textbook term (decl
 (`ගණත`, `හාවිත`) stays as printed.
 **The check:** before applying a `never`/`always` rule, name the constraint it protects and test whether
 this case trips *the constraint* (here: a second medium consuming the DSL — impossible), not just the
-literal wording. vdd-check's hygiene rule is now medium-aware (`--medium sinhala`), and claim sets carry
+literal wording. vdd-check's hygiene rule is now medium-aware (`--medium sinhala`) — ⚠️ *superseded
+by ADR 0021 (T-QG-12): drawn text is simple English on every medium, the flag no longer widens it* —
+and claim sets carry
 `budget:`/`allow:` so build-staged can run the whole suite without per-figure flag juggling.
 
 *Source: Vibhaga-Docs `.devin/skills/_maths-onboarding/TRAPS.md` T128 @08c09a9 — production ids scrubbed; paper-era references kept as history where the lesson is pipeline-neutral.*
@@ -894,3 +897,23 @@ strokes — the transversal crosses every line AT ITS CENTRE, so a mark's defaul
 on the crossing; the builder probes `at` positions until the marks clear it and MN by 8 px.)
 
 *Source: this plugin — W11 review round 1, 2026-10-04.*
+
+## T-QG-12 — The medium-conditional label rule that shipped a figure a second medium cannot render
+
+**Looked true (first G7 run, session f040ebb5, 2026-10-04):** T-S6b-6 as rescoped made drawn label
+language a function of the question's `medium` — so on a sinhala-medium run the Q5/Q6 bar charts
+shipped with Sinhala category names and axis titles, and every gate (`medium='sinhala'` builder
+check, `vdd-check --medium sinhala` rule 3) passed them as correct.
+**Actually:** a figure is one `diagram_dsl` consumed by whichever medium renders it — a chart whose
+categories are Sinhala can never be reused or previewed on an English surface without redrawing, and
+the Sinhala-shaping/KaTeX risks stayed live in review surfaces that render it regardless of scope.
+The rule that was meant to protect the mono-medium case also *blessed* the content that defeats
+re-use. ADR 0021 closes it: **every piece of text drawn in a figure is simple English on every
+medium** — point letters, labels, axis/category/series/value titles, units, card/ring texts. The
+a11y `title`/`description` are not drawn and keep the question's medium.
+**The check:** `_check_label_texts` (vdd_templates.py) and `vdd-check.mjs` rule 3 refuse any
+codepoint U+0D80–U+0DFF in drawn text unconditionally — the message names the label and cites
+`diagram text must be simple English (ADR 0021)`. `--medium` is still accepted (other checks and
+the flag's callers keep working); it no longer widens the label rule.
+
+*Source: this plugin — W12, 2026-10-04 (session f040ebb5, Q5/Q6 bar charts).*
