@@ -15,6 +15,7 @@ argument-hint: "[grade] [lesson number or name] [how many questions]"
 > 2026-10-02 W8 dogfood (G6, 10 questions, 8 template figures, 2 critic rounds → SATISFIED);
 > 2026-10-03 first run on the W9 tools (G6, 10 questions, 8 figures — 7 hand-drawn through finish(), 1 template; 2 critic rounds → SATISFIED);
 > 2026-10-03 first run on the W10 tools (G6, 10 questions, 8 template figures, 0 hand-drawn; `check:` on all 31 leaves; 2 critic rounds → SATISFIED; 0 tool repairs, 1 FRICTION line).
+> 2026-10-04 first G7 run on the W11 templates (10 questions, 33 leaves, 10 template figures — 6 from coordinate_plane/parallel_lines/bar_chart — 0 hand-drawn; 2 critic rounds → SATISFIED; 0 tool repairs, 3 FRICTION lines).
 > Distilled lessons are folded into the steps below: a lesson that teaches angle types *without degrees*
 > demands comparison-with-a-right-angle reasoning; measure label↔canvas-edge clearance, not only
 > label↔stroke; a constructed claim set takes its ratios from the **stem** (T-QG-2); the critic is
