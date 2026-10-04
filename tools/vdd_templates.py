@@ -1157,7 +1157,8 @@ def _lattice_axis(kind: str, axis, cols: int, rows: int):
 def _seat_vertex_labels(kind: str, ring: list[tuple[str | None, XY]], label: list[int],
                         elements: list[dict], cols: int, cell_px: float, *,
                         exempt_grid: bool = False, straight_ok: bool = False,
-                        hint: str = "drop vertex_labels for this shape"):
+                        hint: str = "drop vertex_labels for this shape",
+                        avoid: list[tuple] | None = None):
     """Seat a letter OUTSIDE the closed polygon `ring` (canvas units, cyclic) at each index
     in `label` — the exterior wedge: out of the grid for a boundary corner, into the notch
     for a reflex one. Grid lines thread the interior AND a notch, so an inside-grid seat
@@ -1169,7 +1170,8 @@ def _seat_vertex_labels(kind: str, ring: list[tuple[str | None, XY]], label: lis
     `exempt_grid` drops the faint gv*/gh* ruling lines from the obstacle set (the
     2026-10-04 ruling's fallback pass — they still count for the hug bound). A `straight_ok`
     vertex (two collinear edges — a half-figure's end on the axis) labels along the outward
-    normal. Returns [(name, cx, cy, size)] or raises TemplateError."""
+    normal. `avoid` = label boxes already placed (other labels the letters must clear).
+    Returns [(name, cx, cy, size)] or raises TemplateError."""
     poly_px = [v for _n, v in ring]
     nv_ = len(ring)
     signed = sum(poly_px[i][0] * poly_px[(i + 1) % nv_][1]
@@ -1185,7 +1187,7 @@ def _seat_vertex_labels(kind: str, ring: list[tuple[str | None, XY]], label: lis
     compass = [(round(x / math.hypot(x, y), 6), round(y / math.hypot(x, y), 6))
                for x, y in
                ((1, -1), (-1, -1), (1, 1), (-1, 1), (1, 0), (-1, 0), (0, -1), (0, 1))]
-    seated: list = []
+    seated: list = list(avoid or [])
     out = []
     named = [(n, v) for n, v in ring if n]
     for i in label:
@@ -4602,13 +4604,291 @@ def build_symmetry_grid(*, figure_id, stem, ask=None, title=None, description=No
                   medium=medium)
 
 
+# ────────────────────────────────────────────────────────────────────────────────
+# 20. labelled_composite — a rectilinear composite drawn from its side lengths
+# ────────────────────────────────────────────────────────────────────────────────
+_STEP = {"R": (1.0, 0.0), "L": (-1.0, 0.0), "U": (0.0, -1.0), "D": (0.0, 1.0)}
+_UNSET = object()
+
+
+def build_labelled_composite(*, figure_id, stem, ask=None, title=None, description=None,
+                             medium="english", path, unit="cm", vertex_labels=False,
+                             right_marks=True, unit_px=None):
+    """`path` walks the outline from A: `[dir, length]` or `[dir, length, label]`, dir in
+    R/L/U/D. Every side prints `"<length> <unit>"` unless its `label` is a letter form
+    (`"x m"`) or `None` (no label). The geometry is computed from the lengths, so the
+    drawing cannot disagree with its own printed numbers (the audit's LABEL-RATIO check).
+    An unknown side (letter or unlabelled) is derived by closure when it is the only
+    unknown in its orientation; two or more unknowns in one orientation must each be a
+    stem number."""
+    vc.reset_ids()
+    kind = "labelled_composite"
+    if not isinstance(path, (list, tuple)) or not 4 <= len(path) <= 12:
+        raise TemplateError(f"{kind}: path needs 4–12 sides")
+    if not isinstance(unit, str) or not re.fullmatch(r"[A-Za-z]{1,3}", unit):
+        raise TemplateError(f"{kind}: unit must be a short Latin unit like 'cm' or 'm' "
+                            f"(got {unit!r})")
+    sides = []
+    for i, s in enumerate(path):
+        if not isinstance(s, (list, tuple)) or len(s) not in (2, 3):
+            raise TemplateError(f"{kind}: side {i + 1} must be [dir, length] or "
+                                "[dir, length, label]")
+        d, ln = s[0], s[1]
+        lab = s[2] if len(s) == 3 else _UNSET
+        if d not in _STEP:
+            raise TemplateError(f"{kind}: side {i + 1} direction {d!r} must be R, L, U or D")
+        if not isinstance(ln, (int, float)) or isinstance(ln, bool) or ln <= 0:
+            raise TemplateError(f"{kind}: side {i + 1} length {ln!r} must be a positive number")
+        sides.append((d, float(ln), lab))
+    n = len(sides)
+    horiz = lambda d: d in "RL"                       # noqa: E731
+    for i in range(n):
+        if horiz(sides[i][0]) == horiz(sides[(i + 1) % n][0]):
+            raise TemplateError(
+                f"{kind}: sides {i + 1} and {(i + 1) % n + 1} run the same way — every "
+                "corner of a rectilinear outline turns 90° (merge a straight run into one side)")
+    for a_, b_ in (("R", "L"), ("D", "U")):
+        sa = sum(ln for d, ln, _ in sides if d == a_)
+        sb = sum(ln for d, ln, _ in sides if d == b_)
+        if abs(sa - sb) > 1e-9:
+            raise TemplateError(f"{kind}: the outline does not close — {a_} sides total "
+                                f"{sa:g} but {b_} sides total {sb:g}")
+    names = list("ABCDEFGHIJKL"[:n])
+    vals = [(0.0, 0.0)]
+    for d, ln, _ in sides[:-1]:
+        x, y = vals[-1]
+        vals.append((x + _STEP[d][0] * ln, y + _STEP[d][1] * ln))
+    for i in range(n):
+        for j in range(i + 2, n):
+            if i == 0 and j == n - 1:
+                continue
+            if _segs_touch(vals[i], vals[(i + 1) % n], vals[j], vals[(j + 1) % n]):
+                raise TemplateError(f"{kind}: the outline crosses itself between sides "
+                                    f"{i + 1} and {j + 1}")
+    texts: list[str | None] = []
+    unknown: list[int] = []
+    for i, (d, ln, lab) in enumerate(sides):
+        if lab is _UNSET:
+            texts.append(f"{ln:g} {unit}")
+            continue
+        if lab is None:
+            texts.append(None)
+            unknown.append(i)
+            continue
+        if not isinstance(lab, str):
+            raise TemplateError(f"{kind}: side {i + 1} label must be a string or null")
+        if re.fullmatch(rf"[a-z] {re.escape(unit)}", lab):
+            texts.append(lab)
+            unknown.append(i)
+            continue
+        m = re.fullmatch(rf"(\d+(?:\.\d+)?) {re.escape(unit)}", lab)
+        if not m:
+            raise TemplateError(
+                f"{kind}: side {i + 1} label {lab!r} must be its own length ('{ln:g} {unit}'), "
+                f"a letter ('x {unit}') or null")
+        if abs(float(m[1]) - ln) > 1e-9:
+            raise TemplateError(
+                f"{kind}: label {lab!r} on side {i + 1} prints {m[1]} but the side is "
+                f"{ln:g} {unit} — a side label may only restate its own value")
+        texts.append(lab)
+    seg = [f"{names[i]}{names[(i + 1) % n]}" for i in range(n)]
+    derived: dict[int, str] = {}
+    for grp, (pos, neg) in (("horizontal", ("R", "L")), ("vertical", ("D", "U"))):
+        unk = [i for i in unknown if sides[i][0] in (pos, neg)]
+        if len(unk) == 1:
+            i = unk[0]
+            same = pos if sides[i][0] == pos else neg
+            opp = neg if same == pos else pos
+            plus = [f"{ln:g}" for d, ln, _ in sides if d == opp]
+            minus = [f"{ln:g}" for j, (d, ln, _) in enumerate(sides) if d == same and j != i]
+            derived[i] = " + ".join(plus) + "".join(f" - {m_}" for m_ in minus)
+        else:
+            for i in unk:
+                require_stem(stem, **{f"side {seg[i]} ({texts[i] or 'unlabelled'})":
+                                      sides[i][1]})
+    xs, ys = [p[0] for p in vals], [p[1] for p in vals]
+    W, H = max(xs) - min(xs), max(ys) - min(ys)
+    # corner letters need room in the inner corners beside the side labels — a roomier
+    # default scale when they are on (measured: an 8×5 L-shape seats at ≥36 units/unit)
+    fit_w, fit_h = (300.0, 240.0) if vertex_labels else (200.0, 170.0)
+    x0, y0 = min(xs), min(ys)
+
+    def lay(u: float, span_hint: float | None = None):
+        """The outline, marks, side labels and letters at `u` canvas units per unit.
+        `span_hint` = the measured canvas width of a previous pass (the clearance scale)."""
+        shortest = min(ln for _d, ln, _l in sides) * u
+        if shortest < 22.0:
+            raise TemplateError(
+                f"{kind}: the shortest side draws {shortest:.0f} units long at this scale — too "
+                "short to label (needs ≥22); re-proportion the lengths")
+        pts = {nm: ((x - x0) * u, (y - y0) * u) for nm, (x, y) in zip(names, vals)}
+        poly = [pts[nm] for nm in names]
+        signed = sum(poly[i][0] * poly[(i + 1) % n][1] - poly[(i + 1) % n][0] * poly[i][1]
+                     for i in range(n))
+        elements: list[dict] = []
+        for i in range(n):
+            elements.append(vc.line(poly[i], poly[(i + 1) % n], id=seg[i]))
+        convex = []
+        for i in range(n):
+            pv, v, nv = poly[i - 1], poly[i], poly[(i + 1) % n]
+            cross = (v[0] - pv[0]) * (nv[1] - v[1]) - (v[1] - pv[1]) * (nv[0] - v[0])
+            convex.append(cross * signed > 0)
+            if right_marks and convex[-1]:
+                elements += vc.right_angle_mark(v, pv, nv, r=12)
+        # the side-label gap is finish()'s stroke rule in canvas units at this canvas's card
+        # scale (label gutters ~40 units a side), plus a pixel of slack
+        span_est = span_hint or max(W, H) * u + 2.0 * (40.0 + MARGIN)
+        gap = max(12.0, (STROKE_PX + SLACK_STROKE + 1.0) / min(1.0, PLATE_INNER / (span_est + 60.0)))
+        s_card = min(1.0, PLATE_INNER / (span_est + 60.0))
+        strokes_now = stroke_segments(elements)
+
+        # every labelled side's candidate spots: the outward normal at a slide position t
+        # along the side, midpoint first. A spot must clear every stroke; then a small
+        # backtracking search picks one spot per side with all label boxes ≥5 px apart — two
+        # inner-corner labels in a notch otherwise meet (greedy midpoints pin the first).
+        cands: list[tuple[int, list]] = []
+        for i in range(n):
+            if texts[i] is None:
+                continue
+            a_, b_ = poly[i], poly[(i + 1) % n]
+            nx, ny = vc.normal(a_, b_)
+            mid = vc.lerp(a_, b_, 0.5)
+            if _pt_in_poly((mid[0] + nx * 3.0, mid[1] + ny * 3.0), poly):
+                nx, ny = -nx, -ny                       # outward, by the interior test
+            half = _label_half_along(texts[i], 16, nx, ny)
+            opts = []
+            for t_ in (0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.12, 0.88):
+                p_ = vc.lerp(a_, b_, t_)
+                cand = vc.text((p_[0] + nx * (gap + half), p_[1] + ny * (gap + half)),
+                               texts[i], id=f"sl{seg[i]}", size=16)
+                (_s, bx0, by0, bx1, by1), = label_boxes([cand], 16)
+                box_ = (bx0, by0, bx1, by1)
+                if min(_seg_rect_dist(p, q, box_) - w / 2
+                       for p, q, w in strokes_now) * s_card < STROKE_PX + SLACK_STROKE:
+                    continue
+                opts.append((cand, box_))
+            if not opts:
+                raise TemplateError(f"{kind}: side {seg[i]}'s label {texts[i]!r} cannot clear "
+                                    "the outline anywhere along the side — re-proportion it")
+            cands.append((i, opts))
+        # corner letters first — they have little freedom; the side labels then slide around
+        # them (the letters' boxes seed the search, so the two never meet)
+        chosen: list = []
+        letter_els = []
+        if vertex_labels:
+            ring = [(nm, pts[nm]) for nm in names]
+            for nm, cx_, cy_, sz in _seat_vertex_labels(kind, ring, list(range(n)), elements,
+                                                        1, max(W, H) * u):
+                el_ = vc.text((cx_, cy_), nm, id=f"lbl{nm}", size=sz)
+                letter_els.append(el_)
+                chosen.append((None, label_boxes([el_], sz)[0][1:]))
+        budget_ = [20000]
+
+        def dfs(k_: int) -> bool:
+            if k_ == len(cands):
+                return True
+            for el_, box_ in cands[k_][1]:
+                budget_[0] -= 1
+                if budget_[0] < 0:
+                    return False
+                if any(_rect_gap(box_, pb) * s_card < 5.0 for _e, pb in chosen):
+                    continue
+                chosen.append((el_, box_))
+                if dfs(k_ + 1):
+                    return True
+                chosen.pop()
+            return False
+
+        if not dfs(0):
+            raise TemplateError(
+                f"{kind}: the side labels cannot all sit ≥5 px apart — a notch this narrow "
+                "cannot carry both its labels; re-proportion it or drop one label (null)")
+        elements += [el_ for el_, _b in chosen if el_ is not None] + letter_els
+        return pts, poly, elements, convex
+
+    def lay_measured(u: float):
+        """lay(), then once more at the canvas width the first pass actually produced —
+        the side-label gap is only right at the real clearance scale."""
+        els = lay(u)[2]
+        _dx, _dy, w_, _h = _fit_extent(stroke_segments(els), label_boxes(els, FS))
+        return lay(u, span_hint=float(w_) + 4.0)
+
+    if unit_px:
+        pts, poly, elements, convex = lay_measured(float(unit_px))
+    else:
+        # a crowded notch gets room by drawing the whole figure larger — finish() shrinks
+        # the canvas to the surface again, so only label-vs-label spacing changes
+        u0 = min(fit_w / W, fit_h / H)
+        for k_, f_ in enumerate((1.0, 1.25, 1.5, 1.8)):
+            try:
+                pts, poly, elements, convex = lay_measured(u0 * f_)
+                break
+            except TemplateError as e_:
+                if k_ == 3 or 'too short to label' in str(e_):
+                    raise
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    for i in range(n):
+        add(f"right {names[i - 1]} {names[i]} {names[(i + 1) % n]}", "inferred",
+            "every corner of the rectilinear outline" + ("" if convex[i] else
+                                                         " — a reflex (270°) corner"))
+    nums = stem_numbers(stem)
+    known = [i for i in range(n) if i not in unknown]
+    for i, j in zip(known, known[1:]):
+        v = sides[i][1] / sides[j][1]
+        if _ratio_justified(nums, v):
+            add(f"ratio len {seg[i]} / len {seg[j]} = {v:g}", "stem",
+                f"the printed {texts[i]} and {texts[j]}")
+    for i, expr in derived.items():
+        add(f"derive {expr} = {_num_exact(sides[i][1])}", "inferred",
+            f"side {seg[i]} ({texts[i] or 'unlabelled'}) by closure — the opposite "
+            f"{'horizontal' if horiz(sides[i][0]) else 'vertical'} sides add up the same")
+    sv = [(x - x0, y - y0) for x, y in vals]
+    fwd = sum(x * sv[(i + 1) % n][1] for i, (x, _y) in enumerate(sv))
+    rev = sum(sv[(i + 1) % n][0] * y for i, (_x, y) in enumerate(sv))
+    s1_ = " + ".join(f"{x:g}*{sv[(i + 1) % n][1]:g}" for i, (x, _y) in enumerate(sv))
+    s2_ = " + ".join(f"{sv[(i + 1) % n][0]:g}*{y:g}" for i, (_x, y) in enumerate(sv))
+    big, small = (s1_, s2_) if fwd >= rev else (s2_, s1_)
+    add(f"derive ( {big} - ( {small} ) ) / 2 = {_num_exact(abs(fwd - rev) / 2)}", "inferred",
+        f"shoelace over the side lengths — the area in square {unit}")
+    add(f"derive {' + '.join(f'{ln:g}' for _d, ln, _l in sides)} = "
+        f"{_num_exact(sum(ln for _d, ln, _l in sides))}", "inferred",
+        f"the perimeter in {unit} — the sum of every side")
+    seen = set()
+    for i in range(n):
+        if texts[i] is None or texts[i] in seen:
+            continue
+        seen.add(texts[i])
+        add(f'label "{texts[i]}" names {seg[i]}', "inferred",
+            "an unknown side's letter" if i in unknown else f"the figure's own {seg[i]} length")
+    if vertex_labels:
+        for nm in names:
+            add(f'label "{nm}" names {nm}', "inferred", "vertex label")
+    add("none tickMark parallelMark arrow dashed shaded" + ("" if right_marks else " angleMark"),
+        "inferred", "outline, side labels" + (" and right-angle marks at the outer corners"
+                                              if right_marks else ""))
+    shown = [t for t in texts if t]
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=pts, points=names, segments=seg, claims=claims, ask=ask,
+                  title=title or "A composite shape made of rectangles, with side lengths",
+                  description=description or (
+                      f"A {n}-sided shape whose corners are all right angles, made of "
+                      f"rectangles; the sides are labelled {', '.join(shown)}."),
+                  scale="to scale — every side's drawn length is its stated length",
+                  medium=medium)
+
+
 BUILDERS = {fn.__name__[6:]: fn for fn in
             (build_grid_polygon, build_shaded_grid, build_rays_from_point, build_number_line,
              build_pictograph, build_rectangle_points, build_house_pentagon, build_cuboid,
              build_dot_pattern, build_circle_points, build_two_circles_points,
              build_circles_in_circle, build_abacus, build_sorting_rings, build_shape_row,
              build_coordinate_plane, build_parallel_lines, build_bar_chart,
-             build_symmetry_grid)}
+             build_symmetry_grid, build_labelled_composite)}
 
 CATALOGUE = """
 template            stem-checked numbers                          inputs
@@ -4631,6 +4911,7 @@ coordinate_plane    each point's x,y when coords="stem"           x_max,y_max≤
 parallel_lines      distance.value                                lines=["AB","CD"], parallel=[[…]], direction, crossing="PQ", distance={"between","value","unit"}
 bar_chart           step; every value when values="stem"          categories 2–8, series 1–3 {"name","values"}, step, v_max, value_title, category_title, gridlines, orientation="v"|"h" (h = bars run right, categories stack up the y axis; claims read on OX)
 symmetry_grid       cell                                          half=[(x,y)…] open path, both ends ON the axis, axis={"through":[[x,y],[x,y]]} vertical/horizontal/±45°, show="half"|"full", cols/rows?, cell_px, vertex_labels (falls back to accent letters over the ruling)
+labelled_composite  a side whose value no closure gives (≥2 unknowns in one orientation)  path=[[dir R|L|U|D, length, label?]…] 4–12 sides closing on A, unit, vertex_labels, right_marks, unit_px — label "x m" or null = unknown side (derived by closure when it is its orientation's only unknown)
 """.strip()
 
 SELF_TEST = [
@@ -4756,6 +5037,11 @@ SELF_TEST = [
      "ask": [["a", "the mirror pairs"]],
      "cell": 1, "half": [[0, 0], [4, 1], [4, 4]], "axis": {"through": [[0, 0], [4, 4]]},
      "show": "full", "vertex_labels": True, "cell_px": 40},
+    {"template": "labelled_composite", "figure_id": "selftest-composite",
+     "stem": "The floor of a hall is a U shape. (a) Find x. (b) Find the area of the floor.",
+     "ask": [["a", "the unknown side"], ["b", "the floor area"]],
+     "path": [["R", 9], ["U", 6], ["L", 3], ["D", 3, "x m"], ["L", 3, None], ["U", 3],
+              ["L", 3], ["D", 6]], "unit": "m"},
 ]
 
 

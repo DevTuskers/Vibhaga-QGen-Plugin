@@ -2336,6 +2336,109 @@ class SymmetryGrid(unittest.TestCase):
                              for e in b.doc["elements"]))
 
 
+class LabelledComposite(unittest.TestCase):
+    """W13 — rectilinear composites drawn from their side lengths (G7 L16/L17)."""
+
+    L_PATH = [["R", 8], ["U", 3], ["L", 3], ["U", 2], ["L", 5], ["D", 5]]
+    U_PATH = [["R", 9], ["U", 6], ["L", 3], ["D", 3, "x m"], ["L", 3, None], ["U", 3],
+              ["L", 3], ["D", 6]]
+
+    def _build(self, path, stem="A composite floor plan. (a) Find the area.", **kw):
+        kw.setdefault("unit", "m")
+        return vt.build_labelled_composite(figure_id="t1", stem=stem, path=path, **kw)
+
+    @staticmethod
+    def _side_px(b, seg):
+        e = next(e for e in b.doc["elements"] if e["id"] == seg)
+        (x1, y1), (x2, y2) = e["points"]
+        return math.hypot(x2 - x1, y2 - y1)
+
+    def test_l_shape_area_perimeter_and_scale(self):
+        b = self._build(self.L_PATH)
+        self.assertIn("= 34 |", b.claims)                  # 8×3 + 5×2
+        self.assertIn("derive 8 + 3 + 3 + 2 + 5 + 5 = 26", b.claims)
+        self.assertEqual(len(re.findall(r"^  K\d+  right ", b.claims, re.M)), 6)
+        # drawn to scale from the labels: AB/BC == 8/3
+        self.assertAlmostEqual(self._side_px(b, "AB") / self._side_px(b, "BC"), 8 / 3, places=6)
+        r = audit(b.claims, tempfile.mkdtemp())
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_lone_unknowns_are_derived_by_closure(self):
+        b = self._build(self.U_PATH)
+        self.assertIn("derive 6 + 3 - 6 = 3", b.claims)    # x on DE
+        self.assertIn("derive 9 - 3 - 3 = 3", b.claims)    # the unlabelled EF
+        self.assertIn('label "x m" names DE', b.claims)
+        self.assertFalse(any(e.get("id") == "slEF" for e in b.doc["elements"]))  # null: no text
+        self.assertIn("= 45 |", b.claims)
+        r = audit(b.claims, tempfile.mkdtemp())
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_two_unknowns_in_one_orientation_need_the_stem(self):
+        path = [["R", 9], ["U", 6], ["L", 3], ["D", 3, "x m"], ["L", 3], ["U", 3],
+                ["L", 3], ["D", 6, None]]
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._build(path)
+        self.assertIn("not a number the stem states", str(cm.exception))
+        b = self._build(path, stem="The plot has sides of 3 m and 6 m that are not marked.")
+        r = audit(b.claims, tempfile.mkdtemp())
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_stem_justified_ratio_is_label_checked(self):
+        b = self._build([["R", 6], ["U", 4], ["L", 6], ["D", 4]],
+                        stem="A rectangle is 6 m long and 4 m wide.")
+        self.assertIn("ratio len AB / len BC = 1.5", b.claims)
+        r = audit(b.claims, tempfile.mkdtemp())
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_t_and_step_shapes_build(self):
+        shapes = [
+            [["R", 2], ["U", 4], ["R", 2], ["U", 2], ["L", 6], ["D", 2], ["R", 2], ["D", 4]],
+            [["R", 6], ["U", 2], ["L", 2], ["U", 2], ["L", 2], ["U", 2], ["L", 2], ["D", 6]],
+        ]
+        for p in shapes:
+            for vl in (False, True):
+                with self.subTest(path=p, vertex_labels=vl):
+                    b = self._build(p, unit="cm", vertex_labels=vl)
+                    r = audit(b.claims, tempfile.mkdtemp())
+                    self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_right_marks_toggle_the_none_line(self):
+        on = self._build(self.L_PATH)
+        off = self._build(self.L_PATH, right_marks=False)
+        self.assertEqual(sum(e["type"] == "angleMark" for e in on.doc["elements"]), 5)  # convex
+        self.assertFalse(any(e["type"] == "angleMark" for e in off.doc["elements"]))
+        self.assertNotRegex(on.claims, r"none [^|]*angleMark")
+        self.assertRegex(off.claims, r"none [^|]*angleMark")
+
+    def test_refusals(self):
+        bad = [
+            ([["R", 4], ["U", 2], ["L", 4]], "4–12 sides"),
+            ([["R", 4], ["U", 2], ["L", 3], ["D", 2]], "does not close"),
+            ([["R", 4], ["R", 2], ["U", 2], ["L", 6], ["D", 2]], "turns 90°"),
+            ([["R", 4], ["N", 2], ["L", 4], ["D", 2]], "direction"),
+            ([["R", 0], ["U", 2], ["L", 0], ["D", 2]], "positive"),
+            ([["R", 4, "5 m"], ["U", 2], ["L", 4], ["D", 2]], "restate its own value"),
+            ([["R", 4, "four"], ["U", 2], ["L", 4], ["D", 2]], "must be its own length"),
+            ([["R", 4, "x cm"], ["U", 2], ["L", 4], ["D", 2]], "must be its own length"),
+            ([["R", 20], ["U", 1], ["L", 20], ["D", 1]], "too short to label"),
+            ([["R", 4], ["U", 4], ["L", 2], ["D", 6], ["L", 2], ["U", 2]], "crosses itself"),
+        ]
+        for path, msg in bad:
+            with self.subTest(path=path):
+                with self.assertRaises(vt.TemplateError) as cm:
+                    self._build(path)
+                self.assertIn(msg, str(cm.exception))
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._build(self.L_PATH, unit="මී")
+        self.assertIn("unit", str(cm.exception))
+
+    def test_english_only_and_a11y_exempt(self):
+        with self.assertRaises(vt.TemplateError):
+            self._build([["R", 4, "ඒ m"], ["U", 2], ["L", 4], ["D", 2]])
+        b = self._build(self.L_PATH, medium="sinhala", title="අ — synthetic a11y title")
+        self.assertIn("අ", b.doc["a11y"]["title"])
+
+
 class ByteIdentity(unittest.TestCase):
     """The floating-label machinery must not change any existing template's bytes —
     sha256 over each self-test spec's three emitted files, captured on origin/main."""

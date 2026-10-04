@@ -331,6 +331,27 @@ def case_grid() -> list[dict]:
                 for cp in (30.0, 45.0):
                     cases.append(C("symmetry_grid", stem=sg_stem, cell=1, half=half,
                                    axis=ax, show=show, vertex_labels=vl, cell_px=cp))
+    # labelled_composite (W13) — L/T/U/step/plus outlines × unknown variants × letters
+    lc_stem = "A composite floor plan with sides 3 m and 6 m. (a) Find the area."
+    lc = [
+        [["R", 8], ["U", 3], ["L", 3], ["U", 2], ["L", 5], ["D", 5]],
+        [["R", 2], ["U", 4], ["R", 2], ["U", 2], ["L", 6], ["D", 2], ["R", 2], ["D", 4]],
+        [["R", 9], ["U", 6], ["L", 3], ["D", 3], ["L", 3], ["U", 3], ["L", 3], ["D", 6]],
+        [["R", 6], ["U", 2], ["L", 2], ["U", 2], ["L", 2], ["U", 2], ["L", 2], ["D", 6]],
+        [["R", 2], ["U", 2], ["R", 2], ["U", 2], ["L", 2], ["U", 2], ["L", 2], ["D", 2],
+         ["L", 2], ["D", 2], ["R", 2], ["D", 2]],
+        [["R", 12], ["U", 5], ["L", 4], ["U", 3], ["L", 8], ["D", 8]],
+    ]
+    for p in lc:
+        for variant in ("all", "x", "null", "both"):
+            q = [list(s) for s in p]
+            if variant in ("x", "both"):
+                q[1] = q[1][:2] + ["x m"]
+            if variant in ("null", "both"):
+                q[2] = q[2][:2] + [None]
+            for vl in (False, True):
+                cases.append(C("labelled_composite", stem=lc_stem, path=q, unit="m",
+                               vertex_labels=vl))
     return cases
 
 
