@@ -2,7 +2,7 @@
 """precritic-lint.py — the mechanical pre-critic pass over a generate run dir (W9 item G).
 
     precritic-lint.py <run> [--card KEY=NN …] [--grade N] [--cards-dir DIR]
-                            [--rubric medium-hard] [--existing FILE …]
+                            [--all-probes] [--rubric medium-hard] [--existing FILE …]
 
 `<run>` is the generate §2 actor dir (`content.yaml`, `specs/figures.json`, `figures/`). Each
 `--card KEY=NN` binds a `content.yaml` `lessons:` key to a lesson's scope card, resolved as
@@ -12,11 +12,16 @@
 
 Checks:
 
-  (a) FAIL — a `not_taught` PROBE from a listed card appearing in any question's stem, part
-      text, approach or final — a case-insensitive substring match on NFC + ASCII-folded text
+  (a) FAIL — a `not_taught` PROBE appearing in a question's stem, part text, approach or
+      final — a case-insensitive substring match on NFC + ASCII-folded text
       (scope-cards' probe_norm). A printed probe means the concept may actually be taught —
       the card's curator checked ABSENCE in the lesson, not in the question. Prints the
-      question/part, the probe and the card.
+      question/part, the probe and the card. **Per-question by default (W12):** each
+      question is checked only against the cards bound to the lesson keys its `lessons:`
+      list tags — a probe of a card the question never tags is not its business. The
+      opt-in `--all-probes` restores the old run-wide behaviour (every bound card against
+      every question). A `lessons:` key with no bound `--card` draws one WARN per
+      (question, key) — its not_taught probes were not checked.
 
   (b) WARN — a figure spec's `description` (a11y) containing a digit token equal to a value
       the figure carries as READABLE content, taken from its emitted claim set
@@ -335,12 +340,29 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
     questions = content["questions"]
     fails = warns = 0
 
-    # (a) not_taught probes must not appear in any question field
-    probes = [(key, card["name"], nt.get("concept"), p)
-              for key, card in cards.items()
-              for nt in ((card["doc"].get("curated") or {}).get("not_taught") or [])
-              for p in (nt.get("probes") or [])]
+    # (a) not_taught probes must not appear in a question field — PER QUESTION by
+    # default: a question answers only to the cards its own `lessons:` keys bind (a
+    # probe from an untagged lesson's card is not its business). --all-probes is the
+    # old run-wide check.
+    probes_of = {key: [(card["name"], nt.get("concept"), p)
+                       for nt in ((card["doc"].get("curated") or {})
+                                  .get("not_taught") or [])
+                       for p in (nt.get("probes") or [])]
+                 for key, card in cards.items()}
     for q in questions:
+        if args.all_probes:
+            probes = [(key, *rest)
+                      for key, rests in probes_of.items() for rest in rests]
+        else:
+            tagged = q.get("lessons") or []
+            probes = [(key, *rest)
+                      for key in tagged if key in probes_of
+                      for rest in probes_of[key]]
+            for key in tagged:
+                if key not in probes_of:
+                    warns += 1
+                    log(f"  WARN Q{q.get('n')}: lesson key {key!r} has no bound --card — "
+                        f"its not_taught probes were not checked")
         for pid, text in field_texts(q):
             hay = sc.probe_norm(text)
             for key, cname, concept, probe in probes:
@@ -419,6 +441,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="grade number — cards resolve under maths/grade-NN/scope-cards/ "
                          "(required with --card unless --cards-dir is given)")
     ap.add_argument("--cards-dir", help="read cards from DIR/<NN>-*.yaml instead of the corpus")
+    ap.add_argument("--all-probes", action="store_true",
+                    help="check every question against ALL bound cards' not_taught probes "
+                         "(the pre-W12 run-wide behaviour); the default is per-question — "
+                         "only the cards the question's lessons: keys bind")
     ap.add_argument("--rubric", choices=["medium-hard"], default=None,
                     help="check the leaf `level:` keys against a set rubric (check d — R "
                          "only as part (a), i.e. the first part in document order)")

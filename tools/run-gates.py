@@ -301,6 +301,7 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     gates["build-staged"] = rc
     if rc:
         return fail(gates, run, "build-staged", rc, out)
+    quote(out, r"WARN")                        # student text opening '<digits>. ' etc. — non-fatal
 
     # 4. answers as code — every leaf's `check:` expression must evaluate True (a False or an
     #    eval error stops the chain; missing checks and uncovered final numbers are WARNs)
@@ -472,7 +473,10 @@ def cmd_ship(args, runner=run_cmd, log=print) -> int:
             vc_cmd += ["--staged", str(staged), "--claims-dir", str(run / "figures")]
         rc, out = runner([*vc_cmd, "--out", vc_out])
         gates["visual-check-session"] = rc
-        shown = quote(out, r"CLIPPED|revocation:|q3:", log=log)
+        # the per-question verdict lines ARE the stage summary (W12 A7 — they used to
+        # be filtered out, so a session check printed nothing but the revocation line)
+        shown = quote(out, r"CLIPPED|revocation:|q3:|^Q\d+ +\S+ +(light|dark)\b|"
+                           r"screenshot\(s\).*report:", log=log)
         if rc:
             return fail(gates, run, "visual-check-session", rc, out, shown)
     else:

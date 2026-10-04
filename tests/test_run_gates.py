@@ -567,6 +567,56 @@ class ShipTest(unittest.TestCase):
             self.assertIn("missing on the server", out.getvalue())
             self.assertFalse(any(" publish " in f" {' '.join(c)} " for c in stub.calls))
 
+    def test_session_check_prints_verdict_lines(self):
+        """W12 A7 — the session stage used to echo only CLIPPED/revocation/q3 lines, so
+        a healthy run printed NO per-question verdicts at all. Mock the session run:
+        the Q<n> verdict lines and the report summary must reach ship's output."""
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "figures").mkdir()                    # → --staged/--claims-dir args
+            stub = StubRunner()
+            stub.canned += [
+                (lambda j: "--session" in j, 0,
+                 "Q1  PASS  light · figures 1 · findings 0  → /x/session/light-Q1.png\n"
+                 "Q1  PASS  dark · figures 1 · findings 0  → /x/session/dark-Q1.png\n"
+                 "  q3: ok\n"
+                 "2 screenshot(s) · verdict PASS · exit 0 · report: /x/report.json\n"),
+            ]
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_ship(ship_args(run, session_check=True), runner=stub)
+            self.assertEqual(rc, 0, out.getvalue())
+            vc_call = next(" ".join(c) for c in stub.calls if "--session" in " ".join(c))
+            self.assertIn("--staged", vc_call)
+            self.assertIn("--claims-dir", vc_call)
+            o = out.getvalue()
+            self.assertIn("Q1  PASS  light · figures 1 · findings 0", o)
+            self.assertIn("Q1  PASS  dark", o)
+            self.assertIn("verdict PASS · exit 0 · report: /x/report.json", o)
+            self.assertIn("q3: ok", o)
+            gates = json.loads((run / "gates.json").read_text())
+            self.assertEqual(gates["visual-check-session"], 0)
+
+    def test_session_check_failure_still_shows_verdicts(self):
+        """A CLIPPED FAIL verdict line must surface in the failing stage's output too."""
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            stub = StubRunner()
+            stub.canned += [
+                (lambda j: "--session" in j, 1,
+                 "Q1  CLIPPED FAIL  light · figures 1 · findings 0  → /x/light-Q1.png\n"
+                 "1 screenshot(s) · verdict FAIL · exit 1 · report: /x/report.json\n"),
+            ]
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_ship(ship_args(run, session_check=True), runner=stub)
+            self.assertEqual(rc, 1)
+            o = out.getvalue()
+            self.assertIn("Q1  CLIPPED FAIL  light", o)
+            self.assertIn("verdict FAIL", o)
+            # the chain stops — publish never runs
+            self.assertFalse(any(" publish " in f" {' '.join(c)} " for c in stub.calls))
+
     def test_doc_diff_fails_cleanly_on_malformed_entries(self):
         # a non-dict staged entry or a server row without question_id → FAIL lines + exit 1,
         # never a traceback

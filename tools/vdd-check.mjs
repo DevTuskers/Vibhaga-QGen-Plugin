@@ -16,7 +16,8 @@
  *
  *   1. `parseVddDocument` (@vibhaga/shared)   (S6b §4.1 — nothing on any write path validates VDD)
  *   2. `a11y.title` real + non-generic, `a11y.description` present        (S6b §0.3, §3.3)
- *   3. label hygiene: no `$`, no backtick, no Sinhala in `text.value` / `math.latex`   (S6b §0.5–0.6)
+ *   3. label hygiene: no `$`, no backtick, no Sinhala in any DRAWN text (every medium —
+ *      ADR 0021; a11y title/description are exempt)                      (S6b §0.5–0.6)
  *   4. element budget (≤ 32 is a smell threshold, not a schema cap)         (S6b §3.4)
  *   4b. canvas aspect — height/width > 2.0 renders taller than a 375 px phone screen (no override)
  *   5. `path` elements reported (avoid unless nothing else can draw it)     (T-S6b-9)
@@ -271,14 +272,14 @@ function checkDocument(doc, cs, canvasAnchors) {
     const s = labelOf(el);
     if (typeof s === "string") {
       if (/[$`]/.test(s)) fails.push(`element ${el.id}: label ${JSON.stringify(s)} contains $ or a backtick — reaches the student raw`);
-      // T-S6b-6 (rescoped at owner review, run 13 2026-09-11): one diagram_dsl per node means a figure
-      // cannot be BILINGUAL — so Sinhala labels are forbidden when the question's medium is not Sinhala.
-      // On a mono-medium Sinhala question the figure's structural labels (table headers, row labels, axis
-      // names) MUST be drawn as text elements — moving them into stem prose leaves a visibly broken figure.
-      // Sinhala inside math.latex stays forbidden always: KaTeX cannot shape it (D7 class).
+      // ADR 0021 (supersedes the T-S6b-6 medium condition): every piece of text DRAWN in a
+      // figure is simple English on EVERY medium — one diagram_dsl per node renders on all
+      // media, so a Sinhala label is refused regardless of --medium. The a11y
+      // title/description are not drawn — they stay in the question's medium and are exempt.
+      // Sinhala inside math.latex also fails: KaTeX cannot shape it (D7 class).
       if (/[\u0D80-\u0DFF]/.test(s)) {
-        if (el.type === "math") fails.push(`element ${el.id}: Sinhala inside math.latex — KaTeX cannot shape it (D7)`);
-        else if (opt("--medium", "") !== "sinhala") fails.push(`element ${el.id}: Sinhala in a label on a non-sinhala-medium figure — a figure cannot be bilingual (T-S6b-6; pass --medium sinhala when the question's medium is sinhala)`);
+        if (el.type === "math") fails.push(`element ${el.id}: math label ${JSON.stringify(s)} contains Sinhala — diagram text must be simple English (ADR 0021); KaTeX cannot shape Sinhala either`);
+        else fails.push(`element ${el.id}: label ${JSON.stringify(s)} contains Sinhala — diagram text must be simple English (ADR 0021)`);
       }
     }
     // angleMark labels (both variants) DO render since the 2026-08-28 renderer fix (measured 2026-09-05 in

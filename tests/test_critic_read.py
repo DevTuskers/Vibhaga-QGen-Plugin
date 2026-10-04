@@ -487,5 +487,69 @@ class BriefTests(unittest.TestCase):
             self.assertIn("== lesson ? (Mystery) — no scope card found", text)
 
 
+class CorpusResolution(EndToEnd):
+    """W12 A6 — a chunked round-2 critic wrote 'no scope cards found' briefs: without
+    --corpus or VIBHAGA_CORPUS the fallback pointed INSIDE the plugin checkout
+    (<plugin>/Vibhaga-Maths-Corpus — one directory short of the real sibling). Every
+    chunk critic must resolve the corpus the same way the lead does."""
+
+    def test_fallback_is_the_sibling_checkout(self):
+        with patch.dict(os.environ, {}, clear=True):       # VIBHAGA_CORPUS absent
+            p = cr.corpus_candidate(None)
+        self.assertEqual(p, TOOLS.parent.parent / "Vibhaga-Maths-Corpus")
+
+    def test_env_then_flag_order(self):
+        with tempfile.TemporaryDirectory() as td:
+            with patch.dict(os.environ, {"VIBHAGA_CORPUS": td}):
+                self.assertEqual(cr.corpus_candidate(None), Path(td))
+                self.assertEqual(cr.corpus_candidate("/flag/wins"),
+                                 Path("/flag/wins"))
+
+    def test_brief_uses_env_corpus_end_to_end(self):
+        """The regression itself: VIBHAGA_CORPUS reaches write_brief through main() —
+        brief.txt holds the real card brief, never 'no scope card found'."""
+        with tempfile.TemporaryDirectory() as td:
+            cards_dir = Path(td) / "corpus" / "maths" / "grade-06" / "scope-cards"
+            cards_dir.mkdir(parents=True)
+            (cards_dir / "01-Alpha.yaml").write_text(
+                MINI_CARD.format(nn=1, title="Alpha", slug="01-Alpha"),
+                encoding="utf-8")
+            self.write_canned(
+                q4a=json.dumps({"batch_id": BID, "grade": 6, "session_lessons": [
+                    {"lesson_id": "00000000-0000-4000-8000-000000000001",
+                     "sort_order": 10, "name": "Alpha"}]}) + "\n",
+                q4b=FIXTURE.read_text(encoding="utf-8"), q4c="")
+            self.env["VIBHAGA_CORPUS"] = str(Path(td) / "corpus")
+            rc, _out, err = self.run_main(BID, "--out", str(self.out))
+            self.assertEqual(rc, 0, err)
+            text = (self.out / "brief.txt").read_text(encoding="utf-8")
+            self.assertIn("== 01-Alpha.yaml — Alpha", text)
+            self.assertNotIn("no scope card found", text)
+            self.assertIn(f"critic-read: corpus {Path(td) / 'corpus'}", err)
+
+    def test_flag_beats_env_end_to_end(self):
+        """--corpus wins over VIBHAGA_CORPUS — the flag corpus's card is the one
+        briefed (a chunk spawn must be able to override the ambient env)."""
+        with tempfile.TemporaryDirectory() as td:
+            for sub, title in (("env-corpus", "EnvCard"), ("flag-corpus", "FlagCard")):
+                d = Path(td) / sub / "maths" / "grade-06" / "scope-cards"
+                d.mkdir(parents=True)
+                (d / f"01-{title}.yaml").write_text(
+                    MINI_CARD.format(nn=1, title=title, slug=f"01-{title}"),
+                    encoding="utf-8")
+            self.write_canned(
+                q4a=json.dumps({"batch_id": BID, "grade": 6, "session_lessons": [
+                    {"lesson_id": "00000000-0000-4000-8000-000000000001",
+                     "sort_order": 10, "name": "FlagCard"}]}) + "\n",
+                q4b=FIXTURE.read_text(encoding="utf-8"), q4c="")
+            self.env["VIBHAGA_CORPUS"] = str(Path(td) / "env-corpus")
+            rc, _out, err = self.run_main(BID, "--out", str(self.out),
+                                          "--corpus", str(Path(td) / "flag-corpus"))
+            self.assertEqual(rc, 0, err)
+            text = (self.out / "brief.txt").read_text(encoding="utf-8")
+            self.assertIn("01-FlagCard.yaml — FlagCard", text)
+            self.assertNotIn("EnvCard", text)
+
+
 if __name__ == "__main__":
     unittest.main()

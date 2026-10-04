@@ -33,8 +33,8 @@ generated:          # tool-owned — `draft` rewrites it every time; never hand-
 curated:            # agent-written — `draft` preserves it, `check` verifies it
   status: todo | drafted | reviewed
   not_taught: [{concept, why, probes: [...]}]
-  prerequisites: [{lesson, why}]
-  difficulty_hooks: [{level: M|H, hook}]
+  prerequisites: [{lesson, why, grounds: [...]}]     # grounds optional — see below
+  difficulty_hooks: [{level: M|H, hook, grounds: [...]}]
 ```
 
 `generated` also carries `phrases` — the lesson's mined term bank (emphasis terms, section-title
@@ -70,16 +70,23 @@ Open the lesson file and fill `curated:` for each `todo` card:
   fix the item, never swap in a weaker probe. If no probe can honestly be absent, drop the item.
 - **`prerequisites`** — earlier lessons whose concepts this lesson's worked examples actually use:
   `grade-06/05` form for the same grade (must be an existing, lower-numbered card) or
-  `grade-NN:<free text>` for an earlier grade. An empty list is fine.
+  `grade-NN:<free text>` for an earlier grade. An empty list is fine. `grounds:` quotes below.
 - **`difficulty_hooks`** — 2–4 items, `level: M` or `H`, each naming the non-routine move this lesson
   makes possible (e.g. compare an angle with a right angle — not with a degree figure). These anchor
   the R/M/H difficulty rubric in the plan's appendix:
   [plans/2026-09-29-question-generation-plugin.md](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/plans/2026-09-29-question-generation-plugin.md).
+- **`grounds:`** (optional, on `prerequisites`/`difficulty_hooks` entries) — short strings
+  quoted from the lesson that the claim rests on. `check` requires every `grounds` string to
+  literally occur in the lesson file (NFC, ASCII case-insensitive; figure `**Description:**`
+  and `**Concepts:**` lines count). A string that doesn't occur → FAIL naming the card, the
+  entry and the string. Entries with no `grounds` don't fail but draw one `WARN` per card
+  with the ungrounded count — write them anyway: grounds are what keep a plausible-sounding
+  hook honest against the actual lesson text.
 
 Then **`check --grade N` must exit 0** — one line per card plus a
 `check: N card(s) · k passed · 0 failed` totals line. It fails on a stale `source.sha256`, a hand
-edit inside `generated`, a `todo` status, a probe that occurs in the lesson, a bad prerequisite, and
-wrong hook count or level.
+edit inside `generated`, a `todo` status, a probe that occurs in the lesson, a bad prerequisite,
+a `grounds` string absent from the lesson, and wrong hook count or level.
 
 ## Refusals (exit 2)
 

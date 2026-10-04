@@ -128,7 +128,7 @@ b = vt.finish(kind="two_circles", figure_id="Q3", stem=stem, elements=el, anchor
 
 | template | you pass | stem-checked | the claim set emits | limits |
 |---|---|---|---|---|
-| `grid_polygon` | `cell`, `vertices` (grid units), `cols`/`rows`?, `cell_px`, `vertex_labels` | `cell` | `right` per vertex, `grid R by C over P Q`, shoelace + perimeter `derive`s, `none` | axis-aligned edges only |
+| `grid_polygon` | `cell`, `vertices` (grid units), `cols`/`rows`? (default = the shape's own extent), `cell_px`, `vertex_labels`, `axis={"through":[[x,y],[x,y]]}` | `cell` | `right` per vertex, `grid R by C over P Q`, shoelace + perimeter `derive`s, `paint`/`describe` for a drawn axis, `none` | axis-aligned edges only; vertex labels seat outside the polygon (a notch/reflex corner labels inside the notch — needs ~40+ px cells, 1-cell slots ~76+); `axis` must run vertical/horizontal/±45° and is mirror-symmetric-asserted unless `assert_symmetric: False` |
 | `shaded_grid` | `cols`, `rows`, `full=[(c,r)]`, `half=[(c,r,corner)]` | `cols`+`rows` or their product | `grid`, `shaded n of m cells`, per-half `describe`, area `derive`, `none` | half cells: one corner triangle each |
 | `rays_from_point` | `rays={A:"NE"}` or numeric bearing, `angles=[(from,to,label,reflex)]`, `north_arrow` | numeric bearings; angle sizes must derive from constants+stem | `angle` per marked angle (citing emitted `derive`s), `describe` for reflex, `label` for centre/tips/north, `none` | bearing names are compass points |
 | `number_line` | `v0`, `v1`, `parts_per_unit`, `points={P: 0.4}` | `v0`, `v1`, `parts_per_unit` | `axis … from/to`, `tick … step k`, `at` per point, `label` per numeral+point, `derive 1/parts`, `none`, `budget` when >32 el | integer endpoints; points must sit on the lattice; a wide span labels every `k`-th integer (a divisor of the span, claimed as `tick … step k`) so numerals never crowd |
@@ -143,9 +143,9 @@ b = vt.finish(kind="two_circles", figure_id="Q3", stem=stem, elements=el, anchor
 | `abacus` | `place_values=[…]` left→right, `beads=[…]` parallel, `bead_r` | nothing — printed values are figure content | `label "<v>" names rod<i>`, `describe` per rod's bead count, `derive Σ beads·value` | a rod holds 0–9 beads — >9 refuses (the lesson's own rule); distinct place values |
 | `sorting_rings` | `groups=[(name, [items])]`, `ring_gap` | nothing — item texts are figure content | `label` per ring + per item card (`names ring<i>`/`it<i>_<j>`), `describe` per ring, `derive` count sum | 2–3 rings (three lay out 2 + 1); default-size text, cards/rings grow to fit; distinct names and item glyphs |
 | `shape_row` | `shapes=[(letter, kind)]`, `cell_w`, `row_h` | nothing — kinds are figure content | `circle centre` for round kinds, `describe` per shape (sides/corners/curved), `label` per letter, `derive` curved+straight | kinds: circle, small_circle, square, rectangle, triangle, oval, semicircle; 3 per row; letters are single capitals |
-| `coordinate_plane` | `x_max`,`y_max` ≤10, `points={A:(x,y)}`, `join=[[…]]`, `closed`, `sym_axis={"x"\|"y":k}`, `guides=[…]`, `grid`, `origin_label`, `coords="stem"\|"figure"` | each point's x,y (and the `sym_axis` value) when `coords="stem"` | `axis`/`tick`/`right` on OX/OY, `reads P v on OX`/`OY` per coordinate (and the sym midline's two ends), `paint dashed` on the sym axis, `describe` for guides and the figure-mode declaration, `label` per point/axis letter/numeral; join edges are declared `segments` only | integer first-quadrant points; points can't sit on the axis anchors (O/X/Y); grid lines are real strokes — a crowded interior point's letter refuses |
+| `coordinate_plane` | `x_max`,`y_max` ≤10, `points={A:(x,y)}`, `join=[[…]]`, `closed`, `sym_axis={"x"\|"y":k}`, `guides=[…]`, `grid`, `origin_label`, `coords="stem"\|"figure"` | each point's x,y (and the `sym_axis` value) when `coords="stem"` | `axis`/`tick`/`right` on OX/OY, `reads P v on OX`/`OY` per coordinate (and the sym midline's two ends), `paint dashed` on the sym axis, `describe` for guides and the figure-mode declaration, `label` per point/axis letter/numeral; join edges are declared `segments` only | integer first-quadrant points; points can't sit on the axis anchors (O/X/Y); grid lines are real strokes — a crowded interior point's letter refuses. Measured (W12): with `grid` on, lettered pockets need ~44-unit cells — up to **6×6** (5×8, 4×9 also fit); **`x_max ≥ 7` refuses** — drop `grid` or the letters |
 | `parallel_lines` | `lines=["AB",…]` 2–4, `parallel=[[class],…]` 1–2, `direction`, `crossing="PQ"`, `distance={"between","value","unit"}`, `length` | `distance.value` | `parallel`/`nonparallel` per pair + the transversal's, `label` per letter, distance: `on M/N`, `right M N D`, `label "v unit" names MN` | unclassed lines tilt ≥12° without crossing others; crossing must stay ≥5° off every line; distance needs the pair adjacent in `lines` |
-| `bar_chart` | `categories` 2–8, `series=[{"name","values"}]` 1–3, `step`, `v_max`, `values="stem"\|"figure"`, `value_title`, `category_title`, `gridlines` | `step`; every value when `values="stem"` | `reads T<i> v on OY` per bar (0-value bars read the baseline), `axis OY … step`, `label`s for category/title/legend glyphs | every value a multiple of step/2 and ≤ v_max; numerals never thin — crowded axis refuses; series/category/other-glyph names must be glyph-distinct |
+| `bar_chart` | `categories` 2–8, `series=[{"name","values"}]` 1–3, `step`, `v_max`, `values="stem"\|"figure"`, `value_title`, `category_title`, `gridlines`, `orientation="v"\|"h"` | `step`; every value when `values="stem"` | `reads T<i> v on OY` per bar (0-value bars read the baseline), `axis OY … step`, `label`s for category/title/legend glyphs; with `orientation="h"` the same claims read `on OX` (bars run right, categories stack up the y axis, first category nearest the origin) | every value a multiple of step/2 and ≤ v_max; numerals never thin — crowded axis refuses; series/category/other-glyph names must be glyph-distinct; `"h"` refuses when the label gutter leaves <160 units for the value axis or the rows would exceed the 540-unit canvas height |
 
 Every builder is keyword-only; every spec also takes `figure_id`, `stem`, `medium`
 (`"english"`, `"sinhala"`), `ask` (`[["a","text"],…]`), `title`, `description`.
@@ -173,11 +173,13 @@ biased UP, `MID_UP`/`MID_DOWN` in the file), then emits the claim set.
 - **An `ask` part must map to the load-bearing claims.** The claim set's `load-bearing:`
   section lists every ask part → the claims the answer hangs on. Templates emit that for
   you; when you pick `ask` parts in the spec, pick the parts the figure actually serves.
-- **Sinhala in labels is allowed only on a `sinhala`-medium question** — the figure lives
-  inside the question's medium (T-S6b-6). Pass `medium="sinhala"` to the builder and
-  `--medium sinhala` to `vdd-check` (its rule 3 is medium-conditional — L239). Sinhala in a
-  `math.latex` label is **always** refused: KaTeX cannot shape it. The pre-flight refuses
-  `$`/backtick in any label regardless of medium.
+- **Every piece of DRAWN text is simple English on every medium** (ADR 0021 —
+  supersedes T-S6b-6's medium condition): point letters, labels, text elements, math
+  latex, axis/category/series/value titles, units. The builder and `vdd-check` rule 3
+  refuse any Sinhala codepoint in drawn text regardless of `medium` — categories like
+  "සඳුදා" ship as "Mon". The a11y `title`/`description` are NOT drawn: they keep the
+  question's medium. The pre-flight refuses `$`/backtick in any label regardless of
+  medium.
 - **The spec's `description` (a11y) must not narrate what a part asks the student to read off
   the figure** — which or how many cells are shaded, a marked point's value. Say "some cells
   are shaded" instead (T125). A W8 critic caught a shaded-grid description that handed over

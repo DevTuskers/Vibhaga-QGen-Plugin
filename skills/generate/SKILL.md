@@ -176,12 +176,13 @@ same two checkout paths in the critic's spawn prompt.
    - **Answers** — [`author-question-answers`](../author-question-answers/SKILL.md) §3 (independent derivation + a
      genuine second method), §4 (`approach` + `final` only; provenance goes to `notes.md`, never to `approach`), §5a.
      Two actor-only keys now ride on every leaf: `check:` — a small arithmetic expression that must be True
-     (`check: "40 * 23 == 920"`, or `divmod(925, 40) == (23, 5)`; numbers, `+ - * / // % **`, comparisons,
-     `and/or/not`, `ceil floor divmod min max abs sum round sorted int` — check-answers.py's docstring is the
-     whitelist) and `level:` — `R`|`M`|`H`, the rubric level. Every number in `final` should be reachable from the
-     check. Both keys are leaf-only — a part that has `parts` cannot carry them (build-staged refuses). Leaves whose
-     answer is not numeric (classify, name) keep their second-method derivation in `notes.md`
-     instead. `build-staged` never emits either key.
+     (`check: "40 * 23 == 920"`, or `divmod(925, 40) == (23, 5)`; numbers, `+ - * / // % **`, comparisons
+     incl. tuple comparisons, `and/or/not`, `ceil floor divmod min max abs sum round sorted int len` —
+     check-answers.py's docstring is the whitelist) and `level:` — `R`|`M`|`H`, the rubric level. A leaf
+     whose answer computes nothing declares `check: "none — <reason>"` (reason ≥10 chars after the
+     dash; counted separately, not WARNed). Every number in `final` should be reachable from the
+     check. Both keys are leaf-only — a part that has `parts` cannot carry them (build-staged refuses).
+     `build-staged` never emits either key.
    - **Figure specs** — for each planned figure, one entry in `$A/specs/figures.json` per
      [`figure-templates`](../figure-templates/SKILL.md) (the stem's own numbers; the builder refuses any it cannot find).
      ⚠️ **`figure_id` = the figure's staged id** — `Q<n>` for a question figure, `Q<n>.<label>` for a part figure
@@ -281,7 +282,8 @@ same two checkout paths in the critic's spawn prompt.
     ```
 12. **Pre-critic lint** — `run-gates build --card` already ran `tools/precritic-lint.py`; re-run it standalone
     (`python3 tools/precritic-lint.py $A --card <key>=<NN> --grade <g>`) after any `content.yaml` edit. Fix every
-    FAIL (`not_taught` probe found in a stem/part/approach/final) and look at each WARN (a11y `description`
+    FAIL (`not_taught` probe found in a stem/part/approach/final — per question by default: a question
+    answers only to the cards its `lessons:` keys tag; `--all-probes` is the old run-wide check) and look at each WARN (a11y `description`
     carrying a figure's readable number — T125; the vocabulary heuristic) before the critic sees the batch.
     `--existing` may WARN a blueprint variant against a row from another session — expected: across sessions
     variants count as distinct (owner ruling 2026-10-03; within a batch build-staged already refused, T-QG-8).
@@ -290,7 +292,8 @@ same two checkout paths in the critic's spawn prompt.
     ```
     Critique playground batch <sid> per your profile. Paths: plugin <plugin checkout>; corpus <corpus checkout>;
     content-DB env <Vibhaga-DB/.env>; visual-check output <wt/<topic>/vc>; write the report to
-    <wt/<topic>/critic/rN.md>. [VIBHAGA_ADMIN=<Admin checkout> VIBHAGA_WEB=<Web checkout> — when the plugin is
+    <wt/<topic>/critic/rN.md> — the exact file path (not a directory; the critic passes the corpus
+    checkout to critic-read itself). [VIBHAGA_ADMIN=<Admin checkout> VIBHAGA_WEB=<Web checkout> — when the plugin is
     not a sibling of them, e.g. a worktree.] [Chunk: questions <n..m>.] [Previous report: <path>.]
     ```
     Never `content.yaml`, claim sets, staged docs, notes or a hint about which items you doubt (**T25**). Above 8

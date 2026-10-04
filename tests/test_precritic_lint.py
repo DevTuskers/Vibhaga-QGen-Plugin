@@ -50,6 +50,38 @@ curated:
     - {level: "H", hook: "a folded-strip proof"}
 """
 
+CARD8 = """\
+schema_version: 1
+grade: 6
+subject: Mathematics
+medium: si
+lesson_number: 8
+title_en: Perimeter
+title_si: Perimeter (si)
+syllabus_refs: ["2.1"]
+term: 1
+periods: 2
+source: {file: "lessons/08-Perimeter.md", sha256: "0000000000000000000000000000000000000000000000000000000000000002"}
+generated:
+  sections:
+    - {number: "2.1", title: "Measuring around a shape"}
+  vocabulary: ["perimeter"]
+  phrases: ["around the edge"]
+  worked_examples: []
+  exercises: []
+  activities: []
+  figure_kinds: []
+  figures: 0
+  tables: 0
+  summary: []
+curated:
+  status: drafted
+  not_taught:
+    - {concept: "circle circumference", why: "grade 7", probes: ["circumference"]}
+  prerequisites: []
+  difficulty_hooks: []
+"""
+
 CLAIMS = """\
 claims:
   K1  shaded 3 of 5 cells | inferred | the fully shaded cells
@@ -98,6 +130,29 @@ def make_run(tmp: Path, stem: str = "Shade the strip.", parts=None, approach=Non
     cards = tmp / "cards"
     write(cards / "07-Fractions.yaml", CARD)
     return run
+
+
+def make_run_two_cards(tmp: Path, questions: list) -> Path:
+    """A run with cards 07 (probe 'improper') AND 08 (probe 'circumference') on disk —
+    each question's `lessons:` decides which probes it answers to (W12)."""
+    run = tmp / "run"
+    run.mkdir(parents=True, exist_ok=True)
+    import yaml
+    write(run / "content.yaml",
+          yaml.safe_dump({"id_seed": "synthetic",
+                          "lessons": {"L07": "placeholder", "L08": "placeholder2"},
+                          "questions": questions},
+                         allow_unicode=True, sort_keys=False))
+    write(tmp / "cards" / "07-Fractions.yaml", CARD)
+    write(tmp / "cards" / "08-Perimeter.yaml", CARD8)
+    return run
+
+
+def lint_two_cards(run: Path, tmp: Path, *extra):
+    return subprocess.run(
+        [sys.executable, str(TOOL), str(run), "--card", "L07=7", "--card", "L08=8",
+         "--grade", "6", "--cards-dir", str(tmp / "cards"), *extra],
+        capture_output=True, text=True)
 
 
 def lint(run: Path, tmp: Path, *extra):
@@ -161,6 +216,75 @@ class PrecriticLintTest(unittest.TestCase):
             run2 = make_run(Path(td) / "clean", stem="Shade the strip.", lessons=["L07"])
             r2 = lint(run2, Path(td))
             self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
+
+    # ---- (a) W12: probes are per-question, keyed off the question's lessons: ----
+    def test_probe_of_an_untagged_card_is_not_checked(self):
+        """Card 07's probe 'improper' in a question tagging only L08 → clean."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run_two_cards(tmp, [
+                {"n": 1, "lessons": ["L08"], "stem": "Write the improper fraction."},
+            ])
+            r = lint_two_cards(run, tmp)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("0 fail(s)", r.stdout)
+
+    def test_probe_of_the_tagged_card_fails(self):
+        """The same word in a question tagging L07 → FAIL (default is per-question)."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run_two_cards(tmp, [
+                {"n": 1, "lessons": ["L07"], "stem": "Write the improper fraction."},
+            ])
+            r = lint_two_cards(run, tmp)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("FAIL Q1", r.stdout)
+            self.assertIn("improper", r.stdout)
+
+    def test_question_tagging_both_gets_both_probe_sets(self):
+        """A question tagging L07+L08 answers to both cards' probes."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run_two_cards(tmp, [
+                {"n": 1, "lessons": ["L07", "L08"],
+                 "stem": "Measure the circumference of the rim."},
+            ])
+            r = lint_two_cards(run, tmp)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("circumference", r.stdout)
+            self.assertIn("08-Perimeter", r.stdout)
+
+    def test_all_probes_restores_the_run_wide_check(self):
+        """--all-probes: card 07's probe fires even on a question tagging only L08."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run_two_cards(tmp, [
+                {"n": 1, "lessons": ["L08"], "stem": "Write the improper fraction."},
+            ])
+            r = lint_two_cards(run, tmp, "--all-probes")
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("improper", r.stdout)
+
+    def test_unbound_lesson_key_warns_per_question(self):
+        """A `lessons:` key no --card binds → one WARN per (question, key): its not_taught
+        probes were not checked. Bound keys on the same question still lint normally."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run_two_cards(tmp, [
+                {"n": 1, "lessons": ["L07", "L08"], "stem": "Shade the fraction strip."},
+                {"n": 2, "lessons": ["L08"], "stem": "Measure the rim."},
+            ])
+            r = subprocess.run(                     # bind ONLY L07 — L08 has no card
+                [sys.executable, str(TOOL), str(run), "--card", "L07=7",
+                 "--grade", "6", "--cards-dir", str(tmp / "cards")],
+                capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("WARN Q1: lesson key 'L08' has no bound --card", r.stdout)
+            self.assertIn("WARN Q2: lesson key 'L08' has no bound --card", r.stdout)
+            self.assertIn("2 warn(s)", r.stdout)    # one per (question, key), not per probe
+            # --all-probes is the run-wide mode — no per-key binding WARN there
+            r2 = lint_two_cards(run, tmp, "--all-probes")
+            self.assertNotIn("has no bound --card", r2.stdout)
 
     # ---- (b) a11y description must not hand over the readable value ---------
     def test_description_digit_matching_a_claim_value_warns(self):
