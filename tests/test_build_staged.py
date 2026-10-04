@@ -288,6 +288,44 @@ class BuildStagedTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self.assert_refuses(spec, tmp, "string expression")
 
+    # ---- actor-only question keys: blueprint_id / blueprint_seed (W10d) -----
+
+    def test_blueprint_provenance_keys_never_reach_staged(self):
+        spec = copy.deepcopy(BASE)
+        spec["questions"][0]["blueprint_id"] = "rect-perimeter"
+        spec["questions"][0]["blueprint_seed"] = 7
+        with tempfile.TemporaryDirectory() as tmp:
+            _, out, r = self.build(spec, tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertNotIn("blueprint", out.read_text(encoding="utf-8"))
+
+    def test_refuse_two_questions_one_blueprint(self):
+        """Owner ruling 2026-10-03: at most one variant per blueprint per batch — two variants
+        read as one question to a student."""
+        spec = copy.deepcopy(BASE)
+        spec["questions"][0]["blueprint_id"] = "rect-perimeter"
+        spec["questions"][0]["blueprint_seed"] = 7
+        q2 = copy.deepcopy(spec["questions"][0])
+        q2["n"], q2["blueprint_seed"] = 2, 8
+        spec["questions"].append(q2)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec, tmp, "both instantiate blueprint 'rect-perimeter'")
+        spec["questions"][1]["blueprint_id"] = "other-blueprint"     # different ids are fine
+        with tempfile.TemporaryDirectory() as tmp:
+            _, _, r = self.build(spec, tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_refuse_bad_blueprint_id_and_seed(self):
+        for kw, needle in [
+                ({"blueprint_id": "Bad_Id", "blueprint_seed": 7}, "blueprint_id"),
+                ({"blueprint_id": "ok-id", "blueprint_seed": "7"}, "blueprint_seed"),
+                ({"blueprint_id": "ok-id"}, "as a pair"),
+                ({"blueprint_seed": 7}, "as a pair")]:
+            spec = copy.deepcopy(BASE)
+            spec["questions"][0].update(kw)
+            with tempfile.TemporaryDirectory() as tmp:
+                self.assert_refuses(spec, tmp, needle)
+
     def test_meta_keys_on_a_container_are_refused(self):
         """`check:`/`level:` on a node WITH parts would be silently ignored — the walkers
         only visit leaves — so build-staged refuses instead of letting it look checked."""

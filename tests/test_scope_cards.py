@@ -5,6 +5,7 @@ Fixture corpus: tests/fixtures/scope-corpus/maths/grade-06 — two synthetic les
 structural Sinhala heading keywords only; this is a public repo, no real corpus text may appear).
 Every test copies the fixture into a temp dir so the tree can be drafted into.
 """
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -19,6 +20,10 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 TOOL = ROOT / "tools" / "scope-cards.py"
 FIXTURE = HERE / "fixtures" / "scope-corpus"
+
+_spec = importlib.util.spec_from_file_location("scope_cards", TOOL)
+sc = importlib.util.module_from_spec(_spec)   # for KW_EXAMPLE etc. — no Sinhala literals here
+_spec.loader.exec_module(sc)
 
 CURATED = {
     "status": "drafted",
@@ -86,8 +91,9 @@ class ScopeCardsTest(unittest.TestCase):
             self.assertEqual(card["source"]["file"], "lessons/01-Alpha.md")
             self.assertEqual(len(card["source"]["sha256"]), 64)
             g = card["generated"]
-            self.assertEqual(set(g), {"sections", "vocabulary", "worked_examples", "exercises",
-                                      "activities", "figure_kinds", "figures", "tables", "summary"})
+            self.assertEqual(set(g), {"sections", "vocabulary", "phrases", "worked_examples",
+                                      "exercises", "activities", "figure_kinds", "figures",
+                                      "tables", "summary"})
             self.assertIn({"number": "1.1", "title": "First topic"}, g["sections"])
             self.assertIn({"number": None, "title": "සාරාංශය"}, g["sections"])
             self.assertIn("alpha term", g["vocabulary"])
@@ -156,7 +162,104 @@ class ScopeCardsTest(unittest.TestCase):
             self.assertEqual(r.returncode, 2)
             self.assertIn("not published", r.stderr)
 
+    def test_draft_lessons_filter_phrases_grade_wide(self):
+        # phrases depend on every lesson in the grade — a filtered draft must still read
+        # the other lessons for document frequency, so the card is byte-identical
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.assertEqual(self.draft(corpus).returncode, 0)
+            full = (self.cards_dir(corpus) / "01-Alpha.yaml").read_bytes()
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.assertEqual(self.draft(corpus, "--lessons", "1").returncode, 0)
+            self.assertEqual((self.cards_dir(corpus) / "01-Alpha.yaml").read_bytes(), full)
+
+    def test_draft_phrases_bank(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.assertEqual(self.draft(corpus).returncode, 0)
+            g = self.load_card(corpus, "01-Alpha")["generated"]
+            ph = g["phrases"]
+            self.assertIsInstance(ph, list)
+            self.assertLessEqual(len(ph), 40)
+            # emphasis terms — bolds AND data-source-color spans, cleaned
+            self.assertIn("coloured phrase", ph)        # span term, not just bolds
+            self.assertIn("edge case rule", ph)         # trailing '.' stripped
+            self.assertIn("place value", ph)            # standalone digit token removed
+            # dropped: too short, all-digits, keyword-bearing
+            self.assertNotIn("pi", ph)
+            self.assertNotIn("42", ph)
+            self.assertFalse(any(t.startswith(sc.KW_EXAMPLE) for t in ph), ph)
+            self.assertFalse(any(t.startswith(sc.KW_EXAMPLE) for t in g["vocabulary"]))
+            # figure Source-text bullets ARE mined — a term printed only there still counts
+            self.assertIn("figure-only term", ph)
+            self.assertIn("figure-only term", g["vocabulary"])
+            # but a structural-label bullet in Source text is dropped…
+            self.assertFalse(any("recap" in t for t in ph), ph)
+            self.assertFalse(any("recap" in t for t in g["vocabulary"]))
+            # …and a bold inside the figure's Description is never mined
+            self.assertNotIn("desc-only term", ph)
+            self.assertNotIn("desc-only term", g["vocabulary"])
+            # section-title words ≥4 letters, grade document frequency ≤ 50%
+            self.assertIn("mosaic", ph)
+            self.assertIn("patterns", ph)
+            self.assertNotIn("topic", ph)               # in both lessons' section titles
+            # recurring prose words: ≥4× in this lesson, DF ≤ 25% of lessons
+            self.assertIn("zigzag", ph)
+            self.assertNotIn("paired", ph)              # 4× here AND in lesson 2 → DF 2
+            # vocabulary keeps digit tokens; phrases drops them
+            self.assertIn("place value 10", g["vocabulary"])
+            self.assertNotIn("place value 10", ph)
+            g2 = self.load_card(corpus, "02-Beta")["generated"]
+            self.assertEqual(g2["phrases"], ["gamma term", "shared term"])
+
+    def test_draft_phrases_cap_40(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            lesson = corpus / "maths" / "grade-06" / "lessons" / "01-Alpha.md"
+            extra = " ".join(f"**wterm{i:02d} zed**" for i in range(45))
+            lesson.write_text(lesson.read_text(encoding="utf-8") + f"\nMore {extra} here.\n",
+                              encoding="utf-8")
+            self.assertEqual(self.draft(corpus).returncode, 0)
+            ph = self.load_card(corpus, "01-Alpha")["generated"]["phrases"]
+            self.assertEqual(len(ph), 40)
+            self.assertIn("wterm00 zed", ph)            # first-seen order survives the cap
+
     # ---- check ---------------------------------------------------------------
+
+    def test_clean_term_structural_label_word_boundary(self):
+        # keyword as a word — followed by space/digit/end — is a label: dropped
+        self.assertIsNone(sc.clean_term(sc.KW_EXAMPLE + " 3"))
+        self.assertIsNone(sc.clean_term(sc.KW_STEP + " 2"))
+        self.assertIsNone(sc.clean_term(sc.KW_EXAMPLE))
+        # an inflected word that merely starts with the keyword's letters is a term: kept
+        inflected = sc.KW_EXAMPLE + "\u0dd9" + "\u0d9a"      # keyword + vowel sign + consonant
+        self.assertEqual(sc.clean_term(inflected), inflected)
+        self.assertEqual(sc.clean_term("**" + inflected + "**"), inflected)
+
+    def test_enough_letters_sinhala_floor_is_two(self):
+        # a 1-consonant token still drops (the conjunction case)…
+        self.assertIsNone(sc.clean_term("\u0d9a"))
+        # …but a real 2-consonant lesson term is kept — consonants count, signs don't
+        self.assertEqual(sc.clean_term("\u0d9a\u0ddc\u0dc0"), "\u0d9a\u0ddc\u0dc0")
+        # pure-ASCII terms still need 3 letters
+        self.assertIsNone(sc.clean_term("ab"))
+        self.assertEqual(sc.clean_term("abc"), "abc")
+        # section words sit higher: Sinhala ≥3, ASCII ≥4
+        self.assertFalse(sc.enough_letters("\u0d9a\u0ddc\u0dc0", "section"))
+        self.assertTrue(sc.enough_letters("\u0d9a\u0ddc\u0dc0\u0dbd", "section"))
+        self.assertFalse(sc.enough_letters("abc", "section"))
+        self.assertTrue(sc.enough_letters("abcd", "section"))
+
+    def test_letter_count_counts_real_letters_only(self):
+        # Sinhala independent vowels (0D85–0D96) and consonants (0D9A–0DC6) + ASCII letters
+        self.assertEqual(sc.letter_count("\u0d85"), 1)                  # අ independent vowel
+        self.assertEqual(sc.letter_count("\u0d9a\u0dd9"), 1)            # consonant + vowel sign
+        self.assertEqual(sc.letter_count("\u0d9a\u0dca\u0d9a"), 2)      # the virama is not a letter
+        self.assertEqual(sc.letter_count("\u0d9a\u200d\u0d9a"), 2)      # ZWJ is not a letter
+        self.assertEqual(sc.letter_count("\u0dd9\u0dca"), 0)            # signs alone: no letters
+        self.assertEqual(sc.letter_count("abc"), 3)
+        self.assertEqual(sc.letter_count("a\u0d9a1"), 2)
 
     def test_check_passes_on_curated_cards(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -204,6 +307,20 @@ class ScopeCardsTest(unittest.TestCase):
             p = self.cards_dir(corpus) / "01-Alpha.yaml"
             doc = yaml.safe_load(p.read_text(encoding="utf-8"))
             doc["generated"]["figures"] += 1
+            p.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            r = self.check(corpus)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("generated differs", r.stdout)
+            self.assertIn("phrases depend on every lesson in the grade", r.stdout)
+
+    def test_check_fails_hand_edited_phrases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.draft(corpus)
+            self.curate_all(corpus)
+            p = self.cards_dir(corpus) / "01-Alpha.yaml"
+            doc = yaml.safe_load(p.read_text(encoding="utf-8"))
+            doc["generated"]["phrases"].append("bogus phrase")
             p.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8")
             r = self.check(corpus)
             self.assertEqual(r.returncode, 1)
@@ -436,6 +553,8 @@ class BriefTest(unittest.TestCase):
             self.assertIn("1.1 First topic", out)
             self.assertIn("vocabulary", out)
             self.assertIn("alpha term", out)
+            self.assertIn("phrases (", out)
+            self.assertIn("coloured phrase", out)
             self.assertIn("worked examples:", out)
             self.assertIn("නිදසුන 1", out)
             self.assertIn("zebra", out[:20000])

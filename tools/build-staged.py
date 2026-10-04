@@ -20,6 +20,9 @@ content.yaml shape (keys in `lessons:`/`figures:` are local names resolved by th
         lessons: [L07, L09]
         stem: "A cuboid face is 5 cm by 2 cm. Find its area."
         figure: F1                              # optional → question diagram_dsl
+        blueprint_id: "rect-split"              # optional, actor-only — tools/blueprint.py's
+        blueprint_seed: 7                       #   provenance (a pair; never emitted; at most
+                                                #   ONE variant per blueprint per batch)
         approach: "…"                           # only when there are NO parts (whole-question answer)
         final: "…"
         parts:
@@ -49,7 +52,8 @@ two parts labelled `a` under one parent collide on the same sub_question_id, and
 
 Exit 0 wrote the doc · exit 2 refused (duplicate n · duplicate sibling label · unknown lesson/figure
 key · missing figure file · parts deeper than 2 · leaf part without approach+final · a question
-carrying both parts and a whole answer · non-bare label · non-uuid lesson · malformed spec).
+carrying both parts and a whole answer · non-bare label · non-uuid lesson · two questions sharing a
+blueprint_id · malformed spec).
 """
 import argparse
 import json
@@ -64,9 +68,13 @@ UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 BARE_LABEL = re.compile(r"^[0-9A-Za-z]+$")   # "(a)", "a)", "a.", "a :" — anything punctuated is not bare
 
 # `check`/`level` are actor-only keys on leaves — the answers-as-code expression and the R/M/H
-# rubric level (tools/check-answers.py, precritic-lint --rubric). build-staged validates their
-# shape and never emits them into staged.json.
-Q_KEYS = {"n", "lessons", "stem", "figure", "approach", "final", "parts", "check", "level"}
+# rubric level (tools/check-answers.py, precritic-lint --rubric). `blueprint_id`/`blueprint_seed`
+# are actor-only keys on questions — they record which blueprint + draw produced the item
+# (tools/blueprint.py); two questions from one blueprint in a batch are refused. build-staged
+# validates their shape and never emits them into staged.json.
+BP_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")   # the same contract tools/blueprint.py enforces
+Q_KEYS = {"n", "lessons", "stem", "figure", "approach", "final", "parts", "check", "level",
+          "blueprint_id", "blueprint_seed"}
 P_KEYS = {"label", "text", "figure", "approach", "final", "parts", "check", "level"}
 TOP_KEYS = {"id_seed", "lessons", "figures", "questions"}
 
@@ -209,6 +217,15 @@ def build_question(node, index, figures, lessons, base, seed):
     if not isinstance(n, int) or isinstance(n, bool):
         die(f"{where}: 'n' must be an integer question number (got {n!r})")
     qbase = f"q{n}"
+    bp_id, bp_seed = node.get("blueprint_id"), node.get("blueprint_seed")
+    if (bp_id is None) != (bp_seed is None):
+        die(f"{where} (q{n}): blueprint_id and blueprint_seed come as a pair "
+            f"(tools/blueprint.py emits both)")
+    if bp_id is not None:
+        if not isinstance(bp_id, str) or not BP_ID_RE.fullmatch(bp_id):
+            die(f"{where} (q{n}): blueprint_id must match {BP_ID_RE.pattern} (got {bp_id!r})")
+        if not isinstance(bp_seed, int) or isinstance(bp_seed, bool):
+            die(f"{where} (q{n}): blueprint_seed must be an int (got {bp_seed!r})")
     stem = node.get("stem")
     if not isinstance(stem, str) or not stem.strip():
         die(f"{where} (q{n}): 'stem' is required")
@@ -276,11 +293,20 @@ def build(spec_path):
     base = spec_path.resolve().parent
     out = []
     seen = {}
+    seen_blueprints = {}                       # blueprint_id -> (index, question_number)
     for i, node in enumerate(questions):
         q = build_question(node, i, figures, lessons, base, seed.strip())
         if q["question_number"] in seen:
             die(f"duplicate question number n={q['question_number']} (first at {seen[q['question_number']]})")
         seen[q["question_number"]] = f"questions[{i}]"
+        if isinstance(node, dict) and node.get("blueprint_id") is not None:
+            bp_id = node["blueprint_id"]
+            if bp_id in seen_blueprints:
+                j, m = seen_blueprints[bp_id]
+                die(f"questions[{j}] (q{m}) and questions[{i}] (q{q['question_number']}) both "
+                    f"instantiate blueprint '{bp_id}' — owner ruling 2026-10-03: at most one "
+                    f"variant per blueprint per batch")
+            seen_blueprints[bp_id] = (i, q["question_number"])
         out.append(q)
     return {"questions": out}
 

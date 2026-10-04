@@ -26,7 +26,10 @@ Checks:
 
   (c) WARN (heuristic) — a question tags a lesson KEY but none of its parts' text/approach
       (a part-less question: stem + approach + final) contains any of that card's cleaned
-      vocabulary terms or a section-title word of ≥4 characters. A smell, not a proof —
+      `phrases` or `vocabulary` terms or a section-title word — scope-cards' enough_letters
+      floors apply first (a card term needs ≥2 letters when Sinhala-bearing, ≥3 pure ASCII;
+      a section word ≥3 Sinhala / ≥4 ASCII — a tiny conjunction matched every question and
+      silenced the WARN). Cards without `phrases` still work. A smell, not a proof —
       printed as `heuristic` so nobody treats it as a gate.
 
   (d) `--rubric medium-hard` — the plan appendix's set rules, read off the leaf `level:`
@@ -299,16 +302,18 @@ def rubric_medium_hard(questions: list, log) -> tuple[int, int]:
 
 
 def card_terms(card: dict) -> list[str]:
-    """The card's cleaned vocabulary + section-title words of ≥4 characters (check c)."""
+    """The card's cleaned `phrases` ∪ `vocabulary` + section-title words (check c) — each
+    through scope-cards' enough_letters: a term needs ≥2 letters when Sinhala-bearing / ≥3
+    ASCII, a section word ≥3 Sinhala / ≥4 ASCII — anything smaller would match everything."""
     gen = card.get("generated") or {}
     terms = []
-    for v in gen.get("vocabulary") or []:
+    for v in (gen.get("phrases") or []) + (gen.get("vocabulary") or []):
         t = sc.clean(sc.GLYPH_BULLET_RE.sub("", str(v))).strip()
-        if t and not sc.NOISE_RE.fullmatch(t):
+        if t and not sc.NOISE_RE.fullmatch(t) and sc.enough_letters(t):
             terms.append(t)
     for s in gen.get("sections") or []:
         for w in WORD_RE.findall(str(s.get("title") or "")):
-            if len(w) >= 4:
+            if sc.enough_letters(w, "section"):
                 terms.append(w)
     return terms
 
@@ -376,7 +381,7 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
             if terms and not any(sc.probe_norm(t) in hay for t in terms):
                 warns += 1
                 log(f"  WARN Q{q.get('n')} tags {key} ({cards[key]['name']}) but no part's "
-                    f"text/approach uses its vocabulary or section words — heuristic")
+                    f"text/approach uses its vocabulary, phrases or section words — heuristic")
 
     # (d) set rubric — the leaf `level:` keys against the plan appendix's rules
     if args.rubric == "medium-hard":

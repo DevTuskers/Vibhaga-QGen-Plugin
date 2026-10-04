@@ -36,6 +36,7 @@ a stale cache, an unrecorded id, a flag that lives on the row but not the doc.
 | T-QG-5 | a width-invariant rule measured per width can straddle its own threshold — a label row says `ok:false` while the figure verdict says PASS |
 | T-QG-6 | a reader role with SELECT on `auth.*` sees ZERO rows under policy-less RLS — a revocation count reads "revoked" while sessions are live |
 | T-QG-7 | a gate that is never wired into the chain cannot fail it — a `$$…$$` on one line passed build, validate, publish and both visual checks; only the critic's standalone markdown-gate saw it |
+| T-QG-8 | two variants of one blueprint in a batch read as ONE question to a student — build-staged refuses a second question carrying a batch-mate's `blueprint_id` (across sessions variants count as distinct) |
 
 ---
 ## T4 — A `204` from `/auth/v1/logout` is not proof of revocation
@@ -827,3 +828,16 @@ passes: `$$` and `$$` on their OWN lines around the math. A gate that lives only
 hands is a story for TRAPS, not a safeguard.
 
 *Source: this plugin — W9 run, 2026-10-03.*
+
+## T-QG-8 — Two variants of one blueprint read as one question to a student
+
+**Looked true:** a blueprint is a parameterised question — instantiate it twice with different
+seeds and the batch has two different questions.
+**Actually:** same stem, same parts, same figure kind — only the numbers differ. On the page a
+student sees the same question twice. (Owner ruling 2026-10-03.)
+**The check:** `build-staged` refuses a batch where two questions carry the same `blueprint_id`
+— at most one variant per blueprint per batch. Instantiate the second variant in a LATER run:
+across sessions variants count as distinct, so `precritic-lint --existing` may still WARN a
+fresh variant against a row from another session — expected, read the WARN and move on.
+
+*Source: this plugin — W10d, owner ruling 2026-10-03.*

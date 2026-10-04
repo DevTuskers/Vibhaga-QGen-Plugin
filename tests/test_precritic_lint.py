@@ -31,6 +31,7 @@ generated:
     - {number: "1.1", title: "Naming fractions"}
     - {number: "1.2", title: "Equivalent fractions"}
   vocabulary: ["fraction", "numerator", "denominator"]
+  phrases: ["equal parts", "of", "unit fraction"]
   worked_examples: []
   exercises: []
   activities: []
@@ -262,6 +263,29 @@ class PrecriticLintTest(unittest.TestCase):
             run = make_run(tmp, stem="Colour the numerator.", approach=None, final="2")
             r = lint(run, tmp)
             self.assertNotIn("WARN Q1 tags", r.stdout)   # stem carries "numerator"
+
+    def test_phrase_term_in_a_part_is_quiet(self):
+        # phrases (not just vocabulary) count toward the card-terms match
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run(tmp, parts=[
+                {"label": "a", "text": "Split the strip into equal parts.",
+                 "approach": "x", "final": "4"},
+            ])
+            r = lint(run, tmp)
+            self.assertNotIn("WARN Q1 tags", r.stdout)
+
+    def test_short_phrase_term_does_not_silence_the_warn(self):
+        # 'of' is on the phrases list but under 3 letter codepoints — dropped, so a
+        # question whose only card-word is 'of' still warns
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run(tmp, parts=[
+                {"label": "a", "text": "Count the cells of the strip.",
+                 "approach": "x", "final": "5"},
+            ])
+            r = lint(run, tmp)
+            self.assertIn("WARN Q1 tags", r.stdout)
 
     # ---- (d) --rubric medium-hard reads the leaf `level:` keys ---------------
     def test_rubric_passes_a_clean_set(self):

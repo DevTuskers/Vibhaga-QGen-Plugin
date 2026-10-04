@@ -3,8 +3,9 @@ name: scope-cards
 description: >-
   Draft and curate the per-lesson SCOPE CARDS that live in the private Vibhaga-Maths-Corpus at
   `maths/grade-NN/scope-cards/<NN>-<Slug>.yaml`. A card is the machine-checkable statement of what a
-  published lesson teaches — sections, vocabulary, worked examples, exercises, activities, figures,
-  summary — plus a hand-curated block saying what it does NOT teach, its prerequisites and its
+  published lesson teaches — sections, vocabulary, a mined `phrases` term bank, worked examples,
+  exercises, activities, figures, summary — plus a hand-curated block saying what it does NOT teach,
+  its prerequisites and its
   difficulty hooks. The `generate` skill reads the card before it reads the lesson; a grade or lesson
   with no passing cards is refused. Use when asked to make, update or check scope cards for a grade
   or lesson, or before generating questions for a grade that has none. Card content never enters
@@ -35,6 +36,11 @@ curated:            # agent-written — `draft` preserves it, `check` verifies i
   prerequisites: [{lesson, why}]
   difficulty_hooks: [{level: M|H, hook}]
 ```
+
+`generated` also carries `phrases` — the lesson's mined term bank (emphasis terms, section-title
+words and recurring words, filtered by document frequency across the whole grade): mined by `draft`,
+never curated, and read by `precritic-lint.py`'s card-vocabulary heuristic. Because it depends on
+every lesson in the grade, a `draft --lessons <subset>` still parses all included lessons.
 
 ## Commands (run from the plugin root)
 
@@ -88,6 +94,7 @@ wrong hook count or level.
 `generate` §2 step 1 reads the card first:
 
 - **scope statement** = `sections` + `summary` + `vocabulary` + `not_taught`;
+- **the lesson's own language** = `phrases` — the mined term bank stems should speak;
 - **don't-copy list** = `worked_examples` + `exercises` (headings, anchors, item excerpts);
 - **difficulty rubric anchors** = `difficulty_hooks`, read against the R/M/H rubric in the plan
   appendix linked above;
