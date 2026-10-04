@@ -2236,6 +2236,106 @@ class BarChartHorizontal(unittest.TestCase):
         self.assertEqual(b1.claims, b2.claims)
 
 
+class SymmetryGrid(unittest.TestCase):
+    """W13 — half/full mirror figures on squared paper (G7 L01)."""
+
+    STEM = "Half of a shape is drawn on a grid of 1 cm squares."
+    HALF = [[4, 0], [1, 1], [1, 4], [3, 5], [4, 5]]
+    VAX = {"through": [[4, 0], [4, 5]]}
+
+    def _build(self, **kw):
+        kw.setdefault("cell", 1)
+        kw.setdefault("half", self.HALF)
+        kw.setdefault("axis", self.VAX)
+        return vt.build_symmetry_grid(figure_id="t1", stem=self.STEM, **kw)
+
+    def test_half_mode_draws_only_the_half(self):
+        b = self._build()
+        outline = [e for e in b.doc["elements"] if re.fullmatch(r"[A-Z]{2}", e["id"])]
+        self.assertEqual(len(outline), 4)                 # open path: 5 points, 4 sides
+        self.assertIn("is the grid point (7,1)", b.claims)  # B's image, by coordinate
+        self.assertIn("other half is to be completed", b.claims)
+        self.assertRegex(b.claims, r"paint [A-Z]{2} dashed")
+        self.assertRegex(b.claims, r"on A [A-Z]{2}")
+        self.assertIn("derive 3 + 3 = 6", b.claims)
+        self.assertIn("= 25 |", b.claims)                 # the completed figure's area
+        r = audit(b.claims, tempfile.mkdtemp())
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_full_mode_draws_the_closed_figure(self):
+        b = self._build(show="full")
+        outline = [e for e in b.doc["elements"] if re.fullmatch(r"[A-Z]{2}", e["id"])]
+        self.assertEqual(len(outline), 8)                 # 5 + 3 images, closed
+        self.assertIn('"B and H are mirror images in the dashed line"', b.claims)
+        r = audit(b.claims, tempfile.mkdtemp())
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_every_axis_kind_builds_and_reflects(self):
+        cases = [
+            ({"through": [[0, 3], [6, 3]]}, [[0, 3], [1, 1], [4, 1], [5, 3]]),   # horizontal
+            ({"through": [[0, 0], [4, 4]]}, [[0, 0], [4, 1], [4, 4]]),          # +45°
+            ({"through": [[0, 6], [6, 0]]}, [[1, 5], [1, 1], [5, 1]]),          # −45°
+        ]
+        for ax, half in cases:
+            for show in ("half", "full"):
+                with self.subTest(axis=ax, show=show):
+                    b = self._build(half=half, axis=ax, show=show, cell_px=40)
+                    r = audit(b.claims, tempfile.mkdtemp())
+                    self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_rectilinear_full_figure_gets_a_perimeter(self):
+        b = self._build(half=[[3, 0], [1, 0], [1, 4], [3, 4]],
+                        axis={"through": [[3, 0], [3, 4]]}, show="full")
+        self.assertIn("= 16 |", b.claims)                 # 2+4+2+2+4+2 — straight ends kept
+
+    def test_letter_fallback_goes_accent_and_is_claimed(self):
+        b = self._build(vertex_labels=True)               # 30 px cells: no clear pocket
+        letters = [e for e in b.doc["elements"] if e["id"].startswith("lbl")]
+        self.assertEqual(len(letters), 5)
+        self.assertTrue(all(e.get("color") == vt._CP_ACCENT for e in letters))
+        self.assertIn("accent colour", b.claims)
+        roomy = self._build(half=[[0, 0], [4, 1], [4, 4]], axis={"through": [[0, 0], [4, 4]]},
+                            show="full", vertex_labels=True, cell_px=40)
+        self.assertNotIn("accent colour", roomy.claims)   # clean seats → default ink
+        for b_ in (b, roomy):
+            r = audit(b_.claims, tempfile.mkdtemp())
+            self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_refusals(self):
+        bad = [
+            (dict(show="both"), "show must be"),
+            (dict(half=[[4, 0], [4, 5]]), "at least 3 points"),
+            (dict(half=[[3, 0], [1, 1], [4, 5]]), "must lie on the axis"),
+            (dict(half=[[4, 0], [1, 1], [6, 3], [4, 5]]), "strictly on ONE side"),
+            (dict(half=[[4, 0], [1, 1], [4, 3], [1, 4], [4, 5]]), "strictly on ONE side"),
+            (dict(half=[[4, 0], [1.5, 1], [4, 5]]), "off the grid lattice"),
+            (dict(half=[[4, 0], [1, 1], [1, 1], [4, 5]]), "zero-length"),
+            (dict(half=[[4, 0], [1, 4], [1, 1], [3, 4], [4, 5]]), "crosses itself"),
+            (dict(half=[[1, 0], [0, 2], [1, 4]], axis={"through": [[1, 0], [1, 4]]},
+                  cols=1), "does not fit"),
+            (dict(axis={"through": [[4, 0], [5, 2]]}), "±45°"),
+            (dict(axis={"through": [[4, 0], [4, 0]]}), "distinct"),
+            (dict(cell=2), "cell"),
+        ]
+        for kw, msg in bad:
+            with self.subTest(kw=kw):
+                with self.assertRaises(vt.TemplateError) as cm:
+                    self._build(**kw)
+                self.assertIn(msg, str(cm.exception))
+
+    def test_image_off_the_grid_refuses(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._build(half=[[1, 0], [3, 2], [1, 4]], axis={"through": [[1, 0], [1, 4]]})
+        self.assertIn("outside the grid", str(cm.exception))
+
+    def test_english_only_a11y_exempt(self):
+        b = self._build(medium="sinhala", title="අ — synthetic a11y title",
+                        description="අ — synthetic a11y description, not drawn")
+        self.assertIn("අ", b.doc["a11y"]["title"])
+        self.assertFalse(any(vt.SINHALA.search(str(e.get("value", "")))
+                             for e in b.doc["elements"]))
+
+
 class ByteIdentity(unittest.TestCase):
     """The floating-label machinery must not change any existing template's bytes —
     sha256 over each self-test spec's three emitted files, captured on origin/main."""

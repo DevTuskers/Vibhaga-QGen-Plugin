@@ -4398,12 +4398,217 @@ def _bar_chart_horizontal(*, figure_id, stem, ask, title, description, medium,
                   medium=medium)
 
 
+# ────────────────────────────────────────────────────────────────────────────────
+# 19. symmetry_grid — half (or all) of a mirror-symmetric figure on squared paper
+# ────────────────────────────────────────────────────────────────────────────────
+def _orient(a: XY, b: XY, c: XY) -> float:
+    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+
+def _segs_touch(p: XY, q: XY, r: XY, s: XY) -> bool:
+    """True when closed segments pq and rs share any point (lattice coords — exact)."""
+    d1, d2, d3, d4 = _orient(r, s, p), _orient(r, s, q), _orient(p, q, r), _orient(p, q, s)
+    if ((d1 > 0) != (d2 > 0)) and d1 and d2 and ((d3 > 0) != (d4 > 0)) and d3 and d4:
+        return True
+
+    def on(a, b, c):           # c on segment ab, given collinear
+        return min(a[0], b[0]) <= c[0] <= max(a[0], b[0]) and \
+            min(a[1], b[1]) <= c[1] <= max(a[1], b[1])
+    return (d1 == 0 and on(r, s, p)) or (d2 == 0 and on(r, s, q)) or \
+        (d3 == 0 and on(p, q, r)) or (d4 == 0 and on(p, q, s))
+
+
+def build_symmetry_grid(*, figure_id, stem, ask=None, title=None, description=None,
+                        medium="english", cell, half, axis, show="half", cols=None,
+                        rows=None, cell_px=30.0, vertex_labels=False):
+    """`half` is an OPEN path of lattice points whose first and last points lie ON the axis;
+    the template reflects it to build the closed symmetric figure, so the figure is
+    symmetric by construction. `show="half"` draws only `half` (complete-the-figure);
+    `show="full"` draws the whole closed figure. Sides may run at any slope between lattice
+    points."""
+    vc.reset_ids()
+    kind = "symmetry_grid"
+    require_stem(stem, cell=cell)
+    if show not in ("half", "full"):
+        raise TemplateError(f'{kind}: show must be "half" or "full" (got {show!r})')
+    pts_h = [tuple(map(float, p)) for p in half]
+    if len(pts_h) < 3:
+        raise TemplateError(f"{kind}: `half` needs at least 3 points (two ends on the axis "
+                            "and at least one off it)")
+    for p in pts_h:
+        if abs(p[0] - round(p[0])) > 1e-9 or abs(p[1] - round(p[1])) > 1e-9:
+            raise TemplateError(f"{kind}: point {p} is off the grid lattice")
+        if p[0] < 0 or p[1] < 0:
+            raise TemplateError(f"{kind}: point {p} is outside the grid (coordinates ≥ 0)")
+    # a provisional (huge) grid only to get the reflection; the real one is clipped below
+    (t1_, t2_), _seg, reflect = _lattice_axis(kind, axis, 10 ** 6, 10 ** 6)
+    on_axis = lambda p: max(abs(a - b) for a, b in zip(reflect(p), p)) < 1e-9   # noqa: E731
+    if not (on_axis(pts_h[0]) and on_axis(pts_h[-1])):
+        raise TemplateError(f"{kind}: the first and last points of `half` must lie on the "
+                            "axis — the half figure starts and ends on the mirror line")
+    side = {(_orient(t1_, t2_, p) > 0) for p in pts_h[1:-1]}
+    if any(on_axis(p) for p in pts_h[1:-1]) or len(side) != 1:
+        raise TemplateError(f"{kind}: every point of `half` between its two ends must lie "
+                            "strictly on ONE side of the axis")
+    for a, b in zip(pts_h, pts_h[1:]):
+        if a == b:
+            raise TemplateError(f"{kind}: repeated point {a} — a zero-length side")
+    images = [reflect(p) for p in reversed(pts_h[1:-1])]
+    ring_g = pts_h + images
+    for p in images:
+        if p[0] < -1e-9 or p[1] < -1e-9:
+            raise TemplateError(f"{kind}: the mirror image {p} falls outside the grid — "
+                                "move the figure or the axis")
+    nr = len(ring_g)
+    for i in range(nr):
+        for j in range(i + 1, nr):
+            if j == i + 1 or (i == 0 and j == nr - 1):
+                continue
+            if _segs_touch(ring_g[i], ring_g[(i + 1) % nr], ring_g[j], ring_g[(j + 1) % nr]):
+                raise TemplateError(f"{kind}: the completed figure crosses itself — "
+                                    "re-route `half`")
+    ext = ring_g + [t1_, t2_]
+    cols = cols if cols is not None else int(round(max(x for x, _ in ext)))
+    rows = rows if rows is not None else int(round(max(y for _, y in ext)))
+    if any(x > cols + 1e-9 or y > rows + 1e-9 for x, y in ring_g):
+        raise TemplateError(f"{kind}: the completed figure does not fit a {cols}×{rows} grid")
+    (ax1, ay1), (ax2, ay2) = t1_, t2_
+    _thr, (s0, s1), _r = _lattice_axis(kind, axis, cols, rows)
+    k = len(pts_h)
+    if (k + len(images) if show == "full" else k) > 24:
+        raise TemplateError(f"{kind}: too many vertices to name")
+    names = list("ABCDEFGHIJKLMNOPQRSTUVWX"[: k + len(images)])
+    hn, im_n = names[:k], names[k:]
+    drawn_n = names if show == "full" else hn
+    ring = [(n if n in drawn_n else None, (x * cell_px, y * cell_px))
+            for n, (x, y) in zip(names, ring_g)]
+    px = {n: v for n, v in ring if n}
+    elements: list[dict] = []
+    for c in range(cols + 1):
+        elements.append({"id": f"gv{c}", "type": "line",
+                         "points": [[c * cell_px, 0], [c * cell_px, rows * cell_px]],
+                         "stroke": {"color": "#d1d5db", "width": 1}})
+    for r in range(rows + 1):
+        elements.append({"id": f"gh{r}", "type": "line",
+                         "points": [[0, r * cell_px], [cols * cell_px, r * cell_px]],
+                         "stroke": {"color": "#d1d5db", "width": 1}})
+    edges = list(zip(names, names[1:] + names[:1])) if show == "full" else \
+        list(zip(hn, hn[1:]))
+    for a, b in edges:
+        elements.append(vc.line(px[a], px[b], id=f"{a}{b}", width=2.5))
+    axis_px = (s0[0] * cell_px, s0[1] * cell_px), (s1[0] * cell_px, s1[1] * cell_px)
+    elements.append(vc.line(axis_px[0], axis_px[1], dashed=True, id="axis"))
+    fell_back = False
+    if vertex_labels:
+        want = [i for i, (n, _v) in enumerate(ring) if n]
+        try:
+            seats = _seat_vertex_labels(kind, ring, want, elements, cols, cell_px,
+                                        straight_ok=True)
+        except TemplateError:
+            # the 2026-10-04 ruling: letters may sit over the faint ruling lines
+            seats = _seat_vertex_labels(kind, ring, want, elements, cols, cell_px,
+                                        straight_ok=True, exempt_grid=True,
+                                        hint="even over the ruling lines — use a larger "
+                                             "cell_px or drop vertex_labels")
+            fell_back = True
+        for n, cx_, cy_, sz in seats:
+            el = vc.text((cx_, cy_), n, id=f"lbl{n}", size=sz)
+            if fell_back:
+                el["color"] = _CP_ACCENT
+            elements.append(el)
+    used = set(names)
+    gx, gy = _unused_letters(used, 2)
+    axn = _unused_letters(used | {gx, gy}, 2)
+    anchors = dict(px)
+    anchors[gx], anchors[gy] = (0.0, 0.0), (cols * cell_px, rows * cell_px)
+    anchors[axn[0]], anchors[axn[1]] = axis_px
+    axis_name = "".join(axn)
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    add(f"grid {rows} by {cols} over {gx} {gy}", "inferred",
+        f"a {rows}x{cols} grid of {cell:g}-unit squares — the stem's {cell:g}")
+    add(f"paint {axis_name} dashed", "inferred",
+        f"the mirror line through ({ax1:g},{ay1:g}) and ({ax2:g},{ay2:g}) drawn dashed")
+    add(f'describe "a dashed mirror line through grid points ({ax1:g},{ay1:g}) and '
+        f'({ax2:g},{ay2:g})"', "inferred", "the axis of symmetry")
+    if show == "half":
+        add('describe "half of a symmetric figure is drawn; the other half is to be '
+            'completed across the dashed line"', "inferred", "complete-the-figure mode")
+    for n in (hn[0], hn[-1]):
+        add(f"on {n} {axis_name}", "inferred", f"{n} is an end of the half figure, on the axis")
+    vertical, horizontal = abs(ax2 - ax1) < 1e-9, abs(ay2 - ay1) < 1e-9
+    for i in range(1, k - 1):
+        p, q = pts_h[i], reflect(pts_h[i])
+        qn = im_n[len(images) - i]
+        if show == "full":
+            add(f'describe "{hn[i]} and {qn} are mirror images in the dashed line"',
+                "inferred", "a mirror pair — reflect() of the half point")
+        else:
+            add(f'describe "the mirror image of {hn[i]} in the dashed line is the grid point '
+                f'({q[0]:g},{q[1]:g})"', "inferred", "a mirror pair — reflect() of the half point")
+        if vertical or horizontal:
+            d = abs(p[0] - ax1) if vertical else abs(p[1] - ay1)
+            add(f"derive {d:g} + {d:g} = {2 * d:g}", "inferred",
+                f"{hn[i]} is {d:g} square{'s' if d != 1 else ''} from the axis, so it and "
+                f"its image are {2 * d:g} squares apart " + ("across" if vertical else "up and down"))
+        else:
+            d = abs(p[0] - q[0])
+            add(f"derive {max(p[0], q[0]):g} - {min(p[0], q[0]):g} = {d:g}", "inferred",
+                f"{hn[i]} and its image are {d:g} square{'s' if d != 1 else ''} apart "
+                f"across and {d:g} up or down")
+    fwd = sum(x * ring_g[(i + 1) % nr][1] for i, (x, _y) in enumerate(ring_g))
+    rev = sum(ring_g[(i + 1) % nr][0] * y for i, (_x, y) in enumerate(ring_g))
+    s1_ = " + ".join(f"{x:g}*{ring_g[(i + 1) % nr][1]:g}" for i, (x, _y) in enumerate(ring_g))
+    s2_ = " + ".join(f"{ring_g[(i + 1) % nr][0]:g}*{y:g}" for i, (_x, y) in enumerate(ring_g))
+    big, small = (s1_, s2_) if fwd >= rev else (s2_, s1_)
+    add(f"derive ( {big} - ( {small} ) ) / 2 = {abs(fwd - rev) / 2:g}", "inferred",
+        "shoelace over the completed figure's grid vertices — its area in squares")
+    if all(abs(ring_g[i][0] - ring_g[(i + 1) % nr][0]) < 1e-9
+           or abs(ring_g[i][1] - ring_g[(i + 1) % nr][1]) < 1e-9 for i in range(nr)):
+        per = [vc.dist(ring_g[i], ring_g[(i + 1) % nr]) for i in range(nr)]
+        add(f"derive {' + '.join(f'{p:g}' for p in per)} = {sum(per):g}", "inferred",
+            "the completed figure's sides counted in grid units — its perimeter")
+    if vertex_labels:
+        for n in drawn_n:
+            add(f'label "{n}" names {n}', "inferred", "vertex label")
+        if fell_back:
+            add('describe "vertex letters sit over the faint grid lines and are drawn in the '
+                'accent colour for legibility"', "inferred",
+                "2026-10-04 ruling — the ruling stops being an obstacle once no clear "
+                "pocket seats a letter; the outline and the axis still do")
+    add("none tickMark parallelMark angleMark arrow shaded", "inferred",
+        "plain outline strokes on a light grid; the mirror line is dashed (claimed)")
+    elements_n = len(elements)
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=anchors, points=list(drawn_n) + [gx, gy] + axn,
+                  segments=[f"{a}{b}" for a, b in edges] + [axis_name],
+                  claims=claims, ask=ask,
+                  title=title or ("Half of a symmetric figure on squared paper" if show == "half"
+                                  else "A symmetric figure on squared paper"),
+                  description=description or (
+                      (f"Half of a figure drawn on a grid of {cell:g}-unit squares, with a "
+                       "dashed mirror line; the other half is to be completed."
+                       if show == "half" else
+                       f"A closed figure drawn on a grid of {cell:g}-unit squares, "
+                       "symmetric about the dashed line.")),
+                  scale="to scale — vertices sit on the grid lattice, one square is one unit",
+                  budget=elements_n if elements_n > 32 else None,
+                  departures=([f"{elements_n} elements — the ruling lines of the squared "
+                               "paper"] if elements_n > 32 else None),
+                  medium=medium)
+
+
 BUILDERS = {fn.__name__[6:]: fn for fn in
             (build_grid_polygon, build_shaded_grid, build_rays_from_point, build_number_line,
              build_pictograph, build_rectangle_points, build_house_pentagon, build_cuboid,
              build_dot_pattern, build_circle_points, build_two_circles_points,
              build_circles_in_circle, build_abacus, build_sorting_rings, build_shape_row,
-             build_coordinate_plane, build_parallel_lines, build_bar_chart)}
+             build_coordinate_plane, build_parallel_lines, build_bar_chart,
+             build_symmetry_grid)}
 
 CATALOGUE = """
 template            stem-checked numbers                          inputs
@@ -4425,6 +4630,7 @@ shape_row           none — shape kinds are figure content         shapes=[(let
 coordinate_plane    each point's x,y when coords="stem"           x_max,y_max≤10, points={A:(x,y)}, join, closed, sym_axis={"x"|"y":k}, guides, grid, origin_label — grid+letters: clear pockets first; else letters sit over the faint ruling in accent blue (all ≤10 build)
 parallel_lines      distance.value                                lines=["AB","CD"], parallel=[[…]], direction, crossing="PQ", distance={"between","value","unit"}
 bar_chart           step; every value when values="stem"          categories 2–8, series 1–3 {"name","values"}, step, v_max, value_title, category_title, gridlines, orientation="v"|"h" (h = bars run right, categories stack up the y axis; claims read on OX)
+symmetry_grid       cell                                          half=[(x,y)…] open path, both ends ON the axis, axis={"through":[[x,y],[x,y]]} vertical/horizontal/±45°, show="half"|"full", cols/rows?, cell_px, vertex_labels (falls back to accent letters over the ruling)
 """.strip()
 
 SELF_TEST = [
@@ -4538,6 +4744,18 @@ SELF_TEST = [
      "series": [{"name": "", "values": [4, 7, 5, 8]}],
      "step": 2, "v_max": 10, "value_title": "Books", "category_title": "Month",
      "orientation": "h"},
+    {"template": "symmetry_grid", "figure_id": "selftest-symhalf",
+     "stem": "Half of a shape is drawn on a grid of 1 cm squares. The dashed line is its "
+             "axis of symmetry. (a) Complete the shape. (b) Find its area.",
+     "ask": [["a", "the completed shape"], ["b", "its area"]],
+     "cell": 1, "half": [[4, 0], [1, 1], [1, 4], [3, 5], [4, 5]],
+     "axis": {"through": [[4, 0], [4, 5]]}, "show": "half", "vertex_labels": True},
+    {"template": "symmetry_grid", "figure_id": "selftest-symfull",
+     "stem": "A kite is drawn on a grid of 1 cm squares. (a) Show that the dashed line is "
+             "an axis of symmetry.",
+     "ask": [["a", "the mirror pairs"]],
+     "cell": 1, "half": [[0, 0], [4, 1], [4, 4]], "axis": {"through": [[0, 0], [4, 4]]},
+     "show": "full", "vertex_labels": True, "cell_px": 40},
 ]
 
 

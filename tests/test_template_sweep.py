@@ -1,4 +1,4 @@
-"""tests/test_template_sweep.py — W9 item F: a parameter sweep over the eighteen figure templates.
+"""tests/test_template_sweep.py — W9 item F: a parameter sweep over the figure templates.
 
 The point is coverage, not the golden path: each builder is run across a parameter grid with
 synthetic stems that state the numbers it needs, and the sweep asserts:
@@ -313,6 +313,24 @@ def case_grid() -> list[dict]:
     cases.append(C("parallel_lines", stem=pl_stem, lines=["AB", "CD"],
                    parallel=[["AB", "CD"]],
                    distance={"between": ["AB", "CD"], "value": 3, "unit": "c$m"}))
+    # symmetry_grid (W13) — 4 axis kinds × 2 shapes × half/full × labels × cell sizes
+    sg_stem = "Half of a shape is drawn on a grid of 1 cm squares. (a) Complete it."
+    sg = [
+        ({"through": [[4, 0], [4, 5]]}, [[4, 0], [1, 1], [1, 4], [3, 5], [4, 5]]),
+        ({"through": [[3, 0], [3, 4]]}, [[3, 0], [1, 0], [1, 4], [3, 4]]),
+        ({"through": [[0, 3], [6, 3]]}, [[0, 3], [1, 1], [4, 1], [5, 3]]),
+        ({"through": [[0, 2], [5, 2]]}, [[1, 2], [1, 0], [4, 0], [4, 2]]),
+        ({"through": [[0, 0], [4, 4]]}, [[0, 0], [4, 1], [4, 4]]),
+        ({"through": [[0, 0], [5, 5]]}, [[1, 1], [3, 0], [5, 2], [4, 4]]),
+        ({"through": [[0, 6], [6, 0]]}, [[1, 5], [1, 1], [5, 1]]),
+        ({"through": [[0, 5], [5, 0]]}, [[0, 5], [0, 2], [2, 0], [5, 0]]),
+    ]
+    for ax, half in sg:
+        for show in ("half", "full"):
+            for vl in (False, True):
+                for cp in (30.0, 45.0):
+                    cases.append(C("symmetry_grid", stem=sg_stem, cell=1, half=half,
+                                   axis=ax, show=show, vertex_labels=vl, cell_px=cp))
     return cases
 
 
