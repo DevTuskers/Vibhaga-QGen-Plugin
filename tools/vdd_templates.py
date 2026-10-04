@@ -1106,6 +1106,159 @@ def membership_claims(name: str, point: XY, circles: dict[str, tuple[XY, float]]
              "inferred", "the point's drawn position")]
 
 
+def _lattice_axis(kind: str, axis, cols: int, rows: int):
+    """Validate a mirror axis `{"through": [[x1,y1],[x2,y2]]}` on a cols×rows grid (grid
+    units): lattice through-points, distinct, vertical/horizontal/±45° only (the slopes that
+    map the lattice onto itself), and crossing the grid. Returns `(through, seg, reflect)` —
+    the two through-points, the axis clipped to the grid rect (grid units) and the
+    reflection `reflect((x, y)) -> (x', y')` in that line."""
+    through = axis.get("through") if isinstance(axis, dict) else None
+    if not (isinstance(through, (list, tuple)) and len(through) == 2):
+        raise TemplateError(
+            f'{kind}: axis must be {{"through": [[x1,y1],[x2,y2]]}}')
+    (ax1, ay1), (ax2, ay2) = (tuple(map(float, p)) for p in through)
+    for p in ((ax1, ay1), (ax2, ay2)):
+        if abs(p[0] - round(p[0])) > 1e-9 or abs(p[1] - round(p[1])) > 1e-9:
+            raise TemplateError(
+                f"{kind}: axis through-point {p} is off the grid lattice")
+    adx, ady = ax2 - ax1, ay2 - ay1
+    if math.hypot(adx, ady) < 1e-9:
+        raise TemplateError(f"{kind}: axis through-points must be distinct")
+    if not (abs(adx) < 1e-9 or abs(ady) < 1e-9 or abs(abs(adx) - abs(ady)) < 1e-9):
+        raise TemplateError(
+            f"{kind}: an axis must run vertical, horizontal or at ±45° — "
+            "other slopes do not map the lattice onto itself")
+    # slab-clip the infinite line to the grid rect
+    t0, t1 = -math.inf, math.inf
+    for d_, p_, extent in ((adx, ax1, float(cols)), (ady, ay1, float(rows))):
+        if abs(d_) < 1e-9:
+            if not 0.0 <= p_ <= extent:
+                raise TemplateError(f"{kind}: the axis does not cross the grid")
+            continue
+        ta, tb = -p_ / d_, (extent - p_) / d_
+        t0, t1 = max(t0, min(ta, tb)), min(t1, max(ta, tb))
+    if not t1 - t0 > 1e-9:
+        raise TemplateError(f"{kind}: the axis does not cross the grid")
+
+    def reflect(p):
+        x, y = p
+        if abs(adx) < 1e-9:
+            return (2.0 * ax1 - x, y)
+        if abs(ady) < 1e-9:
+            return (x, 2.0 * ay1 - y)
+        if adx * ady > 0:          # slope +1: (a,b) rel the line maps to (b,a)
+            return (ax1 + (y - ay1), ay1 + (x - ax1))
+        return (ax1 - (y - ay1), ay1 - (x - ax1))   # slope −1: (a,b) maps to (−b,−a)
+
+    seg = ((ax1 + t0 * adx, ay1 + t0 * ady), (ax1 + t1 * adx, ay1 + t1 * ady))
+    return ((ax1, ay1), (ax2, ay2)), seg, reflect
+
+
+def _seat_vertex_labels(kind: str, ring: list[tuple[str | None, XY]], label: list[int],
+                        elements: list[dict], cols: int, cell_px: float, *,
+                        exempt_grid: bool = False, straight_ok: bool = False,
+                        hint: str = "drop vertex_labels for this shape"):
+    """Seat a letter OUTSIDE the closed polygon `ring` (canvas units, cyclic) at each index
+    in `label` — the exterior wedge: out of the grid for a boundary corner, into the notch
+    for a reflex one. Grid lines thread the interior AND a notch, so an inside-grid seat
+    must fit a cell pocket between two ruling lines; when the pocket is too tight for a
+    full-size capital the font ladder steps down (text elements honour fontSize — point
+    labels do not). The clearances are the same rendered-px rules finish() enforces, in
+    canvas units at this canvas's scale, so a seated label survives the pre-flight; the hug
+    bound keeps the box within 1.5·fontSize of painted ink (visual-metrics' target rule).
+    `exempt_grid` drops the faint gv*/gh* ruling lines from the obstacle set (the
+    2026-10-04 ruling's fallback pass — they still count for the hug bound). A `straight_ok`
+    vertex (two collinear edges — a half-figure's end on the axis) labels along the outward
+    normal. Returns [(name, cx, cy, size)] or raises TemplateError."""
+    poly_px = [v for _n, v in ring]
+    nv_ = len(ring)
+    signed = sum(poly_px[i][0] * poly_px[(i + 1) % nv_][1]
+                 - poly_px[(i + 1) % nv_][0] * poly_px[i][1] for i in range(nv_))
+    strokes_all = stroke_segments(elements)
+    strokes_now = (stroke_segments([el for el in elements if not _grid_line(el)])
+                   if exempt_grid else strokes_all)
+    span_est = cols * cell_px + 2.0 * (44.0 + FS * 0.62 / 2 + MARGIN)
+    s_est = min(1.0, PLATE_INNER / (span_est + 60.0))
+    need_stroke = (STROKE_PX + SLACK_STROKE) / s_est
+    need_label = 4.0 / s_est
+    need_own = OWN_FIXED_PX / s_est
+    compass = [(round(x / math.hypot(x, y), 6), round(y / math.hypot(x, y), 6))
+               for x, y in
+               ((1, -1), (-1, -1), (1, 1), (-1, 1), (1, 0), (-1, 0), (0, -1), (0, 1))]
+    seated: list = []
+    out = []
+    named = [(n, v) for n, v in ring if n]
+    for i in label:
+        n, v = ring[i]
+        pv, nv = ring[i - 1][1], ring[(i + 1) % nv_][1]
+        e1 = vc.unit(v, pv)
+        e2 = vc.unit(v, nv)
+        bx, by = e1[0] + e2[0], e1[1] + e2[1]
+        if math.hypot(bx, by) < 1e-9:
+            if not straight_ok:
+                raise TemplateError(f"{kind}: vertex {n} is straight, not a corner — "
+                                    "drop the doubled vertex")
+            bx, by = -e1[1], e1[0]                      # a normal; flip it outward below
+            if _pt_in_poly((v[0] + bx * 4.0, v[1] + by * 4.0), poly_px):
+                bx, by = -bx, -by
+        else:
+            bx, by = bx / math.hypot(bx, by), by / math.hypot(bx, by)
+            # turn sign vs the polygon's signed area tells convex from reflex: the bisector
+            # already points at the labelable wedge — the notch for a reflex corner, the
+            # interior for a convex one — so convex labels go the opposite way
+            cross = (v[0] - pv[0]) * (nv[1] - v[1]) - (v[1] - pv[1]) * (nv[0] - v[0])
+            if cross * signed > 0:                      # convex: opposite the interior
+                bx, by = -bx, -by
+        dirs = []
+        for off in (0.0, -15.0, 15.0, -30.0, 30.0, -45.0, 45.0, -60.0, 60.0,
+                    -75.0, 75.0):
+            dirs.append((round(bx * math.cos(math.radians(off))
+                               - by * math.sin(math.radians(off)), 6),
+                         round(bx * math.sin(math.radians(off))
+                               + by * math.cos(math.radians(off)), 6)))
+        dirs += [d for d in compass if d not in dirs]
+        rivals = [rv for m, rv in named if m != n]
+        seat = None
+        for size in (FS,) + CP_LABEL_SIZES:
+            w_ = _label_width(n, size)
+            up_, dn_ = MID_UP * size, MID_DOWN * size
+            hug = 1.5 * size - 2.0
+            r_hi = max(42.0, 1.1 * cell_px)   # a notch seat can sit a cell in
+            for dx_, dy_ in dirs:
+                for r_ in _arange(16.0, r_hi, 2.0):
+                    cx_, cy_ = v[0] + dx_ * r_, v[1] + dy_ * r_
+                    if _pt_in_poly((cx_, cy_), poly_px):
+                        continue
+                    box_ = (cx_ - w_ / 2, cy_ - up_, cx_ + w_ / 2, cy_ + dn_)
+                    if strokes_now and min(_seg_rect_dist(a, b, box_) - w2 / 2
+                                           for a, b, w2 in strokes_now) < need_stroke:
+                        continue
+                    if min((_seg_rect_dist(a, b, box_)
+                            for a, b, _w in strokes_all), default=99.0) > hug:
+                        continue
+                    if any(_rect_gap(box_, pb) < need_label for pb in seated):
+                        continue
+                    own = math.hypot(cx_ - v[0], cy_ - v[1])
+                    if min((math.hypot(cx_ - rv[0], cy_ - rv[1])
+                            for rv in rivals), default=99.0) - own < need_own:
+                        continue
+                    seat = (cx_, cy_, size)
+                    break
+                if seat:
+                    break
+            if seat:
+                break
+        if seat is None:
+            raise TemplateError(
+                f"{kind}: vertex {n}'s label has no clear seat outside the "
+                f"polygon at any size {(FS,) + CP_LABEL_SIZES} — {hint}")
+        cx_, cy_, sz = seat
+        seated.append((cx_ - _label_width(n, sz) / 2, cy_ - MID_UP * sz,
+                       cx_ + _label_width(n, sz) / 2, cy_ + MID_DOWN * sz))
+        out.append((n, cx_, cy_, sz))
+    return out
+
+
 # ────────────────────────────────────────────────────────────────────────────────
 # 1. grid_polygon — a closed rectilinear polygon on a cm grid
 # ────────────────────────────────────────────────────────────────────────────────
@@ -1146,140 +1299,22 @@ def build_grid_polygon(*, figure_id, stem, ask=None, title=None, description=Non
         elements.append(vc.line(pts[a], pts[b], id=f"{a}{b}", width=2.5))
     axis_seg = None                    # (e1, e2) in canvas units once the axis is drawn
     if axis is not None:
-        through = axis.get("through") if isinstance(axis, dict) else None
-        if not (isinstance(through, (list, tuple)) and len(through) == 2):
-            raise TemplateError(
-                'grid_polygon: axis must be {"through": [[x1,y1],[x2,y2]]}')
-        (ax1, ay1), (ax2, ay2) = (tuple(map(float, p)) for p in through)
-        for p in ((ax1, ay1), (ax2, ay2)):
-            if abs(p[0] - round(p[0])) > 1e-9 or abs(p[1] - round(p[1])) > 1e-9:
-                raise TemplateError(
-                    f"grid_polygon: axis through-point {p} is off the grid lattice")
-        adx, ady = ax2 - ax1, ay2 - ay1
-        if math.hypot(adx, ady) < 1e-9:
-            raise TemplateError("grid_polygon: axis through-points must be distinct")
-        if not (abs(adx) < 1e-9 or abs(ady) < 1e-9 or abs(abs(adx) - abs(ady)) < 1e-9):
-            raise TemplateError(
-                "grid_polygon: an axis must run vertical, horizontal or at ±45° — "
-                "other slopes do not map the lattice onto itself")
-        # slab-clip the infinite line to the grid rect
-        t0, t1 = -math.inf, math.inf
-        for d_, p_, extent in ((adx, ax1, float(cols)), (ady, ay1, float(rows))):
-            if abs(d_) < 1e-9:
-                if not 0.0 <= p_ <= extent:
-                    raise TemplateError("grid_polygon: the axis does not cross the grid")
-                continue
-            ta, tb = -p_ / d_, (extent - p_) / d_
-            t0, t1 = max(t0, min(ta, tb)), min(t1, max(ta, tb))
-        if not t1 - t0 > 1e-9:
-            raise TemplateError("grid_polygon: the axis does not cross the grid")
+        _thr, (s0, s1), reflect = _lattice_axis("grid_polygon", axis, cols, rows)
         if axis.get("assert_symmetric", True):
             # reflection in a vertical/horizontal/±45° line keeps lattice points on the
             # lattice; a rectilinear polygon is mirror-symmetric iff its vertex multiset is
-            ref = []
-            for x, y in verts:
-                if abs(adx) < 1e-9:
-                    ref.append((2.0 * ax1 - x, y))
-                elif abs(ady) < 1e-9:
-                    ref.append((x, 2.0 * ay1 - y))
-                elif adx * ady > 0:    # slope +1: (a,b) rel the line maps to (b,a)
-                    ref.append((ax1 + (y - ay1), ay1 + (x - ax1)))
-                else:                  # slope −1: (a,b) maps to (−b,−a)
-                    ref.append((ax1 - (y - ay1), ay1 - (x - ax1)))
+            ref = [reflect(p) for p in verts]
             if sorted((round(x, 6), round(y, 6)) for x, y in ref) != \
                     sorted((round(x, 6), round(y, 6)) for x, y in verts):
                 raise TemplateError(
                     "grid_polygon: the polygon is not mirror-symmetric about that axis — "
                     'pass axis={"through": …, "assert_symmetric": False} to draw it anyway')
-        axis_seg = ((ax1 + t0 * adx) * cell_px, (ay1 + t0 * ady) * cell_px), \
-                   ((ax1 + t1 * adx) * cell_px, (ay1 + t1 * ady) * cell_px)
+        axis_seg = (s0[0] * cell_px, s0[1] * cell_px), (s1[0] * cell_px, s1[1] * cell_px)
         elements.append(vc.line(axis_seg[0], axis_seg[1], dashed=True, id="axis"))
     if vertex_labels:
-        # a vertex label seats OUTSIDE the polygon: the exterior wedge — out of the grid
-        # for a boundary corner, into the notch for a reflex one. Grid lines thread the
-        # interior AND a notch, so an inside-grid seat must fit a cell pocket between two
-        # ruling lines; when the pocket is too tight for a full-size capital the font
-        # ladder steps down (text elements honour fontSize — point labels do not). The
-        # clearances are the same rendered-px rules finish() enforces, in canvas units at
-        # this canvas's scale, so a seated label survives the pre-flight; the hug bound
-        # keeps the box within 1.5·fontSize of painted ink (visual-metrics' target rule).
-        signed = sum(verts[i][0] * verts[(i + 1) % len(verts)][1]
-                     - verts[(i + 1) % len(verts)][0] * verts[i][1]
-                     for i in range(len(verts)))
-        strokes_now = stroke_segments(elements)
-        poly_px = [pts[n] for n in names]
-        span_est = cols * cell_px + 2.0 * (44.0 + FS * 0.62 / 2 + MARGIN)
-        s_est = min(1.0, PLATE_INNER / (span_est + 60.0))
-        need_stroke = (STROKE_PX + SLACK_STROKE) / s_est
-        need_label = 4.0 / s_est
-        need_own = OWN_FIXED_PX / s_est
-        compass = [(round(x / math.hypot(x, y), 6), round(y / math.hypot(x, y), 6))
-                   for x, y in
-                   ((1, -1), (-1, -1), (1, 1), (-1, 1), (1, 0), (-1, 0), (0, -1), (0, 1))]
-        seated: list = []
-        for i, (n, v) in enumerate(pts.items()):
-            pv = tuple(c * cell_px for c in verts[i - 1])
-            nv = tuple(c * cell_px for c in verts[(i + 1) % len(verts)])
-            e1 = vc.unit(v, pv)
-            e2 = vc.unit(v, nv)
-            bx, by = e1[0] + e2[0], e1[1] + e2[1]
-            if math.hypot(bx, by) < 1e-9:
-                raise TemplateError(f"grid_polygon: vertex {n} is straight, not a corner — "
-                                    "drop the doubled vertex")
-            bx, by = bx / math.hypot(bx, by), by / math.hypot(bx, by)
-            # turn sign vs the polygon's signed area tells convex from reflex: the bisector
-            # already points at the labelable wedge — the notch for a reflex corner, the
-            # interior for a convex one — so convex labels go the opposite way
-            cross = (v[0] - pv[0]) * (nv[1] - v[1]) - (v[1] - pv[1]) * (nv[0] - v[0])
-            if cross * signed > 0:                      # convex: opposite the interior
-                bx, by = -bx, -by
-            dirs = []
-            for off in (0.0, -15.0, 15.0, -30.0, 30.0, -45.0, 45.0, -60.0, 60.0,
-                        -75.0, 75.0):
-                dirs.append((round(bx * math.cos(math.radians(off))
-                                   - by * math.sin(math.radians(off)), 6),
-                             round(bx * math.sin(math.radians(off))
-                                   + by * math.cos(math.radians(off)), 6)))
-            dirs += [d for d in compass if d not in dirs]
-            rivals = [pts[m] for m in names if m != n]
-            seat = None
-            for size in (FS,) + CP_LABEL_SIZES:
-                w_ = _label_width(n, size)
-                up_, dn_ = MID_UP * size, MID_DOWN * size
-                hug = 1.5 * size - 2.0
-                r_hi = max(42.0, 1.1 * cell_px)   # a notch seat can sit a cell in
-                for dx_, dy_ in dirs:
-                    for r_ in _arange(16.0, r_hi, 2.0):
-                        cx_, cy_ = v[0] + dx_ * r_, v[1] + dy_ * r_
-                        if _pt_in_poly((cx_, cy_), poly_px):
-                            continue
-                        box_ = (cx_ - w_ / 2, cy_ - up_, cx_ + w_ / 2, cy_ + dn_)
-                        if min(_seg_rect_dist(a, b, box_) - w2 / 2
-                               for a, b, w2 in strokes_now) < need_stroke:
-                            continue
-                        if min((_seg_rect_dist(a, b, box_)
-                                for a, b, _w in strokes_now), default=99.0) > hug:
-                            continue
-                        if any(_rect_gap(box_, pb) < need_label for pb in seated):
-                            continue
-                        own = math.hypot(cx_ - v[0], cy_ - v[1])
-                        if min((math.hypot(cx_ - rv[0], cy_ - rv[1])
-                                for rv in rivals), default=99.0) - own < need_own:
-                            continue
-                        seat = (cx_, cy_, size)
-                        break
-                    if seat:
-                        break
-                if seat:
-                    break
-            if seat is None:
-                raise TemplateError(
-                    f"grid_polygon: vertex {n}'s label has no clear seat outside the "
-                    f"polygon at any size {(FS,) + CP_LABEL_SIZES} — drop vertex_labels "
-                    "for this shape")
-            cx_, cy_, sz = seat
-            seated.append((cx_ - _label_width(n, sz) / 2, cy_ - MID_UP * sz,
-                           cx_ + _label_width(n, sz) / 2, cy_ + MID_DOWN * sz))
+        ring = [(n, tuple(c * cell_px for c in verts[i])) for i, n in enumerate(names)]
+        for n, cx_, cy_, sz in _seat_vertex_labels("grid_polygon", ring, list(range(len(ring))),
+                                                   elements, cols, cell_px):
             elements.append(vc.text((cx_, cy_), n, id=f"lbl{n}", size=sz))
     gx, gy = _unused_letters(set(names), 2)
     anchors = dict(pts)
