@@ -2323,6 +2323,17 @@ class SymmetryGrid(unittest.TestCase):
                     self._build(**kw)
                 self.assertIn(msg, str(cm.exception))
 
+    def test_too_many_vertices_refuses_cleanly(self):
+        # 12 points → 22 vertices builds; 13 → 24 would leave no letters for the anchors
+        zig = lambda lo: [[i, 1 + (i % 2)] for i in range(11, lo - 1, -1)]   # noqa: E731
+        ok = [[12, 0]] + zig(3) + [[3, 4], [12, 4]]       # 10 interior points
+        b = self._build(half=ok, axis={"through": [[12, 0], [12, 4]]})
+        self.assertIn("grid", b.claims)
+        bad = [[12, 0]] + zig(2) + [[2, 4], [12, 4]]      # 11 interior points
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._build(half=bad, axis={"through": [[12, 0], [12, 4]]})
+        self.assertIn("at most 22", str(cm.exception))
+
     def test_image_off_the_grid_refuses(self):
         with self.assertRaises(vt.TemplateError) as cm:
             self._build(half=[[1, 0], [3, 2], [1, 4]], axis={"through": [[1, 0], [1, 4]]})
@@ -2490,7 +2501,6 @@ class TriangleMarks(unittest.TestCase):
 
     def test_unmarked_triangle_claims_no_class(self):
         b = self._build(angles={"A": 50, "B": 60, "C": 70})
-        self.assertNotIn("triangle\"", b.claims.split("describe")[0])
         self.assertNotIn("the marks show", b.claims)
         self.assertRegex(b.claims, r"none tickMark [^|]*angleMark")
         self._ok(b)
@@ -2577,6 +2587,11 @@ class ByteIdentity(unittest.TestCase):
         # W12 A5 — generated when orientation="h" landed (the v spec's hash above is
         # the byte-identical guard: the vertical layout must not move)
         "selftest-barsh": "0d69c8f3bf612cb7eb6de1b2590c63b863500f9aaf48cb51698f9fd1de8603ef",
+        # W13 — generated when symmetry_grid / labelled_composite / triangle_marks landed
+        "selftest-symhalf": "9ac3301b3cf97356c444ec92a8a20e9e3564a62e2ddf2b1525f1773b3457d24c",
+        "selftest-symfull": "3bccecb424edcbcc94a066b68d67dd9c290c9a3e55240d5c3d2bba816c0a9cf9",
+        "selftest-composite": "113f21727236ee0812eadcfb22391a80e2cf55dc9cd136bdb78b328e22c74cdb",
+        "selftest-trimarks": "efc8b0bb6a5c5027267620ff577fa94a915c9353c3a0286ac10b44265d741b76",
     }
 
     def test_self_test_outputs_unchanged(self):

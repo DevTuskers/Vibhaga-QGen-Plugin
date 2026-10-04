@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""vdd_templates.py — the eighteen figure TEMPLATES of the vibhaga-qgen plugin.
+"""vdd_templates.py — the twenty-one figure TEMPLATES of the vibhaga-qgen plugin.
 
 A template turns a question's STEM NUMBERS into a finished figure — a VDD document, an
 anchors sidecar and a `channel: constructed` claim set — in one `Built` object:
@@ -4477,9 +4477,10 @@ def build_symmetry_grid(*, figure_id, stem, ask=None, title=None, description=No
     (ax1, ay1), (ax2, ay2) = t1_, t2_
     _thr, (s0, s1), _r = _lattice_axis(kind, axis, cols, rows)
     k = len(pts_h)
-    if (k + len(images) if show == "full" else k) > 24:
-        raise TemplateError(f"{kind}: too many vertices to name")
-    names = list("ABCDEFGHIJKLMNOPQRSTUVWX"[: k + len(images)])
+    if k + len(images) > 22:              # +2 grid-corner and +2 axis-end letters ≤ 26
+        raise TemplateError(f"{kind}: the completed figure has {k + len(images)} vertices — "
+                            "at most 22 can be named")
+    names = list("ABCDEFGHIJKLMNOPQRSTUV"[: k + len(images)])
     hn, im_n = names[:k], names[k:]
     drawn_n = names if show == "full" else hn
     ring = [(n if n in drawn_n else None, (x * cell_px, y * cell_px))
@@ -4693,7 +4694,7 @@ def build_labelled_composite(*, figure_id, stem, ask=None, title=None, descripti
         texts.append(lab)
     seg = [f"{names[i]}{names[(i + 1) % n]}" for i in range(n)]
     derived: dict[int, str] = {}
-    for grp, (pos, neg) in (("horizontal", ("R", "L")), ("vertical", ("D", "U"))):
+    for pos, neg in (("R", "L"), ("D", "U")):
         unk = [i for i in unknown if sides[i][0] in (pos, neg)]
         if len(unk) == 1:
             i = unk[0]
@@ -4777,8 +4778,12 @@ def build_labelled_composite(*, figure_id, stem, ask=None, title=None, descripti
         letter_els = []
         if vertex_labels:
             ring = [(nm, pts[nm]) for nm in names]
+            # the seat search scales its clearances by cols·cell_px + its gutters — feed it
+            # the measured canvas width on the second pass
+            span_px = max(W, H) * u if not span_hint else \
+                max(max(W, H) * u, span_hint - 2.0 * (44.0 + FS * 0.62 / 2 + MARGIN))
             for nm, cx_, cy_, sz in _seat_vertex_labels(kind, ring, list(range(n)), elements,
-                                                        1, max(W, H) * u):
+                                                        1, span_px):
                 el_ = vc.text((cx_, cy_), nm, id=f"lbl{nm}", size=sz)
                 letter_els.append(el_)
                 chosen.append((None, label_boxes([el_], sz)[0][1:]))
@@ -4791,7 +4796,9 @@ def build_labelled_composite(*, figure_id, stem, ask=None, title=None, descripti
                 budget_[0] -= 1
                 if budget_[0] < 0:
                     return False
-                if any(_rect_gap(box_, pb) * s_card < 5.0 for _e, pb in chosen):
+                # a corner letter (el None) keeps a wider berth — "D 3 m" read as one label
+                if any(_rect_gap(box_, pb) * s_card < (5.0 if _e is not None else 9.0)
+                       for _e, pb in chosen):
                     continue
                 chosen.append((el_, box_))
                 if dfs(k_ + 1):
@@ -4840,7 +4847,7 @@ def build_labelled_composite(*, figure_id, stem, ask=None, title=None, descripti
     known = [i for i in range(n) if i not in unknown]
     for i, j in zip(known, known[1:]):
         v = sides[i][1] / sides[j][1]
-        if _ratio_justified(nums, v):
+        if abs(v - 1.0) > 1e-9 and _ratio_justified(nums, v):
             add(f"ratio len {seg[i]} / len {seg[j]} = {v:g}", "stem",
                 f"the printed {texts[i]} and {texts[j]}")
     for i, expr in derived.items():
@@ -4874,6 +4881,10 @@ def build_labelled_composite(*, figure_id, stem, ask=None, title=None, descripti
     shown = [t for t in texts if t]
     return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
                   anchors=pts, points=names, segments=seg, claims=claims, ask=ask,
+                  budget=len(elements) if len(elements) > 32 else None,
+                  departures=([f"{len(elements)} elements — every side, its label, its "
+                               "right-angle mark and corner letter"]
+                              if len(elements) > 32 else None),
                   title=title or "A composite shape made of rectangles, with side lengths",
                   description=description or (
                       f"A {n}-sided shape whose corners are all right angles, made of "
@@ -5006,34 +5017,40 @@ def _triangle_marks_once(*, figure_id, stem, ask, title, description, medium, an
         elements += vc.tick_marks(P[s[0]], P[s[1]], c_, size=10)
     span0 = float(base_px) + 2 * 50.0
     clr_a = _clearance_units(STROKE_PX + SLACK_STROKE + 1.5, span0)
+    base_r = {v: 24.0 if ang[v] >= 40 else 34.0 for v in ar}
     for v, c_ in ar.items():
-        a_, b_ = others(v)
-        r_ = 24.0 if ang[v] >= 40 else 34.0
-        elements += vc.angle_label(P[v], P[a_], P[b_], r=r_, arcs=c_)
+        if v not in labs:
+            a_, b_ = others(v)
+            elements += vc.angle_label(P[v], P[a_], P[b_], r=base_r[v], arcs=c_)
     if right is not None:
         a_, b_ = others(right)
         elements += vc.right_angle_mark(P[right], P[a_], P[b_], r=14)
-    # angle labels are separate `text` on the angle's bisector, walked outward until the
-    # box clears both sides and every arc/mark by the stroke rule (the angleMark's own
-    # label sits a FIXED distance past its arc — too close for multi-arcs on a wide canvas)
-    marks_now = stroke_segments(elements)
+    # a labelled angle: the label is a `text` on the bisector, walked outward until its
+    # box clears both sides and every mark by the stroke rule — and its ARC moves out with
+    # it (radius = just inside the label), so the label always reads as its arc's. The
+    # angleMark's own label sits a FIXED distance past its arc — too close for multi-arcs.
     for v, t_ in labs.items():
         a_, b_ = others(v)
         ua, ub = vc.unit(P[v], P[a_]), vc.unit(P[v], P[b_])
         bis = vc.unit((0.0, 0.0), (ua[0] + ub[0], ua[1] + ub[1]))
+        half_ = _label_half_along(t_, FS, bis[0], bis[1])
         far = 0.8 * min(vc.dist(P[v], P[a_]), vc.dist(P[v], P[b_]))
+        marks_now = stroke_segments(elements)
         seat = None
         for d_ in _arange(30.0, far, 2.0):
+            r_ = max(base_r[v], d_ - half_ - clr_a - 3.0 * (ar[v] - 1) - 2.0)
+            arc_ = vc.angle_label(P[v], P[a_], P[b_], r=r_, arcs=ar[v])
             el_ = vc.text((P[v][0] + bis[0] * d_, P[v][1] + bis[1] * d_), t_, id=f"al{v}")
             bx = label_boxes([el_], FS)[0][1:]
-            if min(_seg_rect_dist(p, q, bx) - w / 2 for p, q, w in marks_now) >= clr_a:
-                seat = el_
+            segs_ = marks_now + stroke_segments(arc_)
+            if min(_seg_rect_dist(p, q, bx) - w / 2 for p, q, w in segs_) >= clr_a:
+                seat = (arc_, el_)
                 break
         if seat is None:
             raise TemplateError(f"{kind}: the label {t_!r} at {v} cannot clear the sides of a "
                                 f"{ang[v]:g}° angle inside the triangle — raise base_px or "
                                 "drop the label")
-        elements.append(seat)
+        elements += seat[0] + [seat[1]]
     cen = (sum(p[0] for p in P.values()) / 3, sum(p[1] for p in P.values()) / 3)
     xs_ = [p[0] for p in P.values()]
     clr = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, max(xs_) - min(xs_) + 2 * 50.0)
@@ -5146,7 +5163,7 @@ coordinate_plane    each point's x,y when coords="stem"           x_max,y_max≤
 parallel_lines      distance.value                                lines=["AB","CD"], parallel=[[…]], direction, crossing="PQ", distance={"between","value","unit"}
 bar_chart           step; every value when values="stem"          categories 2–8, series 1–3 {"name","values"}, step, v_max, value_title, category_title, gridlines, orientation="v"|"h" (h = bars run right, categories stack up the y axis; claims read on OX)
 symmetry_grid       cell                                          half=[(x,y)…] open path, both ends ON the axis, axis={"through":[[x,y],[x,y]]} vertical/horizontal/±45°, show="half"|"full", cols/rows?, cell_px, vertex_labels (falls back to accent letters over the ruling)
-labelled_composite  a side whose value no closure gives (≥2 unknowns in one orientation)  path=[[dir R|L|U|D, length, label?]…] 4–12 sides closing on A, unit, vertex_labels, right_marks, unit_px — label "x m" or null = unknown side (derived by closure when it is its orientation's only unknown)
+labelled_composite  unknown sides when 2+ share an orientation   path=[[dir R|L|U|D, length, label?]…] 4–12 sides closing on A, unit, vertex_labels, right_marks, unit_px — label "x m" or null = unknown side (derived by closure when it is its orientation's only unknown)
 triangle_marks      every NUMERIC angle label                    angles={A:a,B:b,C:c} (sum 180, each ≥15), ticks={"AB":n} 1–3, arcs={"A":n} 1–3, right="C", angle_labels={"A":"60°"|"x"} (needs an arc), names, base_px? (auto-grows when labels crowd)
 """.strip()
 

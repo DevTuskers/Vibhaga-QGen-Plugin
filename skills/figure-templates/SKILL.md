@@ -1,11 +1,11 @@
 ---
 name: figure-templates
 description: >-
-  Build a generated question's figure from ONE of the eighteen stem-checked templates in
+  Build a generated question's figure from ONE of the twenty-one stem-checked templates in
   `tools/vdd_templates.py` — grid polygon, shaded grid, rays-from-a-point, number line,
   pictograph, rectangle-with-points, house pentagon, cuboid, dot pattern, circle points,
   two-circle points, circles in a circle, abacus, sorting rings, shape row, coordinate
-  plane, parallel lines, bar chart — instead of
+  plane, parallel lines, bar chart, symmetry grid, labelled composite, triangle marks — instead of
   hand-drawing VDD. The builder takes the stem's own numbers (refusing any it cannot find
   there), computes the geometry from them, and emits the `channel: constructed` claim set
   itself, so the figure and the claim set can never drift apart (T-QG-2). Use at the
@@ -219,5 +219,5 @@ Then run the batch render — `node tools/visual-check.mjs out/` —
 and measures labels against its five rules; it is the live check before the figure joins a
 staged doc.
 
-`python3 tools/vdd_templates.py --self-test` builds all eighteen from synthetic stems and runs
+`python3 tools/vdd_templates.py --self-test` builds all twenty-one from synthetic stems and runs
 the audit on each — it's wired into `check-suite.py` Part B.
