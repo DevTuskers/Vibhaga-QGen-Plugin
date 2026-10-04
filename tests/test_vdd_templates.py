@@ -1587,11 +1587,10 @@ class CoordinatePlane(unittest.TestCase):
                     points=pts, grid=True, origin_label=True)
 
     def test_lettered_grid_sweep_measured_limit(self):
-        """W12 A3: cell-corner pockets + the font ladder extended the lettered-grid
-        frontier to its physical wall — a pocket needs ~44 canvas units of cell
-        (label box + the 8-rendered-px stroke clearance each side at the tight scale).
-        Feasible: x_max ≤ 4 → y_max ≤ 9; x_max = 5 → y_max ≤ 8; x_max = 6 → y_max ≤ 6.
-        Every x_max, y_max in 7..10 refuses outright with the measured-limit message.
+        """W12 A3 + the 2026-10-04 owner ruling: clear pockets come first; when no
+        pocket seats a letter at any size the faint ruling lines stop being
+        obstacles (axes, ticks, joins, dots, labels and the edge still count) and
+        EVERY letter draws in the accent colour. The whole 7..10 envelope builds.
         """
         feasible = [(4, y) for y in range(4, 10)] + \
                    [(5, y) for y in range(4, 9)] + \
@@ -1601,15 +1600,30 @@ class CoordinatePlane(unittest.TestCase):
                 with self.subTest(x_max=xm, y_max=ym):
                     b = vt.BUILDERS["coordinate_plane"](**self._sweep_spec(xm, ym))
                     self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
-        for xm in range(7, 11):
-            for ym in range(7, 11):
-                with self.subTest(x_max=xm, y_max=ym):
-                    with self.assertRaises(vt.TemplateError) as cm:
-                        vt.BUILDERS["coordinate_plane"](**self._sweep_spec(xm, ym))
-                    self.assertIn("44-unit cells", str(cm.exception))
+                    # small grids still seat every letter in a clear pocket — no
+                    # accent, no fallback claim (bytes unchanged by the ruling)
+                    self.assertFalse(
+                        any(e.get("color") for e in b.doc["elements"]))
+                    self.assertNotIn("accent colour", b.claims)
+            for xm in range(7, 11):
+                for ym in range(7, 11):
+                    with self.subTest(x_max=xm, y_max=ym):
+                        b = vt.BUILDERS["coordinate_plane"](**self._sweep_spec(xm, ym))
+                        self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+                        # the fallback engaged: every point letter + "O" shares the
+                        # ONE accent (a figure never mixes letter inks) — and the
+                        # claim set declares it
+                        accent = sorted(e["id"] for e in b.doc["elements"]
+                                        if e.get("color") == vt._CP_ACCENT)
+                        self.assertEqual(
+                            accent,
+                            ["lbA", "lbB", "lbC", "lbD", "lbE", "org"])
+                        self.assertIn(
+                            'describe "point letters sit over the faint grid lines',
+                            b.claims)
 
-    def test_lettered_grid_sweep_passes_vdd_check(self):
-        """The frontier builds also survive vdd-check --no-render with 0 findings."""
+    def _admin_env(self):
+        """Env with VIBHAGA_ADMIN resolved (flag → env → sibling walk), or skip."""
         import os
         import shutil
         env = dict(os.environ)
@@ -1621,8 +1635,17 @@ class CoordinatePlane(unittest.TestCase):
                 env["VIBHAGA_ADMIN"] = str(d / "Vibhaga-Admin")
         if not shutil.which("node") or "VIBHAGA_ADMIN" not in env:
             self.skipTest("node or the sibling Vibhaga-Admin checkout unavailable")
+        return env
+
+    def test_lettered_grid_sweep_passes_vdd_check(self):
+        """The frontier builds AND every 7..10 fallback build survive vdd-check
+        --no-render with 0 findings (the rendered clearance is the regression run —
+        the grid exemption itself is exercised by test_grid_line_exemption_*)."""
+        env = self._admin_env()
         with tempfile.TemporaryDirectory() as tmp:
-            for xm, ym in ((4, 9), (5, 8), (6, 6), (4, 4)):
+            specs = [(4, 9), (5, 8), (6, 6), (4, 4)] + \
+                    [(x, y) for x in range(7, 11) for y in range(7, 11)]
+            for xm, ym in specs:
                 with self.subTest(x_max=xm, y_max=ym):
                     b = vt.BUILDERS["coordinate_plane"](**self._sweep_spec(xm, ym))
                     fig = Path(tmp) / f"cp{xm}x{ym}.json"
@@ -1661,15 +1684,67 @@ class CoordinatePlane(unittest.TestCase):
         with self.assertRaises(vt.TemplateError):
             self._b(unit_px=0)
 
-    def test_dense_grid_refuses_with_a_stated_reason(self):
-        """10x10 with interior points leaves no half-cell pocket — a stated refusal,
-        not a crash, and the message points at grid=False / fewer points."""
-        with self.assertRaises(vt.TemplateError):
-            self._b(x_max=10, y_max=10, coords="figure",
+    def test_dense_grid_falls_back_to_accent_letters(self):
+        """10x10 with 8 interior points: no clear pocket seats any letter, so the
+        ruling-line fallback engages — every letter in the one accent colour and the
+        claim set says so."""
+        b = self._b(x_max=10, y_max=10, coords="figure",
                     stem="Several points are marked. (a) Read them.",
                     points={n: xy for n, xy in
                             zip("ABCDEFGH", [(1, 1), (3, 2), (5, 5), (7, 3),
                                             (2, 8), (9, 9), (4, 6), (8, 1)])})
+        accent = sorted(e["id"] for e in b.doc["elements"]
+                        if e.get("color") == vt._CP_ACCENT)
+        self.assertEqual(accent,
+                         [f"lb{n}" for n in "ABCDEFGH"])
+        self.assertIn('describe "point letters sit over the faint grid lines',
+                      b.claims)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+
+    def test_refusal_stays_real_past_the_fallback(self):
+        """The ruling-line exemption is not a licence to print: unit_px=1 leaves a
+        ~20-unit canvas where no label box can sit anywhere — the refusal names the
+        fallback it already tried."""
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._b(x_max=10, y_max=10, coords="figure",
+                    stem="Point A(5, 5) is marked. (a) Read it.",
+                    points={"A": (5, 5)}, unit_px=1)
+        self.assertIn("fallback", str(cm.exception))
+
+    def test_grid_line_exemption_is_id_keyed(self):
+        """vdd-check's render pass exempts the gv*/gh* ruling lines from the
+        label↔stroke rule ONLY: a label ON a ruling line passes, the same label on a
+        same-coloured line WITHOUT the marker (or on an axis) still fails."""
+        env = self._admin_env()
+        if not (Path(env["VIBHAGA_ADMIN"]) / "node_modules" / "playwright").is_dir():
+            self.skipTest("playwright not installed in the Admin checkout")
+        base = {"schema": "vibhaga.diagram", "schemaVersion": 1,
+                "canvas": {"width": 200, "height": 200},
+                "a11y": {"title": "A vertical line with the letter A on it",
+                         "description": "One vertical line and one centred letter."}}
+        mk = lambda lid: {**base, "elements": [   # noqa: E731
+            {"id": lid, "type": "line", "points": [[100, 10], [100, 190]],
+             "stroke": {"color": "#d1d5db", "width": 1}},
+            {"id": "lbA", "type": "text", "at": [100, 100], "value": "A"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "fig.json"
+            f.write_text(json.dumps(mk("gv1")))          # the ruling-line marker
+            r = subprocess.run(
+                ["node", str(TOOLS / "vdd-check.mjs"), str(f),
+                 "--widths", "320", "--out", str(Path(tmp) / "o1")],
+                capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, 0,
+                             f"label over gv1 must pass:\n{r.stdout}\n{r.stderr}")
+            for lid in ("ln1", "axX"):                  # same faint colour, no marker
+                with self.subTest(id=lid):
+                    f.write_text(json.dumps(mk(lid)))
+                    r = subprocess.run(
+                        ["node", str(TOOLS / "vdd-check.mjs"), str(f),
+                         "--widths", "320", "--out", str(Path(tmp) / "o2")],
+                        capture_output=True, text=True, env=env)
+                    self.assertEqual(r.returncode, 1)
+                    self.assertIn("from stroke geometry", r.stdout)
 
     def test_red_team_anchor_moved_to_a_different_value(self):
         """A=(3,4) in the stem; drag A's anchor up to the y=5 line and the unchanged

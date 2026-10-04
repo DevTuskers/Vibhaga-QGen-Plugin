@@ -213,6 +213,22 @@ function measure(scope: ParentNode) {
         };
       })
       .filter((p) => p.stroked || p.filled);
+    // The templates' faint ruling lines (gv*/gh* line ids — the structural marker, never
+    // colour or width) are exempt from the label-to-stroke distance only (owner ruling
+    // 2026-10-04: a letter may sit over them); they still count for geom_u, whose
+    // proximity is exactly what keeps a fallback letter attached. Same positional
+    // g-to-element mapping vdd-check's render pass uses — a count mismatch exempts nothing.
+    const docEls = ((g.__vcDoc?.elements ?? []) as any[]).map((el: any, i: number) => ({ el, index: i }));
+    if (docEls.some(({ el }: any) => typeof el.z === "number"))
+      docEls.sort((a: any, b: any) => (a.el.z ?? 0) - (b.el.z ?? 0) || a.index - b.index);
+    const shapeEls = docEls.filter(({ el }: any) => el.type !== "math");
+    const gEls = [...svg.children].filter((e) => e.tagName.toLowerCase() === "g");
+    const gridPrims = new Set<Element>();
+    if (gEls.length === shapeEls.length)
+      shapeEls.forEach(({ el }: any, i: number) => {
+        if (el.type === "line" && /^g[vh][0-9]+$/.test(String(el.id ?? "")))
+          for (const n of gEls[i].querySelectorAll(PRIM_SEL)) gridPrims.add(n);
+      });
     const labelEls = [
       ...([...svg.querySelectorAll("text")] as SVGTextElement[])
         .filter((t) => !t.closest("defs") && !t.closest("marker"))
@@ -258,7 +274,7 @@ function measure(scope: ParentNode) {
             if (dd < d) d = dd;
           }
           if (Number.isFinite(d)) {
-            if (p.stroked) stroke = Math.min(stroke, d - p.halfStroke);
+            if (p.stroked && !gridPrims.has(p.el as Element)) stroke = Math.min(stroke, d - p.halfStroke);
             geom = Math.min(geom, d);
           }
           if (p.filled) {
@@ -532,18 +548,20 @@ async function runBatch(figures, { out, widths, themes, headed }) {
       }
       await ctx.close();
     }
-    // The contact sheet (W9-C): every figure's light-375.png at native size, 2 per row with its
-    // id captioned above, on white — one PNG the lead can read instead of N. Composed in a bare
-    // page off the already-open browser; the PNGs are inlined as data URIs because a setContent
-    // page may not load file:// subresources. Skipped silently when no light-375 shot exists
+    // The contact sheets (W9-C): every figure's <theme>-375.png at native size, 2 per row with its
+    // id captioned above, on white — one PNG per theme the lead can read instead of N. Composed in a
+    // bare page off the already-open browser; the PNGs are inlined as data URIs because a setContent
+    // page may not load file:// subresources. Skipped silently when no <theme>-375 shot exists
     // (a --widths/--themes that excludes them, or every figure invalid before render).
-    const items = [];
-    for (const fig of figures) {
-      const png = (fig.pngs ?? []).find((p) => /light-375\.png$/.test(p));
-      if (png && fs.existsSync(png)) items.push({ id: fig.id, data: fs.readFileSync(png).toString("base64") });
-    }
-    if (items.length) {
-      const sheetPath = path.join(out, "contact-light-375.png");
+    const sheets = [];
+    for (const theme of themes) {
+      const items = [];
+      for (const fig of figures) {
+        const png = (fig.pngs ?? []).find((p) => new RegExp(`${theme}-375\\.png$`).test(p));
+        if (png && fs.existsSync(png)) items.push({ id: fig.id, data: fs.readFileSync(png).toString("base64") });
+      }
+      if (!items.length) continue;
+      const sheetPath = path.join(out, `contact-${theme}-375.png`);
       // Start tiny: body.scrollWidth floors at the viewport, so a small initial viewport lets the
       // 2-tile grid overflow and reveals its real width — the fullPage shot then has no 1280×720
       // floor of whitespace under a small batch.
@@ -555,8 +573,9 @@ async function runBatch(figures, { out, widths, themes, headed }) {
       await page.screenshot({ path: sheetPath, fullPage: true });
       await page.close();
       const b = fs.readFileSync(sheetPath);
-      figures.sheet = { path: sheetPath, dims: b.length > 24 ? `${b.readUInt32BE(16)}×${b.readUInt32BE(20)}` : "?" };
+      sheets.push({ path: sheetPath, dims: b.length > 24 ? `${b.readUInt32BE(16)}×${b.readUInt32BE(20)}` : "?" });
     }
+    if (sheets.length) figures.sheets = sheets;
   } finally {
     await browser.close();
     if (server.proc) { server.proc.kill("SIGTERM"); }
@@ -638,7 +657,7 @@ async function batchMode() {
     pngs += fig.pngs.length;
     console.log(figureLine(fig, pad));
   }
-  console.log(`${figures.length} figures · ${pass} pass · ${figures.length - pass} fail${claimsDir ? ` · ${noClaims} without claims` : ""} · PNGs: ${pngs} · report: ${path.join(out, "report.json")}${figures.sheet ? ` · contact: ${figures.sheet.path} ${figures.sheet.dims}` : ""}`);
+  console.log(`${figures.length} figures · ${pass} pass · ${figures.length - pass} fail${claimsDir ? ` · ${noClaims} without claims` : ""} · PNGs: ${pngs} · report: ${path.join(out, "report.json")}${(figures.sheets ?? []).map((s) => ` · contact: ${s.path} ${s.dims}`).join("")}`);
   fs.mkdirSync(out, { recursive: true });
   const report = {
     tool: "visual-check",
@@ -1028,10 +1047,24 @@ async function selfTest() {
       { id: "edgeT", type: "text", at: [292, 60], value: "clip" },
     ],
   };
+  // The ruling-line exemption (owner ruling 2026-10-04): a letter ON a gv*/gh* line passes
+  // label↔stroke; the same letter on an identical line without the marker id still fails.
+  const rulingOf = (lineId, a11yTitle) => ({
+    schema: "vibhaga.diagram", schemaVersion: 1, canvas: { width: 200, height: 200 },
+    a11y: { title: a11yTitle, description: "One faint vertical line and the letter A centred on it. Fixture only." },
+    elements: [
+      { id: lineId, type: "line", points: [[100, 10], [100, 190]], stroke: { color: "#d1d5db", width: 1 } },
+      { id: "lbA", type: "text", at: [100, 100], value: "A" },
+    ],
+  });
+  const ruling = rulingOf("gv1", "Synthetic ruling line with a letter on it");
+  const notRuling = rulingOf("ln1", "Synthetic faint line (no marker id) with a letter on it");
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "visual-check-selftest-"));
   const figures = [
     { id: "clean", doc: clean, source: "self-test", claims: null, outDir: path.join(outDir, "clean"), pngs: [], findings: [] },
     { id: "defective", doc: bad, source: "self-test", claims: null, outDir: path.join(outDir, "bad"), pngs: [], findings: [] },
+    { id: "ruling", doc: ruling, source: "self-test", claims: null, outDir: path.join(outDir, "ruling"), pngs: [], findings: [] },
+    { id: "notRuling", doc: notRuling, source: "self-test", claims: null, outDir: path.join(outDir, "notRuling"), pngs: [], findings: [] },
   ];
   for (const fig of figures) {
     const r = lib.parseVddDocument(fig.doc);
@@ -1055,6 +1088,13 @@ async function selfTest() {
     mathRows.length === 2 && mathRows.every((r) => Math.abs(r.fontSizeU - 18) < 1),
     mathRows.map((r) => `${r.width}px→${r.fontSizeU}u`).join(", ") || "no math rows");
   t("clean figure drew on both themes", byId.clean.pngs.length === 4);
+  t("letter over a gv* ruling line: PASS (exempt)",
+    byId.ruling.result.verdict === "PASS",
+    byId.ruling.result.findings.map((f) => f.message).join("; ") || "no findings");
+  t("same letter over an unmarked faint line: FAIL stroke",
+    byId.notRuling.result.verdict === "FAIL" &&
+    byId.notRuling.result.findings.some((f) => f.rule === "stroke" && f.severity === "fail"),
+    byId.notRuling.result.findings.map((f) => f.message).join("; "));
   console.log(ok ? "\nSELF-TEST PASS" : "\nSELF-TEST FAIL");
   process.exit(ok ? 0 : 1);
 }

@@ -45,8 +45,9 @@ node tools/visual-check.mjs <staged.json | dir | figure.json …> \
   (`--admin` > `VIBHAGA_ADMIN` > `<plugin>/../Vibhaga-Admin`).
 - **Output** — one line per figure, then a summary; `<out>/<id>/<theme>-<w>.png` (default
   `$TMPDIR/visual-check-out`), `<out>/report.json` (the measured label↔edge / label↔stroke
-  distances — the W4 deliverable) and `<out>/contact-light-375.png` — every figure's
-  light-375 render at native size, captioned, for the step-6b look. Each verdict line ends
+  distances — the W4 deliverable) and `<out>/contact-<theme>-375.png` — every figure's
+  375 render at native size, captioned, one sheet per theme (`light` always; `dark` when
+  `--themes` includes it) for the step-6b look. Each verdict line ends
   with the light-375 PNG's pixel size (`375×131`). Exit `1` any FAIL · `2` usage/env · `0` clean.
 
 ```
