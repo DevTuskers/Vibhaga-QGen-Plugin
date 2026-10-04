@@ -179,7 +179,7 @@ function parseClaimSet(text) {
   cs.budget = Number((buf.budget ?? [""])[0]) || null;  // claim-set-declared element budget — the why lives in departures:
   cs.allow = shlex((buf.allow ?? []).join(" "));        // claim-set-declared numeric departures — same rule
   for (const l of buf.anchors ?? []) {
-    const m = l.trim().match(/^([A-Z])\s+(-?[\d.]+)\s+(-?[\d.]+)$/);
+    const m = l.trim().match(/^([A-Z]\d*)\s+(-?[\d.]+)\s+(-?[\d.]+)$/);   // W11: digit-suffixed points (T1..Tn)
     if (m) cs.anchors[m[1]] = [Number(m[2]), Number(m[3])];
   }
   for (const l of buf.claims ?? []) {

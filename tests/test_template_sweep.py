@@ -1,4 +1,4 @@
-"""tests/test_template_sweep.py — W9 item F: a parameter sweep over the nine figure templates.
+"""tests/test_template_sweep.py — W9 item F: a parameter sweep over the eighteen figure templates.
 
 The point is coverage, not the golden path: each builder is run across a parameter grid with
 synthetic stems that state the numbers it needs, and the sweep asserts:
@@ -207,6 +207,112 @@ def case_grid() -> list[dict]:
                    shapes=[["A", "hexagon"], ["B", "circle"]]))          # bad kind — refusal
     cases.append(C("shape_row", stem="Name each shape.",
                    shapes=[["A", "circle"], ["A", "square"]]))           # dup letter — refusal
+
+    # ── W11: the three G7 templates ──────────────────────────────────────────────
+    # coordinate_plane — extents {1,3,5,8,10}² × point sets × join/sym/guides/grid/coords.
+    # The letter pockets are half-cells beside each dot; a fine grid on a large plane can
+    # leave none of them clear — that refusal is legitimate only past the demonstrated
+    # 6x5 region (small cells, many ruling lines), so those cases are flagged extreme.
+    def plane_stem(pts):
+        if not pts:
+            return "A coordinate plane. (a) Describe it."
+        return ("Points " + ", ".join(f"{n}({x}, {y})" for n, (x, y) in pts.items()) +
+                " are marked on a coordinate plane. (a) Read their coordinates.")
+    for xm in (1, 3, 5, 8, 10):
+        for ym in (1, 3, 5, 8, 10):
+            inside = [(x, y) for x in range(xm + 1) for y in range(ym + 1)
+                      if (x, y) not in ((0, 0), (xm, 0), (0, ym))]
+            # `inside` already holds the legal on-axis sits (x,0)/(0,y) plus the far
+            # corner (xm,ym) — the three excluded cells are the axis anchors
+            pool = inside
+            p1 = {"A": (xm, ym)}                       # the far corner is always legal
+            p4 = dict(zip("ABCD", pool[::max(1, len(pool) // 4)][:4]))
+            p8 = dict(zip("ABCDEFGH", pool[::max(1, len(pool) // 8)][:8]))
+            tight = min(52.0, 430.0 / xm, 300.0 / ym) < 45
+            cases.append(C("coordinate_plane", stem=plane_stem({}), points={},
+                           x_max=xm, y_max=ym, grid=True, coords="figure"))
+            cases.append(C("coordinate_plane", stem=plane_stem(p1), points=p1,
+                           x_max=xm, y_max=ym, grid=False, coords="stem",
+                           origin_label=True))
+            ex = tight and bool(p4)
+            kw4 = dict(points=p4, x_max=xm, y_max=ym, grid=True, coords="stem",
+                       sym_axis={"x": xm / 2} if (xm + ym) % 2 == 0 else {"y": ym / 2})
+            if len(p4) >= 2:
+                kw4["join"] = [list(p4)[:3]]
+            cases.append(C("coordinate_plane", stem=plane_stem(p4), extreme=ex, **kw4))
+            ex8 = tight and bool(p8)
+            kw8 = dict(points=p8, x_max=xm, y_max=ym, grid=False, coords="figure")
+            if p8:
+                kw8["guides"] = [next(iter(p8))]
+            cases.append(C("coordinate_plane",
+                           stem="Several points are marked. (a) Read them.",
+                           extreme=ex8, **kw8))
+    for xy in ((0, 0), (5, 0), (0, 5)):                # the shared axis anchors refuse
+        cases.append(C("coordinate_plane", stem=plane_stem({}), x_max=5, y_max=5,
+                       points={"A": xy}, coords="figure"))
+
+    # parallel_lines — 2/3/4 lines × class layouts × direction × crossing × distance.
+    # dir=20 + crossing + distance packs an endpoint letter against the crossing and the
+    # MN segment at the smallest stack gap — the two densest cells legitimately refuse.
+    pl_stem = ("Some of the lines are parallel; the perpendicular distance between the "
+               "parallel lines is 3 cm. (a) Name the parallel lines.")
+    for lines, par in (
+            (["AB", "CD"], [["AB", "CD"]]),
+            (["AB", "CD", "EF"], [["AB", "CD"]]),
+            (["AB", "CD", "EF"], [["AB", "CD", "EF"]]),
+            (["AB", "CD", "EF", "GH"], [["AB", "CD"]]),
+            (["AB", "CD", "EF", "GH"], [["AB", "CD"], ["EF", "GH"]])):
+        for d in (0, 20, -30, 90):
+            for cross in (None, "PQ"):
+                for dist in (None, {"between": ["AB", "CD"], "value": 3, "unit": "cm"}):
+                    cases.append(C("parallel_lines", stem=pl_stem, lines=lines,
+                                   parallel=par, direction=d, crossing=cross,
+                                   distance=dist,
+                                   extreme=bool(d == 20 and cross and dist)))
+
+    # bar_chart — categories 2..8 x 1..3 series x steps {1,2,5,10,1000} x values modes;
+    # a 0-value bar and year categories; then the stated refusals.
+    for i, nc in enumerate(range(2, 9)):
+        n_ser = 1 + i % 3
+        step = (1, 2, 5, 10, 1000)[i % 5]
+        vals = [[step * ((k * (j + 1)) % 7 + 1) for k in range(nc)]   # ≤ 7·step → ≤7 axis steps
+                for j in range(n_ser)]
+        if i % 4 == 0:
+            vals[0][1] = 0                              # a 0 bar still reads
+        mode = "stem" if i % 2 == 0 else "figure"
+        cats = [f"Grp {k + 1}" for k in range(nc)]
+        if i == 5:
+            cats = [str(2015 + k) for k in range(nc)]     # years are not scale numerals
+        series = [{"name": f"S{j + 1}" if n_ser > 1 else "", "values": v}
+                  for j, v in enumerate(vals)]
+        nums = [step] + [v for vs in vals for v in vs]
+        stem = ("The chart shows " + ", ".join(f"{v:g}" for v in sorted(set(nums))) +
+                ", the axis in steps of " + f"{step:g}. (a) Read the bars.")
+        cases.append(C("bar_chart", stem=stem, categories=cats, series=series,
+                       step=step, values=mode))
+    cases.append(C("bar_chart", stem="x", categories=[f"C{i}" for i in range(9)],
+                   series=[{"name": "", "values": [1] * 9}], step=1))        # 9 cats
+    cases.append(C("bar_chart", stem="x",
+                   categories=["A", "B"],
+                   series=[{"name": f"S{j}", "values": [1, 2]} for j in range(4)],
+                   step=1))                                                  # 4 series
+    cases.append(C("bar_chart", stem="The chart shows 7, in steps of 4. (a) Read.",
+                   categories=["A", "B"],
+                   series=[{"name": "", "values": [7, 4]}], step=4))         # 7 not on the lattice
+    cases.append(C("bar_chart", stem="The chart shows 12, in steps of 2. (a) Read.",
+                   categories=["A", "B"],
+                   series=[{"name": "", "values": [12, 4]}], step=2, v_max=10))  # over v_max
+    cases.append(C("bar_chart", stem="The chart shows 5, in steps of 1. (a) Read.",
+                   categories=["A", "B"],
+                   series=[{"name": "", "values": [5, 3]}], step=1, v_max=13))   # 13 steps
+    # W11 review — a `$`/backtick/`|` in any user label must be a stated refusal,
+    # never vc.text's AssertionError
+    cases.append(C("bar_chart", stem="The chart shows 5, in steps of 1. (a) Read.",
+                   categories=["$x$", "B"],
+                   series=[{"name": "", "values": [5, 3]}], step=1))
+    cases.append(C("parallel_lines", stem=pl_stem, lines=["AB", "CD"],
+                   parallel=[["AB", "CD"]],
+                   distance={"between": ["AB", "CD"], "value": 3, "unit": "c$m"}))
     return cases
 
 

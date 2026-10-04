@@ -42,7 +42,7 @@ CUBOID_52 = ("A cuboid has length 5 cm, width 3 cm and height 2 cm. "
 class EveryBuilderAuditsClean(unittest.TestCase):
     """Each SELF_TEST spec (synthetic stems) must reach audit exit 0 with no edits."""
 
-    def test_all_nine_self_test_specs_audit(self):
+    def test_all_eighteen_self_test_specs_audit(self):
         with tempfile.TemporaryDirectory() as tmp:
             for spec in vt.SELF_TEST:
                 spec = dict(spec)
@@ -1237,6 +1237,542 @@ class MembershipTemplates(unittest.TestCase):
                          json.dumps(b2.doc, sort_keys=True))
 
 
+def _anchors_of(claims: str) -> dict:
+    """Parse a claim set's `anchors:` block → {name: (x, y)}."""
+    out = {}
+    for line in claims.splitlines():
+        m = re.match(r"^  ([A-Z]\d*) (\S+) (\S+)$", line)
+        if m:
+            out[m.group(1)] = (float(m.group(2)), float(m.group(3)))
+    return out
+
+
+def _set_anchor(claims: str, name: str, x=None, y=None) -> str:
+    """Rewrite one anchor line in the claims text (the red team's move)."""
+    lines = []
+    for line in claims.splitlines():
+        m = re.match(r"^  ([A-Z]\d*) (\S+) (\S+)$", line)
+        if m and m.group(1) == name:
+            nx = float(m.group(2)) if x is None else x
+            ny = float(m.group(3)) if y is None else y
+            line = f"  {name} {nx:g} {ny:g}"
+        lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
+class CoordinatePlane(unittest.TestCase):
+    """W11 — first-quadrant integer plane: axis claims, `reads` per coordinate,
+    half-cell pocket labels, and the axis-anchor collision refusals."""
+
+    STEM = ("Points A(3, 4), B(1, 2), C(5, 1) and D(2, 5) are marked on a "
+            "coordinate plane. (a) Read the coordinates of each point.")
+
+    def _b(self, **kw):
+        d = dict(figure_id="cp1", stem=self.STEM, ask=[["a", "x"]],
+                 x_max=6, y_max=5, coords="stem", grid=True,
+                 points={"A": (3, 4), "B": (1, 2)})
+        d.update(kw)
+        return vt.BUILDERS["coordinate_plane"](**d)
+
+    def test_happy_path_audits_clean(self):
+        b = self._b()
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0)
+        self.assertIn("axis OX from 0 to 6", b.claims)
+        self.assertIn("axis OY from 0 to 5", b.claims)
+        self.assertIn("right X O Y", b.claims)
+        self.assertIn("reads A 3 on OX | stem", b.claims)
+        self.assertIn("reads A 4 on OY | stem", b.claims)
+        self.assertIn('label "x" names OX', b.claims)
+        self.assertIn('label "y" names OY', b.claims)
+
+    def test_join_sym_axis_guides_and_origin_label(self):
+        b = self._b(points={"A": (3, 4), "B": (1, 2), "C": (5, 1)},
+                    join=[["A", "B", "C"]], closed=True, sym_axis={"x": 3},
+                    guides=["A"], origin_label=True,
+                    stem=self.STEM)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+        self.assertIn('label "O" names O', b.claims)
+        self.assertIn("paint", b.claims)                      # the dashed midline
+        self.assertNotIn("none tickMark parallelMark angleMark angleArc dashed",
+                         b.claims)                            # dashed IS drawn now
+
+    def test_figure_mode_emits_inferred_reads_and_the_content_line(self):
+        b = self._b(coords="figure",
+                    stem="The points are marked on the plane. (a) Read them.")
+        self.assertIn("reads A 3 on OX | inferred", b.claims)
+        self.assertIn("figure content", b.claims)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0)
+
+    def test_extents_and_point_validation(self):
+        with self.assertRaises(vt.TemplateError):
+            self._b(x_max=0)
+        with self.assertRaises(vt.TemplateError):
+            self._b(x_max=11)
+        with self.assertRaises(vt.TemplateError):
+            self._b(x_max=6.0)                              # float, not int
+        with self.assertRaises(vt.TemplateError):
+            self._b(coords="axes")
+        with self.assertRaises(vt.TemplateError):
+            self._b(points={"a": (3, 4)})                   # not a capital
+        with self.assertRaises(vt.TemplateError):
+            self._b(points={"O": (3, 4)})                   # reserved
+        with self.assertRaises(vt.TemplateError):
+            self._b(points={"A": (2.5, 3)})                 # non-integer
+        with self.assertRaises(vt.TemplateError):
+            self._b(points={"A": (7, 2)})                   # outside the plane
+        with self.assertRaises(vt.TemplateError):
+            self._b(points={"A": (3, 4), "B": (3, 4)})      # two letters, one dot
+
+    def test_axis_anchor_positions_refuse(self):
+        """(0,0), (x_max,0), (0,y_max) are owned by O/X/Y — a dot letter can never
+        own the shared anchor, so the builder refuses them outright."""
+        for xy in ((0, 0), (6, 0), (0, 5)):
+            with self.subTest(xy=xy):
+                with self.assertRaises(vt.TemplateError) as cm:
+                    self._b(points={"A": xy})
+                self.assertIn("axis anchor", str(cm.exception))
+        b = self._b(points={"A": (6, 5)},                   # the far corner is legal
+                    stem="Point A(6, 5) is marked. (a) Read it.")
+        self.assertIn("reads A 5 on OY", b.claims)
+
+    def test_on_axis_non_anchor_points_build(self):
+        b = self._b(points={"A": (3, 0), "B": (0, 2)},
+                    stem="Points A(3, 0) and B(0, 2) are marked. (a) Read them.")
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+
+    def test_stem_mode_needs_every_coordinate(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._b(points={"A": (3, 5)},
+                    stem="Point A(3, 4) is marked. (a) Read it.")   # no 5 in the stem
+        self.assertIn("5", str(cm.exception))
+
+    def test_join_sym_guides_validation(self):
+        with self.assertRaises(vt.TemplateError):
+            self._b(join=[["A", "Z"]])                      # unknown point
+        with self.assertRaises(vt.TemplateError):
+            self._b(join=[["A"]])                           # too short
+        with self.assertRaises(vt.TemplateError):
+            self._b(join=[["A", "A"]])                      # zero-length step
+        with self.assertRaises(vt.TemplateError):
+            self._b(sym_axis={"z": 2})                      # bad key
+        with self.assertRaises(vt.TemplateError):
+            self._b(sym_axis={"x": 6})                      # not strictly inside
+        with self.assertRaises(vt.TemplateError):
+            self._b(guides=["Z"])
+        with self.assertRaises(vt.TemplateError):
+            self._b(unit_px=0)
+
+    def test_dense_grid_refuses_with_a_stated_reason(self):
+        """10x10 with interior points leaves no half-cell pocket — a stated refusal,
+        not a crash, and the message points at grid=False / fewer points."""
+        with self.assertRaises(vt.TemplateError):
+            self._b(x_max=10, y_max=10, coords="figure",
+                    stem="Several points are marked. (a) Read them.",
+                    points={n: xy for n, xy in
+                            zip("ABCDEFGH", [(1, 1), (3, 2), (5, 5), (7, 3),
+                                            (2, 8), (9, 9), (4, 6), (8, 1)])})
+
+    def test_red_team_anchor_moved_to_a_different_value(self):
+        """A=(3,4) in the stem; drag A's anchor up to the y=5 line and the unchanged
+        claim `reads A 4 on OY` must die — the anchors now disagree with it."""
+        b = self._b(points={"A": (3, 4)},
+                    stem="Point A(3, 4) is marked. (a) Read it.")
+        anc = _anchors_of(b.claims)
+        o_y, y_y = anc["O"][1], anc["Y"][1]
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0)
+            forged = _set_anchor(b.claims, "A", y=y_y)      # y_max = 5 → the 5 line
+            r = audit(forged, tmp)
+            self.assertNotEqual(r.returncode, 0, forged)
+
+    def test_red_team_claim_off_stem_value(self):
+        """`reads A 5 on OY | stem` — the stem states A(3, 4), no 5 anywhere: the
+        stem-justification check must kill it even before geometry is consulted."""
+        b = self._b(points={"A": (3, 4)},
+                    stem="Point A(3, 4) is marked. (a) Read it.")
+        forged = b.claims.replace("reads A 4 on OY | stem",
+                                  "reads A 5 on OY | stem")
+        self.assertNotEqual(forged, b.claims)
+        with tempfile.TemporaryDirectory() as tmp:
+            r = audit(forged, tmp)
+            self.assertNotEqual(r.returncode, 0, forged)
+            self.assertIn("stem", r.stdout)
+
+    def test_sym_axis_stem_mode_reads_are_stem_evidenced(self):
+        """W11 review MAJOR 1 — the midline's two `reads` carry ev `stem` in stem mode
+        (the value is require_stem'd at input)."""
+        b = self._b(sym_axis={"x": 3})                       # 3 IS in STEM (A's x)
+        sym_reads = [ln for ln in b.claims.splitlines()
+                     if "reads" in ln and "midline" in ln]
+        self.assertEqual(len(sym_reads), 2)
+        for ln in sym_reads:
+            self.assertIn("| stem", ln)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+
+    def test_sym_axis_stem_mode_needs_the_value_in_the_stem(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._b(sym_axis={"y": 2.5})                     # 2.5 is nowhere in STEM
+        self.assertIn("midline", str(cm.exception))
+
+    def test_sym_axis_figure_mode_reads_stay_inferred(self):
+        b = self._b(coords="figure", sym_axis={"x": 3},
+                    stem="Points are marked and a dashed midline crosses the plane. "
+                         "(a) Read the figure.")
+        for ln in b.claims.splitlines():
+            if "reads" in ln and "midline" in ln:
+                self.assertIn("| inferred", ln)
+        self.assertIn("figure content", b.claims)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+
+    def test_red_team_reads_ev_flipped_to_inferred_dies(self):
+        """W11 review MAJOR 1: `reads … | inferred` without the figure-content
+        declaration unhooks the value from the stem — the audit must now kill it."""
+        b = self._b(points={"A": (3, 4)},
+                    stem="Point A(3, 4) is marked. (a) Read it.")
+        forged = b.claims.replace("reads A 3 on OX | stem",
+                                  "reads A 3 on OX | inferred")
+        self.assertNotEqual(forged, b.claims)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0)
+            r = audit(forged, tmp)
+            self.assertNotEqual(r.returncode, 0, forged)
+            self.assertIn("figure content", r.stdout)
+
+
+class ParallelLines(unittest.TestCase):
+    """W11 — parallel classes, tilted non-class lines, the optional crossing and the
+    perpendicular-distance segment MN."""
+
+    STEM = ("AB and CD are parallel horizontal lines; EF lies between them, slanted. "
+            "The perpendicular distance between AB and CD is 3 cm. "
+            "(a) Name the parallel lines.")
+
+    def _b(self, **kw):
+        d = dict(figure_id="pl1", stem=self.STEM, ask=[["a", "x"]],
+                 lines=["AB", "CD", "EF"], parallel=[["AB", "CD"]], direction=0)
+        d.update(kw)
+        return vt.BUILDERS["parallel_lines"](**d)
+
+    def test_happy_path_audits_clean(self):
+        b = self._b()
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+        self.assertIn("parallel AB CD", b.claims)
+        self.assertIn("nonparallel AB EF", b.claims)
+        self.assertIn("nonparallel CD EF", b.claims)
+
+    def test_two_classes_crossing_and_distance(self):
+        b = self._b(lines=["AB", "CD", "EF", "GH"],
+                    parallel=[["AB", "CD"], ["EF", "GH"]],
+                    crossing="PQ",
+                    distance={"between": ["AB", "CD"], "value": 3, "unit": "cm"})
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+        self.assertIn("parallel EF GH", b.claims)
+        self.assertIn("nonparallel PQ AB", b.claims)
+        self.assertIn("on M AB", b.claims)
+        self.assertIn("on N CD", b.claims)
+        self.assertIn('label "3 cm" names MN', b.claims)
+        self.assertIn("right", b.claims)
+        self.assertIn("two arrows", b.claims)               # class 2's double mark
+
+    def test_line_and_class_validation(self):
+        with self.assertRaises(vt.TemplateError):
+            self._b(lines=["AB"])                           # need 2-4
+        with self.assertRaises(vt.TemplateError):
+            self._b(lines=["AB", "CD", "EF", "GH", "IJ"])
+        with self.assertRaises(vt.TemplateError):
+            self._b(lines=["AB", "CD", "AC"])               # A shared by AB and AC
+        with self.assertRaises(vt.TemplateError):
+            self._b(parallel=[])                            # ≥1 class
+        with self.assertRaises(vt.TemplateError):
+            self._b(parallel=[["AB"], ["CD", "EF"]])        # a class needs ≥2
+        with self.assertRaises(vt.TemplateError):
+            self._b(parallel=[["AB", "CD"], ["CD", "EF"]])  # CD in two classes
+        with self.assertRaises(vt.TemplateError):
+            self._b(parallel=[["AB", "CD", "EF"], ["GH", "IJ"]])  # 3 classes
+        with self.assertRaises(vt.TemplateError):
+            self._b(parallel=[["AB", "PQ"]])                # PQ not in lines
+        with self.assertRaises(vt.TemplateError):
+            self._b(direction="east")
+
+    def test_crossing_and_distance_validation(self):
+        with self.assertRaises(vt.TemplateError):
+            self._b(crossing="AQ")                          # A already used
+        with self.assertRaises(vt.TemplateError):
+            self._b(crossing="P")                           # needs two capitals
+        with self.assertRaises(vt.TemplateError):
+            self._b(distance={"between": ["AB", "EF"],      # different classes
+                              "value": 3, "unit": "cm"})
+        with self.assertRaises(vt.TemplateError):
+            self._b(distance={"between": ["AB", "CD"],
+                              "value": -3, "unit": "cm"})
+        with self.assertRaises(vt.TemplateError):
+            self._b(distance={"between": ["AB", "CD"],
+                              "value": 3, "unit": ""})
+        with self.assertRaises(vt.TemplateError):           # MN letters taken by a line
+            self._b(lines=["AB", "CD", "EF", "MN"],
+                    parallel=[["AB", "CD"], ["EF", "MN"]],
+                    distance={"between": ["AB", "CD"], "value": 3, "unit": "cm"})
+        with self.assertRaises(vt.TemplateError) as cm:     # 3 not in the stem
+            self._b(stem="AB and CD are parallel; EF is slanted. (a) Name them.",
+                    distance={"between": ["AB", "CD"], "value": 3, "unit": "cm"})
+        self.assertIn("3", str(cm.exception))
+
+    def test_directions_and_tilt(self):
+        for direction in (0, 20, -30, 90):
+            with self.subTest(direction=direction):
+                b = self._b(direction=direction)
+                with tempfile.TemporaryDirectory() as tmp:
+                    self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+
+    def test_red_team_parallel_claim_on_a_rotated_line(self):
+        """Rotate CD's anchors 4° off AB — `parallel AB CD` must die (≥5° gate)."""
+        b = self._b()
+        anc = _anchors_of(b.claims)
+        cx, cy = anc["C"]
+        dx, dy = anc["D"]
+        ang = math.atan2(dy - cy, dx - cx) + math.radians(4)
+        ln = math.hypot(dx - cx, dy - cy)
+        forged = _set_anchor(b.claims, "D",
+                             x=cx + ln * math.cos(ang), y=cy + ln * math.sin(ang))
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0)
+            r = audit(forged, tmp)
+            self.assertNotEqual(r.returncode, 0, forged)
+
+    def test_red_team_nonparallel_claim_on_a_parallel_line(self):
+        """Straighten EF's anchors onto AB's direction — `nonparallel AB EF` must die."""
+        b = self._b()
+        anc = _anchors_of(b.claims)
+        ax, ay, bx, by = *anc["A"], *anc["B"]
+        ex, ey, fx, fy = *anc["E"], *anc["F"]
+        uab = math.hypot(bx - ax, by - ay)
+        ln = math.hypot(fx - ex, fy - ey)
+        forged = _set_anchor(b.claims, "F",
+                             x=ex + (bx - ax) / uab * ln,
+                             y=ey + (by - ay) / uab * ln)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0)
+            r = audit(forged, tmp)
+            self.assertNotEqual(r.returncode, 0, forged)
+
+    def test_parallel_marks_clear_the_crossing_and_mn(self):
+        """W11 review MAJOR 2 — on the dense spec the crossing used to run straight
+        through the marks. Measure the emitted mark strokes' distance to the crossing
+        and MN segments at the narrowest render scale: ≥8 rendered px of ink gap."""
+        b = self._b(lines=["AB", "CD", "EF", "GH"],
+                    parallel=[["AB", "CD"], ["EF", "GH"]],
+                    crossing="PQ",
+                    distance={"between": ["AB", "CD"], "value": 3, "unit": "cm"})
+        els = b.doc["elements"]
+        marks = [el for el in els if el["type"] == "parallelMark"]
+        self.assertEqual(len(marks), 4)
+        blockers = [next(el["points"] for el in els if el.get("id") == "lnPQ"),
+                    next(el["points"] for el in els if el.get("id") == "dist")]
+        s = min(1.0, vt.PLATE_INNER / (b.doc["canvas"]["width"] + 60.0))
+        for p, q, _w in vt.stroke_segments(marks):
+            for seg in blockers:
+                gap = vt._seg_seg_dist(p, q, tuple(seg[0]), tuple(seg[1]))
+                self.assertGreaterEqual(
+                    gap * s, 8.0,
+                    f"a parallelMark stroke {(p, q)} sits {gap * s:.1f} rendered px "
+                    f"from a crossing/MN stroke")
+        # round-3 review: a class is ONE symbol — its members share a single `at`,
+        # so the chevrons stay on the same side of the transversal (count = class
+        # index + 1, so grouping by count groups by class)
+        by_count: dict[int, list[float]] = {}
+        for el in marks:
+            by_count.setdefault(el["count"], []).append(el["at"])
+        self.assertEqual(sorted(by_count), [1, 2])
+        for cnt, ats in by_count.items():
+            self.assertEqual(len(set(ats)), 1,
+                             f"class {cnt} marks carry mixed `at` {ats}")
+
+    def test_every_letter_sits_at_its_own_end(self):
+        """W11 review — E's floater used to land right under C (EF's left end sat just
+        below CD's). Every letter must read nearer its OWN anchor than any other."""
+        variants = ({}, {"crossing": "PQ"},
+                    {"distance": {"between": ["AB", "CD"], "value": 3, "unit": "cm"}})
+        for kw in variants:
+            with self.subTest(kw=kw):
+                b = self._b(**kw)
+                for el in b.doc["elements"]:
+                    if el["type"] != "text" or not el["id"].startswith("lb"):
+                        continue
+                    ch = el["value"]
+                    if ch not in b.anchors:
+                        continue                    # the "v unit" distance label
+                    own = b.anchors[ch]
+                    d_own = math.hypot(el["at"][0] - own[0], el["at"][1] - own[1])
+                    for nm_, p in b.anchors.items():
+                        if nm_ == ch:
+                            continue
+                        self.assertLess(
+                            d_own, math.hypot(el["at"][0] - p[0],
+                                              el["at"][1] - p[1]),
+                            f"{ch}'s label reads nearer {nm_} than its own end")
+
+    def test_dollar_label_is_a_stated_refusal_not_a_crash(self):
+        """W11 review — the unit text reaches a VDD label: `$` must be TemplateError,
+        not vc.text's AssertionError."""
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._b(distance={"between": ["AB", "CD"], "value": 3, "unit": "c$m"})
+        self.assertIn("`$`", str(cm.exception))
+        with self.assertRaises(vt.TemplateError):
+            self._b(distance={"between": ["AB", "CD"], "value": 3, "unit": "cm`s"})
+
+
+class BarChart(unittest.TestCase):
+    """W11 — grouped vertical bars, T-anchored reads, numeral-vs-category labels."""
+
+    STEM = ("The chart shows sales of 25 books in Grade 6 and 40 books in Grade 7, "
+            "in steps of 5. (a) Which grade sold more?")
+
+    def _b(self, **kw):
+        d = dict(figure_id="bc1", stem=self.STEM, ask=[["a", "x"]],
+                 categories=["Grade 6", "Grade 7"],
+                 series=[{"name": "", "values": [25, 40]}], step=5)
+        d.update(kw)
+        return vt.BUILDERS["bar_chart"](**d)
+
+    def test_happy_path_audits_clean(self):
+        b = self._b()
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+        self.assertIn("axis OY from 0 to 40", b.claims)
+        self.assertIn("tick OY step 5 | stem", b.claims)
+        self.assertIn("reads T1 25 on OY | stem", b.claims)
+        self.assertIn("reads T2 40 on OY | stem", b.claims)
+        self.assertIn('label "Grade 6" names cat0', b.claims)
+        self.assertNotIn("legend", b.claims)                # one series → no legend
+
+    def test_multi_series_legend_zero_bar_and_titles(self):
+        b = self._b(categories=["Mon", "Tue", "Wed"],
+                    series=[{"name": "Tea", "values": [4, 0, 6]},
+                            {"name": "Milk", "values": [2, 3, 5]}],
+                    step=2, v_max=8, value_title="Cups", category_title="Day",
+                    stem="Tea sold 4, 0 and 6 cups; milk sold 2, 3 and 5 cups, "
+                         "in steps of 2. (a) Compare.")
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+        self.assertIn("reads T3 0 on OY", b.claims)         # a 0 bar still reads
+        self.assertIn('label "Tea" names series0', b.claims)
+        self.assertIn('names OY', b.claims)                 # the value title
+        self.assertIn('names OX', b.claims)                 # the category title
+
+    def test_figure_mode_and_year_categories(self):
+        """Years as category glyphs are NOT scale numerals — the 2a exclusion keeps
+        `label "2019" names cat0` out of the printed-numeral set."""
+        b = self._b(categories=["2019", "2020", "2021"],
+                    series=[{"name": "", "values": [10, 15, 20]}],
+                    step=5, values="figure",
+                    stem="The chart shows a club's membership over three years, "
+                         "the axis marked in steps of 5. "
+                         "(a) In which year was it highest?")
+        self.assertIn("reads T1 10 on OY | inferred", b.claims)
+        self.assertIn("figure content", b.claims)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+
+    def test_input_validation(self):
+        with self.assertRaises(vt.TemplateError):
+            self._b(categories=["Only"])                    # need 2-8
+        with self.assertRaises(vt.TemplateError):
+            self._b(categories=[f"C{i}" for i in range(9)])
+        with self.assertRaises(vt.TemplateError):
+            self._b(categories=["A", " "])                  # blank label
+        with self.assertRaises(vt.TemplateError):
+            self._b(series=[])                              # need 1-3
+        with self.assertRaises(vt.TemplateError):
+            self._b(series=[{"name": "", "values": [1, 2]}] * 4)
+        with self.assertRaises(vt.TemplateError):
+            self._b(series=[{"name": "", "values": [25]}])  # one value, two cats
+        with self.assertRaises(vt.TemplateError):
+            self._b(series=[{"name": "", "values": [25, 40]},
+                            {"name": "", "values": [10, 20]}])   # unnamed in a group
+        with self.assertRaises(vt.TemplateError):
+            self._b(values="bars")
+        with self.assertRaises(vt.TemplateError):
+            self._b(step=0)
+        with self.assertRaises(vt.TemplateError):           # step 7 not in stem
+            self._b(step=7)
+
+    def test_scale_validation(self):
+        with self.assertRaises(vt.TemplateError) as cm:     # 33 not on the 2.5 lattice
+            self._b(series=[{"name": "", "values": [25, 33]}],
+                    stem="The chart shows 25 and 33, in steps of 5. (a) Read.")
+        self.assertIn("step/2", str(cm.exception))
+        with self.assertRaises(vt.TemplateError):           # v_max not a step multiple
+            self._b(v_max=42)
+        with self.assertRaises(vt.TemplateError):           # 13 steps > 12
+            self._b(step=1, v_max=13,
+                    series=[{"name": "", "values": [5, 10]}],
+                    stem="The chart shows 5 and 10, in steps of 1. (a) Read.")
+        with self.assertRaises(vt.TemplateError) as cm:     # a bar over the axis
+            self._b(v_max=30)
+        self.assertIn("v_max", str(cm.exception))
+
+    def test_width_cap_refusal_states_the_fix(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._b(categories=["Category number " + str(i) for i in range(8)],
+                    series=[{"name": "Series " + s,
+                             "values": [10] * 8} for s in "ABC"],
+                    step=5,
+                    stem="Eight categories, three series, all at 10, steps of 5. "
+                         "(a) Read.")
+        self.assertIn("drop categories", str(cm.exception))
+
+    def test_red_team_bar_drawn_at_another_value(self):
+        """Stem states 25 and 40; drag T1's anchor to the 30 height — the claim
+        `reads T1 25 on OY` must die against its own anchor."""
+        b = self._b()
+        anc = _anchors_of(b.claims)
+        o_y, y_y = anc["O"][1], anc["Y"][1]                 # OY maps 0..40
+        y30 = o_y + (30 / 40) * (y_y - o_y)
+        forged = _set_anchor(b.claims, "T1", y=y30)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0)
+            r = audit(forged, tmp)
+            self.assertNotEqual(r.returncode, 0, forged)
+
+    def test_red_team_claim_matching_the_forged_anchor_dies_on_stem(self):
+        """The full lie: anchor AND claim agree on 30 — it falls only to the
+        stem-justification check (the stem never states 30)."""
+        b = self._b()
+        anc = _anchors_of(b.claims)
+        o_y, y_y = anc["O"][1], anc["Y"][1]
+        forged = _set_anchor(b.claims, "T1", y=o_y + (30 / 40) * (y_y - o_y))
+        forged = forged.replace("reads T1 25 on OY | stem",
+                                "reads T1 30 on OY | stem")
+        self.assertNotEqual(forged, b.claims)
+        with tempfile.TemporaryDirectory() as tmp:
+            r = audit(forged, tmp)
+            self.assertNotEqual(r.returncode, 0, forged)
+            self.assertIn("stem", r.stdout)
+
+    def test_dollar_and_backtick_labels_are_stated_refusals(self):
+        """W11 review — a `$` in a category used to escape as vc.text's AssertionError.
+        Every user text (categories, series names, titles) is checked up front."""
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._b(categories=["$x$", "Q"])
+        self.assertIn("`$`", str(cm.exception))
+        with self.assertRaises(vt.TemplateError):
+            self._b(series=[{"name": "A`b", "values": [25, 40]},
+                            {"name": "B", "values": [20, 30]}],
+                    stem="A`b sold 25 and 40; B sold 20 and 30, in steps of 5. (a) Read.")
+        with self.assertRaises(vt.TemplateError):
+            self._b(value_title="Sales $")
+        with self.assertRaises(vt.TemplateError):
+            self._b(category_title="Day|Night")            # claim-separator chars too
+
+
 class ByteIdentity(unittest.TestCase):
     """The floating-label machinery must not change any existing template's bytes —
     sha256 over each self-test spec's three emitted files, captured on origin/main."""
@@ -1258,6 +1794,10 @@ class ByteIdentity(unittest.TestCase):
         "selftest-abacus": "e373396ae5831ac3b59e197ee58d303bf0b8f5825efd4c0d440d55c4f4512f0e",
         "selftest-rings": "6e0ffc326d1bd899b702a9a1eea4a9c5ce0927258f7155c083bdf6a7f8edbc07",
         "selftest-shapes": "f3fdfa398f181216902d858288b9e4b5255179ded2e4627dddcaf44b12621e9a",
+        # W11 — generated when the three G7 templates landed
+        "selftest-plane": "22da47f99125b5821f78e4a39cffbbb0a2f8b447c8cee8856cfd719f44d2455a",
+        "selftest-parallel": "a90ffb97dca6fe53f22f192f1b4dc989822ab6147a72ab3b012a00e00ec96861",
+        "selftest-bars": "f6427cfc31e6a891bb820165618cf6c14598be4dd1fa3920f0a3e53155e684b0",
     }
 
     def test_self_test_outputs_unchanged(self):

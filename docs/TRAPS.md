@@ -841,3 +841,56 @@ across sessions variants count as distinct, so `precritic-lint --existing` may s
 fresh variant against a row from another session — expected, read the WARN and move on.
 
 *Source: this plugin — W10d, owner ruling 2026-10-03.*
+
+## T-QG-9 — The floater sweep that can never land in the pocket it was given
+
+**Looked true:** `finish()`'s `_near` floater search tries 16 directions × fixed 6-unit steps
+around the anchor — if a clear spot exists near the dot, the sweep finds it.
+**Actually:** it only finds spots its fixed-step grid happens to hit. A coordinate-plane point
+surrounded by grid lines leaves a clear pocket that is a thin SLIVER — (cell − label − 2×
+clearance) ≈ 1–6 units tall centred mid-cell — and the sweep steps past it at every distance.
+`stroke-clearance rule rejected 112 of 112` meant "your sweep granularity never sampled the
+pocket", not "no pocket exists". Same trap for labels that must sit between a segment and a
+neighbouring anchor (`own-anchor` eats everything outside a narrow band).
+**The check:** labels whose legal positions are pockets between strokes — grid-cell letters on
+`coordinate_plane`, the `MN` foot letters and `"3 cm"` value on `parallel_lines` — are placed as
+FIXED texts by `_pick_label_spot`, which evaluates candidate centres against exactly the rules
+`finish()` will apply (stroke gap, label gap, own-anchor) and picks the best. `_near` floaters
+stay for spots with real freedom (endpoints, axis letters) — the origin's `O` and `0` are
+pocket-seated too, because a floater's sweep stacked `O` on top of `0` (W11 review).
+
+*Source: this plugin — W11, 2026-10-04.*
+
+## T-QG-10 — Clearance scales UP in units, the target rule does NOT
+
+**Looked true:** a label placed `clearance + padding` units from a stroke is safe — the padding
+is tiny and the stroke rule is the tightest one anyway.
+**Actually:** `_clearance_units(px, span)` converts rendered px to canvas units at ~`px/s`
+(s = 294/span once the figure outgrows the plate), so on a wide canvas "8 px clear of the axis"
+becomes a ~19-unit gap. visual-check's **target** rule measures a short label's distance to the
+nearest painted geometry in CANVAS units and fails past `1.5 × fontSize` — it does not scale.
+The two rules squeeze from opposite ends: `bar_chart` category labels sat ~23u under the
+baseline (fail >21u) and the coordinate plane's `"0"` at the numeral-column corner sat ~29u
+from the origin (fail >22.5u — the diagonal seat multiplies the required gap by √2).
+**The check:** any fixed label 1–2 glyphs long must be seated with BOTH constraints in the
+score: stroke/label gaps ≥ the scaled clearance AND box-to-nearest-paint ≤ `1.5·size`. The
+"0" shares the point-letter pocket search for exactly this reason; corner seats that must
+clear two perpendicular strokes can be unreachable — seat it hugging ONE axis instead.
+
+*Source: this plugin — W11, 2026-10-04.*
+
+## T-QG-11 — `| inferred` unhooks a value from the stem with no trace
+
+**Looked true:** a `reads P v on XY` claim's evidence word is bookkeeping — `stem` means the
+stem states it, `inferred` means it doesn't — and either way the VALUE is still checked.
+**Actually:** the stem-justification check only bites on `ev stem`. Flipping `reads A 4 on OY`
+from `| stem` to `| inferred` in a stem-mode claim set passed the whole audit — the value was
+then justified by NOTHING (measured and verified on a W11 stem-mode coordinate plane).
+**The check:** in a `constructed` set a `reads` claim whose evidence is not `stem` FAILS unless
+the set carries the read-the-figure declaration — a `describe` claim whose text says the values
+are "figure content". Both W11 figure modes emit that line word for word; a set in stem mode
+never does, so a flipped evidence word dies. (Same round: a `parallelMark`'s chevrons are real
+strokes — the transversal crosses every line AT ITS CENTRE, so a mark's default `at` = 0.5 sits
+on the crossing; the builder probes `at` positions until the marks clear it and MN by 8 px.)
+
+*Source: this plugin — W11 review round 1, 2026-10-04.*
