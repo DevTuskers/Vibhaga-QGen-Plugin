@@ -1,4 +1,4 @@
-"""tests/test_template_sweep.py — W9 item F: a parameter sweep over the eighteen figure templates.
+"""tests/test_template_sweep.py — W9 item F: a parameter sweep over the figure templates.
 
 The point is coverage, not the golden path: each builder is run across a parameter grid with
 synthetic stems that state the numbers it needs, and the sweep asserts:
@@ -313,6 +313,71 @@ def case_grid() -> list[dict]:
     cases.append(C("parallel_lines", stem=pl_stem, lines=["AB", "CD"],
                    parallel=[["AB", "CD"]],
                    distance={"between": ["AB", "CD"], "value": 3, "unit": "c$m"}))
+    # symmetry_grid (W13) — 4 axis kinds × 2 shapes × half/full × labels × cell sizes
+    sg_stem = "Half of a shape is drawn on a grid of 1 cm squares. (a) Complete it."
+    sg = [
+        ({"through": [[4, 0], [4, 5]]}, [[4, 0], [1, 1], [1, 4], [3, 5], [4, 5]]),
+        ({"through": [[3, 0], [3, 4]]}, [[3, 0], [1, 0], [1, 4], [3, 4]]),
+        ({"through": [[0, 3], [6, 3]]}, [[0, 3], [1, 1], [4, 1], [5, 3]]),
+        ({"through": [[0, 2], [5, 2]]}, [[1, 2], [1, 0], [4, 0], [4, 2]]),
+        ({"through": [[0, 0], [4, 4]]}, [[0, 0], [4, 1], [4, 4]]),
+        ({"through": [[0, 0], [5, 5]]}, [[1, 1], [3, 0], [5, 2], [4, 4]]),
+        ({"through": [[0, 6], [6, 0]]}, [[1, 5], [1, 1], [5, 1]]),
+        ({"through": [[0, 5], [5, 0]]}, [[0, 5], [0, 2], [2, 0], [5, 0]]),
+    ]
+    for ax, half in sg:
+        for show in ("half", "full"):
+            for vl in (False, True):
+                for cp in (30.0, 45.0):
+                    cases.append(C("symmetry_grid", stem=sg_stem, cell=1, half=half,
+                                   axis=ax, show=show, vertex_labels=vl, cell_px=cp))
+    # labelled_composite (W13) — L/T/U/step/plus outlines × unknown variants × letters
+    lc_stem = "A composite floor plan with sides 3 m and 6 m. (a) Find the area."
+    lc = [
+        [["R", 8], ["U", 3], ["L", 3], ["U", 2], ["L", 5], ["D", 5]],
+        [["R", 2], ["U", 4], ["R", 2], ["U", 2], ["L", 6], ["D", 2], ["R", 2], ["D", 4]],
+        [["R", 9], ["U", 6], ["L", 3], ["D", 3], ["L", 3], ["U", 3], ["L", 3], ["D", 6]],
+        [["R", 6], ["U", 2], ["L", 2], ["U", 2], ["L", 2], ["U", 2], ["L", 2], ["D", 6]],
+        [["R", 2], ["U", 2], ["R", 2], ["U", 2], ["L", 2], ["U", 2], ["L", 2], ["D", 2],
+         ["L", 2], ["D", 2], ["R", 2], ["D", 2]],
+        [["R", 12], ["U", 5], ["L", 4], ["U", 3], ["L", 8], ["D", 8]],
+    ]
+    for p in lc:
+        for variant in ("all", "x", "null", "both"):
+            q = [list(s) for s in p]
+            if variant in ("x", "both"):
+                q[1] = q[1][:2] + ["x m"]
+            if variant in ("null", "both"):
+                q[2] = q[2][:2] + [None]
+            for vl in (False, True):
+                cases.append(C("labelled_composite", stem=lc_stem, path=q, unit="m",
+                               vertex_labels=vl))
+    # triangle_marks (W13) — triangle classes × mark sets × labels
+    tm_stem = "Two angles are 30°, 40°, 45°, 50°, 60° or 70°. Find x."
+    tri = [
+        ({"A": 60, "B": 60, "C": 60}, {"AB": 1, "BC": 1, "CA": 1}, {"A": 1, "B": 1, "C": 1}, None),
+        ({"A": 70, "B": 70, "C": 40}, {"CA": 1, "BC": 1}, {"A": 1, "B": 1, "C": 2}, None),
+        ({"A": 40, "B": 40, "C": 100}, {"CA": 2, "BC": 2}, {"A": 1, "B": 1, "C": 2}, None),
+        ({"A": 45, "B": 45, "C": 90}, {"CA": 1, "BC": 1}, {"A": 1, "B": 1}, "C"),
+        ({"A": 30, "B": 60, "C": 90}, {}, {"A": 1, "B": 2}, "C"),
+        ({"A": 90, "B": 50, "C": 40}, {}, {"B": 1, "C": 2}, "A"),
+        ({"A": 50, "B": 60, "C": 70}, {"AB": 1, "BC": 2, "CA": 3}, {"A": 1, "B": 2, "C": 3}, None),
+        ({"A": 30, "B": 40, "C": 110}, {}, {"A": 1, "B": 2, "C": 3}, None),
+    ]
+    for angles_, ticks_, arcs_, right_ in tri:
+        for lab in ("none", "letter", "numeric"):
+            labels = {}
+            arced = list(arcs_)
+            if lab == "letter" and arced:
+                labels = {arced[-1]: "x"}
+            if lab == "numeric" and len(arced) >= 2:
+                labels = {}
+                for v in arced[:-1]:          # an equal angle's size prints once
+                    if f"{angles_[v]:g}°" not in labels.values():
+                        labels[v] = f"{angles_[v]:g}°"
+                labels[arced[-1]] = "x"
+            cases.append(C("triangle_marks", stem=tm_stem, angles=angles_, ticks=ticks_,
+                           arcs=arcs_, right=right_, angle_labels=labels))
     return cases
 
 
