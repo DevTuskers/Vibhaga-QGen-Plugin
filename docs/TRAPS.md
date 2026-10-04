@@ -862,6 +862,17 @@ FIXED texts by `_pick_label_spot`, which evaluates candidate centres against exa
 stay for spots with real freedom (endpoints, axis letters) — the origin's `O` and `0` are
 pocket-seated too, because a floater's sweep stacked `O` on top of `0` (W11 review).
 
+*Update 2026-10-04 (owner ruling):* a point letter may sit **over** the faint ruling lines when
+the pockets run out — "if they are visible, that is fine". `coordinate_plane` keeps the
+clear-pocket search as pass 1; only when a letter (or the `O`) seats nowhere at any size does a
+fallback pass treat the `gv*`/`gh*` ruling lines as non-obstacles (axes, ticks, joins, dots,
+labels and the edge still count), and then ALL the figure's letters draw in the accent colour
+`#1d4ed8` — one ink per figure — with a `describe` claim recording it. `vdd-check` and
+`visual-check` exempt exactly those ids (the structural marker — never colour or width) from the
+label↔stroke rule, and `finish()`'s pre-flight does the same. The old measured-limit refusal
+(`x_max ≥ 7` refuses with `grid`+letters) is gone: the whole 10×10 envelope builds; a refusal now
+means even the fallback found no seat.
+
 *Source: this plugin — W11, 2026-10-04.*
 
 ## T-QG-10 — Clearance scales UP in units, the target rule does NOT
