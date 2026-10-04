@@ -159,6 +159,12 @@ same two checkout paths in the critic's spawn prompt.
    Check the set against the plan appendix rubric (for "medium–hard": ≥3 parts each, ≤1 R part and only as (a), an H
    part last, ≥60 % M/H and ≥30 % H across the set's levelled parts) and against AGENTS rule 3 for every multi-lesson tag. A figure that has nothing
    derivable (a pure shape to name) is dropped or put to the owner, never given an invented claim.
+   - **An H part is not just a longer chain** (owner ruling 2026-10-04, plan OD-8). If every step is a move the
+     lesson's worked examples show in that order — "find the 9th term" by continuing the steps, "list the
+     factors and pick the most" — it is M, and the critic will rate it so. Give each H part one real trigger:
+     an unfamiliar situation the lesson never shows, a reverse step (given the result, find the input), a
+     decision after the arithmetic, or a "why / why not" justification. Write the trigger into the plan line
+     (`H: reverse`, `H: decide`, `H: justify`, `H: new context`).
 4. **Author `content.yaml`** (the 2026-09-29 shape — `id_seed`, `lessons:` key map, `figures:` key map, `questions:`
    with `n`, `lessons`, `stem`, `figure`, `parts[label, text, figure, approach, final]`; `build-staged.py` docstring):
    - **Stem** — [`author-question-text`](../author-question-text/SKILL.md) §1a + §3: `$…$`/`$$…$$`, never Sinhala
