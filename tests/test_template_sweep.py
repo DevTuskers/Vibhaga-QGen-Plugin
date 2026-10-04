@@ -352,6 +352,32 @@ def case_grid() -> list[dict]:
             for vl in (False, True):
                 cases.append(C("labelled_composite", stem=lc_stem, path=q, unit="m",
                                vertex_labels=vl))
+    # triangle_marks (W13) — triangle classes × mark sets × labels
+    tm_stem = "Two angles are 30°, 40°, 45°, 50°, 60° or 70°. Find x."
+    tri = [
+        ({"A": 60, "B": 60, "C": 60}, {"AB": 1, "BC": 1, "CA": 1}, {"A": 1, "B": 1, "C": 1}, None),
+        ({"A": 70, "B": 70, "C": 40}, {"CA": 1, "BC": 1}, {"A": 1, "B": 1, "C": 2}, None),
+        ({"A": 40, "B": 40, "C": 100}, {"CA": 2, "BC": 2}, {"A": 1, "B": 1, "C": 2}, None),
+        ({"A": 45, "B": 45, "C": 90}, {"CA": 1, "BC": 1}, {"A": 1, "B": 1}, "C"),
+        ({"A": 30, "B": 60, "C": 90}, {}, {"A": 1, "B": 2}, "C"),
+        ({"A": 90, "B": 50, "C": 40}, {}, {"B": 1, "C": 2}, "A"),
+        ({"A": 50, "B": 60, "C": 70}, {"AB": 1, "BC": 2, "CA": 3}, {"A": 1, "B": 2, "C": 3}, None),
+        ({"A": 30, "B": 40, "C": 110}, {}, {"A": 1, "B": 2, "C": 3}, None),
+    ]
+    for angles_, ticks_, arcs_, right_ in tri:
+        for lab in ("none", "letter", "numeric"):
+            labels = {}
+            arced = list(arcs_)
+            if lab == "letter" and arced:
+                labels = {arced[-1]: "x"}
+            if lab == "numeric" and len(arced) >= 2:
+                labels = {}
+                for v in arced[:-1]:          # an equal angle's size prints once
+                    if f"{angles_[v]:g}°" not in labels.values():
+                        labels[v] = f"{angles_[v]:g}°"
+                labels[arced[-1]] = "x"
+            cases.append(C("triangle_marks", stem=tm_stem, angles=angles_, ticks=ticks_,
+                           arcs=arcs_, right=right_, angle_labels=labels))
     return cases
 
 

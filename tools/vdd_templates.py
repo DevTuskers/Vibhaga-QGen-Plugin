@@ -4882,13 +4882,248 @@ def build_labelled_composite(*, figure_id, stem, ask=None, title=None, descripti
                   medium=medium)
 
 
+# ────────────────────────────────────────────────────────────────────────────────
+# 21. triangle_marks — a triangle with equal-side ticks, angle arcs and right marks
+# ────────────────────────────────────────────────────────────────────────────────
+def build_triangle_marks(*, figure_id, stem, ask=None, title=None, description=None,
+                         medium="english", angles, ticks=None, arcs=None, right=None,
+                         angle_labels=None, names=("A", "B", "C"), base_px=None):
+    """A triangle drawn from its three angles (base = the first two names, third vertex
+    above). The MARKS are the figure's content and every one is asserted against the
+    geometry: equal tick counts ⇔ equal sides, equal arc counts ⇔ equal angles, a right
+    mark ⇔ 90°. A numeric angle label must equal its angle and be a stem number (it becomes
+    an `angle` claim); a letter label (`x`) is the unknown the question asks for. With no
+    `base_px`, a crowded labelled figure is retried at larger bases (labels keep their
+    size, so a bigger triangle gives thin angles room) before it refuses."""
+    kw = dict(figure_id=figure_id, stem=stem, ask=ask, title=title, description=description,
+              medium=medium, angles=angles, ticks=ticks, arcs=arcs, right=right,
+              angle_labels=angle_labels, names=names)
+    if base_px is not None:
+        return _triangle_marks_once(base_px=float(base_px), **kw)
+    for k_, base_ in enumerate((200.0, 260.0, 340.0)):
+        try:
+            return _triangle_marks_once(base_px=base_, **kw)
+        except TemplateError as e_:
+            if k_ == 2 or not re.search(r"rendered px|cannot clear", str(e_)):
+                raise
+
+
+def _triangle_marks_once(*, figure_id, stem, ask, title, description, medium, angles, ticks,
+                         arcs, right, angle_labels, names, base_px):
+    vc.reset_ids()
+    kind = "triangle_marks"
+    names = list(names)
+    if len(names) != 3 or len(set(names)) != 3 or \
+            not all(isinstance(n, str) and re.fullmatch(r"[A-Z]", n) for n in names):
+        raise TemplateError(f"{kind}: names must be three distinct single capitals")
+    A, B, Cn = names
+    if not isinstance(angles, dict) or set(angles) != set(names):
+        raise TemplateError(f"{kind}: angles must give all three of {names}")
+    ang = {}
+    for n, v in angles.items():
+        if not isinstance(v, (int, float)) or isinstance(v, bool) or not 0 < v < 180:
+            raise TemplateError(f"{kind}: angle {n}={v!r} must be between 0 and 180")
+        ang[n] = float(v)
+    if abs(sum(ang.values()) - 180.0) > 1e-6:
+        raise TemplateError(f"{kind}: the angles add up to {sum(ang.values()):g}, not 180")
+    if min(ang.values()) < 15.0:
+        raise TemplateError(f"{kind}: an angle under 15° draws too thin to mark")
+    side_of = {frozenset((A, B)): f"{A}{B}", frozenset((B, Cn)): f"{B}{Cn}",
+               frozenset((Cn, A)): f"{Cn}{A}"}
+
+    def side_key(s):
+        if not (isinstance(s, str) and len(s) == 2 and frozenset(s) in side_of):
+            raise TemplateError(f"{kind}: {s!r} is not a side of triangle {''.join(names)}")
+        return side_of[frozenset(s)]
+
+    tk = {}
+    for s, c_ in (ticks or {}).items():
+        if c_ not in (1, 2, 3):
+            raise TemplateError(f"{kind}: side {s} tick count must be 1, 2 or 3")
+        tk[side_key(s)] = c_
+    ar = {}
+    for v, c_ in (arcs or {}).items():
+        if v not in names:
+            raise TemplateError(f"{kind}: arc vertex {v!r} is not one of {names}")
+        if c_ not in (1, 2, 3):
+            raise TemplateError(f"{kind}: arc count at {v} must be 1, 2 or 3")
+        ar[v] = c_
+    if right is not None:
+        if right not in names:
+            raise TemplateError(f"{kind}: right {right!r} is not one of {names}")
+        if abs(ang[right] - 90.0) > 1e-6:
+            raise TemplateError(f"{kind}: a right-angle mark at {right} needs a 90° angle "
+                                f"(it is {ang[right]:g}°)")
+        if right in ar:
+            raise TemplateError(f"{kind}: {right} carries the right-angle mark — no arcs too")
+    labs = {}
+    for v, t_ in (angle_labels or {}).items():
+        if v not in names:
+            raise TemplateError(f"{kind}: angle label vertex {v!r} is not one of {names}")
+        if v not in ar:
+            raise TemplateError(f"{kind}: the label at {v} needs an arc to sit on — give "
+                                f"{v} an arc count")
+        if not isinstance(t_, str):
+            raise TemplateError(f"{kind}: angle label at {v} must be a string")
+        m = re.fullmatch(r"(\d+(?:\.\d+)?)°?", t_)
+        if m:
+            if abs(float(m[1]) - ang[v]) > 1e-6:
+                raise TemplateError(f"{kind}: label {t_!r} at {v} prints {m[1]} but the angle "
+                                    f"is {ang[v]:g}° — a label may only restate its own angle")
+            require_stem(stem, **{f"angle {v} ({t_!r})": ang[v]})
+        elif not re.fullmatch(r"[a-z]°?", t_):
+            raise TemplateError(f"{kind}: angle label {t_!r} must be its own size ('60°') "
+                                "or one lowercase letter ('x')")
+        if t_ in labs.values():
+            raise TemplateError(
+                f"{kind}: angle label {t_!r} is printed twice — print an equal angle's size "
+                "once and give both angles the same arc count (each printed glyph binds one "
+                "label claim)")
+        labs[v] = t_
+    P = {A: (0.0, 0.0), B: (float(base_px), 0.0)}
+    P[Cn] = vc.triangle_from_angles(P[A], P[B], ang[A], ang[B])
+    length = {s: vc.dist(P[s[0]], P[s[1]]) for s in side_of.values()}
+    eq = lambda x, y: abs(x - y) <= 1e-6 * max(x, y)     # noqa: E731
+    sl = list(tk)
+    for i, s in enumerate(sl):
+        for t2 in sl[i + 1:]:
+            if (tk[s] == tk[t2]) != eq(length[s], length[t2]):
+                raise TemplateError(
+                    f"{kind}: sides {s} and {t2} carry {'the same' if tk[s] == tk[t2] else 'different'} "
+                    f"tick marks but are {'not ' if tk[s] == tk[t2] else ''}equal — a mark must "
+                    "match the triangle the angles give")
+    vl = list(ar)
+    for i, v in enumerate(vl):
+        for w in vl[i + 1:]:
+            if (ar[v] == ar[w]) != (abs(ang[v] - ang[w]) <= 1e-6):
+                raise TemplateError(
+                    f"{kind}: angles {v} and {w} carry {'the same' if ar[v] == ar[w] else 'different'} "
+                    f"arcs but are {'not ' if ar[v] == ar[w] else ''}equal — a mark must match "
+                    "the angles")
+    others = lambda v: [w for w in names if w != v]       # noqa: E731
+    elements: list[dict] = [vc.line(P[s[0]], P[s[1]], id=s) for s in side_of.values()]
+    for s, c_ in tk.items():
+        elements += vc.tick_marks(P[s[0]], P[s[1]], c_, size=10)
+    span0 = float(base_px) + 2 * 50.0
+    clr_a = _clearance_units(STROKE_PX + SLACK_STROKE + 1.5, span0)
+    for v, c_ in ar.items():
+        a_, b_ = others(v)
+        r_ = 24.0 if ang[v] >= 40 else 34.0
+        elements += vc.angle_label(P[v], P[a_], P[b_], r=r_, arcs=c_)
+    if right is not None:
+        a_, b_ = others(right)
+        elements += vc.right_angle_mark(P[right], P[a_], P[b_], r=14)
+    # angle labels are separate `text` on the angle's bisector, walked outward until the
+    # box clears both sides and every arc/mark by the stroke rule (the angleMark's own
+    # label sits a FIXED distance past its arc — too close for multi-arcs on a wide canvas)
+    marks_now = stroke_segments(elements)
+    for v, t_ in labs.items():
+        a_, b_ = others(v)
+        ua, ub = vc.unit(P[v], P[a_]), vc.unit(P[v], P[b_])
+        bis = vc.unit((0.0, 0.0), (ua[0] + ub[0], ua[1] + ub[1]))
+        far = 0.8 * min(vc.dist(P[v], P[a_]), vc.dist(P[v], P[b_]))
+        seat = None
+        for d_ in _arange(30.0, far, 2.0):
+            el_ = vc.text((P[v][0] + bis[0] * d_, P[v][1] + bis[1] * d_), t_, id=f"al{v}")
+            bx = label_boxes([el_], FS)[0][1:]
+            if min(_seg_rect_dist(p, q, bx) - w / 2 for p, q, w in marks_now) >= clr_a:
+                seat = el_
+                break
+        if seat is None:
+            raise TemplateError(f"{kind}: the label {t_!r} at {v} cannot clear the sides of a "
+                                f"{ang[v]:g}° angle inside the triangle — raise base_px or "
+                                "drop the label")
+        elements.append(seat)
+    cen = (sum(p[0] for p in P.values()) / 3, sum(p[1] for p in P.values()) / 3)
+    xs_ = [p[0] for p in P.values()]
+    clr = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, max(xs_) - min(xs_) + 2 * 50.0)
+    for v in names:
+        ux, uy = vc.unit(cen, P[v])          # out of the triangle, away from its centroid
+        d_ = clr + _label_half_along(v, FS, ux, uy) + 2.0
+        elements.append(vc.text((P[v][0] + ux * d_, P[v][1] + uy * d_), v, id=f"lbl{v}"))
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    for i, s in enumerate(sl):
+        for t2 in sl[i + 1:]:
+            if tk[s] == tk[t2]:
+                add(f"equal {s} {t2}", "inferred",
+                    f"both carry {tk[s]} tick mark{'s' if tk[s] > 1 else ''}")
+    for i, v in enumerate(vl):
+        for w in vl[i + 1:]:
+            if ar[v] == ar[w]:
+                a1, b1 = others(v)
+                a2, b2 = others(w)
+                add(f'describe "angle {a1}{v}{b1} and angle {a2}{w}{b2} carry the same arc '
+                    f'mark — they are equal"', "inferred",
+                    f"{ar[v]} arc{'s' if ar[v] > 1 else ''} at each")
+    if right is not None:
+        a_, b_ = others(right)
+        add(f"right {a_} {right} {b_}", "inferred", "the right-angle mark")
+    for v, t_ in labs.items():
+        a_, b_ = others(v)
+        if re.fullmatch(r"\d+(?:\.\d+)?°?", t_):
+            add(f"angle {a_} {v} {b_} = {ang[v]:g}", "stem", f"the printed {t_} at {v}")
+        else:
+            add(f'describe "the angle at {v} is marked {t_} — the unknown"', "inferred",
+                "a letter label")
+    nums_ = [v for v, t_ in labs.items() if re.fullmatch(r"\d+(?:\.\d+)?°?", t_)]
+    lets_ = [v for v in labs if v not in nums_]
+    if len(nums_) == 2 and len(lets_) == 1:
+        add(f"derive 180 - {ang[nums_[0]]:g} - {ang[nums_[1]]:g} = {ang[lets_[0]]:g}",
+            "inferred", f"the angle sum gives the unknown at {lets_[0]}")
+    else:
+        add(f"derive {' + '.join(f'{ang[v]:g}' for v in names)} = 180", "inferred",
+            "the interior angles as drawn — the angle sum of a triangle")
+    n_eq = max((sum(1 for t2 in sl if tk[t2] == tk[s]) for s in sl), default=0)
+    by_side = ("equilateral" if n_eq == 3 else "isosceles" if n_eq == 2 else
+               "scalene" if len(sl) == 3 else None)
+    by_angle = "right-angled" if right is not None else None
+    if by_side or by_angle:
+        add(f'describe "the marks show {"an" if (by_side or by_angle)[0] in "aeiou" else "a"} '
+            f'{" ".join(x for x in (by_side, by_angle) if x)} triangle"', "inferred",
+            "classification read from the marks alone — unmarked sizes are not claimed")
+    for v in names:
+        add(f'label "{v}" names {v}', "inferred", "vertex letter")
+    for v, t_ in labs.items():
+        add(f'label "{t_}" names {v}1', "inferred", f"the label on the arc at {v} (anchor {v}1)")
+    absent = ["parallelMark", "arrow", "dashed", "shaded"]
+    if not tk:
+        absent.insert(0, "tickMark")
+    if not ar and right is None:
+        absent.append("angleMark")
+    add("none " + " ".join(absent), "inferred", "only the marks claimed above are drawn")
+    kinds = []
+    if tk:
+        kinds.append("tick marks on equal sides")
+    if ar:
+        kinds.append("angle arcs")
+    if right is not None:
+        kinds.append(f"a right-angle mark at {right}")
+    anchors = dict(P)
+    for v in labs:
+        anchors[f"{v}1"] = tuple(next(e for e in elements if e["id"] == f"al{v}")["at"])
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=anchors, points=names + [f"{v}1" for v in labs],
+                  segments=list(side_of.values()), claims=claims, ask=ask,
+                  title=title or f"Triangle {''.join(names)} with marks",
+                  description=description or (
+                      f"Triangle {''.join(names)}"
+                      + (f" with {', '.join(kinds)}." if kinds else ".")),
+                  scale="angles drawn to size; side lengths are not stated",
+                  medium=medium)
+
+
 BUILDERS = {fn.__name__[6:]: fn for fn in
             (build_grid_polygon, build_shaded_grid, build_rays_from_point, build_number_line,
              build_pictograph, build_rectangle_points, build_house_pentagon, build_cuboid,
              build_dot_pattern, build_circle_points, build_two_circles_points,
              build_circles_in_circle, build_abacus, build_sorting_rings, build_shape_row,
              build_coordinate_plane, build_parallel_lines, build_bar_chart,
-             build_symmetry_grid, build_labelled_composite)}
+             build_symmetry_grid, build_labelled_composite, build_triangle_marks)}
 
 CATALOGUE = """
 template            stem-checked numbers                          inputs
@@ -4912,6 +5147,7 @@ parallel_lines      distance.value                                lines=["AB","C
 bar_chart           step; every value when values="stem"          categories 2–8, series 1–3 {"name","values"}, step, v_max, value_title, category_title, gridlines, orientation="v"|"h" (h = bars run right, categories stack up the y axis; claims read on OX)
 symmetry_grid       cell                                          half=[(x,y)…] open path, both ends ON the axis, axis={"through":[[x,y],[x,y]]} vertical/horizontal/±45°, show="half"|"full", cols/rows?, cell_px, vertex_labels (falls back to accent letters over the ruling)
 labelled_composite  a side whose value no closure gives (≥2 unknowns in one orientation)  path=[[dir R|L|U|D, length, label?]…] 4–12 sides closing on A, unit, vertex_labels, right_marks, unit_px — label "x m" or null = unknown side (derived by closure when it is its orientation's only unknown)
+triangle_marks      every NUMERIC angle label                    angles={A:a,B:b,C:c} (sum 180, each ≥15), ticks={"AB":n} 1–3, arcs={"A":n} 1–3, right="C", angle_labels={"A":"60°"|"x"} (needs an arc), names, base_px? (auto-grows when labels crowd)
 """.strip()
 
 SELF_TEST = [
@@ -5042,6 +5278,12 @@ SELF_TEST = [
      "ask": [["a", "the unknown side"], ["b", "the floor area"]],
      "path": [["R", 9], ["U", 6], ["L", 3], ["D", 3, "x m"], ["L", 3, None], ["U", 3],
               ["L", 3], ["D", 6]], "unit": "m"},
+    {"template": "triangle_marks", "figure_id": "selftest-trimarks",
+     "stem": "Triangle PQR has two equal sides. (a) Name the kind of triangle. (b) Find x.",
+     "ask": [["a", "the kind of triangle"], ["b", "the angle x"]],
+     "names": ["P", "Q", "R"], "angles": {"P": 70, "Q": 70, "R": 40},
+     "ticks": {"PR": 1, "QR": 1}, "arcs": {"P": 1, "Q": 1, "R": 2},
+     "angle_labels": {"R": "x"}},
 ]
 
 

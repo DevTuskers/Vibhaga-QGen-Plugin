@@ -2439,6 +2439,114 @@ class LabelledComposite(unittest.TestCase):
         self.assertIn("අ", b.doc["a11y"]["title"])
 
 
+class TriangleMarks(unittest.TestCase):
+    """W13 — triangle classification by marks (G7 L09/L14)."""
+
+    def _build(self, stem="Name the triangle by its marks.", **kw):
+        return vt.build_triangle_marks(figure_id="t1", stem=stem, **kw)
+
+    def _ok(self, b):
+        r = audit(b.claims, tempfile.mkdtemp())
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_equilateral(self):
+        b = self._build(angles={"A": 60, "B": 60, "C": 60}, ticks={"AB": 1, "BC": 1, "CA": 1},
+                        arcs={"A": 1, "B": 1, "C": 1})
+        self.assertEqual(len(re.findall(r"  K\d+  equal ", b.claims)), 3)
+        self.assertIn("an equilateral triangle", b.claims)
+        self.assertEqual(sum(e["type"] == "tickMark" for e in b.doc["elements"]), 3)
+        self._ok(b)
+
+    def test_isosceles_with_letter_label(self):
+        b = self._build(names=["P", "Q", "R"], angles={"P": 70, "Q": 70, "R": 40},
+                        ticks={"PR": 1, "QR": 1}, arcs={"P": 1, "Q": 1, "R": 2},
+                        angle_labels={"R": "x"})
+        self.assertIn("equal RP QR", b.claims)
+        self.assertIn("an isosceles triangle", b.claims)
+        self.assertIn('label "x" names R1', b.claims)
+        self.assertIn("angle QPR and angle PQR carry the same arc", b.claims)
+        self._ok(b)
+
+    def test_right_isosceles(self):
+        b = self._build(angles={"A": 45, "B": 45, "C": 90}, ticks={"CA": 1, "BC": 1}, right="C")
+        self.assertIn("right A C B", b.claims)
+        self.assertIn("isosceles right-angled triangle", b.claims)
+        self.assertNotRegex(b.claims, r"none [^|]*angleMark")
+        self._ok(b)
+
+    def test_obtuse_numeric_labels_derive_the_unknown(self):
+        b = self._build(stem="Two angles of a triangle are 30° and 40°. Find x.",
+                        angles={"A": 30, "B": 40, "C": 110}, arcs={"A": 1, "B": 2, "C": 3},
+                        angle_labels={"A": "30°", "B": "40°", "C": "x"})
+        self.assertIn("angle B A C = 30 | stem", b.claims)
+        self.assertIn("derive 180 - 30 - 40 = 110", b.claims)
+        self._ok(b)
+
+    def test_scalene_by_distinct_ticks(self):
+        b = self._build(angles={"A": 50, "B": 60, "C": 70}, ticks={"AB": 1, "BC": 2, "CA": 3})
+        self.assertIn("a scalene triangle", b.claims)
+        self.assertNotIn("  equal ", b.claims)
+        self._ok(b)
+
+    def test_unmarked_triangle_claims_no_class(self):
+        b = self._build(angles={"A": 50, "B": 60, "C": 70})
+        self.assertNotIn("triangle\"", b.claims.split("describe")[0])
+        self.assertNotIn("the marks show", b.claims)
+        self.assertRegex(b.claims, r"none tickMark [^|]*angleMark")
+        self._ok(b)
+
+    def test_misleading_marks_refuse(self):
+        bad = [
+            (dict(angles={"A": 50, "B": 60, "C": 70}, ticks={"AB": 1, "BC": 1}),
+             "the same tick marks but are not equal"),
+            (dict(angles={"A": 70, "B": 70, "C": 40}, ticks={"CA": 1, "BC": 2}),
+             "different tick marks but are equal"),
+            (dict(angles={"A": 50, "B": 60, "C": 70}, arcs={"A": 1, "B": 1}),
+             "the same arcs but are not equal"),
+            (dict(angles={"A": 70, "B": 70, "C": 40}, arcs={"A": 1, "B": 2}),
+             "different arcs but are equal"),
+            (dict(angles={"A": 50, "B": 60, "C": 70}, right="C"), "needs a 90° angle"),
+            (dict(angles={"A": 45, "B": 45, "C": 90}, right="C", arcs={"C": 1}), "no arcs too"),
+        ]
+        for kw, msg in bad:
+            with self.subTest(kw=kw):
+                with self.assertRaises(vt.TemplateError) as cm:
+                    self._build(**kw)
+                self.assertIn(msg, str(cm.exception))
+
+    def test_input_refusals(self):
+        bad = [
+            (dict(angles={"A": 60, "B": 60, "C": 70}), "not 180"),
+            (dict(angles={"A": 60, "B": 60}), "all three"),
+            (dict(angles={"A": 10, "B": 80, "C": 90}), "under 15°"),
+            (dict(angles={"A": 60, "B": 60, "C": 60}, ticks={"AD": 1}), "not a side"),
+            (dict(angles={"A": 60, "B": 60, "C": 60}, ticks={"AB": 4}), "1, 2 or 3"),
+            (dict(angles={"A": 60, "B": 60, "C": 60}, angle_labels={"A": "x"}), "needs an arc"),
+            (dict(angles={"A": 60, "B": 60, "C": 60}, arcs={"A": 1},
+                  angle_labels={"A": "50°"}), "only restate its own angle"),
+            (dict(angles={"A": 60, "B": 60, "C": 60}, arcs={"A": 1},
+                  angle_labels={"A": "60°"}), "not a number the stem states"),
+            (dict(angles={"A": 60, "B": 60, "C": 60}, arcs={"A": 1},
+                  angle_labels={"A": "xy"}), "one lowercase letter"),
+            (dict(angles={"A": 60, "B": 60, "C": 60}, names=["A", "A", "C"]), "distinct"),
+            (dict(angles={"A": 70, "B": 70, "C": 40}, arcs={"A": 1, "B": 1},
+                  angle_labels={"A": "x", "B": "x"}), "printed twice"),
+        ]
+        for kw, msg in bad:
+            with self.subTest(kw=kw):
+                with self.assertRaises(vt.TemplateError) as cm:
+                    self._build(**kw)
+                self.assertIn(msg, str(cm.exception))
+
+    def test_english_only_and_a11y_exempt(self):
+        with self.assertRaises(vt.TemplateError):
+            self._build(angles={"A": 60, "B": 60, "C": 60}, arcs={"A": 1},
+                        angle_labels={"A": "අ"})
+        b = self._build(angles={"A": 60, "B": 60, "C": 60}, medium="sinhala",
+                        title="අ — synthetic a11y title")
+        self.assertIn("අ", b.doc["a11y"]["title"])
+
+
 class ByteIdentity(unittest.TestCase):
     """The floating-label machinery must not change any existing template's bytes —
     sha256 over each self-test spec's three emitted files, captured on origin/main."""
