@@ -20,7 +20,8 @@ Checks:
       question is checked only against the cards bound to the lesson keys its `lessons:`
       list tags — a probe of a card the question never tags is not its business. The
       opt-in `--all-probes` restores the old run-wide behaviour (every bound card against
-      every question).
+      every question). A `lessons:` key with no bound `--card` draws one WARN per
+      (question, key) — its not_taught probes were not checked.
 
   (b) WARN — a figure spec's `description` (a11y) containing a digit token equal to a value
       the figure carries as READABLE content, taken from its emitted claim set
@@ -353,9 +354,15 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
             probes = [(key, *rest)
                       for key, rests in probes_of.items() for rest in rests]
         else:
+            tagged = q.get("lessons") or []
             probes = [(key, *rest)
-                      for key in (q.get("lessons") or []) if key in probes_of
+                      for key in tagged if key in probes_of
                       for rest in probes_of[key]]
+            for key in tagged:
+                if key not in probes_of:
+                    warns += 1
+                    log(f"  WARN Q{q.get('n')}: lesson key {key!r} has no bound --card — "
+                        f"its not_taught probes were not checked")
         for pid, text in field_texts(q):
             hay = sc.probe_norm(text)
             for key, cname, concept, probe in probes:

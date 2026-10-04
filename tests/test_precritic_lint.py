@@ -265,6 +265,27 @@ class PrecriticLintTest(unittest.TestCase):
             self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
             self.assertIn("improper", r.stdout)
 
+    def test_unbound_lesson_key_warns_per_question(self):
+        """A `lessons:` key no --card binds → one WARN per (question, key): its not_taught
+        probes were not checked. Bound keys on the same question still lint normally."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run_two_cards(tmp, [
+                {"n": 1, "lessons": ["L07", "L08"], "stem": "Shade the fraction strip."},
+                {"n": 2, "lessons": ["L08"], "stem": "Measure the rim."},
+            ])
+            r = subprocess.run(                     # bind ONLY L07 — L08 has no card
+                [sys.executable, str(TOOL), str(run), "--card", "L07=7",
+                 "--grade", "6", "--cards-dir", str(tmp / "cards")],
+                capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("WARN Q1: lesson key 'L08' has no bound --card", r.stdout)
+            self.assertIn("WARN Q2: lesson key 'L08' has no bound --card", r.stdout)
+            self.assertIn("2 warn(s)", r.stdout)    # one per (question, key), not per probe
+            # --all-probes is the run-wide mode — no per-key binding WARN there
+            r2 = lint_two_cards(run, tmp, "--all-probes")
+            self.assertNotIn("has no bound --card", r2.stdout)
+
     # ---- (b) a11y description must not hand over the readable value ---------
     def test_description_digit_matching_a_claim_value_warns(self):
         with tempfile.TemporaryDirectory() as td:
