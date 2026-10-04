@@ -76,6 +76,26 @@ POINT_LABEL_DOWN = 0.53
 CP_LABEL_SIZES = (14.0, 12.0, 10.0)   # point-letter font ladder; below ~10 units a
                                       # capital renders ≲5 px on the narrow plate
 
+# The faint ruling lines — `gv<n>` (vertical) / `gh<n>` (horizontal) `line` elements,
+# the convention coordinate_plane, grid_polygon and shaded_grid all emit. The
+# 2026-10-04 owner ruling lets a point letter sit OVER them once no clear pocket
+# exists, so they are exempt from the label↔stroke clearance — identified by this
+# STRUCTURAL marker (the id prefix), never by colour or width; vdd-check.mjs and
+# visual-check.mjs apply the same test. Axes, ticks, joins, dots and other labels
+# still measure in full.
+_GRID_ID = re.compile(r"g[vh]\d+$")
+
+
+def _grid_line(el: dict) -> bool:
+    return el.get("type") == "line" and bool(_GRID_ID.fullmatch(str(el.get("id") or "")))
+
+
+# A point letter that needed the ruling-line exemption draws in this accent —
+# blue-700, ~6.7:1 on the white plate every surface renders (`bg-white` in both
+# themes) and ~4.5:1 on the #d1d5db ruling itself, unmistakable beside the
+# #1f2937 default ink. One colour per figure — letters never mix inks.
+_CP_ACCENT = "#1d4ed8"
+
 # Floating labels — a `text` element carrying `_near` asks finish() to place it (W10a).
 FLOAT_GAP = 14.0          # default `_gap`: units from the anchor to the box's NEAR edge
 FLOAT_REACH, FLOAT_STEP = 36.0, 6.0   # candidates try _gap, _gap+6, …, _gap+36
@@ -720,6 +740,10 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
     scale_stroke = min(1.0, PLATE_INNER / (W + 60.0))
     boxes = [(_s, x0 + dx, y0 + dy, x1 + dx, y1 + dy) for _s, x0, y0, x1, y1 in boxes]
     strokes = [((a[0] + dx, a[1] + dy), (b[0] + dx, b[1] + dy), w) for a, b, w in strokes]
+    # the ruling lines are exempt from the label↔stroke check only (the 2026-10-04
+    # ruling — a letter may sit over the faint grid when no clear pocket exists);
+    # every other stroke still measures. `elements` are already translated here.
+    clear_strokes = stroke_segments([el for el in elements if not _grid_line(el)])
 
     def refuse_label(i: int, rule: str, msg: str):
         """A floater that still fails at the final scale gets the honest error — the author
@@ -737,7 +761,7 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
             refuse_label(i, "the edge rule",
                          f"{kind}: label {txt!r} is ~{edge:.1f} rendered px from the canvas "
                          f"edge (needs {EDGE_PX}px + slack) — move it inward")
-        worst = min(_seg_rect_dist(a, b, (x0, y0, x1, y1)) - w / 2 for a, b, w in strokes) if strokes else 99
+        worst = min(_seg_rect_dist(a, b, (x0, y0, x1, y1)) - w / 2 for a, b, w in clear_strokes) if clear_strokes else 99
         if worst * scale_stroke < STROKE_PX + SLACK_STROKE:
             refuse_label(i, "the stroke-clearance rule",
                          f"{kind}: label {txt!r} is ~{worst * scale_stroke:.1f} rendered px "
@@ -2989,8 +3013,12 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
     stem number) or "figure" (read-the-figure mode — `reads` carry ev `inferred`).
 
     x_max/y_max run to 10 for a bare plane. With `grid` on AND letters to seat
-    (`points`, `origin_label`), each letter's pocket needs ~44 canvas units of cell —
-    measured limit ≈ 6×6 (5×8 and 4×9 also fit); x_max ≥ 7 refuses outright (W12)."""
+    (`points`, `origin_label`), each letter first searches for a pocket clear of
+    EVERY stroke including the ruling lines; only when none seats at any size do the
+    faint ruling lines stop being obstacles (the 2026-10-04 owner ruling) — every
+    other ink still counts — and ALL the figure's letters then draw in the accent
+    colour so they read over the ruling. A refusal now means the fallback failed
+    too; the whole 10×10 envelope builds."""
     vc.reset_ids()
     for nm, v in (("x_max", x_max), ("y_max", y_max)):
         if isinstance(v, bool) or not isinstance(v, int) or not (1 <= v <= 10):
@@ -3156,6 +3184,11 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
         # 1.5·fontSize of SOME painted ink (stroke centrelines and dots both count),
         # which the far pockets of a wide-scaled canvas break.
         strokes = stroke_segments(elements)
+        # `strokes_xg` — the same set minus the faint ruling lines — is ONLY the
+        # fallback pass's obstacle set (the 2026-10-04 ruling: a letter may sit over
+        # the ruling once no clear pocket exists). `paint_gap` always measures the
+        # full set: the ruling's nearness is what keeps a fallback letter attached.
+        strokes_xg = stroke_segments([el for el in elements if not _grid_line(el)])
         s_est = min(1.0, PLATE_INNER / (span_x + 1.6 * unit + 60.0))
         need_stroke = (STROKE_PX + SLACK_STROKE) / s_est
         need_label = 4.0 / s_est
@@ -3163,17 +3196,20 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
         placed: list[tuple] = []                  # boxes this pass committed
         fixed_boxes = label_boxes(elements, FS)
 
-        def seat(cx, cy, text, size, offsets, rivals=(), first_ok=False):
+        def seat(cx, cy, text, size, offsets, rivals=(), first_ok=False, clear=None):
             """(score, bx, by) — score <0 fails a rule. `first_ok` returns the FIRST
-            legal offset (the list is then a preference order); otherwise the best."""
+            legal offset (the list is then a preference order); otherwise the best.
+            `clear` overrides the stroke-clearance obstacle set (the fallback pass
+            passes `strokes_xg`); the paint hug always measures every stroke."""
             w = _label_width(text, size)
+            cs = strokes if clear is None else clear
             best = None
             for dx, dy in offsets:
                 bx, by = cx + dx, cy + dy
                 box = (bx - w / 2, by - MID_UP * size,
                        bx + w / 2, by + MID_DOWN * size)
                 stroke_gap = min((_seg_rect_dist(a, b, box) - sw / 2
-                                  for a, b, sw in strokes), default=99.0)
+                                  for a, b, sw in cs), default=99.0)
                 paint_gap = min((_seg_rect_dist(a, b, box)
                                  for a, b, _s in strokes), default=99.0)
                 label_gap = min((_rect_gap(box, pb[1:5])
@@ -3241,6 +3277,10 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
             out.sort(key=lambda o: math.hypot(*o))
             return out
 
+        # True once ANY letter (or the "O") needed the ruling-line fallback — every
+        # letter then draws in _CP_ACCENT so a figure never mixes letter inks.
+        fell_back = False
+
         if origin_label:
             # the capital "O" is pocket-seated like the numerals, preferring the
             # classic corner down-LEFT of the origin — a floater's sweep stacks it
@@ -3261,10 +3301,22 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
                             rivals_o, first_ok=True)
                 if best is not None and best[0] >= 0:
                     break
+            if (best is None or best[0] < 0) and grid:
+                # FALLBACK (2026-10-04 ruling): the faint ruling lines stop being
+                # obstacles — axes, ticks, joins, dots and labels still are — and
+                # the letter then draws in the accent colour (applied below).
+                for sz in (16.0,) + CP_LABEL_SIZES:
+                    best = seat(0.0, 0.0, "O", sz,
+                                corner_offsets("O", sz, o_off_dirs) + o_ring,
+                                rivals_o, first_ok=True, clear=strokes_xg)
+                    if best is not None and best[0] >= 0:
+                        fell_back = True
+                        break
             if best is None or best[0] < 0:
                 raise TemplateError(
                     "coordinate_plane: origin_label's \"O\" found no seat clear of the "
-                    "axes, the \"0\" and the point letters — drop origin_label")
+                    "axes, the \"0\" and the point letters — even with the ruling-line "
+                    "fallback; drop origin_label")
             ow = _label_width("O", sz)
             elements.append(vc.text((best[1], best[2]), "O", id="org", size=sz))
             placed.append(("O", best[1] - ow / 2, best[2] - MID_UP * sz,
@@ -3285,6 +3337,17 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
                             rivals, first_ok=True)
                 if best is not None and best[0] >= 0:
                     break
+            if (best is None or best[0] < 0) and grid:
+                # FALLBACK pass (2026-10-04 ruling): the ruling lines stop being
+                # obstacles — the axes, ticks, joins, dots, other letters and the
+                # canvas edge still are — and the letter draws in the accent colour.
+                for size in CP_LABEL_SIZES:
+                    best = seat(cx, cy, n, size,
+                                corner_offsets(n, size) + list(ring),
+                                rivals, first_ok=True, clear=strokes_xg)
+                    if best is not None and best[0] >= 0:
+                        fell_back = True
+                        break
             if best is not None and best[0] >= 0:
                 w = _label_width(n, size)
                 elements.append(vc.text((best[1], best[2]), n, id=f"lb{n}", size=size))
@@ -3294,8 +3357,15 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
                 raise TemplateError(
                     f"coordinate_plane: point {n}'s letter found no clear pocket at "
                     f"any size {CP_LABEL_SIZES} (~{(best[0] if best else 0) * s_est:.1f} "
-                    f"rendered px short) — the labels need room the strokes don't leave")
-        return elements, anchors, sym_pts, join_segs, step_x, step_y, span_x
+                    f"rendered px short) — the ruling-line fallback found none either; "
+                    f"the axes, ticks, joins, dots and other letters still block it")
+        if fell_back:
+            # ONE accent for every point letter + the "O" — a figure never mixes
+            # letter inks; the claim set records it (the `describe` line below).
+            for el in elements:
+                if re.fullmatch(r"lb[A-Z]|org", str(el.get("id") or "")):
+                    el["color"] = _CP_ACCENT
+        return elements, anchors, sym_pts, join_segs, step_x, step_y, span_x, fell_back
 
     ev_pts = "stem" if coords == "stem" else "inferred"
     units = [float(unit_px)] if unit_px is not None else \
@@ -3306,7 +3376,8 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
     err = None
     for u in units:
         try:
-            elements, anchors, sym_pts, join_segs, step_x, step_y, span_x = assemble(u)
+            elements, anchors, sym_pts, join_segs, step_x, step_y, span_x, fell_back = \
+                assemble(u)
         except TemplateError as e:
             if "pocket" not in str(e) and "seat" not in str(e):
                 raise
@@ -3362,6 +3433,11 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
             add(f'label "{n}" names {n}', ev_pts, "a marked point")
         if origin_label:
             add('label "O" names O', "stem", "the origin letter")
+        if fell_back:
+            add('describe "point letters sit over the faint grid lines and are drawn '
+                'in the accent colour for legibility"', "inferred",
+                "2026-10-04 ruling — the ruling stops being an obstacle once no "
+                "clear pocket seats a letter; axes, ticks, joins and dots still do")
         dashed_drawn = bool(sym or gset)
         add("none tickMark parallelMark angleMark angleArc" +
             (" " if dashed_drawn else " dashed ") + "shaded", "inferred",
@@ -3394,15 +3470,16 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
                 raise
             err = e
     if grid and (pts or origin_label):
-        # measured W12: a letter's pocket needs ~44 canvas units of cell (label box +
-        # the 8-rendered-px stroke clearance each side, s_est-scaled) — the largest
-        # grids that still seat letters are 6×6, 5×8 and 4×9; x_max ≥ 7 (or the tall
-        # equivalents) leaves no legal pocket at any unit size
+        # every cell size already got BOTH seat passes — the clear-pocket search and
+        # the ruling-line fallback (letters may sit over the faint grid and draw in
+        # the accent colour, 2026-10-04). A refusal here means the obstacles that
+        # never lift — axes, tick numerals, joins, the dots, other letters, the
+        # canvas edge — left no seat at any unit size or font size.
         raise TemplateError(
             f"coordinate_plane: no cell size inside the width cap lays the figure out "
-            f"cleanly ({err}) — with `grid` on, lettered points need ~44-unit cells; "
-            f"the measured limit is about 6×6 (5×8 and 4×9 also fit) and x_max ≥ 7 "
-            f"refuses outright — pass grid=False or drop the letters")
+            f"cleanly ({err}) — the letters already got the ruling-line fallback "
+            f"(accent-coloured seats over the faint grid); what still blocks them is "
+            f"real ink. Pass grid=False, fewer points, or drop origin_label")
     raise TemplateError(f"coordinate_plane: no cell size inside the width cap lays the "
                         f"figure out cleanly ({err}) — pass grid=False or fewer points")
 
@@ -4310,7 +4387,7 @@ circles_in_circle   none — counts are figure content              n_in, n_out,
 abacus              none — printed values are figure content      place_values=[10000,…,1], beads=[b per rod 0–9] — >9 refuses
 sorting_rings       none — item texts are figure content          groups=[(name,[items])] 2–3 rings; cards stack inside each ring
 shape_row           none — shape kinds are figure content         shapes=[(letter,kind)] kind in circle small_circle square rectangle triangle oval semicircle — 3 per row
-coordinate_plane    each point's x,y when coords="stem"           x_max,y_max≤10, points={A:(x,y)}, join, closed, sym_axis={"x"|"y":k}, guides, grid, origin_label — grid+letters need ~44-unit cells: measured limit ≈6×6 (5×8, 4×9 fit); x_max≥7 refuses
+coordinate_plane    each point's x,y when coords="stem"           x_max,y_max≤10, points={A:(x,y)}, join, closed, sym_axis={"x"|"y":k}, guides, grid, origin_label — grid+letters: clear pockets first; else letters sit over the faint ruling in accent blue (all ≤10 build)
 parallel_lines      distance.value                                lines=["AB","CD"], parallel=[[…]], direction, crossing="PQ", distance={"between","value","unit"}
 bar_chart           step; every value when values="stem"          categories 2–8, series 1–3 {"name","values"}, step, v_max, value_title, category_title, gridlines, orientation="v"|"h" (h = bars run right, categories stack up the y axis; claims read on OX)
 """.strip()

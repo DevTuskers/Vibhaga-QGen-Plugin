@@ -35,7 +35,9 @@
  *      every claim-set label rendered as a `<text>`, `aria-label` and `<desc>` resolve, and every
  *      `<text>` label's bbox measured ≥ 8 rendered px from the canvas edge and ≥ 6 rendered px from
  *      stroke geometry — rendered px at each width (viewBox units × render scale), measured to the
- *      stroke's EDGE (centreline − half its rendered width); an unmeasurable bbox fails closed
+ *      stroke's EDGE (centreline − half its rendered width); the templates' faint ruling lines
+ *      (gv<n>/gh<n> `line` ids) are exempt — a letter may sit over them (owner ruling 2026-10-04);
+ *      an unmeasurable bbox fails closed
  *      (declare an intentional departure with an `allow: label:"<text>"` claim-set line)
  *
  * CANVAS ANCHORS (for 8–9). The drawing's named points, in canvas coordinates, come from — in
@@ -537,15 +539,29 @@ else {
             ctx.fillStyle = "transparent"; ctx.fillStyle = style.stroke; ctx.fillRect(0, 0, 1, 1);
             return [...ctx.getImageData(0, 0, 1, 1).data].some((v, k) => k < 3 && v !== bg[k]) ? [index] : [];
           });
+          // The templates' faint ruling lines — `line` elements whose id is the gv<n>/gh<n>
+          // convention grid_polygon, shaded_grid and coordinate_plane all emit — are exempt
+          // from the label↔stroke rule ONLY (owner ruling 2026-10-04: a point letter may sit
+          // over the ruling when no clear pocket exists). The marker is structural (the id
+          // prefix), never colour or width; axes, ticks, joins and dots still measure. The
+          // g↔element mapping is the same positional one visibleStrokes uses, so a render
+          // whose <g> count doesn't match gets NO exemption rather than a guessed one.
+          const gridNodes = new Set();
+          if (groups.length === shapes.length)
+            shapes.forEach(({ el }, i) => {
+              if (el.type === "line" && /^g[vh]\d+$/.test(String(el.id ?? "")))
+                for (const n of groups[i].querySelectorAll("line,polyline,polygon,path,circle,rect,ellipse")) gridNodes.add(n);
+            });
           // label metrics, in RENDERED px at this width: getBBox returns viewBox user units, so every
           // distance goes through pxPerUnit (a canvas wider than the render shrinks units into px).
           // Every <text> bbox's min distance to the canvas edge (fail < 8 px) and to any stroke
           // geometry — sampled with getPointAtLength, measured to the stroke's EDGE (centreline minus
-          // half its rendered stroke-width; fail < 6 px). No exclusions; an intentional attachment is
+          // half its rendered stroke-width; fail < 6 px). No exclusions besides the ruling lines
+          // above; an intentional attachment is
           // declared via `allow: label:"<text>"`. An unmeasurable bbox fails CLOSED.
           const vb = svg.viewBox?.baseVal;
           const pxPerUnit = vb && vb.width ? svg.getBoundingClientRect().width / vb.width : null;
-          const strokes = scope("line,polyline,polygon,path,circle,rect,ellipse");
+          const strokes = scope("line,polyline,polygon,path,circle,rect,ellipse").filter((s) => !gridNodes.has(s));
           const labelMetrics = scope("text").map((t) => {
             let bb; try { bb = t.getBBox(); } catch { bb = null; }
             if (!bb || !pxPerUnit) return { text: t.textContent, edge_px: null, stroke_px: null, ok: false };
