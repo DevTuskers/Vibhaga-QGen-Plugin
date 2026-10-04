@@ -9,12 +9,16 @@ part) — `build-staged` never emits them:
   check:  a Python arithmetic expression that must evaluate to True — e.g.
           `check: "40 * 23 == 920"` or `check: "divmod(925, 40) == (23, 5)"`. Whitelist:
           numbers, + - * / // % **, unary -, comparisons (chained ok), and/or/not,
-          parentheses, tuple/list literals (constant indexing ok), and calls to
-          ceil floor divmod min max abs sum round sorted int. Nothing else — no names,
-          no attributes. The check must contain at least one comparison, and every
-          comparison must compute something — a bare `True` or a constant-only
+          parentheses, tuple/list literals (constant indexing ok; tuple comparisons
+          like `(a, b) == (1, 2)` count), and calls to
+          ceil floor divmod min max abs sum round sorted int len. Nothing else — no
+          names, no attributes. The check must contain at least one comparison, and
+          every comparison must compute something — a bare `True` or a constant-only
           compare (`1 == 1`, `1 < 2`, `(1, 2) == (1, 2)`) re-derives nothing and is
-          refused. Resource
+          refused. A leaf can instead declare `check: "none — <reason>"` (an em dash
+          or ` - `): the reason after the dash must strip to ≥10 characters, and the
+          leaf is counted separately in the summary as unchecked-by-declaration —
+          for classification/naming answers where nothing computes. Resource
           bounds: every intermediate |number| ≤ 10**15, every list/tuple ≤ 1000
           elements (a `seq * n` repetition is refused before it allocates), |exp| ≤
           1000 on `**`, and a 2 s wall-clock backstop per leaf (SIGALRM, POSIX).
@@ -27,8 +31,8 @@ value of some Call/BinOp in it — uncovered numbers WARN (the final could still
 the check doesn't reach it). Leaves without `check:` WARN one line each — a classification
 answer legitimately has none.
 
-Summary `check-answers: N checked · F false · W warn · M without check`; exit 1 on any
-False or eval error, else 0.
+Summary `check-answers: N checked · F false · W warn · M without check · U unchecked
+(check: none)`; exit 1 on any False or eval error, else 0.
 """
 import argparse
 import ast
@@ -59,7 +63,8 @@ def die(msg: str) -> "None":
 # The expression evaluator — an AST whitelist, never eval()
 # ---------------------------------------------------------------------------
 FUNCS = {"ceil": math.ceil, "floor": math.floor, "divmod": divmod, "min": min, "max": max,
-         "abs": abs, "sum": sum, "round": round, "sorted": sorted, "int": int}
+         "abs": abs, "sum": sum, "round": round, "sorted": sorted, "int": int,
+         "len": len}
 _BIN = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b,
         ast.Mult: lambda a, b: a * b, ast.Div: lambda a, b: a / b,
         ast.FloorDiv: lambda a, b: a // b, ast.Mod: lambda a, b: a % b}
@@ -71,6 +76,7 @@ MAX_POW = 1000           # |exponent| cap so `10**(10**8)` cannot hang the gate
 MAX_ABS = 10 ** 15       # every intermediate number stays small — big-int bombs die at birth
 MAX_SEQ = 1000           # every intermediate list/tuple stays short — `[1]*10**9` never exists
 EVAL_SECONDS = 2         # wall-clock backstop per leaf, on top of the structural caps
+NONE_CHECK = re.compile(r"^none\s*(?:—|-)\s*(.+)$", re.S)
 
 
 class Refuse(ValueError):
@@ -309,13 +315,24 @@ def main() -> int:
     if not isinstance(spec.get("questions"), list):
         die("content: 'questions' must be a list")
 
-    checked = false = warns = missing = 0
+    checked = false = warns = missing = unchecked = 0
     for name, node in leaves(spec):
         expr = node.get("check")
         if expr is None:
             missing += 1
             print(f"WARN {name}: no check — nothing re-derives this leaf")
             continue
+        if isinstance(expr, str):
+            m = NONE_CHECK.fullmatch(expr.strip())
+            if m:
+                reason = m.group(1).strip()
+                if len(reason) < 10:
+                    print(f"FAIL {name}: 'check: none' wants a reason of ≥10 "
+                          f"characters after the dash — got {reason!r}")
+                    false += 1
+                else:
+                    unchecked += 1
+                continue
         if not isinstance(expr, str):
             print(f"FAIL {name}: check must be a string expression, got {expr!r}")
             checked += 1
@@ -345,7 +362,7 @@ def main() -> int:
                     warns += 1
                     print(f"WARN {name}: final number {num:g} not covered by check")
     print(f"check-answers: {checked} checked · {false} false · {warns} warn · "
-          f"{missing} without check")
+          f"{missing} without check · {unchecked} unchecked (check: none)")
     return 1 if false else 0
 
 

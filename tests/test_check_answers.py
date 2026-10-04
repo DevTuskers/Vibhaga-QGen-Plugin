@@ -276,6 +276,95 @@ class CheckAnswersTest(unittest.TestCase):
             self.assertIn("WARN Q1: no check", r.stdout)
             self.assertIn("0 checked · 0 false · 0 warn · 1 without check", r.stdout)
 
+    # ---- W12: `check: "none — <reason>"`, len(), tuple comparisons ----------
+    def test_check_none_em_dash_counts_as_unchecked(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "x"
+    approach: "name the shape"
+    final: "a triangle"
+    check: "none — a naming answer computes nothing"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("0 checked · 0 false · 0 warn · 0 without check · "
+                          "1 unchecked (check: none)", r.stdout)
+            self.assertNotIn("WARN Q1", r.stdout)
+
+    def test_check_none_ascii_dash(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "x"
+    approach: "…"
+    final: "acute"
+    check: "none - an angle classification is not a computation"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("1 unchecked (check: none)", r.stdout)
+
+    def test_check_none_short_reason_refused(self):
+        # a reason <10 chars after a valid dash is refused naming the reason rule;
+        # `none` with a dash and NO reason at all dies at the parser instead
+        for expr in ("none — short", "none - x", "none — too brief"):
+            with self.subTest(expr=expr), tempfile.TemporaryDirectory() as td:
+                run = write_run(Path(td), f"""\
+  - n: 1
+    lessons: [L01]
+    stem: "x"
+    approach: "…"
+    final: "1"
+    check: {expr!r}
+""")
+                r = run_tool(run)
+                self.assertEqual(r.returncode, 1, expr)
+                self.assertIn("reason", r.stdout, expr)
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "x"
+    approach: "…"
+    final: "1"
+    check: "none —"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("FAIL Q1", r.stdout)
+
+    def test_len_and_tuple_compare_in_whitelist(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "x"
+    approach: "…"
+    final: "4"
+    check: "len(sorted([4, 1, 2])) == 3 and divmod(925, 40) == (23, 5) and divmod(925, 40) < (24, 0)"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("1 checked", r.stdout)
+
+    def test_tuple_of_constants_vs_constants_still_constant_only(self):
+        # whitelisting tuple comparisons does NOT reopen the tautology hole
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "x"
+    approach: "…"
+    final: "1"
+    check: "(1, 2) == (1, 2) or len([1, 1]) == 2"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("constant-only", r.stdout)
+
     def test_nested_leaf_names_and_level_are_ignored_fields(self):
         with tempfile.TemporaryDirectory() as td:
             run = write_run(Path(td), """\

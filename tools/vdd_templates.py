@@ -73,6 +73,8 @@ MID_UP, MID_DOWN = 0.70, 0.58
 # mark_off − 9.0, i.e. +0.50·size; DiagramRenderer's own label box uses ±0.5·size). Modelled at
 # 0.53 to keep a small pad over the measurement. A descender glyph (gjpqy…) reaches ~MID_DOWN.
 POINT_LABEL_DOWN = 0.53
+CP_LABEL_SIZES = (14.0, 12.0, 10.0)   # point-letter font ladder; below ~10 units a
+                                      # capital renders ≲5 px on the narrow plate
 
 # Floating labels — a `text` element carrying `_near` asks finish() to place it (W10a).
 FLOAT_GAP = 14.0          # default `_gap`: units from the anchor to the box's NEAR edge
@@ -603,12 +605,18 @@ def _place_floaters(kind: str, elements: list[dict], fs: float) -> None:
             break
 
 
-def _check_label_texts(elements: list[dict], extra: list[str], medium: str) -> None:
-    """vdd-check rule 3 is medium-conditional: Sinhala in `math.latex` is refused ALWAYS (KaTeX
-    cannot shape it); Sinhala in text/point labels is refused only when the question's `medium`
-    is not `sinhala` — one diagram_dsl per node means a figure cannot be bilingual, and on a
-    mono-medium Sinhala question Sinhala labels are the correct ink. `$`/backtick reach the
-    student raw on any medium."""
+def _check_label_texts(elements: list[dict], extra: list[str], medium: str,
+                       a11y: list[str] | None = None) -> None:
+    """ADR 0021: every piece of text DRAWN in a figure — point letters, labels, text
+    elements, math latex, axis/category/series/value titles, units, card/ring texts —
+    is simple English on EVERY medium. One diagram_dsl per node renders on all media,
+    so a Sinhala codepoint in drawn text is refused regardless of `medium` (the
+    T-S6b-6 medium condition this supersedes) — and KaTeX cannot shape Sinhala
+    either. `medium` stays in the signature for the callers; no check keys off it any
+    more. The a11y `title`/`description` are NOT drawn — pass them in `a11y`: they
+    keep the question's medium and skip the Sinhala check while the `$`/backtick and
+    claim-separator hygiene still applies. `extra` = free DRAWN text that never
+    became an element (bar-chart categories/titles, the parallel_lines unit)."""
     for el in elements:
         s = (el.get("value") if el["type"] == "text" else
              el.get("latex") if el["type"] == "math" else el.get("label"))
@@ -617,22 +625,28 @@ def _check_label_texts(elements: list[dict], extra: list[str], medium: str) -> N
         if el["type"] == "math":
             if SINHALA.search(s):
                 raise TemplateError(
-                    f"math label {s!r} contains Sinhala — KaTeX cannot shape it "
-                    f"(refused on every medium)")
+                    f"math label {s!r} contains Sinhala — diagram text must be simple "
+                    "English (ADR 0021); KaTeX cannot shape Sinhala either")
         else:
             extra.append(s)
     for s in extra:
-        if SINHALA.search(s) and medium != "sinhala":
-            raise TemplateError(
-                f"label {s!r} contains Sinhala — vdd-check rule 3 refuses it when the "
-                f"question's medium is {medium!r} (a figure cannot be bilingual); pass "
-                f"medium='sinhala' when the question is sinhala-medium")
-        if "$" in s or "`" in s:
-            raise TemplateError(f"label {s!r} contains `$` or a backtick — it reaches the student raw")
-        if "|" in s or '"' in s or "\n" in s:
-            raise TemplateError(f"label {s!r} contains a claim-separator character (`|`, "
-                                f"a double quote or a newline) — it would corrupt the "
-                                f"claim set's `label \"{s}\" …` line")
+        if SINHALA.search(s):
+            raise TemplateError(f"label {s!r} contains Sinhala — diagram text must be "
+                                "simple English (ADR 0021)")
+        _check_free_text(s)
+    for s in a11y or []:
+        if isinstance(s, str):
+            _check_free_text(s, what="a11y text")
+
+
+def _check_free_text(s: str, what: str = "label") -> None:
+    if "$" in s or "`" in s:
+        raise TemplateError(f"{what} {s!r} contains `$` or a backtick — it reaches "
+                            "the student raw")
+    if "|" in s or '"' in s or "\n" in s:
+        raise TemplateError(f"{what} {s!r} contains a claim-separator character (`|`, "
+                            "a double quote or a newline) — it would corrupt the "
+                            "claim set's `label \"{s}\" …` line")
 
 
 def _translate(elements: list[dict], dx: float, dy: float) -> None:
@@ -671,7 +685,10 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
     ids = [el.get("id") for el in elements]
     if len(ids) != len(set(ids)):
         raise TemplateError(f"{kind}: duplicate element ids — {sorted(i for i in set(ids) if ids.count(i) > 1)}")
-    _check_label_texts(elements, [title or "", description or ""], medium)
+    # a11y title/description are NOT drawn — exempt from the ADR 0021 script rule but
+    # not from the `$`/backtick/claim-separator hygiene (`title` lands in the figure:
+    # claim line)
+    _check_label_texts(elements, [], medium, a11y=[title or "", description or ""])
 
     fs = FS
     _place_floaters(kind, elements, fs)      # `_near` texts get their `at` + `_floater` mark
@@ -1070,7 +1087,7 @@ def membership_claims(name: str, point: XY, circles: dict[str, tuple[XY, float]]
 # ────────────────────────────────────────────────────────────────────────────────
 def build_grid_polygon(*, figure_id, stem, ask=None, title=None, description=None, medium="english",
                        cell, vertices, cols=None, rows=None, cell_px=30.0,
-                       vertex_labels=False, shade=True):
+                       vertex_labels=False, shade=True, axis=None):
     vc.reset_ids()
     require_stem(stem, cell=cell)
     verts = [tuple(map(float, v)) for v in vertices]
@@ -1084,8 +1101,10 @@ def build_grid_polygon(*, figure_id, stem, ask=None, title=None, description=Non
             raise TemplateError(
                 f"grid_polygon: edge {verts[i]}→{(nx, ny)} is not rectilinear — only "
                 f"axis-aligned edges on the grid")
-    cols = cols or int(max(x for x, _ in verts)) + 1
-    rows = rows or int(max(y for _, y in verts)) + 1
+    # default grid is the shape's own extent — a spare +1 row/column of ruling lines only
+    # ever blocked corner labels (and read as padding nobody asked for)
+    cols = cols if cols is not None else int(max(x for x, _ in verts))
+    rows = rows if rows is not None else int(max(y for _, y in verts))
     names = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ"[: len(verts)])
     pts = {n: (x * cell_px, y * cell_px) for n, (x, y) in zip(names, verts)}
     elements: list[dict] = []
@@ -1101,18 +1120,78 @@ def build_grid_polygon(*, figure_id, stem, ask=None, title=None, description=Non
                          "stroke": {"color": "#d1d5db", "width": 1}})
     for a, b in zip(names, names[1:] + names[:1]):
         elements.append(vc.line(pts[a], pts[b], id=f"{a}{b}", width=2.5))
+    axis_seg = None                    # (e1, e2) in canvas units once the axis is drawn
+    if axis is not None:
+        through = axis.get("through") if isinstance(axis, dict) else None
+        if not (isinstance(through, (list, tuple)) and len(through) == 2):
+            raise TemplateError(
+                'grid_polygon: axis must be {"through": [[x1,y1],[x2,y2]]}')
+        (ax1, ay1), (ax2, ay2) = (tuple(map(float, p)) for p in through)
+        for p in ((ax1, ay1), (ax2, ay2)):
+            if abs(p[0] - round(p[0])) > 1e-9 or abs(p[1] - round(p[1])) > 1e-9:
+                raise TemplateError(
+                    f"grid_polygon: axis through-point {p} is off the grid lattice")
+        adx, ady = ax2 - ax1, ay2 - ay1
+        if math.hypot(adx, ady) < 1e-9:
+            raise TemplateError("grid_polygon: axis through-points must be distinct")
+        if not (abs(adx) < 1e-9 or abs(ady) < 1e-9 or abs(abs(adx) - abs(ady)) < 1e-9):
+            raise TemplateError(
+                "grid_polygon: an axis must run vertical, horizontal or at ±45° — "
+                "other slopes do not map the lattice onto itself")
+        # slab-clip the infinite line to the grid rect
+        t0, t1 = -math.inf, math.inf
+        for d_, p_, extent in ((adx, ax1, float(cols)), (ady, ay1, float(rows))):
+            if abs(d_) < 1e-9:
+                if not 0.0 <= p_ <= extent:
+                    raise TemplateError("grid_polygon: the axis does not cross the grid")
+                continue
+            ta, tb = -p_ / d_, (extent - p_) / d_
+            t0, t1 = max(t0, min(ta, tb)), min(t1, max(ta, tb))
+        if not t1 - t0 > 1e-9:
+            raise TemplateError("grid_polygon: the axis does not cross the grid")
+        if axis.get("assert_symmetric", True):
+            # reflection in a vertical/horizontal/±45° line keeps lattice points on the
+            # lattice; a rectilinear polygon is mirror-symmetric iff its vertex multiset is
+            ref = []
+            for x, y in verts:
+                if abs(adx) < 1e-9:
+                    ref.append((2.0 * ax1 - x, y))
+                elif abs(ady) < 1e-9:
+                    ref.append((x, 2.0 * ay1 - y))
+                elif adx * ady > 0:    # slope +1: (a,b) rel the line maps to (b,a)
+                    ref.append((ax1 + (y - ay1), ay1 + (x - ax1)))
+                else:                  # slope −1: (a,b) maps to (−b,−a)
+                    ref.append((ax1 - (y - ay1), ay1 - (x - ax1)))
+            if sorted((round(x, 6), round(y, 6)) for x, y in ref) != \
+                    sorted((round(x, 6), round(y, 6)) for x, y in verts):
+                raise TemplateError(
+                    "grid_polygon: the polygon is not mirror-symmetric about that axis — "
+                    'pass axis={"through": …, "assert_symmetric": False} to draw it anyway')
+        axis_seg = ((ax1 + t0 * adx) * cell_px, (ay1 + t0 * ady) * cell_px), \
+                   ((ax1 + t1 * adx) * cell_px, (ay1 + t1 * ady) * cell_px)
+        elements.append(vc.line(axis_seg[0], axis_seg[1], dashed=True, id="axis"))
     if vertex_labels:
-        # a vertex label seats on the corner's EXTERIOR bisector: for a convex corner that is
-        # the diagonal away from the polygon; for a reflex corner it is the notch. Seats
-        # inside the grid are impossible — a capital's box (~11x22 units) cannot clear the
-        # 30-unit grid lines AND the two meeting edges at once — so the search only ever
-        # succeeds when the exterior wedge runs out of the grid, and an interior corner
-        # (reflex, or a convex corner whose outside is grid-covered) is refused up front
-        # rather than left for the generic label pre-flight to find.
+        # a vertex label seats OUTSIDE the polygon: the exterior wedge — out of the grid
+        # for a boundary corner, into the notch for a reflex one. Grid lines thread the
+        # interior AND a notch, so an inside-grid seat must fit a cell pocket between two
+        # ruling lines; when the pocket is too tight for a full-size capital the font
+        # ladder steps down (text elements honour fontSize — point labels do not). The
+        # clearances are the same rendered-px rules finish() enforces, in canvas units at
+        # this canvas's scale, so a seated label survives the pre-flight; the hug bound
+        # keeps the box within 1.5·fontSize of painted ink (visual-metrics' target rule).
         signed = sum(verts[i][0] * verts[(i + 1) % len(verts)][1]
                      - verts[(i + 1) % len(verts)][0] * verts[i][1]
                      for i in range(len(verts)))
         strokes_now = stroke_segments(elements)
+        poly_px = [pts[n] for n in names]
+        span_est = cols * cell_px + 2.0 * (44.0 + FS * 0.62 / 2 + MARGIN)
+        s_est = min(1.0, PLATE_INNER / (span_est + 60.0))
+        need_stroke = (STROKE_PX + SLACK_STROKE) / s_est
+        need_label = 4.0 / s_est
+        need_own = OWN_FIXED_PX / s_est
+        compass = [(round(x / math.hypot(x, y), 6), round(y / math.hypot(x, y), 6))
+                   for x, y in
+                   ((1, -1), (-1, -1), (1, 1), (-1, 1), (1, 0), (-1, 0), (0, -1), (0, 1))]
         seated: list = []
         for i, (n, v) in enumerate(pts.items()):
             pv = tuple(c * cell_px for c in verts[i - 1])
@@ -1130,43 +1209,65 @@ def build_grid_polygon(*, figure_id, stem, ask=None, title=None, description=Non
             cross = (v[0] - pv[0]) * (nv[1] - v[1]) - (v[1] - pv[1]) * (nv[0] - v[0])
             if cross * signed > 0:                      # convex: opposite the interior
                 bx, by = -bx, -by
-            w_ = _label_width(n, FS)
-            h_ = (MID_UP + POINT_LABEL_DOWN) * FS       # capitals carry no descender
-            seat = None
-            # beyond ~40 units the box's near edge lands >1.5·fontSize from the vertex —
-            # visual-metrics' target rule would fail it even if the seat is clear. The fan
-            # off the bisector finds seats like "above the top edge, shy of the corner"
-            # when the grid's spare row/column hems the diagonal.
+            dirs = []
             for off in (0.0, -15.0, 15.0, -30.0, 30.0, -45.0, 45.0, -60.0, 60.0,
                         -75.0, 75.0):
-                dx_, dy_ = (bx * math.cos(math.radians(off)) - by * math.sin(math.radians(off)),
-                            bx * math.sin(math.radians(off)) + by * math.cos(math.radians(off)))
-                for r_ in _arange(26.0, 40.0, 2.0):
-                    cx_, cy_ = v[0] + dx_ * r_, v[1] + dy_ * r_
-                    box_ = (cx_ - w_ / 2, cy_ - h_ / 2, cx_ + w_ / 2, cy_ + h_ / 2)
-                    if min(_seg_rect_dist(a, b, box_) - w2 / 2
-                           for a, b, w2 in strokes_now) >= 12.0 and \
-                            all(_rect_gap(box_, pb) >= 8.0 for pb in seated):
-                        seat = (cx_, cy_)
+                dirs.append((round(bx * math.cos(math.radians(off))
+                                   - by * math.sin(math.radians(off)), 6),
+                             round(bx * math.sin(math.radians(off))
+                                   + by * math.cos(math.radians(off)), 6)))
+            dirs += [d for d in compass if d not in dirs]
+            rivals = [pts[m] for m in names if m != n]
+            seat = None
+            for size in (FS,) + CP_LABEL_SIZES:
+                w_ = _label_width(n, size)
+                up_, dn_ = MID_UP * size, MID_DOWN * size
+                hug = 1.5 * size - 2.0
+                r_hi = max(42.0, 1.1 * cell_px)   # a notch seat can sit a cell in
+                for dx_, dy_ in dirs:
+                    for r_ in _arange(16.0, r_hi, 2.0):
+                        cx_, cy_ = v[0] + dx_ * r_, v[1] + dy_ * r_
+                        if _pt_in_poly((cx_, cy_), poly_px):
+                            continue
+                        box_ = (cx_ - w_ / 2, cy_ - up_, cx_ + w_ / 2, cy_ + dn_)
+                        if min(_seg_rect_dist(a, b, box_) - w2 / 2
+                               for a, b, w2 in strokes_now) < need_stroke:
+                            continue
+                        if min((_seg_rect_dist(a, b, box_)
+                                for a, b, _w in strokes_now), default=99.0) > hug:
+                            continue
+                        if any(_rect_gap(box_, pb) < need_label for pb in seated):
+                            continue
+                        own = math.hypot(cx_ - v[0], cy_ - v[1])
+                        if min((math.hypot(cx_ - rv[0], cy_ - rv[1])
+                                for rv in rivals), default=99.0) - own < need_own:
+                            continue
+                        seat = (cx_, cy_, size)
+                        break
+                    if seat:
                         break
                 if seat:
                     break
             if seat is None:
                 raise TemplateError(
-                    f"grid_polygon: vertex {n}'s label has no seat within reach that clears "
-                    f"the edges and grid lines — drop vertex_labels for this shape")
-            cx_, cy_ = seat
-            seated.append((cx_ - w_ / 2, cy_ - h_ / 2, cx_ + w_ / 2, cy_ + h_ / 2))
-            # point labels anchor top-left-ish: box = at + offset, y pulled up by MID_UP·size
-            ox = cx_ - w_ / 2 - v[0]
-            oy = cy_ - v[1] + FS * (MID_UP - POINT_LABEL_DOWN) / 2
-            elements.append({"id": f"lbl{n}", "type": "point", "at": vc.P(v), "r": 0,
-                             "label": n, "labelOffset": [vc.r2(ox), vc.r2(oy)]})
+                    f"grid_polygon: vertex {n}'s label has no clear seat outside the "
+                    f"polygon at any size {(FS,) + CP_LABEL_SIZES} — drop vertex_labels "
+                    "for this shape")
+            cx_, cy_, sz = seat
+            seated.append((cx_ - _label_width(n, sz) / 2, cy_ - MID_UP * sz,
+                           cx_ + _label_width(n, sz) / 2, cy_ + MID_DOWN * sz))
+            elements.append(vc.text((cx_, cy_), n, id=f"lbl{n}", size=sz))
     gx, gy = _unused_letters(set(names), 2)
     anchors = dict(pts)
     anchors[gx], anchors[gy] = (0.0, 0.0), (cols * cell_px, rows * cell_px)
     gpoints = names + [gx, gy]
     segments = [f"{a}{b}" for a, b in zip(names, names[1:] + names[:1])]
+    ax_names = None
+    if axis_seg is not None:
+        ax_names = _unused_letters(set(names) | {gx, gy}, 2)
+        anchors[ax_names[0]], anchors[ax_names[1]] = axis_seg
+        gpoints += ax_names
+        segments.append("".join(ax_names))
 
     claims: list[tuple[str, str, str]] = []
 
@@ -1194,8 +1295,18 @@ def build_grid_polygon(*, figure_id, stem, ask=None, title=None, description=Non
     if vertex_labels:
         for n in names:
             add(f'label "{n}" names {n}', "inferred", "vertex label")
-    add("none tickMark parallelMark angleMark arrow dashed", "inferred",
-        "plain outline strokes on a light grid")
+    if axis_seg is not None:
+        (ax1, ay1), (ax2, ay2) = axis["through"]
+        add(f"paint {''.join(ax_names)} dashed", "inferred",
+            f"the line through ({ax1:g},{ay1:g}) and ({ax2:g},{ay2:g}) drawn dashed")
+        add(f'describe "a dashed line through grid points ({ax1:g},{ay1:g}) and '
+            f'({ax2:g},{ay2:g})'
+            + (' — the shape is mirror-symmetric about it'
+               if axis.get("assert_symmetric", True) else '') + '"',
+            "inferred", "the axis drawn on the grid")
+    add("none tickMark parallelMark angleMark arrow" + ("" if axis_seg else " dashed"),
+        "inferred", "plain outline strokes on a light grid"
+                    + ("; the axis is dashed (claimed)" if axis_seg else ""))
     return finish(kind="grid_polygon", figure_id=figure_id, stem=stem, elements=elements,
                   anchors=anchors, points=gpoints, segments=segments, claims=claims, ask=ask,
                   title=title or f"A closed rectilinear shape on a grid of {cell:g}-unit squares",
@@ -2875,7 +2986,11 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
     as polylines (or polygons when `closed`); `sym_axis` = {"x": k} draws the vertical
     midline x = k dashed, {"y": k} the horizontal one; `guides` = point names that get
     dashed perpendiculars to both axes; `coords` = "stem" (each coordinate must be a
-    stem number) or "figure" (read-the-figure mode — `reads` carry ev `inferred`)."""
+    stem number) or "figure" (read-the-figure mode — `reads` carry ev `inferred`).
+
+    x_max/y_max run to 10 for a bare plane. With `grid` on AND letters to seat
+    (`points`, `origin_label`), each letter's pocket needs ~44 canvas units of cell —
+    measured limit ≈ 6×6 (5×8 and 4×9 also fit); x_max ≥ 7 refuses outright (W12)."""
     vc.reset_ids()
     for nm, v in (("x_max", x_max), ("y_max", y_max)):
         if isinstance(v, bool) or not isinstance(v, int) or not (1 <= v <= 10):
@@ -3096,25 +3211,64 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
         elements.append(vc.text((best[1], best[2]), "0", id="n0", size=16))
         placed.append(("0", best[1] - zw / 2, best[2] - zup,
                        best[1] + zw / 2, best[2] + zdn))
+        # a letter's cheapest pocket is a CELL CORNER: the seat inside one of the four
+        # cells meeting at the point, hugging ANY of that cell's four lattice corners
+        # with the box's inner edges just clear of the two lines meeting there. The
+        # ring's fixed f·unit radii step over every one of these pockets on a tight
+        # grid (T-QG-9), so the offsets are computed from the needed clearance, not
+        # swept. `d` sits at the bottom of the legal window: just past the needed
+        # stroke gap + the widest line's half-width (the -sw/2 in seat()), but it must
+        # also stay within the paint-hug limit (1.5·size − 2 units of a centreline) —
+        # at the smallest sizes that window can be empty, and seat() then fails them.
+
+        def corner_offsets(text, size, dirs=((1, -1), (-1, -1), (1, 1), (-1, 1))):
+            """Offsets that seat the box in each adjacent cell (sx,sy), hugging each
+            of that cell's four lattice corners — nearest seats to the point first."""
+            d = min(need_stroke + 1.2, 1.5 * size - 2.0)
+            w = _label_width(text, size)
+            out, seen = [], set()
+            for sx, sy in dirs:
+                for ox in (0.0, sx * unit):            # cell's near / far x corner
+                    ix = sx if ox == 0.0 else -sx      # direction into the cell
+                    for oy in (0.0, sy * unit):
+                        iy = sy if oy == 0.0 else -sy
+                        off = (ox + ix * (d + w / 2),
+                               oy + iy * (d + (MID_UP if iy > 0 else MID_DOWN)
+                                          * size))
+                        if off not in seen:
+                            seen.add(off)
+                            out.append(off)
+            out.sort(key=lambda o: math.hypot(*o))
+            return out
+
         if origin_label:
             # the capital "O" is pocket-seated like the numerals, preferring the
             # classic corner down-LEFT of the origin — a floater's sweep stacks it
-            # over the "0" instead (W11 review). Down-left first, then the rest of
-            # the outside-quadrant ring; the "0"'s committed box is already in
-            # `placed`, so the two can never collide.
-            ow = _label_width("O", 16)
-            o_off = [(sx * f * unit, sy * f * unit)
-                     for f in (0.42, 0.33, 0.55, 0.68, 0.85)
-                     for sx, sy in ((-1, 1), (-1, 0), (0, 1), (-1, -1), (1, 1))]
+            # over the "0" instead (W11 review). Quarter-cell corners first (down-left,
+            # then the other open quadrants, inside cell(0,0) last), then the
+            # outside-quadrant ring, stepping down the font ladder before refusing;
+            # the "0"'s committed box is already in `placed`, so colliding seats are
+            # rejected by the label gap.
+            o_off_dirs = ((-1, 1), (1, 1), (-1, -1), (1, -1))
+            o_ring = [(sx * f * unit, sy * f * unit)
+                      for f in (0.42, 0.33, 0.55, 0.68, 0.85)
+                      for sx, sy in ((-1, 1), (-1, 0), (0, 1), (-1, -1), (1, 1))]
             rivals_o = [p for nm_, p in anchors.items() if nm_ != "O"]
-            best = seat(0.0, 0.0, "O", 16, o_off, rivals_o, first_ok=True)
+            best = None
+            for sz in (16.0,) + CP_LABEL_SIZES:
+                best = seat(0.0, 0.0, "O", sz,
+                            corner_offsets("O", sz, o_off_dirs) + o_ring,
+                            rivals_o, first_ok=True)
+                if best is not None and best[0] >= 0:
+                    break
             if best is None or best[0] < 0:
                 raise TemplateError(
                     "coordinate_plane: origin_label's \"O\" found no seat clear of the "
                     "axes, the \"0\" and the point letters — drop origin_label")
-            elements.append(vc.text((best[1], best[2]), "O", id="org", size=16))
-            placed.append(("O", best[1] - ow / 2, best[2] - MID_UP * 16.0,
-                           best[1] + ow / 2, best[2] + MID_DOWN * 16.0))
+            ow = _label_width("O", sz)
+            elements.append(vc.text((best[1], best[2]), "O", id="org", size=sz))
+            placed.append(("O", best[1] - ow / 2, best[2] - MID_UP * sz,
+                           best[1] + ow / 2, best[2] + MID_DOWN * sz))
         ring = tuple((sx * f * unit, sy * f * unit)
                      for f in (0.5, 0.42, 0.6, 0.72, 0.85, 0.33)
                      for sx, sy in ((1, -1), (-1, -1), (1, 1), (-1, 1),
@@ -3123,17 +3277,24 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
             cx, cy = px * unit, -py * unit
             rivals = [anchors[m] for m in pts if m != n] + \
                      ([anchors["O"]] if origin_label else [])
-            best = seat(cx, cy, n, 14, ring, rivals)
+            best = None
+            for size in CP_LABEL_SIZES:
+                # quarter-cell corners first (they hug the point's own corner — the
+                # tightest legal seat), then the diagonal/axis ring, first legal wins
+                best = seat(cx, cy, n, size, corner_offsets(n, size) + list(ring),
+                            rivals, first_ok=True)
+                if best is not None and best[0] >= 0:
+                    break
             if best is not None and best[0] >= 0:
-                w = _label_width(n, 14)
-                elements.append(vc.text((best[1], best[2]), n, id=f"lb{n}", size=14))
-                placed.append((n, best[1] - w / 2, best[2] - MID_UP * 14.0,
-                               best[1] + w / 2, best[2] + MID_DOWN * 14.0))
+                w = _label_width(n, size)
+                elements.append(vc.text((best[1], best[2]), n, id=f"lb{n}", size=size))
+                placed.append((n, best[1] - w / 2, best[2] - MID_UP * size,
+                               best[1] + w / 2, best[2] + MID_DOWN * size))
             else:
                 raise TemplateError(
-                    f"coordinate_plane: point {n}'s letter found no clear half-cell "
-                    f"pocket (~{(best[0] if best else 0) * s_est:.1f} rendered px "
-                    f"short) — the labels need room the strokes don't leave")
+                    f"coordinate_plane: point {n}'s letter found no clear pocket at "
+                    f"any size {CP_LABEL_SIZES} (~{(best[0] if best else 0) * s_est:.1f} "
+                    f"rendered px short) — the labels need room the strokes don't leave")
         return elements, anchors, sym_pts, join_segs, step_x, step_y, span_x
 
     ev_pts = "stem" if coords == "stem" else "inferred"
@@ -3144,7 +3305,13 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
         raise TemplateError("coordinate_plane: unit_px must be a positive number")
     err = None
     for u in units:
-        elements, anchors, sym_pts, join_segs, step_x, step_y, span_x = assemble(u)
+        try:
+            elements, anchors, sym_pts, join_segs, step_x, step_y, span_x = assemble(u)
+        except TemplateError as e:
+            if "pocket" not in str(e) and "seat" not in str(e):
+                raise
+            err = e
+            break            # a smaller cell can never seat what a bigger one couldn't
         claims: list[tuple[str, str, str]] = []
 
         def add(pred, ev, note=""):
@@ -3226,6 +3393,16 @@ def build_coordinate_plane(*, figure_id, stem, ask=None, title=None, description
                     "canvas is" in str(e):   # an aspect refusal is not a cell-size issue
                 raise
             err = e
+    if grid and (pts or origin_label):
+        # measured W12: a letter's pocket needs ~44 canvas units of cell (label box +
+        # the 8-rendered-px stroke clearance each side, s_est-scaled) — the largest
+        # grids that still seat letters are 6×6, 5×8 and 4×9; x_max ≥ 7 (or the tall
+        # equivalents) leaves no legal pocket at any unit size
+        raise TemplateError(
+            f"coordinate_plane: no cell size inside the width cap lays the figure out "
+            f"cleanly ({err}) — with `grid` on, lettered points need ~44-unit cells; "
+            f"the measured limit is about 6×6 (5×8 and 4×9 also fit) and x_max ≥ 7 "
+            f"refuses outright — pass grid=False or drop the letters")
     raise TemplateError(f"coordinate_plane: no cell size inside the width cap lays the "
                         f"figure out cleanly ({err}) — pass grid=False or fewer points")
 
@@ -3681,14 +3858,18 @@ def build_parallel_lines(*, figure_id, stem, ask=None, title=None, description=N
 def build_bar_chart(*, figure_id, stem, ask=None, title=None, description=None,
                     medium="english", categories=None, series=None, step=None,
                     v_max=None, values="stem", value_title=None, category_title=None,
-                    gridlines=True):
-    """A vertical bar chart (L26 scope: simple or grouped bars only). `categories` =
-    2–8 label strings printed under the groups; `series` = 1–3 dicts
+                    gridlines=True, orientation="v"):
+    """A bar chart (L26 scope: simple or grouped bars only). `categories` =
+    2–8 label strings printed under the groups (or beside the rows when
+    `orientation="h"`); `series` = 1–3 dicts
     {"name": str, "values": [one per category]} — one series draws no legend; `step`
     is the value-axis interval (stem-checked, always); `v_max` defaults to the smallest
-    multiple of step ≥ the largest bar. Every bar top is anchor T1..Tn — the `reads`
-    claim is what makes the height auditable. `values="figure"` is the honest
-    read-the-figure mode (ev `inferred`, no stem check)."""
+    multiple of step ≥ the largest bar. Every bar end is anchor T1..Tn — the `reads`
+    claim is what makes the length auditable. `values="figure"` is the honest
+    read-the-figure mode (ev `inferred`, no stem check). `orientation="h"` draws
+    horizontal bars: categories on the vertical axis, values along x (claims read
+    `on OX`); the default "v" is byte-identical to the chart this builder always
+    emitted."""
     vc.reset_ids()
     if not isinstance(categories, (list, tuple)) or not (2 <= len(categories) <= 8):
         raise TemplateError("bar_chart: categories must be a list of 2–8 label strings")
@@ -3720,6 +3901,9 @@ def build_bar_chart(*, figure_id, stem, ask=None, title=None, description=None,
     if values not in ("stem", "figure"):
         raise TemplateError(f"bar_chart: values must be 'stem' or 'figure' — got "
                             f"{values!r}")
+    if orientation not in ("v", "h"):
+        raise TemplateError(f"bar_chart: orientation must be 'v' or 'h' — got "
+                            f"{orientation!r}")
     if not isinstance(step, (int, float)) or isinstance(step, bool) or step <= 0:
         raise TemplateError(f"bar_chart: step must be a positive number — got {step!r}")
     require_stem(stem, step=step)
@@ -3761,6 +3945,16 @@ def build_bar_chart(*, figure_id, stem, ask=None, title=None, description=None,
                      ([nm for nm, _v in srs] if n_ser > 1 else []) +
                      ([value_title] if value_title else []) +
                      ([category_title] if category_title else []))
+
+    if orientation == "h":
+        return _bar_chart_horizontal(figure_id=figure_id, stem=stem, ask=ask,
+                                     title=title, description=description,
+                                     medium=medium, cats=cats, srs=srs,
+                                     n_cat=n_cat, n_ser=n_ser, step=step,
+                                     v_max=v_max, n_steps=n_steps, values=values,
+                                     value_title=value_title,
+                                     category_title=category_title,
+                                     gridlines=gridlines)
 
     # ── layout — bar sizes adapt to the category count, bounded by the 560-unit cap ──
     plot_h = 240.0
@@ -3918,6 +4112,180 @@ def build_bar_chart(*, figure_id, stem, ask=None, title=None, description=None,
                   medium=medium)
 
 
+def _bar_chart_horizontal(*, figure_id, stem, ask, title, description, medium,
+                          cats, srs, n_cat, n_ser, step, v_max, n_steps, values,
+                          value_title, category_title, gridlines) -> Built:
+    """`orientation="h"` — the vertical layout transposed: the value axis runs
+    left→right along the bottom (`axis OX`, an arrow), categories stack up the plain
+    y axis with the first category nearest the origin, and `reads` claims measure
+    each bar's END edge on OX. `value_title` centres under the numeral row and
+    `category_title` end-aligns left of the label column; the head row keeps only
+    the legend. The vertical builder above is untouched — "v" output stays
+    byte-identical."""
+    # swatch -> name gap (legend) as in the vertical builder; clearances are sized
+    # against the widest canvas the cap admits — real ones only shrink, so the
+    # nominal span is always the safe side
+    sw_gap = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, 460.0)
+    head_end = 8.0
+    if n_ser > 1:
+        head_end += sum(14.0 + sw_gap + _label_width(nm, 14) + 24.0
+                        for nm, _v in srs)
+    wlab_cat = max(_label_width(c, 14) for c in cats)
+    ctitle_w = _label_width(category_title, 16) if category_title else 0.0
+    catclr = _clearance_units(STROKE_PX + SLACK_STROKE, 540.0)
+    gutter = 2.0 + catclr + wlab_cat + (ctitle_w + 14.0 if category_title else 0.0)
+    plot_w = min(380.0, 540.0 - gutter - 64.0)
+    if plot_w < 160.0:
+        raise TemplateError(f"bar_chart orientation='h': the category labels leave "
+                            f"~{plot_w:.0f} units for the value axis (need ≥160) — "
+                            f"shorten them")
+    uv = plot_w / v_max
+    est_w = gutter + max(plot_w + 12.0, head_end) + 2 * MARGIN + 20
+    if est_w > 540.0:
+        raise TemplateError(f"bar_chart orientation='h': the legend row needs "
+                            f"~{est_w:.0f} canvas units — the 560-unit cap admits "
+                            f"~540; shorten the series names or drop a series")
+    numclr = _clearance_units(STROKE_PX + SLACK_STROKE, est_w)
+    num_size = 16.0
+    num_w = max(_label_width(f"{k * step:g}", num_size) for k in range(n_steps + 1))
+    if plot_w / n_steps < num_w + _clearance_units(4.0, est_w):
+        for num_size in (14.0, 12.0):
+            num_w = max(_label_width(f"{k * step:g}", num_size)
+                        for k in range(n_steps + 1))
+            if plot_w / n_steps >= num_w + _clearance_units(4.0, est_w):
+                break
+        else:
+            raise TemplateError(f"bar_chart orientation='h': {n_steps + 1} numerals "
+                                f"crowd the value axis at {plot_w / n_steps:.0f} "
+                                f"units a step — raise step or lower v_max "
+                                f"(no thinning: every step numeral must print)")
+    num_h = (MID_UP + MID_DOWN) * num_size
+    num_y = 5.0 + numclr + MID_UP * num_size        # box top clears the ±5 tick
+    foot = 5.0 + numclr + num_h
+    if value_title:
+        foot = num_y + 30.0 + MID_DOWN * 16.0       # title centre 30 under the row
+    head = 50.0 if n_ser > 1 else 8.0
+    cat_h = (MID_UP + MID_DOWN) * 14.0
+    chosen = None
+    for bw in (30.0, 26.0, 22.0, 18.0, 15.0, 12.0):
+        ig, gg = max(4.0, bw * 0.28), max(16.0, bw * 0.9)
+        grp = n_ser * bw + (n_ser - 1) * ig
+        pitch = max(grp + gg, cat_h + _clearance_units(5.0, est_w))
+        plot_h = n_cat * pitch + 12.0
+        est_h = head + plot_h + foot + 2 * MARGIN
+        if est_h <= 540.0:
+            chosen = (bw, ig, pitch, grp, plot_h)
+            break
+    if chosen is None:
+        raise TemplateError(f"bar_chart orientation='h': {n_cat} categories x "
+                            f"{n_ser} series need ~{est_h:.0f} canvas units tall — "
+                            f"the 560-unit cap admits ~540; shorten the labels or "
+                            f"drop categories")
+    bw, ig, pitch, grp, plot_h = chosen
+    elements: list[dict] = []
+    anchors: dict[str, XY] = {"O": (0.0, 0.0), "X": (plot_w, 0.0),
+                              "Y": (0.0, -plot_h)}
+    if gridlines:
+        for k in range(1, n_steps + 1):
+            x = k * step * uv
+            elements.append({"id": f"gl{k}", "type": "line", "stroke":
+                             {"color": _GRID_INK, "width": 1},
+                             "points": [[x, 0], [x, -plot_h]]})
+    elements.append({"id": "axX", "type": "arrow", "head": "end",
+                     "points": [[0, 0], [plot_w + 12, 0]]})
+    elements.append(vc.line((0, 0), (0, -plot_h), id="axY", width=2))
+    for k in range(n_steps + 1):
+        x = k * step * uv
+        elements.append(vc.line((x, -5), (x, 5), id=f"tk{k}", width=1.5))
+        elements.append(vc.text((x, num_y), f"{k * step:g}", id=f"nm{k}",
+                                size=num_size))
+    tops: list[tuple[int, int, float]] = []           # (T index, series, value)
+    for i in range(n_cat):
+        gy = -i * pitch - (pitch - grp) / 2           # the group's bottom edge
+        for j, (_nm, vals) in enumerate(srs):
+            v = vals[i]
+            top_y = gy - j * (bw + ig) - bw
+            if v > 0:
+                elements.append({"id": f"bar{i}_{j}", "type": "rect",
+                                 "x": 0.0, "y": vc.r2(top_y),
+                                 "width": vc.r2(v * uv), "height": vc.r2(bw),
+                                 "fill": {"color": _BAR_FILLS[j]},
+                                 "stroke": {"color": _BAR_OUTLINE, "width": 1.5}})
+            tops.append((i * n_ser + j + 1, j, v))
+            anchors[f"T{i * n_ser + j + 1}"] = (v * uv, top_y + bw / 2)
+    for i, c in enumerate(cats):
+        elements.append(vc.text((-2.0 - catclr, -i * pitch - pitch / 2), c,
+                                id=f"cat{i}", align="end", size=14))
+    if category_title:
+        elements.append(vc.text((-(2.0 + catclr + wlab_cat + 14.0), -plot_h / 2),
+                                category_title, id="ctitle", align="end", size=16))
+    if value_title:
+        elements.append(vc.text((plot_w / 2, num_y + 30.0), value_title,
+                                id="vtitle", size=16))
+    if n_ser > 1:
+        head_y = -plot_h - MID_UP * 16.0 - \
+            _clearance_units(STROKE_PX + SLACK_STROKE, est_w) - 10
+        lx = 8.0
+        for j, (nm, _v) in enumerate(srs):
+            elements.append({"id": f"sw{j}", "type": "rect", "x": vc.r2(lx),
+                             "y": vc.r2(head_y - 7), "width": 14, "height": 14,
+                             "fill": {"color": _BAR_FILLS[j]},
+                             "stroke": {"color": _BAR_OUTLINE, "width": 1.5}})
+            elements.append(vc.text((lx + 14 + sw_gap, head_y), nm, id=f"lg{j}",
+                                    align="start", size=14))
+            lx += 14 + sw_gap + _label_width(nm, 14) + 24
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    add(f"axis OX from 0 to {v_max:g}", "inferred", "the value axis")
+    add(f"tick OX step {step:g}", "stem", f"a numeral every {step:g} — all "
+                                          f"{n_steps + 1} printed, none thinned")
+    ev_v = "stem" if values == "stem" else "inferred"
+    for t_i, _j, v in tops:
+        add(f"reads T{t_i} {v:g} on OX", ev_v, "the bar's end edge reads its value")
+    if values == "figure":
+        add('describe "the bar lengths are figure content — the question asks the '
+            'student to read them"', "inferred", "read-the-figure mode")
+    add(f"derive {v_max:g} / {step:g} = {n_steps}", "inferred", "the axis's step count")
+    for k in range(n_steps + 1):
+        add(f'label "{k * step:g}" names {k * step:g}', "stem", "a scale numeral")
+    for i, c in enumerate(cats):
+        add(f'label "{c}" names cat{i}', ev_v, "a category label beside its row")
+    if n_ser > 1:
+        for j, (nm, _v) in enumerate(srs):
+            add(f'label "{nm}" names series{j}', ev_v, "a legend name by its swatch")
+    if value_title:
+        add(f'label "{value_title}" names OX', "stem", "the value axis's title")
+    if category_title:
+        add(f'label "{category_title}" names OY', "stem", "the category axis's title")
+    for j, (nm, _v) in enumerate(srs):
+        add(f'describe "the {nm or "only"} series bars are filled {_BAR_FILLS[j]} '
+            f'outlined {_BAR_OUTLINE}"', "inferred", "the series paint")
+    add("none tickMark parallelMark angleMark angleArc dashed shaded", "inferred",
+        "bars, numerals and the axis arrowhead — no marks")
+    elements_n = len(elements)
+    return finish(kind="bar_chart", figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=anchors, points=["O", "X", "Y"] +
+                                         [f"T{t}" for t, _j, _v in tops],
+                  segments=["OX", "OY"], claims=claims, ask=ask,
+                  title=title or "A bar chart",
+                  description=description or (
+                      f"A horizontal bar chart over {n_cat} categories" +
+                      (f" in {n_ser} series (legend at the top)" if n_ser > 1
+                       else "") +
+                      f"; the value axis runs 0 to {v_max:g} in steps of {step:g} "
+                      f"and each bar's end edge reads its value on it."),
+                  scale="to scale — the value axis is a true linear map of the bar "
+                        "lengths",
+                  budget=elements_n if elements_n > 32 else None,
+                  departures=([f"{elements_n} elements — one rect per bar plus the "
+                               "ruling gridlines"] if elements_n > 32 else None),
+                  medium=medium)
+
+
 BUILDERS = {fn.__name__[6:]: fn for fn in
             (build_grid_polygon, build_shaded_grid, build_rays_from_point, build_number_line,
              build_pictograph, build_rectangle_points, build_house_pentagon, build_cuboid,
@@ -3927,7 +4295,7 @@ BUILDERS = {fn.__name__[6:]: fn for fn in
 
 CATALOGUE = """
 template            stem-checked numbers                          inputs
-grid_polygon        cell                                          vertices (grid units), cols/rows?, cell_px, vertex_labels
+grid_polygon        cell                                          vertices (grid units), cols/rows? (default = the shape's extent), cell_px, vertex_labels (concave seats need ~40+ px cells), axis={"through":[[x,y],[x,y]]}
 shaded_grid         cols*rows OR cols and rows                    full=[(c,r)], half=[(c,r,corner)] corner tl|tr|bl|br
 rays_from_point     numeric bearings/angle sizes (compass free)   rays={A:"NE"}, angles=[(a,b,label,reflex)], north_arrow
 number_line         v0, v1, parts_per_unit                        points={P:0.7}, unit_px
@@ -3942,9 +4310,9 @@ circles_in_circle   none — counts are figure content              n_in, n_out,
 abacus              none — printed values are figure content      place_values=[10000,…,1], beads=[b per rod 0–9] — >9 refuses
 sorting_rings       none — item texts are figure content          groups=[(name,[items])] 2–3 rings; cards stack inside each ring
 shape_row           none — shape kinds are figure content         shapes=[(letter,kind)] kind in circle small_circle square rectangle triangle oval semicircle — 3 per row
-coordinate_plane    each point's x,y when coords="stem"           x_max,y_max≤10, points={A:(x,y)}, join, closed, sym_axis={"x"|"y":k}, guides, grid, origin_label
+coordinate_plane    each point's x,y when coords="stem"           x_max,y_max≤10, points={A:(x,y)}, join, closed, sym_axis={"x"|"y":k}, guides, grid, origin_label — grid+letters need ~44-unit cells: measured limit ≈6×6 (5×8, 4×9 fit); x_max≥7 refuses
 parallel_lines      distance.value                                lines=["AB","CD"], parallel=[[…]], direction, crossing="PQ", distance={"between","value","unit"}
-bar_chart           step; every value when values="stem"          categories 2–8, series 1–3 {"name","values"}, step, v_max, value_title, category_title, gridlines
+bar_chart           step; every value when values="stem"          categories 2–8, series 1–3 {"name","values"}, step, v_max, value_title, category_title, gridlines, orientation="v"|"h" (h = bars run right, categories stack up the y axis; claims read on OX)
 """.strip()
 
 SELF_TEST = [
@@ -4049,6 +4417,15 @@ SELF_TEST = [
      "categories": ["Jan", "Feb", "Mar", "Apr"],
      "series": [{"name": "", "values": [4, 7, 5, 8]}],
      "step": 2, "v_max": 10, "value_title": "Books", "category_title": "Month"},
+    {"template": "bar_chart", "figure_id": "selftest-barsh",
+     "stem": "The bar chart shows books borrowed over four months: 4 in Jan, 7 in "
+             "Feb, 5 in Mar and 8 in Apr, on a scale of 2 per step up to 10. "
+             "(a) Which month had most borrowings?",
+     "ask": [["a", "the busiest month"]],
+     "categories": ["Jan", "Feb", "Mar", "Apr"],
+     "series": [{"name": "", "values": [4, 7, 5, 8]}],
+     "step": 2, "v_max": 10, "value_title": "Books", "category_title": "Month",
+     "orientation": "h"},
 ]
 
 

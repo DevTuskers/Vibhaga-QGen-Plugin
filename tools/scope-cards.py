@@ -16,6 +16,10 @@ anchors). The card has three parts:
                `--lessons` subset stays byte-identical. precritic-lint reads it for check (c).
   curated      agent-written — status, not_taught (with probes grounded in absence), prerequisites,
                difficulty_hooks. `draft` preserves an existing `curated:` block unchanged.
+               prerequisites/difficulty_hooks entries may carry `grounds:` — strings that must
+               literally occur in the lesson text (NFC, case-insensitive; figure Description/
+               Concepts lines count); `check` FAILs a missing string and WARNs once per card
+               for entries with no grounds at all.
 
 Usage:
 
@@ -822,9 +826,33 @@ def schema_problems(data, grade: int, lesson_name: str) -> list[str]:
     return probs
 
 
+def grounds_problems(item: dict, where: str, lesson_text_nfc: str,
+                     probs: list[str]) -> bool:
+    """Optional `grounds:` — strings that must literally occur in the lesson text (NFC +
+    ASCII case-fold, same matching as not_taught probes). Every miss is a problem. Returns
+    True when the entry carries NO grounds (the caller tallies those into one WARN per card)."""
+    grounds = item.get("grounds")
+    if grounds is None:
+        return True
+    if not isinstance(grounds, list) or \
+            not all(isinstance(g, str) and g.strip() for g in grounds):
+        probs.append(f"{where}: grounds must be a list of nonempty strings")
+        return False
+    if not grounds:
+        return True                          # 'grounds: []' grounds nothing — count it
+    for g in grounds:
+        if not probe_occurs(g, lesson_text_nfc):
+            probs.append(f"{where}: grounds {g!r} does not occur in the lesson text — "
+                         f"ground the claim in what the lesson actually says")
+    return False
+
+
 def curated_problems(curated: dict, lesson_text_nfc: str, card_lesson: int,
-                     grade: int, cards: Path) -> list[str]:
+                     grade: int, cards: Path) -> tuple[list[str], int]:
+    """(problems, ungrounded count) — prerequisites/difficulty_hooks entries without a
+    `grounds` list are counted; the caller prints them as ONE WARN line per card."""
     probs = []
+    ungrounded = 0
     extra = set(curated) - CARD_CURATED_KEYS
     if extra:
         probs.append(f"curated: unknown keys {sorted(extra)}")
@@ -870,6 +898,7 @@ def curated_problems(curated: dict, lesson_text_nfc: str, card_lesson: int,
             continue
         if not isinstance(item.get("why"), str) or not item["why"].strip():
             probs.append(f"{where}: why is required")
+        ungrounded += grounds_problems(item, where, lesson_text_nfc, probs)
         ref = item.get("lesson")
         if not isinstance(ref, str):
             probs.append(f"{where}: lesson must be 'grade-NN/MM' or 'grade-NN:<text>'")
@@ -909,20 +938,24 @@ def curated_problems(curated: dict, lesson_text_nfc: str, card_lesson: int,
             probs.append(f"{where}: level must be one of {LEVELS} (got {item.get('level')!r})")
         if not isinstance(item.get("hook"), str) or not item["hook"].strip():
             probs.append(f"{where}: hook is required")
-    return probs
+        ungrounded += grounds_problems(item, where, lesson_text_nfc, probs)
+    return probs, ungrounded
 
 
 def check_card(cpath: Path, lesson_path: Path, grade: int, lesson_number: int,
-               cards: Path, lesson_text_nfc: str, ctx: dict) -> list[str]:
+               cards: Path, lesson_text_nfc: str, ctx: dict) -> tuple[list[str], int]:
+    """(problems, ungrounded count) — the second value is how many curated entries lack a
+    `grounds` list; cmd_check prints it as one WARN line per card."""
     yaml = import_yaml()
     try:
         data = yaml.safe_load(cpath.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001
-        return [f"card does not parse: {exc}"]
+        return [f"card does not parse: {exc}"], 0
     probs = schema_problems(data, grade, lesson_path.name)
     if isinstance(data, dict) and isinstance(data.get("lesson_number"), int) \
             and data["lesson_number"] != lesson_number:
         probs.append(f"lesson_number must be {lesson_number} (got {data['lesson_number']})")
+    ungrounded = 0
     if not probs:
         if data["source"]["sha256"] != sha256_file(lesson_path):
             probs.append("source.sha256 is stale — the lesson file changed since the card was drafted")
@@ -930,8 +963,10 @@ def check_card(cpath: Path, lesson_path: Path, grade: int, lesson_number: int,
             probs.append("generated differs from what draft would emit — re-run draft "
                          "(generated is tool-owned; phrases depend on every lesson in the "
                          "grade)")
-        probs += curated_problems(data["curated"], lesson_text_nfc, lesson_number, grade, cards)
-    return probs
+        cur_probs, ungrounded = curated_problems(data["curated"], lesson_text_nfc,
+                                                 lesson_number, grade, cards)
+        probs += cur_probs
+    return probs, ungrounded
 
 
 def cmd_check(args) -> int:
@@ -953,13 +988,16 @@ def cmd_check(args) -> int:
             print(f"{nn:02d}-<no card> FAIL: no scope card for lessons/{lp.name}")
             continue
         lesson_text = probe_norm(lp.read_text(encoding="utf-8"))
-        probs = check_card(cpath, lp, args.grade, nn, cards, lesson_text, ctx)
+        probs, ungrounded = check_card(cpath, lp, args.grade, nn, cards, lesson_text, ctx)
         if probs:
             n_fail += 1
             print(f"{cpath.name} FAIL: " + " · ".join(probs))
         else:
             n_ok += 1
             print(f"{cpath.name} OK")
+        if ungrounded:
+            print(f"{cpath.name} WARN: {ungrounded} curated entrie(s) have no `grounds` — "
+                  f"quote the lesson text each claim rests on")
     if cards.is_dir():
         expected = {files[n].stem for n in included}
         for p in sorted(cards.glob("*.yaml")):
@@ -1055,8 +1093,12 @@ def brief_card(cpath: Path) -> list[str]:
         lines.append(f"    probes: {', '.join(str(p) for p in nt.get('probes') or [])}")
     for p in cur.get("prerequisites") or []:
         lines.append(f"  prerequisite {p.get('lesson')} — {p.get('why')}")
+        if p.get("grounds"):
+            lines.append(f"    grounds: {' · '.join(str(g) for g in p['grounds'])}")
     for h in cur.get("difficulty_hooks") or []:
         lines.append(f"  hook {h.get('level')}: {h.get('hook')}")
+        if h.get("grounds"):
+            lines.append(f"    grounds: {' · '.join(str(g) for g in h['grounds'])}")
     return lines
 
 

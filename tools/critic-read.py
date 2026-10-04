@@ -342,6 +342,19 @@ def write_brief(out_dir: Path, session: dict, corpus: Path | None) -> Path:
 HASHES_HEADER = "# critic-read hashes v1"   # the provenance stamp --previous insists on
 
 
+def corpus_candidate(arg: str | None) -> Path:
+    """The corpus path the resolution order lands on — `--corpus` → `VIBHAGA_CORPUS` →
+    the sibling `<plugin>/../Vibhaga-Maths-Corpus` (BESIDE the plugin checkout — the
+    W12-A6 bug used `HERE.parent`, one directory short, so a chunked critic run with no
+    flag/env resolved to a path inside the plugin and every brief.txt read 'no scope
+    cards found'). The path may not exist; the caller degrades to a reason line."""
+    if arg:
+        return Path(arg)
+    if os.environ.get("VIBHAGA_CORPUS"):
+        return Path(os.environ["VIBHAGA_CORPUS"])
+    return HERE.parent.parent / "Vibhaga-Maths-Corpus"
+
+
 def load_previous(spec: str, batch_id: str) -> dict[str, str]:
     """`--previous` — a report dir holding hashes.txt, or a critic-read `hashes --out` file.
     The file must open with `# critic-read hashes v1 sid=<uuid>` naming THIS batch: carrying by
@@ -542,10 +555,10 @@ def main(argv: list[str] | None = None) -> int:
     (out_dir / "figures.txt").write_text(("\n".join(figs) + "\n") if figs else "", encoding="utf-8")
 
     # the critic pack — brief.txt is a derived artefact of THIS tool's read, not an actor file
-    corpus = Path(a.corpus) if a.corpus else \
-        (Path(os.environ["VIBHAGA_CORPUS"]) if os.environ.get("VIBHAGA_CORPUS")
-         else HERE.parent / "Vibhaga-Maths-Corpus")
+    corpus = corpus_candidate(a.corpus)
     brief = write_brief(out_dir, session, corpus if corpus.is_dir() else None)
+    print(f"{PROG}: corpus {corpus}" if corpus.is_dir()
+          else f"{PROG}: corpus unresolved ({corpus})", file=sys.stderr)
     print(f"  brief: {brief}")
 
     print(f"{PROG}: {len(questions)} question(s) · {parts_total} part(s) · {len(figs)} figure(s) · "

@@ -474,6 +474,102 @@ class ScopeCardsTest(unittest.TestCase):
             self.assertEqual(r.returncode, 1)
             self.assertIn("level", r.stdout)
 
+    # ---- curated grounds (W12 A9) --------------------------------------------
+
+    def test_grounds_occurring_strings_pass(self):
+        """grounds strings present in the lesson text — including figure Description/Concepts
+        lines — pass; 'desc-only term' lives only on the figure's **Description:** line and
+        'drawing' only on **Concepts:**."""
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.draft(corpus)
+            self.curate(corpus, "01-Alpha", {
+                **CURATED,
+                "difficulty_hooks": [
+                    {"level": "M", "hook": "uses the described drawing",
+                     "grounds": ["desc-only term", "drawing"]},   # figure-meta only words
+                    {"level": "H", "hook": "zebra twist", "grounds": ["zebra", "ZEBRA"]}],
+                "prerequisites": [{"lesson": "grade-05:earlier", "why": "w",
+                                   "grounds": ["alpha term"]}],
+            })
+            self.curate(corpus, "02-Beta", CURATED)
+            r = self.check(corpus)
+            self.assertEqual(r.returncode, 0, r.stdout)
+            self.assertNotIn("01-Alpha.yaml WARN", r.stdout)   # every 01 entry is grounded
+            self.assertIn("02-Beta.yaml WARN", r.stdout)       # 02's two hooks have none
+
+    def test_grounds_missing_string_fails(self):
+        """A grounds string absent from the lesson is a FAIL naming card, entry and string."""
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.draft(corpus)
+            self.curate(corpus, "01-Alpha", {
+                **CURATED,
+                "difficulty_hooks": [
+                    {"level": "M", "hook": "h", "grounds": ["zebra", "qq-not-in-lesson"]},
+                    {"level": "H", "hook": "h2", "grounds": ["zebra"]}],
+            })
+            self.curate(corpus, "02-Beta", CURATED)
+            r = self.check(corpus)
+            self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertIn("01-Alpha.yaml FAIL", r.stdout)
+            self.assertIn("difficulty_hooks[0]", r.stdout)
+            self.assertIn("qq-not-in-lesson", r.stdout)
+            self.assertIn("does not occur in the lesson text", r.stdout)
+            self.assertIn("02-Beta.yaml OK", r.stdout)
+
+    def test_grounds_warn_once_per_card_for_ungrounded(self):
+        """Entries without `grounds` → exactly ONE WARN line per card carrying the count —
+        02-Beta has 2 hooks + 0 prerequisites ungrounded → count 2 on one line."""
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.draft(corpus)
+            self.curate(corpus, "01-Alpha", {
+                **CURATED,
+                "difficulty_hooks": [
+                    {"level": "M", "hook": "h", "grounds": ["zebra"]},
+                    {"level": "H", "hook": "h2"}],            # ungrounded
+                "prerequisites": [{"lesson": "grade-05:x", "why": "w",
+                                   "grounds": []}],            # empty list grounds nothing
+            })
+            self.curate(corpus, "02-Beta", CURATED)            # 2 hooks, no grounds
+            r = self.check(corpus)
+            self.assertEqual(r.returncode, 0, r.stdout)
+            warn_lines = [l for l in r.stdout.splitlines() if "WARN" in l]
+            self.assertEqual(len(warn_lines), 2, r.stdout)     # one per card, not per entry
+            self.assertIn("01-Alpha.yaml WARN: 2", warn_lines[0])
+            self.assertIn("02-Beta.yaml WARN: 2", warn_lines[1])
+
+    def test_grounds_bad_shape_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.draft(corpus)
+            self.curate(corpus, "01-Alpha", {
+                **CURATED,
+                "difficulty_hooks": [{"level": "M", "hook": "h", "grounds": "zebra"},
+                                     {"level": "H", "hook": "h2", "grounds": [""]}],
+            })
+            self.curate(corpus, "02-Beta", CURATED)
+            r = self.check(corpus)
+            self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertEqual(r.stdout.count("grounds must be a list of nonempty strings"), 2,
+                             r.stdout)
+
+    def test_draft_preserves_grounds(self):
+        """Re-running draft must carry an existing card's grounds through (curated block is
+        preserved wholesale)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            self.draft(corpus)
+            grounded = {**CURATED, "difficulty_hooks": [
+                {"level": "M", "hook": "h", "grounds": ["zebra"]},
+                {"level": "H", "hook": "h2", "grounds": ["alpha term"]}]}
+            self.curate_all(corpus, grounded)
+            r = self.draft(corpus)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            card = self.load_card(corpus, "01-Alpha")
+            self.assertEqual(card["curated"]["difficulty_hooks"][0]["grounds"], ["zebra"])
+
     # ---- refusals (exit 2) ---------------------------------------------------
 
     def test_refuse_grade_with_no_corpus_dir(self):

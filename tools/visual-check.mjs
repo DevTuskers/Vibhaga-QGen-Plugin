@@ -9,7 +9,9 @@
  *                                          [--admin PATH]
  *     node tools/visual-check.mjs --session <playground-session-id> [--out DIR] [--base-url URL]
  *                                          [--staged FILE] [--claims-dir DIR] [--admin PATH]
- *                                          (always headed — signs in, then out)
+ *                                          (always headed — signs in, then out; PNGs land in
+ *                                          <out>/session/ and the run's verdict/exit/screenshot
+ *                                          list in <out>/report.json — W12 A7)
  *     node tools/visual-check.mjs --self-test
  *
  * `--admin PATH` is the Vibhaga-Admin CHECKOUT (`--admin` flag > `VIBHAGA_ADMIN` env >
@@ -752,6 +754,13 @@ async function sessionMode() {
   const { chromium } = await import(pathToFileURL(PLAYWRIGHT).href);
   const browser = await chromium.launch({ headless: false }); // always headed
   let exitCode = 0;
+  // hoisted to function scope so the outer catch/finally can still write report.json
+  // when the run dies before the question loop (A7 — ship had no artefact to summarise)
+  const shots = [];                       // {question, theme, verdict, findings, png}
+  let actorId = null;
+  let anyFail = false;
+  let fatal = null;
+  let proofFail = false;
   try {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "light" });
     const page = await ctx.newPage();
@@ -803,10 +812,6 @@ async function sessionMode() {
         `${(await alert.first().textContent().catch(() => null))?.trim() ?? "no redirect"}`);
     // ── signed in ── everything below runs under a finally that ALWAYS signs out; the actor id
     // is captured FIRST so a mid-loop failure still leaves a usable revocation proof.
-    let actorId = null;
-    let anyFail = false;
-    let fatal = null;
-    let proofFail = false;
     try {
       actorId = await extractActorId(page);
       if (!actorId) throw new Error("could not extract the actor's user id from the Supabase session (cookie/localStorage)");
@@ -883,6 +888,8 @@ async function sessionMode() {
         const fails = results.flatMap((r) => r.findings.filter((f) => f.severity === "fail"));
         if (fails.length || clipped) anyFail = true;
         const verdict = clipped ? "CLIPPED FAIL" : fails.length ? "FAIL" : "PASS";
+        shots.push({ question: n, theme, verdict, figures: results.length,
+                     findings: fails.map((f) => f.message), png });
         console.log(`Q${n}  ${verdict}  ${theme} · figures ${results.length} · findings ${fails.length}${fails.length ? " — " + fails.map((f) => f.message).join("; ") : ""}  → ${png}`);
         if (needH > vp.height) await page.setViewportSize(vp); // put the viewport back
         await region.getByRole("button", { name: "Close preview" }).click().catch(() => {});
@@ -957,11 +964,30 @@ async function sessionMode() {
       console.log("revocation: UNKNOWN — no actor id was captured before the failure");
     }
   }
-  exitCode = fatal ? 1 : (anyFail || proofFail) ? 1 : 0;
+  } catch (e) {
+    // a sign-in-time failure lands here — before the inner finally existed. Record it so
+    // report.json still says what happened instead of the stage leaving nothing behind.
+    fatal = fatal ?? e;
+    console.error(`visual-check: --session failed — ${e?.message ?? e}`);
   } finally {
     await browser.close();
     if (server.proc) server.proc.kill("SIGTERM");
   }
+  exitCode = fatal ? 1 : (anyFail || proofFail) ? 1 : 0;
+  // report.json — the stage's artefact: ship quotes the verdict lines and this summary is
+  // the proof the run happened (screenshots alone used to be the only trace)
+  const report = {
+    tool: "visual-check",
+    mode: "session",
+    session: sessionId,
+    base_url: lastBaseUrl ?? null,
+    verdict: fatal ? "ERROR" : (anyFail || proofFail) ? "FAIL" : "PASS",
+    exit: exitCode,
+    error: fatal ? String(fatal?.message ?? fatal) : null,
+    screenshots: shots,
+  };
+  fs.writeFileSync(path.join(out, "report.json"), JSON.stringify(report, null, 1));
+  console.log(`${shots.length} screenshot(s) · verdict ${report.verdict} · exit ${exitCode} · report: ${path.join(out, "report.json")}`);
   return exitCode;
 }
 

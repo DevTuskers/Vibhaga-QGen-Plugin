@@ -345,5 +345,45 @@ class BuildStagedTest(unittest.TestCase):
             self.assert_refuses(spec2, tmp, "leaf-only")
 
 
+    # ---- '<digits>. ' lead-in → WARN, never a refusal (W12 A8) -----------------
+
+    def test_ordered_list_lead_warns_not_fails(self):
+        """A field opening '2. …' would render as a markdown ordered list — WARN naming the
+        field, but the doc still builds (exit 0)."""
+        spec = copy.deepcopy(BASE)
+        spec["questions"][0]["stem"] = "2. A cuboid face measures 5 cm by 2 cm."
+        with tempfile.TemporaryDirectory() as tmp:
+            _, out, r = self.build(spec, tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("WARN", r.stderr)
+            self.assertIn(".stem starts with '2.'", r.stderr)
+            self.assertTrue(out.exists())
+
+    def test_ordered_list_lead_on_part_fields(self):
+        """Part text / approach / final are student-facing too — each warns, named."""
+        spec = copy.deepcopy(BASE)
+        spec["questions"][0] = {"n": 1, "lessons": ["L07"], "stem": "…",
+                                "parts": [{"label": "a", "text": "  12. Measure the edge.",
+                                           "approach": "3. Add the lengths.",
+                                           "final": "1. 14 cm"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            _, out, r = self.build(spec, tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn(".text starts with '12.'", r.stderr)
+            self.assertIn(".approach starts with '3.'", r.stderr)
+            self.assertIn(".final starts with '1.'", r.stderr)
+            self.assertTrue(out.exists())
+
+    def test_decimal_lead_does_not_warn(self):
+        """'3.14 …' is not a markdown list marker (no space after the dot) — no WARN."""
+        spec = copy.deepcopy(BASE)
+        spec["questions"][0]["stem"] = "3.14 is an approximation of pi."
+        with tempfile.TemporaryDirectory() as tmp:
+            _, out, r = self.build(spec, tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertNotIn("WARN", r.stderr)
+            self.assertTrue(out.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

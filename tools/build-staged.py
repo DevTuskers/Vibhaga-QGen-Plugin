@@ -53,7 +53,8 @@ two parts labelled `a` under one parent collide on the same sub_question_id, and
 Exit 0 wrote the doc · exit 2 refused (duplicate n · duplicate sibling label · unknown lesson/figure
 key · missing figure file · parts deeper than 2 · leaf part without approach+final · a question
 carrying both parts and a whole answer · non-bare label · non-uuid lesson · two questions sharing a
-blueprint_id · malformed spec).
+blueprint_id · malformed spec). A student text field opening with `<digits>. ` (a markdown
+ordered-list marker) is a WARN on stderr, not a refusal — reword it or escape the dot.
 """
 import argparse
 import json
@@ -73,6 +74,10 @@ BARE_LABEL = re.compile(r"^[0-9A-Za-z]+$")   # "(a)", "a)", "a.", "a :" — anyt
 # (tools/blueprint.py); two questions from one blueprint in a batch are refused. build-staged
 # validates their shape and never emits them into staged.json.
 BP_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")   # the same contract tools/blueprint.py enforces
+# A student-facing field that opens "12. …" renders as a markdown ordered list (the digits become
+# the item number). WARN — never refuse: the author may want exactly that. The marker needs
+# whitespace or EOL after the dot in CommonMark, so "3.14 …" does NOT warn.
+LIST_LEAD = re.compile(r"^\s*\d+\.(\s|$)")
 Q_KEYS = {"n", "lessons", "stem", "figure", "approach", "final", "parts", "check", "level",
           "blueprint_id", "blueprint_seed"}
 P_KEYS = {"label", "text", "figure", "approach", "final", "parts", "check", "level"}
@@ -135,6 +140,17 @@ def answer_pair(node, where, required):
     return approach is not None
 
 
+def warn_ordered_list(node, where, fields):
+    """A student text field that opens '<digits>. ' renders as a markdown ordered list — WARN the
+    field name so the author can reword (or write '3\\.' to escape). Never a refusal."""
+    for field in fields:
+        value = node.get(field)
+        if isinstance(value, str) and LIST_LEAD.match(value):
+            head = value.lstrip().split(None, 1)[0]
+            print(f"build-staged: WARN {where}.{field} starts with {head!r} — "
+                  f"markdown renders a leading '<digits>.' as an ordered list item", file=sys.stderr)
+
+
 def check_sibling_labels(children, where):
     """Two same-labelled siblings would collide on the same id — the label is part of the uuid5 path.
     Refuse before any row is built. (Missing/non-bare labels are left for build_part's own refusal.)"""
@@ -179,6 +195,7 @@ def build_part(node, base_id, sort_order, depth, figures, base, where):
     text = node.get("text")
     if not isinstance(text, str) or not text.strip():
         die(f"{where}: part 'text' is required")
+    warn_ordered_list(node, where, ("text", "approach", "final"))
     if depth > 2:
         die(f"{where}: parts nest at most 2 levels deep")
     children = node.get("parts") or []
@@ -229,6 +246,7 @@ def build_question(node, index, figures, lessons, base, seed):
     stem = node.get("stem")
     if not isinstance(stem, str) or not stem.strip():
         die(f"{where} (q{n}): 'stem' is required")
+    warn_ordered_list(node, f"{where} (q{n})", ("stem", "approach", "final"))
     lesson_keys = node.get("lessons")
     if not isinstance(lesson_keys, list) or not lesson_keys:
         die(f"{where} (q{n}): 'lessons' must be a nonempty list of lesson keys")

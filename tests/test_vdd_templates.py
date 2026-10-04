@@ -42,7 +42,7 @@ CUBOID_52 = ("A cuboid has length 5 cm, width 3 cm and height 2 cm. "
 class EveryBuilderAuditsClean(unittest.TestCase):
     """Each SELF_TEST spec (synthetic stems) must reach audit exit 0 with no edits."""
 
-    def test_all_eighteen_self_test_specs_audit(self):
+    def test_all_self_test_specs_audit(self):
         with tempfile.TemporaryDirectory() as tmp:
             for spec in vt.SELF_TEST:
                 spec = dict(spec)
@@ -112,7 +112,7 @@ class PerTemplateClaims(unittest.TestCase):
     def test_grid_polygon_area_and_rights(self):
         b = vt.build_grid_polygon(figure_id="t1", stem="A shape on a 1 cm grid.",
                                   cell=1, vertices=[[1, 1], [5, 1], [5, 3], [3, 3], [3, 5], [1, 5]])
-        self.assertIn("grid 6 by 6", b.claims)            # rows x cols over the corner anchors
+        self.assertIn("grid 5 by 5", b.claims)            # rows x cols = the shape's extent (W12 A4)
         self.assertEqual(len(re.findall(r"^  K\d+  right ", b.claims, re.M)), 6)
         self.assertIn("derive", b.claims)
 
@@ -382,22 +382,85 @@ class Refusals(unittest.TestCase):
             vt.build_rays_from_point(figure_id="t1", stem="Two rays only.",
                                      rays={"A": "NE", "B": 30})
 
+    ADR_MSG = "diagram text must be simple English (ADR 0021)"
+
     def test_sinhala_label_refused(self):
         with self.assertRaises(vt.TemplateError) as cm:
             vt.build_pictograph(figure_id="t1", stem="One circle stands for 4 cups.",
                                 per_symbol=4, rows=[["සඳුදා", 8]])
-        self.assertIn("Sinhala", str(cm.exception))
+        self.assertIn(self.ADR_MSG, str(cm.exception))
 
-    def test_sinhala_label_allowed_on_sinhala_medium(self):
-        """vdd-check rule 3 is medium-conditional: a sinhala-medium question's figure may —
-        should — carry Sinhala labels (T-S6b-6). The build must pass it through."""
-        b = vt.build_pictograph(figure_id="t1", stem="One circle stands for 4 cups.",
+    def test_sinhala_label_refused_on_sinhala_medium(self):
+        """ADR 0021 supersedes T-S6b-6's medium condition: drawn text is simple English
+        on EVERY medium — a sinhala-medium question's figure gets English labels too."""
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.build_pictograph(figure_id="t1", stem="One circle stands for 4 cups.",
                                 ask=[["a", "the cups each day"]],
                                 per_symbol=4, rows=[["සඳුදා", 8], ["අඟහරුවාදා", 10]],
                                 medium="sinhala")
-        self.assertIn('label "සඳුදා" names row1', b.claims)
+        self.assertIn(self.ADR_MSG, str(cm.exception))
+
+    def test_english_label_passes_on_sinhala_medium(self):
+        b = vt.build_pictograph(figure_id="t1", stem="One circle stands for 4 cups.",
+                                ask=[["a", "the cups each day"]],
+                                per_symbol=4, rows=[["Mon", 8], ["Tue", 10]],
+                                medium="sinhala")
+        self.assertIn('label "Mon" names row1', b.claims)
         r = audit(b.claims, tempfile.mkdtemp())
         self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_sinhala_a11y_title_description_exempt(self):
+        """title/description are NOT drawn — they keep the question's medium (ADR 0021)."""
+        b = vt.build_pictograph(figure_id="t1", stem="One circle stands for 4 cups.",
+                                per_symbol=4, rows=[["Mon", 8]],
+                                title="අ — a synthetic Sinhala a11y title",
+                                description="අ — a synthetic Sinhala a11y description, "
+                                            "not drawn anywhere in the figure",
+                                medium="sinhala")
+        self.assertIn("අ", b.doc["a11y"]["title"])
+
+    def test_sinhala_refused_in_every_builder_free_text_path(self):
+        """One probe per builder parameter whose value becomes drawn text."""
+        cases = [
+            ("bar_chart categories", dict(
+                categories=["අ", "B"],
+                series=[{"name": "n", "values": [10, 20]}], step=10)),
+            ("bar_chart series name", dict(
+                categories=["A", "B"],
+                series=[{"name": "අ", "values": [10, 20]},
+                        {"name": "s2", "values": [15, 25]}], step=10)),
+            ("bar_chart value_title", dict(
+                categories=["A", "B"],
+                series=[{"name": "n", "values": [10, 20]}], step=10,
+                value_title="අ")),
+            ("bar_chart category_title", dict(
+                categories=["A", "B"],
+                series=[{"name": "n", "values": [10, 20]}], step=10,
+                category_title="අ")),
+        ]
+        for what, kw in cases:
+            with self.subTest(what=what):
+                with self.assertRaises(vt.TemplateError) as cm:
+                    vt.build_bar_chart(figure_id="t1",
+                                       stem="Values 10, 15, 20 and 25.", **kw)
+                self.assertIn(self.ADR_MSG, str(cm.exception))
+        for what, groups in (
+                ("sorting_rings group name", [["අ", ["1"]], ["B", ["2"]]]),
+                ("sorting_rings item", [["A", ["අ"]], ["B", ["2"]]])):
+            with self.subTest(what=what):
+                with self.assertRaises(vt.TemplateError) as cm:
+                    vt.build_sorting_rings(figure_id="t1", stem="Sort the items.",
+                                           groups=groups)
+                self.assertIn(self.ADR_MSG, str(cm.exception))
+        # shape_row takes no free text besides a11y — its letters are single capitals
+        # by validation, so its only script surface is the a11y exemption above.
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.build_parallel_lines(figure_id="t1",
+                                    stem="Two parallel lines, 4 units apart.",
+                                    lines=["PQ", "RS"], parallel=[["PQ", "RS"]],
+                                    distance={"between": ["PQ", "RS"], "value": 4,
+                                              "unit": "අ"})
+        self.assertIn(self.ADR_MSG, str(cm.exception))
 
     def test_sinhala_in_math_latex_refused_on_every_medium(self):
         """KaTeX cannot shape Sinhala — refused even when the question's medium is sinhala."""
@@ -611,6 +674,175 @@ class DrawnGeometry(unittest.TestCase):
         want = sorted({(v[0] * pitch + c[0] - pitch, v[1] * pitch + c[1] - pitch)
                        for v in [[1, 1], [5, 1], [5, 3], [1, 3]]})
         self.assertEqual(drawn, want)
+
+
+class GridPolygonLabelsAndAxis(unittest.TestCase):
+    """W12 A4 — vertex labels on concave shapes, the exact-extent default grid, and the
+    `axis` feature."""
+
+    STEM = "The shape is drawn on a grid of 1 cm squares."
+    UNOTCH = [[0, 0], [6, 0], [6, 5], [4, 5], [4, 2], [2, 2], [2, 5], [0, 5]]
+    UNOTCH_8x6 = [[0, 0], [8, 0], [8, 6], [5, 6], [5, 2], [3, 2], [3, 6], [0, 6]]
+
+    def _build(self, **kw):
+        kw.setdefault("cell", 1)
+        return vt.build_grid_polygon(figure_id="t1", stem=self.STEM, **kw)
+
+    @staticmethod
+    def _vdd_check(b, tmp):
+        """vdd-check --no-render on the written figure — 0 findings or skip."""
+        import os
+        import shutil
+        env = dict(os.environ)
+        if not env.get("VIBHAGA_ADMIN"):
+            d = TOOLS.parent
+            while not (d / "Vibhaga-Admin").is_dir() and d.parent != d:
+                d = d.parent
+            if (d / "Vibhaga-Admin").is_dir():
+                env["VIBHAGA_ADMIN"] = str(d / "Vibhaga-Admin")
+        if not shutil.which("node") or "VIBHAGA_ADMIN" not in env:
+            raise unittest.SkipTest("node or the sibling Vibhaga-Admin checkout unavailable")
+        fig = Path(tmp) / "f.json"
+        fig.write_text(json.dumps(b.doc), encoding="utf-8")
+        (Path(tmp) / "f.claims.txt").write_text(b.claims, encoding="utf-8")
+        (Path(tmp) / "f.anchors.json").write_text(json.dumps(b.anchors), encoding="utf-8")
+        r = subprocess.run(
+            ["node", str(TOOLS / "vdd-check.mjs"), str(fig),
+             "--claims", str(Path(tmp) / "f.claims.txt"),
+             "--anchors", str(Path(tmp) / "f.anchors.json"), "--no-render"],
+            capture_output=True, text=True, env=env)
+        return r
+
+    def test_default_grid_is_the_shapes_extent(self):
+        b = self._build(vertices=[[1, 1], [5, 1], [5, 3], [1, 3]])
+        self.assertIn("grid 3 by 5", b.claims)            # no spare row/column
+        gv = [e for e in b.doc["elements"] if re.fullmatch(r"gv\d+", e["id"])]
+        gh = [e for e in b.doc["elements"] if re.fullmatch(r"gh\d+", e["id"])]
+        self.assertEqual((len(gv), len(gh)), (6, 4))      # cols+1 x rows+1 rulings
+        b2 = self._build(vertices=[[1, 1], [5, 1], [5, 3], [1, 3]], cols=8, rows=6)
+        self.assertIn("grid 6 by 8", b2.claims)           # explicit cols/rows unchanged
+        gv2 = [e for e in b2.doc["elements"] if re.fullmatch(r"gv\d+", e["id"])]
+        self.assertEqual(len(gv2), 9)
+
+    def test_convex_vertex_labels(self):
+        b = self._build(vertices=[[0, 0], [4, 0], [4, 3], [0, 3]],
+                        cell_px=40.0, vertex_labels=True)
+        self.assertIn('label "A" names A', b.claims)
+        r = audit(b.claims, tempfile.mkdtemp())
+        self.assertEqual(r.returncode, 0, r.stdout)
+        W, H = b.doc["canvas"]["width"], b.doc["canvas"]["height"]
+        for el in b.doc["elements"]:                     # labels near the canvas edge
+            if el["type"] == "text":                     # still get their margin
+                x, y = el["at"]
+                self.assertTrue(0 <= x <= W and 0 <= y <= H)
+
+    def test_unotch_vertex_labels_build(self):
+        for cp in (40.0, 50.0, 60.0):
+            with self.subTest(cell_px=cp):
+                b = self._build(vertices=self.UNOTCH, cell_px=cp, vertex_labels=True)
+                labels = [e for e in b.doc["elements"]
+                          if e["type"] == "text" and e["id"].startswith("lbl")]
+                self.assertEqual(len(labels), 8)
+                r = audit(b.claims, tempfile.mkdtemp())
+                self.assertEqual(r.returncode, 0, r.stdout)
+                if cp == 50.0:                    # one representative through vdd-check
+                    with tempfile.TemporaryDirectory() as tmp:
+                        rr = self._vdd_check(b, tmp)
+                    self.assertEqual(rr.returncode, 0, rr.stdout + rr.stderr)
+
+    def test_unotch_8x6_vertex_labels_build(self):
+        b = self._build(vertices=self.UNOTCH_8x6, cell_px=66.0, vertex_labels=True)
+        r = audit(b.claims, tempfile.mkdtemp())
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_adjacent_reflex_vertices(self):
+        # a one-cell slot: E and F are reflex corners sharing the slot's back edge —
+        # both labels must squeeze into the same pocket (needs cell_px ≥ ~76 — the
+        # honest measured bound; 70 still refuses)
+        b = self._build(vertices=[[0, 0], [5, 0], [5, 3], [4, 3], [4, 2], [3, 2],
+                                  [3, 3], [0, 3]],
+                        cell_px=80.0, vertex_labels=True)
+        labels = {e["id"]: e for e in b.doc["elements"]
+                  if e["type"] == "text" and e["id"].startswith("lbl")}
+        self.assertEqual(len(labels), 8)
+        # each label sits nearer its own vertex anchor than any other vertex's
+        vertex_anchors = {n: b.anchors[n] for n in "ABCDEFGH"}
+        for n, el in labels.items():
+            ax_, ay_ = el["at"]
+            own = math.hypot(ax_ - vertex_anchors[n[3:]][0],
+                             ay_ - vertex_anchors[n[3:]][1])
+            for m, (rx, ry) in vertex_anchors.items():
+                if m != n[3:]:
+                    self.assertLess(own, math.hypot(ax_ - rx, ay_ - ry))
+        r = audit(b.claims, tempfile.mkdtemp())
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_tight_notch_still_refuses(self):
+        # a 2-cell notch at cell_px 24 leaves no seat an honest label could take —
+        # the refusal stays real
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._build(vertices=self.UNOTCH, cell_px=24.0, vertex_labels=True)
+        self.assertIn("no clear seat", str(cm.exception))
+
+    def test_axis_draws_a_dashed_clipped_line(self):
+        b = self._build(vertices=[[0, 0], [4, 0], [4, 3], [0, 3]],
+                        axis={"through": [[2, -1], [2, 4]]})
+        el = self._axis_el(b)
+        self.assertEqual(el["stroke"]["style"], "dashed")
+        # clipped to the grid rect — in canvas units the vertical axis through x=2 runs
+        # from the grid's top ruling to its bottom one
+        top = next(e for e in b.doc["elements"] if e["id"] == "gh0")["points"][0][1]
+        bottom = next(e for e in b.doc["elements"] if e["id"] == "gh3")["points"][0][1]
+        x2 = next(e for e in b.doc["elements"] if e["id"] == "gv2")["points"][0][0]
+        self.assertAlmostEqual(el["points"][0][1], top)
+        self.assertAlmostEqual(el["points"][1][1], bottom)
+        for x, y in el["points"]:
+            self.assertAlmostEqual(x, x2)
+        self.assertRegex(b.claims, r"paint [A-Z]{2} dashed")
+        self.assertIn('describe "a dashed line', b.claims)
+        self.assertRegex(b.claims, r"none tickMark parallelMark angleMark arrow \|")
+        r = audit(b.claims, tempfile.mkdtemp())
+        self.assertEqual(r.returncode, 0, r.stdout)
+        with tempfile.TemporaryDirectory() as tmp:
+            rr = self._vdd_check(b, tmp)
+        self.assertEqual(rr.returncode, 0, rr.stdout + rr.stderr)
+
+    @staticmethod
+    def _axis_el(b):
+        return next(e for e in b.doc["elements"] if e["id"] == "axis")
+
+    def test_axis_diagonal_symmetry(self):
+        for through in ([[0, 0], [3, 3]], [[0, 3], [3, 0]]):   # a square's diagonals
+            with self.subTest(through=through):
+                b = self._build(vertices=[[0, 0], [3, 0], [3, 3], [0, 3]],
+                                axis={"through": through})
+                self._axis_el(b)
+        # horizontal symmetry on a wide rectangle
+        b = self._build(vertices=[[0, 0], [4, 0], [4, 2], [0, 2]],
+                        axis={"through": [[0, 1], [4, 1]]})
+        self._axis_el(b)
+
+    def test_axis_refusals(self):
+        sq = [[0, 0], [3, 0], [3, 3], [0, 3]]
+        with self.assertRaisesRegex(vt.TemplateError, "distinct"):
+            self._build(vertices=sq, axis={"through": [[1, 1], [1, 1]]})
+        with self.assertRaisesRegex(vt.TemplateError, "lattice"):
+            self._build(vertices=sq, axis={"through": [[0.5, 0], [0.5, 3]]})
+        with self.assertRaisesRegex(vt.TemplateError, "vertical, horizontal or"):
+            self._build(vertices=sq, axis={"through": [[0, 0], [3, 1]]})
+        with self.assertRaisesRegex(vt.TemplateError, "does not cross"):
+            self._build(vertices=sq, axis={"through": [[9, 0], [9, 4]]})
+        with self.assertRaisesRegex(vt.TemplateError, "through"):
+            self._build(vertices=sq, axis={"through": [[1, 1]]})
+
+    def test_axis_symmetry_assertion(self):
+        ell = [[0, 0], [4, 0], [4, 3], [3, 3], [3, 2], [0, 2]]     # L-shape, not symmetric
+        with self.assertRaisesRegex(vt.TemplateError, "mirror-symmetric"):
+            self._build(vertices=ell, axis={"through": [[2, 0], [2, 4]]})
+        b = self._build(vertices=ell,
+                        axis={"through": [[2, 0], [2, 4]], "assert_symmetric": False})
+        self.assertNotIn("mirror-symmetric about it", b.claims)   # describe stays honest
+        self._axis_el(b)
 
 
 class CLI(unittest.TestCase):
@@ -1344,6 +1576,69 @@ class CoordinatePlane(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
 
+    def _sweep_spec(self, xm, ym):
+        """The W12 sweep shape: five non-collinear interior points + origin_label."""
+        pts = {"A": (1, 1), "B": (xm - 1, 1), "C": (1, ym - 1),
+               "D": (xm - 1, ym - 1), "E": (xm // 2, ym // 2)}
+        nums = sorted({c for p in pts.values() for c in p})
+        stem = ("Points " + " ".join(map(str, nums)) +
+                " are marked on a coordinate plane. (a) Read them.")
+        return dict(figure_id="f1", stem=stem, x_max=xm, y_max=ym,
+                    points=pts, grid=True, origin_label=True)
+
+    def test_lettered_grid_sweep_measured_limit(self):
+        """W12 A3: cell-corner pockets + the font ladder extended the lettered-grid
+        frontier to its physical wall — a pocket needs ~44 canvas units of cell
+        (label box + the 8-rendered-px stroke clearance each side at the tight scale).
+        Feasible: x_max ≤ 4 → y_max ≤ 9; x_max = 5 → y_max ≤ 8; x_max = 6 → y_max ≤ 6.
+        Every x_max, y_max in 7..10 refuses outright with the measured-limit message.
+        """
+        feasible = [(4, y) for y in range(4, 10)] + \
+                   [(5, y) for y in range(4, 9)] + \
+                   [(6, y) for y in range(4, 7)]
+        with tempfile.TemporaryDirectory() as tmp:
+            for xm, ym in feasible:
+                with self.subTest(x_max=xm, y_max=ym):
+                    b = vt.BUILDERS["coordinate_plane"](**self._sweep_spec(xm, ym))
+                    self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+        for xm in range(7, 11):
+            for ym in range(7, 11):
+                with self.subTest(x_max=xm, y_max=ym):
+                    with self.assertRaises(vt.TemplateError) as cm:
+                        vt.BUILDERS["coordinate_plane"](**self._sweep_spec(xm, ym))
+                    self.assertIn("44-unit cells", str(cm.exception))
+
+    def test_lettered_grid_sweep_passes_vdd_check(self):
+        """The frontier builds also survive vdd-check --no-render with 0 findings."""
+        import os
+        import shutil
+        env = dict(os.environ)
+        if not env.get("VIBHAGA_ADMIN"):
+            d = TOOLS.parent
+            while not (d / "Vibhaga-Admin").is_dir() and d.parent != d:
+                d = d.parent
+            if (d / "Vibhaga-Admin").is_dir():
+                env["VIBHAGA_ADMIN"] = str(d / "Vibhaga-Admin")
+        if not shutil.which("node") or "VIBHAGA_ADMIN" not in env:
+            self.skipTest("node or the sibling Vibhaga-Admin checkout unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            for xm, ym in ((4, 9), (5, 8), (6, 6), (4, 4)):
+                with self.subTest(x_max=xm, y_max=ym):
+                    b = vt.BUILDERS["coordinate_plane"](**self._sweep_spec(xm, ym))
+                    fig = Path(tmp) / f"cp{xm}x{ym}.json"
+                    fig.write_text(json.dumps(b.doc), encoding="utf-8")
+                    claims = Path(tmp) / f"cp{xm}x{ym}.claims.txt"
+                    claims.write_text(b.claims, encoding="utf-8")
+                    anchors = Path(tmp) / f"cp{xm}x{ym}.anchors.json"
+                    anchors.write_text(json.dumps(b.anchors), encoding="utf-8")
+                    r = subprocess.run(
+                        ["node", str(TOOLS / "vdd-check.mjs"), str(fig),
+                         "--claims", str(claims), "--anchors", str(anchors),
+                         "--no-render"],
+                        capture_output=True, text=True, env=env)
+                    self.assertEqual(r.returncode, 0,
+                                     f"{xm}×{ym}\n{r.stdout}\n{r.stderr}")
+
     def test_stem_mode_needs_every_coordinate(self):
         with self.assertRaises(vt.TemplateError) as cm:
             self._b(points={"A": (3, 5)},
@@ -1773,6 +2068,99 @@ class BarChart(unittest.TestCase):
             self._b(category_title="Day|Night")            # claim-separator chars too
 
 
+class BarChartHorizontal(unittest.TestCase):
+    """W12 A5 — `orientation="h"`: bars run right, categories stack up the y axis
+    with the first category nearest the origin, and every `reads` claim measures a
+    bar's END edge on OX. The default "v" output is pinned byte-identical by the
+    selftest-bars entry in ByteIdentity."""
+
+    STEM = ("The chart shows sales of 25 books in Grade 6 and 40 books in Grade 7, "
+            "in steps of 5. (a) Which grade sold more?")
+
+    def _b(self, **kw):
+        d = dict(figure_id="bc1", stem=self.STEM, ask=[["a", "x"]],
+                 categories=["Grade 6", "Grade 7"],
+                 series=[{"name": "", "values": [25, 40]}], step=5,
+                 orientation="h")
+        d.update(kw)
+        return vt.BUILDERS["bar_chart"](**d)
+
+    def test_happy_path_audits_clean(self):
+        b = self._b()
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+        self.assertIn("axis OX from 0 to 40", b.claims)
+        self.assertIn("tick OX step 5 | stem", b.claims)
+        self.assertIn("reads T1 25 on OX | stem", b.claims)
+        self.assertIn("reads T2 40 on OX | stem", b.claims)
+        self.assertIn('label "Grade 6" names cat0', b.claims)
+        # the value axis is the horizontal one — the arrow carries it
+        ax = {e["id"]: e for e in b.doc["elements"]}
+        self.assertEqual(ax["axX"]["type"], "arrow")
+        self.assertEqual(ax["axY"]["type"], "line")
+
+    def test_multi_series_legend_zero_bar_and_titles(self):
+        b = self._b(categories=["Mon", "Tue", "Wed"],
+                    series=[{"name": "Tea", "values": [4, 0, 6]},
+                            {"name": "Milk", "values": [2, 3, 5]}],
+                    step=2, v_max=8, value_title="Cups", category_title="Day",
+                    stem="Tea sold 4, 0 and 6 cups; milk sold 2, 3 and 5 cups, "
+                         "in steps of 2. (a) Compare.")
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+        self.assertIn("reads T3 0 on OX", b.claims)         # a 0 bar still reads
+        self.assertIn('label "Tea" names series0', b.claims)
+        self.assertIn('label "Cups" names OX', b.claims)    # the value title
+        self.assertIn('label "Day" names OY', b.claims)     # the category title
+
+    def test_figure_mode(self):
+        b = self._b(values="figure",
+                    stem="The chart shows two classes' totals, the axis marked in "
+                         "steps of 5. (a) Which is larger?")
+        self.assertIn("reads T1 25 on OX | inferred", b.claims)
+        self.assertIn("figure content", b.claims)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(audit(b.claims, tmp).returncode, 0, b.claims)
+
+    def test_h_survives_vdd_check(self):
+        b = self._b(categories=["Mon", "Tue", "Wed"],
+                    series=[{"name": "Tea", "values": [4, 0, 6]},
+                            {"name": "Milk", "values": [2, 3, 5]}],
+                    step=2, v_max=8, value_title="Cups", category_title="Day",
+                    stem="Tea sold 4, 0 and 6 cups; milk sold 2, 3 and 5 cups, "
+                         "in steps of 2. (a) Compare.")
+        with tempfile.TemporaryDirectory() as tmp:
+            r = GridPolygonLabelsAndAxis._vdd_check(b, tmp)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_orientation_validation(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._b(orientation="x")
+        self.assertIn("orientation", str(cm.exception))
+
+    def test_gutter_refusal_states_the_fix(self):
+        """Category labels that leave <160 units for the value axis refuse."""
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._b(categories=["A very long category label that runs and runs "
+                                "and runs and runs past the gutter " + str(i)
+                                for i in range(4)],
+                    series=[{"name": "", "values": [10] * 4}],
+                    stem="Four categories all at 10, in steps of 5. (a) Read.")
+        self.assertIn("shorten", str(cm.exception))
+
+    def test_vertical_default_byte_identical(self):
+        """The default build and an explicit orientation="v" emit the same bytes;
+        the v layout itself is pinned by selftest-bars' sha256 in ByteIdentity."""
+        kw = dict(figure_id="bc1", stem=self.STEM, ask=[["a", "x"]],
+                  categories=["Grade 6", "Grade 7"],
+                  series=[{"name": "", "values": [25, 40]}], step=5)
+        b1 = vt.BUILDERS["bar_chart"](**kw)
+        b2 = vt.BUILDERS["bar_chart"](orientation="v", **kw)
+        self.assertEqual(json.dumps(b1.doc, sort_keys=True),
+                         json.dumps(b2.doc, sort_keys=True))
+        self.assertEqual(b1.claims, b2.claims)
+
+
 class ByteIdentity(unittest.TestCase):
     """The floating-label machinery must not change any existing template's bytes —
     sha256 over each self-test spec's three emitted files, captured on origin/main."""
@@ -1780,7 +2168,7 @@ class ByteIdentity(unittest.TestCase):
     GOLDEN = {
         "selftest-cuboid": "05f09debdef31ece88cfbc7ffc0036095112bab21c2ff513ffd1afa5b8f58c9c",
         "selftest-dots": "7ed9088e060208c13050f2dddfb4e846ab7c7a859f364ebd64f94d4230dea166",
-        "selftest-grid": "397021ddea0b1ea650bb7103578ea6155e3c230991228040c9fd6416f0ab2abf",
+        "selftest-grid": "e7f6fda91430b0ffa92a3071eab54c5f3e5e54d946e67ec35b93899be1bed393",
         "selftest-house": "b7efe080cc9db6bc8e028b0ec5e7ca2e0a5a12757295489d7c663f8512762f38",
         "selftest-line": "aaabd2c6e476e4cb67c22dcb3c1f506aba59e7e2fc29764635bd886a52279851",
         "selftest-pict": "c39c157a1f4fcbedcad1e30515b71184db67d234930e96ec51d7c515245ccdd3",
@@ -1795,9 +2183,14 @@ class ByteIdentity(unittest.TestCase):
         "selftest-rings": "6e0ffc326d1bd899b702a9a1eea4a9c5ce0927258f7155c083bdf6a7f8edbc07",
         "selftest-shapes": "f3fdfa398f181216902d858288b9e4b5255179ded2e4627dddcaf44b12621e9a",
         # W11 — generated when the three G7 templates landed
-        "selftest-plane": "22da47f99125b5821f78e4a39cffbbb0a2f8b447c8cee8856cfd719f44d2455a",
+        # W12 — selftest-plane/grid regenerated: A3's cell-corner label seating moved the
+        # point letters, A4's default cols/rows are the shape's exact extent
+        "selftest-plane": "f80cfd4e7d009043e3b9ad28b71051f239e6afd286e60f0469600e3ce65602cb",
         "selftest-parallel": "a90ffb97dca6fe53f22f192f1b4dc989822ab6147a72ab3b012a00e00ec96861",
         "selftest-bars": "f6427cfc31e6a891bb820165618cf6c14598be4dd1fa3920f0a3e53155e684b0",
+        # W12 A5 — generated when orientation="h" landed (the v spec's hash above is
+        # the byte-identical guard: the vertical layout must not move)
+        "selftest-barsh": "0d69c8f3bf612cb7eb6de1b2590c63b863500f9aaf48cb51698f9fd1de8603ef",
     }
 
     def test_self_test_outputs_unchanged(self):
