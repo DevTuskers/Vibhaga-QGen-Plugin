@@ -2576,6 +2576,7 @@ class VennSets(unittest.TestCase):
         self.assertIn('describe "5 lies inside the A circle and inside the B circle"', b.claims)
         self.assertIn("outside the B circle and inside the universal rectangle", b.claims)
         self.assertIn('label "U" names univ', b.claims)
+        self.assertIn("a rectangle labelled U frames every set", b.claims)
         self.assertIn('label "5" names region_ab_1', b.claims)
         self.assertIn("derive 2 + 1 = 3", b.claims)          # n(A)
         self.assertIn("derive 2 + 1 + 1 + 1 = 5", b.claims)  # n(U)
@@ -2632,6 +2633,7 @@ class VennSets(unittest.TestCase):
             (dict(sets=["A", "B"], regions={"A": ["$x$"]}), "backtick"),
             (dict(sets=["A", "B"], regions={"A": ["1"]}, shade=["A"]), "shading not supported yet"),
             (dict(sets=["A", "B"], regions={"A": "xy", "AB": 1, "B": 1, "": 1}), "never mixed"),
+            (dict(sets=["A", "B"], regions={"A": ["1"]}, r="big"), "at least 50"),
             (dict(sets=["A", "B"], regions={"A": [str(i) for i in range(40)]}, r=50),
              "cannot seat"),
         ]
@@ -2796,8 +2798,8 @@ class ByteIdentity(unittest.TestCase):
         "selftest-composite": "113f21727236ee0812eadcfb22391a80e2cf55dc9cd136bdb78b328e22c74cdb",
         "selftest-trimarks": "efc8b0bb6a5c5027267620ff577fa94a915c9353c3a0286ac10b44265d741b76",
         # W14 — generated when venn_sets / circle_parts landed
-        "selftest-venn": "3042306ad3f1e9c5b86c6576c84f546ede4762c5894ac9c32b5db2e26604d9f9",
-        "selftest-venn3": "20a145facd71ab9e8126ed70e2ee2015fb7aa795abb691bfd8f55001077dc899",
+        "selftest-venn": "fbc07d9f9f560504984241dafe4cf5c18a772b2faef551f8eedf139fa8e52568",
+        "selftest-venn3": "b5baef12404e11361c716a35e0e4a9b22eaeeb5f13fce2e4b21ed281b5bca563",
         "selftest-circle": "bba42c4d35e57115bd23c50832770f8459ee13b3077a4e4b7eb64b272c601711",
     }
 

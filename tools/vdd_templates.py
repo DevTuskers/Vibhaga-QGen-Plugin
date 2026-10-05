@@ -5323,9 +5323,10 @@ def build_venn_sets(*, figure_id, stem, ask=None, title=None, description=None,
                if mode == "counts" else "an element belongs to one region only, and a set "
                "name cannot also be an item"))
 
+    if r is not None and not (isinstance(r, (int, float)) and not isinstance(r, bool)
+                              and r >= 50):
+        raise TemplateError(f"{kind}: r must be a number of at least 50 units")
     radii = [float(r)] if r is not None else list(_VENN_R)
-    if r is not None and not (isinstance(r, (int, float)) and r >= 50):
-        raise TemplateError(f"{kind}: r must be at least 50 units")
     last = None
     for rr in radii:
         try:
@@ -5515,6 +5516,8 @@ def _venn_once(*, kind, figure_id, stem, ask, title, description, medium, sets, 
         elif toks[0].isdigit():
             known[k] = float(toks[0])
     if universal is not None:
+        add(f'describe "a rectangle labelled {universal} frames every set — the universal set"',
+            "inferred", "the drawn frame")
         add(f'label "{universal}" names univ', "inferred", "the universal set's label")
     for s in sets:
         add(f'label "{s}" names {s}', "inferred", f"set {s}'s name, outside its circle")
@@ -5717,7 +5720,9 @@ def _circle_parts_once(*, figure_id, stem, ask, title, description, medium, poin
             a_, b_ = ft["pts"]
             sep = abs((deg[a_] - deg[b_] + 180.0) % 360.0 - 180.0)
             true_ = 2.0 * radius * math.sin(math.radians(sep) / 2)
-        if abs(v - true_) > 0.005 * true_:
+        # 0.2% — inside the audit's own 0.5% label-ratio band, so a label this passes can
+        # never fail the drawn-vs-label pair check on 0.01-rounded anchors
+        if abs(v - true_) > 0.002 * true_:
             hint = ""
             if ft["kind"] == "chord" and v < 2 * radius:
                 want_sep = 2 * math.degrees(math.asin(v / (2 * radius)))
