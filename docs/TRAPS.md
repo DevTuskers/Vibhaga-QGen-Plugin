@@ -928,3 +928,21 @@ codepoint U+0D80–U+0DFF in drawn text unconditionally — the message names th
 the flag's callers keep working); it no longer widens the label rule.
 
 *Source: this plugin — W12, 2026-10-04 (session f040ebb5, Q5/Q6 bar charts).*
+
+## T-QG-13 — The wide frame that starved the overlap, and the region label "far from its target"
+
+**What happened (W14, `venn_sets`).** Two traps in one template. (1) Two five-letter words in A∩B
+refused at every radius up to 150 units although the lens holds them at 130 standalone: the
+universal rectangle carried the full label-band padding on its LEFT and RIGHT too, the canvas grew,
+the clearance in units grew with it (T-QG-10), and the lens lost more than the bigger circle gave.
+Side padding only has to keep the frame off the outlines — the label bands are top and bottom.
+(2) A one-token count seated at its region's roomiest point is ~30 units from every outline, so
+visual-check's `target` rule (a label within 1.5 × fontSize of what it names) failed every Venn
+count: the rule assumes a label names a STROKE, and a region item names an AREA.
+**The check:** the venn frame's side pad is `clr + 6`; region tokens bind `label "g" names
+region_<key>[_j]`, and `visual-metrics.mjs` skips the `target` rule for exactly those `region_…`
+targets — edge and stroke still measure them, no `allow:` line is involved, so nothing else is
+waived. A trefoil's overlap regions hold about one short token each at a readable size; the
+template says so when it refuses.
+
+*Source: this plugin — W14, 2026-10-05.*

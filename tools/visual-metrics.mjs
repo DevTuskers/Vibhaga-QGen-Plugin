@@ -13,7 +13,8 @@
  *   edge    — label bbox < 8 rendered px from the canvas edge
  *   stroke  — label bbox < 6 rendered px from a stroked primitive's EDGE (centreline − width/2)
  *   target  — label far from what it names: a label equal to a `point` element's label is measured
- *             bbox→point; any other label uses geom_u (nearest painted primitive). > 1.5·fontSizeU fails
+ *             bbox→point; a word label or an AREA label (`label "…" names region_…`) is skipped;
+ *             any other label uses geom_u (nearest painted primitive). > 1.5·fontSizeU fails
  *   arc     — an angle numeral/variable (^\d+(\.\d+)?°?$ | ^[a-z]°?$ | ^[α-ωθ]°?$) whose centre's polar
  *             angle from the vertex lies outside the DRAWN span of every arc / unlabelled angleMark
  *             within r + 1.5·fontSizeU (labelled angleMarks are skipped — the renderer places those)
@@ -310,11 +311,19 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
       pointByLabel.set(el.label, el.at);
 
   // a point label's target is its OWN point's `at`; a word label (≥3-letter run, any script) is a
-  // header/legend and is not measured; anything else's target is the nearest painted geometry.
+  // header/legend and is not measured; an AREA label — its `label` claim names a `region_…`
+  // target (a Venn region's item or count, W14) — names the region it sits in, whose roomiest
+  // point is legitimately far from every outline, so it is not measured either (edge and stroke
+  // still are); anything else's target is the nearest painted geometry.
+  const areaLabels = new Set();
+  for (const c of cs?.claims ?? []) {
+    const m = c.pred === "label" && String(c.args).match(/^"(.*)" names (region_\S*)$/);
+    if (m) areaLabels.add(m[1]);
+  }
   const targetOf = (l) => {
     if (l.bbox && pointByLabel.has(l.text))
       return { d: distPointToBox(pointByLabel.get(l.text), l.bbox), via: `point ${JSON.stringify(l.text)}` };
-    if (WORD_LABEL_RE.test(l.text ?? "")) return { d: null, skipped: true };
+    if (WORD_LABEL_RE.test(l.text ?? "") || areaLabels.has(l.text)) return { d: null, skipped: true };
     return { d: l.geom_u ?? null, via: "the nearest painted geometry" };
   };
   const targetBad = (l, tg) =>

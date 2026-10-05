@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""vdd_templates.py — the twenty-one figure TEMPLATES of the vibhaga-qgen plugin.
+"""vdd_templates.py — the twenty-three figure TEMPLATES of the vibhaga-qgen plugin.
 
 A template turns a question's STEM NUMBERS into a finished figure — a VDD document, an
 anchors sidecar and a `channel: constructed` claim set — in one `Built` object:
@@ -5134,13 +5134,831 @@ def _triangle_marks_once(*, figure_id, stem, ask, title, description, medium, an
                   medium=medium)
 
 
+# ────────────────────────────────────────────────────────────────────────────────
+# 22. venn_sets — 2 or 3 sets in an (optional) universal rectangle, items or counts
+# ────────────────────────────────────────────────────────────────────────────────
+_VENN_R = (70.0, 90.0, 110.0, 130.0, 150.0)       # radius ladder: the smallest that fits wins
+_VENN_REGIONS = {2: ["A", "AB", "B"], 3: ["A", "B", "C", "AB", "AC", "BC", "ABC"]}
+_VENN_OUT = {2: {0: -120.0, 1: -60.0}, 3: {0: -150.0, 1: -30.0, 2: 90.0}}
+_VENN_COUNT = re.compile(r"[a-z]")                # an unknown count printed as one letter
+
+
+def _text_box(text: str, at: XY, size: float = FS) -> tuple[float, float, float, float]:
+    """The middle/middle `text` box label_boxes() computes, for a label anchored at `at`."""
+    w = _label_width(text, size)
+    return (at[0] - w / 2, at[1] - size * MID_UP, at[0] + w / 2, at[1] + size * MID_DOWN)
+
+
+def _box_vs_circle(box, c: XY, r: float, inside: bool, clr: float) -> bool:
+    """Exact: the whole box ≥ clr inside the circle (farthest corner) or ≥ clr outside
+    it (nearest point of the box to the centre)."""
+    x0, y0, x1, y1 = box
+    if inside:
+        return max(math.hypot(x - c[0], y - c[1]) for x in (x0, x1) for y in (y0, y1)) <= r - clr
+    nx, ny = min(max(c[0], x0), x1), min(max(c[1], y0), y1)
+    return math.hypot(nx - c[0], ny - c[1]) >= r + clr
+
+
+def _seat_text(text: str, prefer: XY, ok, occupied: list, gap: float, reach: float,
+               step: float = 3.0):
+    """(at, box) nearest `prefer` on the first expanding Chebyshev ring holding a box that
+    passes `ok(box)` and keeps ≥ gap to every `occupied` box — or None. The box is the
+    renderer's own middle/middle text box, so a pass here is a pass in finish()."""
+    px, py = prefer
+    for k in range(int(reach / step) + 1):
+        if k == 0:
+            ring = [(px, py)]
+        else:
+            r_ = k * step
+            ring = [(px + i * step, py - r_) for i in range(-k, k + 1)] + \
+                   [(px + i * step, py + r_) for i in range(-k, k + 1)] + \
+                   [(px - r_, py + i * step) for i in range(-k + 1, k)] + \
+                   [(px + r_, py + i * step) for i in range(-k + 1, k)]
+        best = None
+        for x, y in ring:
+            box = _text_box(text, (x, y))
+            if ok(box) and all(_rect_gap(box, o) >= gap for o in occupied):
+                d = math.hypot(x - px, y - py)
+                if best is None or d < best[0]:
+                    best = (d, (vc.r2(x), vc.r2(y)), box)
+        if best:
+            return best[1], _text_box(text, best[1])
+    return None
+
+
+def _seat_group(tokens: list[str], prefer: XY, ok, occupied: list, gap: float, reach: float,
+                step: float = 3.0):
+    """Seat a region's tokens as ONE block — a column, a row or a grid — nearest `prefer`:
+    [(at, box)…] in token order, or None. Greedy one-at-a-time seating parks the first
+    token on the region's roomiest point and strands the rest (W13: a small search over
+    arrangements beats greedy placement in crowded spots). Every token box is checked
+    exactly with `ok` and against `occupied`."""
+    n_ = len(tokens)
+    cw = max(_label_width(t, FS) for t in tokens)
+    ch = FS * (MID_UP + MID_DOWN)
+    layouts = []
+    for ncol in sorted({1, n_, 2, 3} & set(range(1, n_ + 1))):
+        rows = math.ceil(n_ / ncol)
+        offs = []
+        for i_ in range(n_):
+            rr, cc = divmod(i_, ncol)
+            in_row = min(ncol, n_ - rr * ncol)
+            offs.append(((cc - (in_row - 1) / 2) * (cw + gap),
+                         (rr - (rows - 1) / 2) * (ch + gap) + FS * (MID_UP - MID_DOWN) / 2))
+        layouts.append(offs)
+    px, py = prefer
+    for k in range(int(reach / step) + 1):
+        if k == 0:
+            ring = [(px, py)]
+        else:
+            r_ = k * step
+            ring = [(px + i * step, py - r_) for i in range(-k, k + 1)] + \
+                   [(px + i * step, py + r_) for i in range(-k, k + 1)] + \
+                   [(px - r_, py + i * step) for i in range(-k + 1, k)] + \
+                   [(px + r_, py + i * step) for i in range(-k + 1, k)]
+        best = None
+        for x, y in ring:
+            for offs in layouts:
+                seats = []
+                for t, (ox, oy) in zip(tokens, offs):
+                    at = (vc.r2(x + ox), vc.r2(y + oy))
+                    box = _text_box(t, at)
+                    if not ok(box) or any(_rect_gap(box, o) < gap for o in occupied) or \
+                            any(_rect_gap(box, b2) < gap for _a, b2 in seats):
+                        break
+                    seats.append((at, box))
+                else:
+                    d = math.hypot(x - px, y - py)
+                    if best is None or d < best[0]:
+                        best = (d, seats)
+                    break
+        if best:
+            return best[1]
+    return None
+
+
+def build_venn_sets(*, figure_id, stem, ask=None, title=None, description=None,
+                    medium="english", sets=("A", "B"), regions=None, universal="U",
+                    shade=None, r=None):
+    """A Venn diagram of 2 or 3 sets (single capitals, drawn in English) — a side-by-side
+    pair or the standard trefoil — optionally inside a labelled universal rectangle
+    (`universal=None` draws none). `regions` is keyed by the sets a region lies INSIDE —
+    {"A": …, "AB": …, "B": …, "": …}, "" = outside every set but inside the universal
+    rectangle — and every value is either a list of ITEMS (short English/number tokens,
+    each drawn as text in its region) or a COUNT (an int ≥ 0, or one lowercase letter for
+    an unknown). Items or counts, never mixed. Counts mode needs every region. Each token
+    is seated with its whole box ≥ the stroke clearance inside/outside every outline; the
+    radius grows up the ladder until everything fits, then the build refuses.
+    `shade` is reserved for the G10 region-shading step and refuses for now."""
+    kind = "venn_sets"
+    vc.reset_ids()
+    if shade is not None:
+        raise TemplateError(f"{kind}: shading not supported yet — `shade` is reserved for the "
+                            "G10 region-shading step")
+    sets = list(sets) if isinstance(sets, (list, tuple)) else sets
+    if not isinstance(sets, list) or not 2 <= len(sets) <= 3 or len(set(sets)) != len(sets) or \
+            not all(isinstance(s, str) and re.fullmatch(r"[A-Z]", s) for s in sets):
+        raise TemplateError(f"{kind}: sets must be 2 or 3 distinct single capitals — got {sets!r}")
+    if universal is not None and (not isinstance(universal, str) or not universal.strip()
+                                  or len(universal) > 3):
+        raise TemplateError(f"{kind}: universal is a short label (≤3 characters) or None")
+    if not isinstance(regions, dict) or not regions:
+        raise TemplateError(f"{kind}: regions must be a non-empty dict keyed by the sets a "
+                            "region is inside (\"A\", \"AB\", …, \"\" = outside every set)")
+    n = len(sets)
+    keys_all = ["".join(sets[int(ch, 36) - 10] for ch in k) for k in _VENN_REGIONS[n]]
+    if universal is not None:
+        keys_all.append("")
+    norm: dict[str, object] = {}
+    for key, v in regions.items():
+        if not isinstance(key, str) or any(ch not in sets for ch in key) or \
+                len(set(key)) != len(key):
+            raise TemplateError(f"{kind}: region key {key!r} must be letters drawn once each "
+                                f"from the sets {sets} (\"\" = outside every set)")
+        k = "".join(s for s in sets if s in key)
+        if k in norm:
+            raise TemplateError(f"{kind}: region {k!r} is given twice ({key!r} names it too)")
+        if k == "" and universal is None:
+            raise TemplateError(f"{kind}: region \"\" is outside every set — it needs the "
+                                "universal rectangle (universal=None draws none)")
+        norm[k] = v
+    is_count = lambda v: (isinstance(v, int) and not isinstance(v, bool) and v >= 0) or \
+        (isinstance(v, str) and bool(_VENN_COUNT.fullmatch(v)))          # noqa: E731
+    if all(isinstance(v, (list, tuple)) for v in norm.values()):
+        mode = "items"
+    elif all(is_count(v) for v in norm.values()):
+        mode = "counts"
+    else:
+        raise TemplateError(f"{kind}: every region value is a list of items OR a count (an int "
+                            "≥ 0 or one lowercase letter) — never mixed")
+    content: dict[str, list[str]] = {}
+    if mode == "counts":
+        missing = [k or '""' for k in keys_all if k not in norm]
+        if missing:
+            raise TemplateError(f"{kind}: counts mode prints a number in EVERY region — "
+                                f"missing {missing}")
+        content = {k: [str(norm[k])] for k in keys_all}
+        if all(_VENN_COUNT.fullmatch(c[0]) for c in content.values()):
+            raise TemplateError(f"{kind}: at least one region count must be a number")
+    else:
+        for k in keys_all:
+            items = [str(x) for x in (norm.get(k) or [])]
+            for it in items:
+                if not it.strip() or len(it) > 12 or it != it.strip():
+                    raise TemplateError(f"{kind}: item {it!r} must be a short token "
+                                        "(1–12 characters, no leading/trailing space)")
+            content[k] = items
+        if not any(content.values()):
+            raise TemplateError(f"{kind}: every region is empty — give items or counts")
+    glyphs = sets + ([universal] if universal is not None else []) + \
+        [g for k in keys_all for g in content.get(k, [])]
+    # ADR 0021 + claim hygiene up front — vc.text asserts on `$`/backtick, which would
+    # surface as a crash instead of a stated refusal
+    _check_label_texts([], list(glyphs), medium)
+    if len(set(glyphs)) != len(glyphs):
+        dup = next(g for g in glyphs if glyphs.count(g) > 1)
+        raise TemplateError(
+            f"{kind}: {dup!r} is printed twice — each printed glyph binds ONE label claim; "
+            + ("give the regions different counts or print one as a letter"
+               if mode == "counts" else "an element belongs to one region only, and a set "
+               "name cannot also be an item"))
+
+    if r is not None and not (isinstance(r, (int, float)) and not isinstance(r, bool)
+                              and r >= 50):
+        raise TemplateError(f"{kind}: r must be a number of at least 50 units")
+    radii = [float(r)] if r is not None else list(_VENN_R)
+    last = None
+    for rr in radii:
+        try:
+            return _venn_once(kind=kind, figure_id=figure_id, stem=stem, ask=ask, title=title,
+                              description=description, medium=medium, sets=sets,
+                              universal=universal, keys_all=keys_all, content=content,
+                              mode=mode, r=rr)
+        except TemplateError as e:
+            last = e
+            if not str(e).startswith(f"{kind}: cannot seat"):
+                raise
+    raise last                                              # type: ignore[misc]
+
+
+def _venn_once(*, kind, figure_id, stem, ask, title, description, medium, sets, universal,
+               keys_all, content, mode, r):
+    n = len(sets)
+    if n == 2:
+        cen = {sets[0]: (0.0, 0.0), sets[1]: (1.1 * r, 0.0)}
+    else:
+        cen = {sets[0]: (0.0, 0.0), sets[1]: (r, 0.0), sets[2]: (r / 2, r * math.sqrt(3) / 2)}
+    circ = {s: (c, r) for s, c in cen.items()}
+    cx0 = min(c[0] for c in cen.values()) - r
+    cx1 = max(c[0] for c in cen.values()) + r
+    cy0 = min(c[1] for c in cen.values()) - r
+    cy1 = max(c[1] for c in cen.values()) + r
+    lab_h = FS * (MID_UP + MID_DOWN)
+    outside_n = len(content.get("", []))
+    span = cx1 - cx0 + 2 * (lab_h + 40.0)
+    order = sorted(keys_all, key=lambda k: (-len(k) if k else 9, keys_all.index(k)))
+
+    def margin_of(p, key, rect):
+        m = math.inf
+        for s, (c, rad) in circ.items():
+            d = math.hypot(p[0] - c[0], p[1] - c[1])
+            m = min(m, rad - d if s in key else d - rad)
+        if rect is not None:
+            m = min(m, p[0] - rect[0], rect[2] - p[0], p[1] - rect[1], rect[3] - p[1])
+        return m
+
+    for _pass in range(4):
+        # finish()'s stroke rule (6 + 2 px) at the span, + the 1-unit half stroke and the
+        # ≤0.4-unit sagitta of its 8°-sampled outline
+        clr = _clearance_units(STROKE_PX + SLACK_STROKE, span) + 1.5
+        gap = _clearance_units(4.0 + 1.0, span)
+        pad = 2 * clr + lab_h + gap
+        for extra in range(0, 5):
+            rect = None
+            if universal is not None:
+                # the label bands are top and bottom — the sides only keep the frame off the
+                # outlines; full side padding widened the canvas, raised the clearance in
+                # units, and starved the lens (W14: two 5-letter words in A∩B refused)
+                side = clr + 6.0
+                rect = (cx0 - side, cy0 - pad, cx1 + side,
+                        cy1 + pad + extra * (lab_h + gap + 2.0))
+
+            def ok_for(key, rect=rect, clr=clr):
+                def ok(box):
+                    for s, (c, rad) in circ.items():
+                        if not _box_vs_circle(box, c, rad, s in key, clr):
+                            return False
+                    if rect is not None and not (box[0] >= rect[0] + clr and
+                                                 box[1] >= rect[1] + clr and
+                                                 box[2] <= rect[2] - clr and
+                                                 box[3] <= rect[3] - clr):
+                        return False
+                    return True
+                return ok
+
+            occupied: list = []
+            seats: dict[str, tuple] = {}
+            fail = None
+            if universal is not None:
+                w = _label_width(universal, FS)
+                pref = (rect[0] + clr + w / 2 + 2, rect[1] + clr + FS * MID_UP + 2)
+                got = _seat_text(universal, pref, ok_for(""), occupied, gap, 3 * r)
+                if got is None:
+                    fail = "the universal label"
+                else:
+                    seats["univ"] = got
+                    occupied.append(got[1])
+            for i, s in enumerate(sets):
+                if fail:
+                    break
+                c = cen[s]
+                pref = vc.polar(c, r + clr + 14.0, _VENN_OUT[n][i])
+                got = _seat_text(s, pref, ok_for(""), occupied, gap, 1.5 * r)
+                if got is None:
+                    fail = f"the set name {s}"
+                    break
+                seats[f"nm{s}"] = got
+                occupied.append(got[1])
+            for k in order:
+                if fail:
+                    break
+                toks = content.get(k, [])
+                if not toks:
+                    continue
+                # the region's pole of inaccessibility — its roomiest point
+                step = r / 16.0
+                lo_x, hi_x = (rect[0], rect[2]) if (rect and k == "") else (cx0, cx1)
+                # the outside region's content lives in the BOTTOM band — the top band holds
+                # the set names and the universal label, and a count beside "C" reads "C 2"
+                lo_y, hi_y = (cy1, rect[3]) if (rect and k == "") else (cy0, cy1)
+                best = None
+                for ix in range(int((hi_x - lo_x) / step) + 1):
+                    for iy in range(int((hi_y - lo_y) / step) + 1):
+                        p = (lo_x + ix * step, lo_y + iy * step)
+                        m = margin_of(p, k, rect if k == "" else None)
+                        if best is None or m > best[0] + 1e-9:
+                            best = (m, p)
+                seed = best[1]
+                # outside tokens share the open band with the set names — keep the W13
+                # wider gap there so "A 4" never reads as one label
+                occ = occupied if k else [(b[0] - gap, b[1] - gap, b[2] + gap, b[3] + gap)
+                                          for b in occupied]
+                got = _seat_group(toks, seed, ok_for(k), occ, gap, 1.2 * r)
+                if got is None:
+                    fail = (f"region {k or 'outside'!s}'s {len(toks)} "
+                            f"{'items' if mode == 'items' else 'count'}")
+                else:
+                    for j, sj in enumerate(got):
+                        seats[f"{k}#{j}"] = sj
+                        occupied.append(sj[1])
+            if not fail:
+                break
+            if not (universal is not None and outside_n and fail.startswith("region outside")):
+                break
+        if fail:
+            raise TemplateError(
+                f"{kind}: cannot seat {fail} clear of the outlines at r={r:g} — "
+                + ("a three-set trefoil's overlap regions hold about one short token each at a "
+                   "readable size; move items to the single-set regions, print counts, or use "
+                   "two sets" if n == 3 else
+                   "shorten the items, print counts, or split the figure"))
+        xs = [b[1][0] for b in seats.values()] + [b[1][2] for b in seats.values()] + [cx0, cx1]
+        if rect is not None:
+            xs += [rect[0], rect[2]]
+        new_span = max(xs) - min(xs) + 2.0
+        if _clearance_units(STROKE_PX + SLACK_STROKE, new_span) + 1.5 <= clr + 0.05:
+            break
+        span = new_span           # W13: re-lay at the MEASURED width, never trust an estimate
+    else:
+        raise TemplateError(f"{kind}: cannot seat the labels at a stable scale at r={r:g}")
+
+    elements: list[dict] = []
+    if rect is not None:
+        elements.append({"id": "univ", "type": "rect", "x": vc.r2(rect[0]), "y": vc.r2(rect[1]),
+                         "width": vc.r2(rect[2] - rect[0]), "height": vc.r2(rect[3] - rect[1])})
+    for s in sets:
+        elements.append(vc.circle(cen[s], r, id=f"set{s}"))
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    if universal is not None:
+        elements.append(vc.text(seats["univ"][0], universal, id="ulbl"))
+    for s in sets:
+        elements.append(vc.text(seats[f"nm{s}"][0], s, id=f"nm{s}"))
+        add(f"circle centre {s} radius {r:g}", "inferred", f"the drawn circle of set {s}")
+    tag = lambda k: k.lower() if k else "out"                                # noqa: E731
+    known: dict[str, float] = {}
+    for k in keys_all:
+        toks = content.get(k, [])
+        for j, tok in enumerate(toks):
+            at = seats[f"{k}#{j}"][0]
+            tid = f"region_{tag(k)}_{j + 1}" if mode == "items" else f"region_{tag(k)}"
+            elements.append(vc.text(at, tok, id=tid))
+        if toks:
+            words = membership_claims("x", seats[f"{k}#0"][0], circ)[0][0]
+            words = words[len('describe "x lies '):-1]
+            for j in range(len(toks)):     # the seat proved it; the claim restates it per token
+                w2 = membership_claims("x", seats[f"{k}#{j}"][0], circ)[0][0]
+                if w2[len('describe "x lies '):-1] != words:
+                    raise TemplateError(f"{kind}: internal — region {k!r} tokens straddle an "
+                                        "outline")
+            if k == "":
+                words += " and inside the universal rectangle"
+            what = (", ".join(toks) + (" lie " if len(toks) > 1 else " lies ")) \
+                if mode == "items" else (f"the count {toks[0]} lies " if toks[0].isdigit()
+                                         else f"the unknown count {toks[0]} lies ")
+            add(f'describe "{what}{words}"', "inferred", "the region's drawn content")
+        if mode == "items":
+            known[k] = float(len(toks))
+        elif toks[0].isdigit():
+            known[k] = float(toks[0])
+    if universal is not None:
+        add(f'describe "a rectangle labelled {universal} frames every set — the universal set"',
+            "inferred", "the drawn frame")
+        add(f'label "{universal}" names univ', "inferred", "the universal set's label")
+    for s in sets:
+        add(f'label "{s}" names {s}', "inferred", f"set {s}'s name, outside its circle")
+    for k in keys_all:
+        for j, tok in enumerate(content.get(k, [])):
+            tid = f"region_{tag(k)}_{j + 1}" if mode == "items" else f"region_{tag(k)}"
+            add(f'label "{tok}" names {tid}', "inferred",
+                "an element of the region" if mode == "items" else "the region's count")
+    n_derives = 0
+
+    def derive(keys, what):
+        nonlocal n_derives
+        if all(k in known for k in keys):
+            tot = sum(known[k] for k in keys)
+            add(f"derive {' + '.join(_num_exact(known[k]) for k in keys)} = {_num_exact(tot)}",
+                "inferred", what)
+            n_derives += 1
+
+    for s in sets:
+        derive([k for k in keys_all if s in k], f"n({s}) — every region inside {s}")
+    union = [k for k in keys_all if k]
+    derive(union, f"n({' ∪ '.join(sets)}) — every region inside a set")
+    if universal is not None:
+        derive(keys_all, f"n({universal}) — every region, the outside one included")
+    if not n_derives:                       # unknowns block every sum — restate a known count
+        k0 = next(k for k in keys_all if k in known)
+        add(f"derive {_num_exact(known[k0])} + 0 = {_num_exact(known[k0])}", "inferred",
+            "a printed count (the unknowns block every total)")
+    add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
+        "outlines and region text only")
+    budget = len(elements) if len(elements) > 32 else None
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=dict(cen), points=list(sets), segments=[], claims=claims, ask=ask,
+                  title=title or f"A Venn diagram of sets {', '.join(sets)}",
+                  description=description or (
+                      f"A Venn diagram: {n} overlapping circles named {', '.join(sets)}"
+                      + (f" inside a rectangle labelled {universal}" if universal else "")
+                      + (", with items written in their regions." if mode == "items"
+                         else ", with a number written in each region.")),
+                  scale="circle sizes are a canvas choice — only region membership matters",
+                  budget=budget,
+                  departures=[f"budget {budget}: one text per region item"] if budget else None,
+                  medium=medium)
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# 23. circle_parts — a circle with named points and its parts (G7 L18, G8 L23)
+# ────────────────────────────────────────────────────────────────────────────────
+_CP_FEATURES = ("radius", "diameter", "chord", "arc", "sector", "segment")
+_LEN_LABEL = re.compile(r"(\d+(?:\.\d+)?)\s*([A-Za-z]+)?")
+
+
+def build_circle_parts(*, figure_id, stem, ask=None, title=None, description=None,
+                       medium="english", points=None, features=None, centre="O",
+                       radius=None, unit="cm", r_px=None):
+    """A circle, centre letter optional, with named points ON it by angle and a list of
+    parts. `points` = {"A": deg, …} (0° = east, 90° = DOWN on the canvas — the cookbook's
+    polar convention, as circle_points). `features` = [{"<kind>": "<names>", "label"?:
+    str, "major"?: bool}] with kind radius "OA" · diameter "AB" (the two points must be
+    180° apart — it passes through the centre, asserted) · chord "CD" (not a diameter) ·
+    arc "CD" (highlighted) · sector "OAB" (shaded, radii drawn) · segment "CD" (shaded,
+    chord drawn); `major` picks the major arc/sector/segment. A label is English text
+    ("radius", "chord", "x cm") or a LENGTH ("5 cm") on a radius/diameter/chord: a length
+    must restate that part's own value from the stem's `radius` and be a stem number.
+    With no `r_px` a crowded figure is retried at drawn radii 90, 120 and 150 before it
+    refuses. Later grades extend `features` (tangent at a point, angles at the centre and the
+    circumference, cyclic quadrilaterals, equal-chord ticks) without changing this one."""
+    kw = dict(figure_id=figure_id, stem=stem, ask=ask, title=title, description=description,
+              medium=medium, points=points, features=features, centre=centre, radius=radius,
+              unit=unit)
+    # with no pinned r_px a crowded figure is retried on a bigger circle (labels keep their
+    # size, so the wedges between radii gain room), then with extra clearance, then refuses
+    tries = [(float(r_px) if isinstance(r_px, (int, float)) and not isinstance(r_px, bool)
+              else r_px, x) for x in (0.0, 6.0)] if r_px is not None else \
+        [(rp, x) for rp in (90.0, 120.0, 150.0) for x in (0.0, 6.0)]
+    for k_, (rp, extra) in enumerate(tries):
+        try:
+            return _circle_parts_once(extra=extra, r_px=rp, **kw)
+        except TemplateError as e_:
+            if k_ == len(tries) - 1 or not re.search(r"rendered px|no clear spot", str(e_)):
+                raise
+
+
+def _circle_parts_once(*, figure_id, stem, ask, title, description, medium, points, features,
+                       centre, radius, unit, r_px, extra):
+    kind = "circle_parts"
+    vc.reset_ids()
+    if centre is not None and not (isinstance(centre, str) and re.fullmatch(r"[A-Z]", centre)):
+        raise TemplateError(f"{kind}: centre is one capital letter or None — got {centre!r}")
+    O = centre or "O"
+    points = points or {}
+    if not isinstance(points, dict):
+        raise TemplateError(f"{kind}: points must be a dict of name -> degrees")
+    deg: dict[str, float] = {}
+    for nm, d in points.items():
+        if not (isinstance(nm, str) and re.fullmatch(r"[A-Z]", nm)) or nm == O:
+            raise TemplateError(f"{kind}: point names are single capitals other than the "
+                                f"centre {O} — got {nm!r}")
+        if not isinstance(d, (int, float)) or isinstance(d, bool) or not math.isfinite(d):
+            raise TemplateError(f"{kind}: {nm}'s angle must be a number of degrees — got {d!r}")
+        deg[nm] = float(d) % 360.0
+    names = list(deg)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            if not _deg_clear(deg[a], [deg[b]], 20.0):
+                raise TemplateError(f"{kind}: {a} and {b} are under 20° apart on the circle — "
+                                    "their letters would collide; spread the angles")
+    if not (isinstance(r_px, (int, float)) and 60.0 <= r_px <= 160.0):
+        raise TemplateError(f"{kind}: r_px (the drawn radius) must be 60–160 units")
+    r_px = float(r_px)
+    if radius is not None:
+        if not isinstance(radius, (int, float)) or isinstance(radius, bool) or radius <= 0:
+            raise TemplateError(f"{kind}: radius must be a positive stem number")
+        require_stem(stem, radius=radius)
+    if not isinstance(unit, str) or not re.fullmatch(r"[A-Za-z]{1,3}", unit):
+        raise TemplateError(f"{kind}: unit is a short Latin unit like cm or m")
+    feats = []
+    seen = set()
+    for f in (features or []):
+        if not isinstance(f, dict):
+            raise TemplateError(f"{kind}: each feature is a dict like {{\"chord\": \"CD\"}}")
+        ks = [k for k in f if k in _CP_FEATURES]
+        bad = [k for k in f if k not in _CP_FEATURES + ("label", "major")]
+        if len(ks) != 1 or bad:
+            raise TemplateError(f"{kind}: feature {f!r} needs exactly one of {_CP_FEATURES} "
+                                "(plus optional label / major)")
+        fk, spec = ks[0], f[ks[0]]
+        if not isinstance(spec, str):
+            raise TemplateError(f"{kind}: {fk} names its points as a string, e.g. \"CD\"")
+        pts = [ch for ch in spec if ch != O] if fk in ("radius", "sector") else list(spec)
+        if fk in ("radius", "sector") and (O not in spec or spec.count(O) != 1):
+            raise TemplateError(f"{kind}: a {fk} starts at the centre — write it {O}{''.join(pts)}")
+        want = 1 if fk == "radius" else 2
+        if len(pts) != want or len(set(pts)) != want or any(p not in deg for p in pts):
+            raise TemplateError(f"{kind}: {fk} {spec!r} must name {want} distinct point(s) "
+                                f"on the circle ({names})")
+        sep = abs((deg[pts[0]] - deg[pts[-1]] + 180.0) % 360.0 - 180.0) if want == 2 else 0
+        if fk == "diameter" and abs(sep - 180.0) > 1e-6:
+            raise TemplateError(f"{kind}: diameter {spec} must pass through {O} — {pts[0]} and "
+                                f"{pts[1]} are {sep:g}° apart, not 180° (put {pts[1]} at "
+                                f"{(deg[pts[0]] + 180) % 360:g}°)")
+        if fk in ("chord", "segment") and abs(sep - 180.0) <= 1e-6:
+            raise TemplateError(f"{kind}: {fk} {spec} passes through {O} — that chord is a "
+                                "diameter; use the diameter feature")
+        major = f.get("major", False)
+        if not isinstance(major, bool) or (major and fk not in ("arc", "sector", "segment")):
+            raise TemplateError(f"{kind}: `major` is a bool on an arc, sector or segment only")
+        if major and abs(sep - 180.0) <= 1e-6:
+            raise TemplateError(f"{kind}: {fk} {spec} spans 180° — it has no major side")
+        key = (fk, frozenset(pts), major)
+        if key in seen:
+            raise TemplateError(f"{kind}: {fk} {spec} is listed twice")
+        seen.add(key)
+        lab = f.get("label")
+        if lab is not None and not (isinstance(lab, str) and lab.strip()):
+            raise TemplateError(f"{kind}: a label is a non-empty string")
+        feats.append({"kind": fk, "pts": pts, "major": major, "label": lab})
+    labs = [ft["label"] for ft in feats if ft["label"] is not None]
+    glyphs = ([centre] if centre else []) + names + labs
+    _check_label_texts([], list(glyphs), medium)
+    if len(set(glyphs)) != len(glyphs):
+        dup = next(g for g in glyphs if glyphs.count(g) > 1)
+        raise TemplateError(f"{kind}: {dup!r} is printed twice — each printed glyph binds ONE "
+                            "label claim (label one of the parts only)")
+
+    Oxy = (0.0, 0.0)
+    P = {nm: on_circle_point(Oxy, r_px, deg[nm]) for nm in names}
+    scale = (radius / r_px) if radius is not None else None
+
+    def span_of(a, b, major):
+        """(start, end) degrees, start < end, increasing (clockwise on screen) — the minor
+        sweep from a to b unless `major`."""
+        d = (deg[b] - deg[a]) % 360.0
+        if (d <= 180.0) != (not major):
+            return deg[b], deg[b] + (360.0 - d)
+        return deg[a], deg[a] + d
+
+    # numeric labels restate their own length — from the stem's radius, never the drawing
+    for ft in feats:
+        lab = ft["label"]
+        m = _LEN_LABEL.fullmatch(lab.strip()) if lab else None
+        if not m:
+            continue
+        if ft["kind"] not in ("radius", "diameter", "chord"):
+            raise TemplateError(f"{kind}: {ft['kind']} label {lab!r} is a number — only a "
+                                "radius, diameter or chord prints a length (arc length and "
+                                "area labels belong to a later grade)")
+        if m[2] and m[2] != unit:
+            raise TemplateError(f"{kind}: label {lab!r} uses unit {m[2]!r}, the figure's unit "
+                                f"is {unit!r}")
+        if radius is None:
+            raise TemplateError(f"{kind}: label {lab!r} prints a length — pass the stem's "
+                                "`radius` so the template can check it")
+        v = float(m[1])
+        if ft["kind"] == "radius":
+            true_ = float(radius)
+        elif ft["kind"] == "diameter":
+            true_ = 2.0 * radius
+        else:
+            a_, b_ = ft["pts"]
+            sep = abs((deg[a_] - deg[b_] + 180.0) % 360.0 - 180.0)
+            true_ = 2.0 * radius * math.sin(math.radians(sep) / 2)
+        # 0.2% — inside the audit's own 0.5% label-ratio band, so a label this passes can
+        # never fail the drawn-vs-label pair check on 0.01-rounded anchors
+        if abs(v - true_) > 0.002 * true_:
+            hint = ""
+            if ft["kind"] == "chord" and v < 2 * radius:
+                want_sep = 2 * math.degrees(math.asin(v / (2 * radius)))
+                hint = (f" (for {v:g} {unit} put {ft['pts'][1]} {want_sep:.2f}° from "
+                        f"{ft['pts'][0]})")
+            raise TemplateError(f"{kind}: label {lab!r} on {ft['kind']} "
+                                f"{''.join(ft['pts'])} prints {v:g} but the part is "
+                                f"{true_:.4g} {unit} on a radius of {radius:g} — a label may "
+                                f"only restate its own length{hint}")
+        require_stem(stem, **{f"{ft['kind']} label {lab!r}": v})
+
+    span = 2 * (r_px + 60.0)
+    clr = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, span) + 2.0 + extra
+    elements: list[dict] = []
+    seg_lines: dict[frozenset, tuple[str, str]] = {}
+
+    def want_line(a, b):
+        seg_lines.setdefault(frozenset((a, b)), (a, b))
+
+    XY_ = dict(P, **{O: Oxy})
+    for ft in feats:
+        fk, pts = ft["kind"], ft["pts"]
+        if fk == "sector":
+            s, e = span_of(pts[0], pts[1], ft["major"])
+            elements.append(vc.polygon([Oxy] + vc.sampled_arc(Oxy, r_px, s, e), fill=vc.SHADE,
+                                       stroke_width=0, id=f"sec{''.join(pts)}"))
+            want_line(O, pts[0])
+            want_line(O, pts[1])
+        elif fk == "segment":
+            s, e = span_of(pts[0], pts[1], ft["major"])
+            elements.append(vc.polygon(vc.sampled_arc(Oxy, r_px, s, e), fill=vc.SHADE,
+                                       stroke_width=0, id=f"seg{''.join(pts)}"))
+            want_line(*pts)
+        elif fk == "radius":
+            want_line(O, pts[0])
+        elif fk in ("diameter", "chord"):
+            want_line(*pts)
+    elements.append(vc.circle(Oxy, r_px, id="circ"))
+    for a, b in seg_lines.values():
+        elements.append(vc.line(XY_[a], XY_[b], id=f"ln{a}{b}"))
+    for ft in feats:
+        if ft["kind"] == "arc":
+            s, e = span_of(ft["pts"][0], ft["pts"][1], ft["major"])
+            el = vc.arc(Oxy, r_px, s, e, id=f"arc{''.join(ft['pts'])}")
+            el["sweep"] = "cw"
+            el["stroke"] = {"color": _CP_ACCENT, "width": 4}
+            elements.append(el)
+    if centre:
+        elements.append({"id": "ptO", "type": "point", "at": vc.P(Oxy), "r": 3.5})
+    for nm in names:
+        elements.append({"id": f"pt{nm}", "type": "point", "at": vc.P(P[nm]), "r": 3.5})
+    for nm in names:           # point letters sit radially outside the circle
+        u = (math.cos(math.radians(deg[nm])), math.sin(math.radians(deg[nm])))
+        d_ = clr + _label_half_along(nm, FS, u[0], u[1]) + 2.0
+        elements.append(vc.text((P[nm][0] + u[0] * d_, P[nm][1] + u[1] * d_), nm, id=f"lb{nm}"))
+    # feature labels — a dedicated candidate search, not the generic floater: inside a
+    # circle the free pockets are wedges between radii, which a 36-unit floater sweep misses.
+    # Each candidate box must clear every stroke by `clr`, every placed box by `gap`, stay on
+    # its part's side of the circle, and (for a segment's label) sit nearer its own segment
+    # than any other drawn segment — a label is read as the part it is nearest.
+    gap = _clearance_units(4.0 + 1.0, span)
+    strokes = stroke_segments(elements)
+    boxes = [b[1:] for b in label_boxes(elements, FS)]
+    line_xy = {k: (XY_[a], XY_[b]) for k, (a, b) in seg_lines.items()}
+
+    def clear(box) -> bool:
+        return all(_seg_rect_dist(p, q, box) - w / 2 >= clr for p, q, w in strokes) and \
+            all(_rect_gap(box, o) >= 2 * gap for o in boxes)   # W13 "D 3 m": letters and
+                                                                # labels never read as one
+
+    def inside(box, sign: int) -> bool:          # sign +1: inside the circle, −1: outside
+        return _box_vs_circle(box, Oxy, r_px, sign > 0, clr)
+
+    def ang_in(p, s, e) -> bool:
+        a = (_angle_of(p, Oxy) - s) % 360.0
+        return a <= e - s
+
+    label_target: dict[int, str] = {}
+    for i, ft in enumerate(feats):
+        if ft["label"] is None:
+            continue
+        fk, pts, text_ = ft["kind"], ft["pts"], ft["label"]
+        w_ = _label_width(text_, FS)
+        cands: list[tuple[XY, object]] = []
+        if fk in ("radius", "diameter", "chord"):
+            a, b = (Oxy, P[pts[0]]) if fk == "radius" else (P[pts[0]], P[pts[1]])
+            own = frozenset((O, pts[0])) if fk == "radius" else frozenset(pts)
+            nx, ny = vc.normal(a, b)
+            ts = (0.5, 0.4, 0.6, 0.3, 0.7, 0.25, 0.75) if fk != "diameter" else \
+                (0.25, 0.75, 0.3, 0.7, 0.2, 0.8, 0.35, 0.65)
+            for t in ts:
+                m = vc.lerp(a, b, t)
+                for sg in (1, -1):
+                    for k_ in range(12):
+                        d_ = clr + _label_half_along(text_, FS, nx * sg, ny * sg) + 3.0 * k_
+                        cands.append(((m[0] + nx * sg * d_, m[1] + ny * sg * d_), own))
+            tgt = f"{O}{pts[0]}" if fk == "radius" else "".join(pts)
+        else:
+            s, e = span_of(pts[0], pts[1], ft["major"])
+            fr = (0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8)
+            if fk == "arc":
+                for f_ in fr:
+                    th = s + (e - s) * f_
+                    u = (math.cos(math.radians(th)), math.sin(math.radians(th)))
+                    for k_ in range(10):
+                        d_ = r_px + clr + 2.0 + _label_half_along(text_, FS, *u) + 3.0 * k_
+                        cands.append(((u[0] * d_, u[1] * d_), "out"))
+            elif fk == "sector":
+                for rho in (0.55, 0.45, 0.65, 0.35, 0.75, 0.3, 0.8):
+                    for f_ in fr:
+                        cands.append((on_circle_point(Oxy, rho * r_px, s + (e - s) * f_),
+                                      ("sec", s, e)))
+            else:
+                c_mid = vc.lerp(P[pts[0]], P[pts[1]], 0.5)
+                for f_ in fr:
+                    rim = on_circle_point(Oxy, r_px, s + (e - s) * f_)
+                    for t in (0.5, 0.4, 0.6, 0.3, 0.7):
+                        cands.append((vc.lerp(c_mid, rim, t), ("seg", c_mid, ft["major"])))
+            tgt = f"{fk}_{''.join(pts).lower()}{'_major' if ft['major'] else ''}"
+        seat = None
+        for at_, rule in cands:
+            box = _text_box(text_, at_)
+            if not clear(box):
+                continue
+            if rule == "out":
+                if not inside(box, -1):
+                    continue
+            elif not inside(box, 1):
+                continue
+            if isinstance(rule, frozenset):
+                ctr = ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+                d_own = _pt_seg(ctr, *line_xy[rule])
+                if any(_pt_seg(ctr, *line_xy[k]) - d_own < 4.0 for k in line_xy if k != rule):
+                    continue
+            elif isinstance(rule, tuple) and rule[0] == "sec":
+                if not all(ang_in((x, y), rule[1], rule[2])
+                           for x in (box[0], box[2]) for y in (box[1], box[3])):
+                    continue
+            elif isinstance(rule, tuple) and rule[0] == "seg":
+                # every corner on the arc's side of the chord (beyond its midpoint, outward)
+                # (the major segment is the centre's side: every corner short of the chord)
+                cm, maj = rule[1], rule[2]
+                h_ = math.hypot(*cm)
+                if not all(((x * cm[0] + y * cm[1]) / h_ < h_ - clr) if maj else
+                           ((x * cm[0] + y * cm[1]) / h_ > h_ + clr)
+                           for x in (box[0], box[2]) for y in (box[1], box[3])):
+                    continue
+            seat = at_
+            break
+        if seat is None:
+            raise TemplateError(f"{kind}: the {fk} label {text_!r} has no clear spot — no "
+                                "candidate clears every stroke and label (rendered px rule); "
+                                "spread the points, shorten the label or drop it")
+        el = vc.text(seat, text_, id=f"fl{i}")
+        elements.append(el)
+        boxes.append(_text_box(text_, seat))
+        label_target[i] = tgt
+    if centre:
+        elements.append(_float_label("lbO", centre, Oxy))
+
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    add(f"circle centre {O} radius {vc.r2(r_px):g}", "inferred", "the drawn circle")
+    if len(names) >= 2:
+        add(f"circle centre {O} through {' '.join(names[:3])}", "inferred",
+            "the named points lie on the circle")
+    elif names:
+        add(f'describe "{names[0]} lies on the circle"', "inferred", "a point on the outline")
+    side = lambda major: "major" if major else "minor"                       # noqa: E731
+    for ft in feats:
+        fk, pts, nm2 = ft["kind"], ft["pts"], "".join(ft["pts"])
+        if fk == "radius":
+            add(f'describe "{O}{nm2} is a radius — from the centre {O} to the circle"',
+                "inferred", "a drawn radius")
+        elif fk == "diameter":
+            add(f"on {O} {nm2}", "inferred", "the diameter passes through the centre")
+            add(f'describe "{nm2} is a diameter — a chord through the centre {O}"',
+                "inferred", "a drawn diameter")
+        elif fk == "chord":
+            add(f'describe "{nm2} is a chord — it joins two points of the circle and misses '
+                f'the centre {O}"', "inferred", "a drawn chord")
+        elif fk == "arc":
+            add(f"arc centre {O} from {pts[0]} to {pts[1]}", "inferred", "the highlighted arc")
+            add(f'describe "the {side(ft["major"])} arc {nm2} is highlighted"', "inferred",
+                "a thick accent arc")
+        elif fk == "sector":
+            add(f"arc centre {O} from {pts[0]} to {pts[1]}", "inferred", "the sector's arc")
+            add(f'describe "the {side(ft["major"])} sector {O}{nm2} — between radii {O}{pts[0]} '
+                f'and {O}{pts[1]} — is shaded"', "inferred", "a shaded sector")
+        else:
+            add(f'describe "the {side(ft["major"])} segment between chord {nm2} and its arc is '
+                f'shaded"', "inferred", "a shaded segment")
+    if centre:
+        add(f'label "{centre}" names {O}', "inferred", "the centre's letter")
+    for nm in names:
+        add(f'label "{nm}" names {nm}', "inferred", "a point on the circle")
+    for i, ft in enumerate(feats):
+        if i in label_target:
+            add(f'label "{ft["label"]}" names {label_target[i]}', "inferred",
+                f"the {ft['kind']}'s label")
+    if radius is not None:
+        add(f"derive 2 * {radius:g} = {_num_exact(2.0 * radius)}", "inferred",
+            "a diameter is twice the radius")
+    else:
+        add(f"derive 2 * {vc.r2(r_px):g} = {_num_exact(2.0 * vc.r2(r_px))}", "inferred",
+            "the drawn diameter is twice the drawn radius (canvas units)")
+    absent = ["tickMark", "parallelMark", "angleMark", "arrow", "dashed"]
+    if not any(ft["kind"] in ("sector", "segment") for ft in feats):
+        absent.append("shaded")
+    add("none " + " ".join(absent), "inferred", "only the parts claimed above are drawn")
+    segs = ["".join(ab) for ab in seg_lines.values()]
+    parts = sorted({ft["kind"] for ft in feats}, key=_CP_FEATURES.index)
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=dict(XY_), points=[O] + names, segments=segs, claims=claims, ask=ask,
+                  title=title or "A circle and its parts",
+                  description=description or (
+                      "A circle" + (f" with centre {centre}" if centre else "")
+                      + (f", points {', '.join(names)} on it" if names else "")
+                      + (f" and its {', '.join(parts)} drawn." if parts else ".")),
+                  scale=(f"drawn to scale: {vc.r2(r_px):g} units = {radius:g} {unit}"
+                         if radius is not None else "the circle's size is a canvas choice"),
+                  medium=medium)
+
+
 BUILDERS = {fn.__name__[6:]: fn for fn in
             (build_grid_polygon, build_shaded_grid, build_rays_from_point, build_number_line,
              build_pictograph, build_rectangle_points, build_house_pentagon, build_cuboid,
              build_dot_pattern, build_circle_points, build_two_circles_points,
              build_circles_in_circle, build_abacus, build_sorting_rings, build_shape_row,
              build_coordinate_plane, build_parallel_lines, build_bar_chart,
-             build_symmetry_grid, build_labelled_composite, build_triangle_marks)}
+             build_symmetry_grid, build_labelled_composite, build_triangle_marks,
+             build_venn_sets, build_circle_parts)}
 
 CATALOGUE = """
 template            stem-checked numbers                          inputs
@@ -5165,6 +5983,8 @@ bar_chart           step; every value when values="stem"          categories 2�
 symmetry_grid       cell                                          half=[(x,y)…] open path, both ends ON the axis, axis={"through":[[x,y],[x,y]]} vertical/horizontal/±45°, show="half"|"full", cols/rows?, cell_px, vertex_labels (falls back to accent letters over the ruling)
 labelled_composite  unknown sides when 2+ share an orientation   path=[[dir R|L|U|D, length, label?]…] 4–12 sides closing on A, unit, vertex_labels, right_marks, unit_px — label "x m" or null = unknown side (derived by closure when it is its orientation's only unknown)
 triangle_marks      every NUMERIC angle label                    angles={A:a,B:b,C:c} (sum 180, each ≥15), ticks={"AB":n} 1–3, arcs={"A":n} 1–3, right="C", angle_labels={"A":"60°"|"x"} (needs an arc), names, base_px? (auto-grows when labels crowd)
+venn_sets           none — items/counts are figure content       sets=["A","B"(,"C")] 2–3 (trefoil), regions={"A":[items]|n,"AB":…,"":…} ("" = outside every set, needs universal), universal="U"|None, r? (auto-grows) — counts need every region, a count may be one letter (unknown); shade= reserved (G10, refuses)
+circle_parts        radius when a LENGTH label prints; every length label    points={A:deg} (0°=E, 90°=down), features=[{"radius":"OA"|"diameter":"AB"|"chord":"CD"|"arc":"CD"|"sector":"OAB"|"segment":"CD","label"?,"major"?}], centre="O"|None, radius?, unit, r_px? (auto-grows 90→150) — a diameter's points are 180° apart; later: tangents, angles at centre/circumference, cyclic quads, equal-chord ticks
 """.strip()
 
 SELF_TEST = [
@@ -5301,6 +6121,26 @@ SELF_TEST = [
      "names": ["P", "Q", "R"], "angles": {"P": 70, "Q": 70, "R": 40},
      "ticks": {"PR": 1, "QR": 1}, "arcs": {"P": 1, "Q": 1, "R": 2},
      "angle_labels": {"R": "x"}},
+    {"template": "venn_sets", "figure_id": "selftest-venn",
+     "stem": "In a class, some pupils play cricket (C) and some play football (F). (a) How "
+             "many pupils play both games? (b) How many pupils are in the class?",
+     "ask": [["a", "the pupils in both sets"], ["b", "the class total"]],
+     "sets": ["C", "F"], "regions": {"C": 7, "CF": 4, "F": 5, "": 2}, "universal": "U"},
+    {"template": "venn_sets", "figure_id": "selftest-venn3",
+     "stem": "The Venn diagram shows the sets P, Q and R of some numbers. (a) List the "
+             "elements of P. (b) Which number is in all three sets?",
+     "ask": [["a", "the elements of P"], ["b", "the common element"]],
+     "sets": ["P", "Q", "R"],
+     "regions": {"P": ["1"], "Q": ["4"], "R": ["9"], "PQ": ["2"], "QR": ["8"], "PR": ["3"],
+                 "PQR": ["6"], "": ["5", "7"]}, "universal": "E"},
+    {"template": "circle_parts", "figure_id": "selftest-circle",
+     "stem": "The circle has centre O and radius 5 cm. (a) Name the diameter and a chord. "
+             "(b) Find the length of the diameter.",
+     "ask": [["a", "the named parts"], ["b", "the diameter"]],
+     "points": {"A": 180, "B": 0, "C": 60, "D": 120, "E": 270},
+     "features": [{"radius": "OE", "label": "5 cm"}, {"diameter": "AB"},
+                  {"chord": "CD", "label": "chord"}, {"segment": "CD"}],
+     "radius": 5, "unit": "cm"},
 ]
 
 
