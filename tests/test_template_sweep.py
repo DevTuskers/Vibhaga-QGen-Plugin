@@ -378,6 +378,57 @@ def case_grid() -> list[dict]:
                 labels[arced[-1]] = "x"
             cases.append(C("triangle_marks", stem=tm_stem, angles=angles_, ticks=ticks_,
                            arcs=arcs_, right=right_, angle_labels=labels))
+    # venn_sets (W14) — 2/3 sets × items/counts × universal on/off
+    vs_stem = "The Venn diagram shows the sets. (a) List the elements of each set."
+    for n_ in (2, 3):
+        sets_ = ["A", "B", "C"][:n_]
+        keys = ["A", "AB", "B"] if n_ == 2 else ["A", "B", "C", "AB", "AC", "BC", "ABC"]
+        for uni in ("U", None):
+            ks = keys + ([""] if uni else [])
+            counts = {k: i + 2 for i, k in enumerate(ks)}
+            cases.append(C("venn_sets", stem=vs_stem, sets=sets_, regions=counts, universal=uni))
+            cases.append(C("venn_sets", stem=vs_stem, sets=sets_, universal=uni,
+                           regions={**counts, keys[1]: "x"}))
+            for per in (1, 2, 3):
+                items, c_ = {}, 0
+                for k in ks:
+                    items[k] = [str(10 + c_ + j) for j in range(per)]
+                    c_ += per
+                cases.append(C("venn_sets", stem=vs_stem, sets=sets_, regions=items,
+                               universal=uni))
+            cases.append(C("venn_sets", stem=vs_stem, sets=sets_, universal=uni,
+                           regions={"A": ["red", "blue"], keys[1]: ["green"]}))
+            cases.append(C("venn_sets", stem=vs_stem, sets=sets_, universal=uni,
+                           regions={keys[-1]: ["Ravi", "Nimal"], "B": ["Kamal"]}))
+    # circle_parts (W14) — feature combinations × point angles × labels
+    cp_stem = "The circle has centre O, radius 4 cm and diameter 8 cm. Name its parts."
+    rot = (0, 37, 90, 145)
+    combos = [
+        ({"A": 0, "B": 180}, [{"diameter": "AB"}]),
+        ({"A": 0, "B": 180}, [{"diameter": "AB", "label": "diameter"}]),
+        ({"A": 0, "B": 180}, [{"diameter": "AB", "label": "8 cm"}]),
+        ({"A": 30}, [{"radius": "OA", "label": "4 cm"}]),
+        ({"A": 30}, [{"radius": "OA", "label": "radius"}]),
+        ({"C": 200, "D": 300}, [{"chord": "CD", "label": "chord"}]),
+        ({"C": 200, "D": 300}, [{"chord": "CD"}, {"segment": "CD"}]),
+        ({"C": 200, "D": 300}, [{"chord": "CD"}, {"segment": "CD", "major": True}]),
+        ({"C": 200, "D": 300}, [{"arc": "CD", "label": "arc"}]),
+        ({"C": 200, "D": 300}, [{"arc": "CD", "major": True, "label": "arc"}]),
+        ({"A": 10, "B": 80}, [{"sector": "OAB", "label": "sector"}]),
+        ({"A": 10, "B": 80}, [{"sector": "OAB", "major": True}]),
+        ({"A": 180, "B": 0, "C": 60, "D": 120, "E": 270},
+         [{"radius": "OE", "label": "4 cm"}, {"diameter": "AB"},
+          {"chord": "CD", "label": "chord"}, {"segment": "CD"}]),
+        ({"A": 180, "B": 0, "E": 270, "F": 45},
+         [{"diameter": "AB", "label": "diameter"}, {"radius": "OE", "label": "radius"},
+          {"arc": "BF", "label": "arc"}]),
+    ]
+    for pts, feats in combos:
+        for d0 in rot:
+            p2 = {k: (v + d0) % 360 for k, v in pts.items()}
+            for centre_ in ("O", None):
+                cases.append(C("circle_parts", stem=cp_stem, points=p2, features=feats,
+                               centre=centre_, radius=4))
     return cases
 
 

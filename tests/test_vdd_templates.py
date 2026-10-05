@@ -2557,6 +2557,209 @@ class TriangleMarks(unittest.TestCase):
         self.assertIn("අ", b.doc["a11y"]["title"])
 
 
+class VennSets(unittest.TestCase):
+    """W14 — 2/3-set Venn diagrams (G7 L02, G8 L19; G9/G10 sets later)."""
+
+    STEM = "The Venn diagram shows two sets of numbers. (a) List the elements of each set."
+
+    def _build(self, stem=None, **kw):
+        return vt.build_venn_sets(figure_id="v1", stem=stem or self.STEM, **kw)
+
+    def _ok(self, b):
+        r = audit(b.claims, tempfile.mkdtemp())
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_two_set_items_with_universal(self):
+        b = self._build(sets=["A", "B"], regions={"A": ["1", "3"], "AB": ["5"], "B": ["2"],
+                                                  "": ["9"]})
+        self.assertIn("circle centre A radius", b.claims)
+        self.assertIn('describe "5 lies inside the A circle and inside the B circle"', b.claims)
+        self.assertIn("outside the B circle and inside the universal rectangle", b.claims)
+        self.assertIn('label "U" names univ', b.claims)
+        self.assertIn('label "5" names region_ab_1', b.claims)
+        self.assertIn("derive 2 + 1 = 3", b.claims)          # n(A)
+        self.assertIn("derive 2 + 1 + 1 + 1 = 5", b.claims)  # n(U)
+        self.assertEqual(sum(e["type"] == "circle" for e in b.doc["elements"]), 2)
+        self._ok(b)
+
+    def test_key_order_is_normalised(self):
+        b = self._build(sets=["P", "Q"], regions={"QP": ["7"], "P": ["1"]}, universal=None)
+        self.assertIn('label "7" names region_pq_1', b.claims)
+        self.assertFalse(any(e["type"] == "rect" for e in b.doc["elements"]))
+        self._ok(b)
+
+    def test_three_set_counts_every_region_clear(self):
+        regions = {"A": 4, "B": 5, "C": 6, "AB": 2, "AC": 3, "BC": 1, "ABC": 7, "": 8}
+        b = self._build(sets=["A", "B", "C"], regions=regions)
+        self.assertIn("derive 4 + 2 + 3 + 7 = 16", b.claims)     # n(A)
+        self.assertIn("derive 4 + 5 + 6 + 2 + 3 + 1 + 7 + 8 = 36", b.claims)
+        # every count box sits ≥ the stroke rule inside/outside every circle (finish proves it;
+        # this pins that the triple-overlap count really lies in all three)
+        self.assertIn('describe "the count 7 lies inside the A circle and inside the B circle '
+                      'and inside the C circle"', b.claims)
+        self._ok(b)
+
+    def test_unknown_count_letter_blocks_its_sums_only(self):
+        b = self._build(sets=["A", "B"], regions={"A": 6, "AB": "x", "B": 4, "": 3})
+        self.assertIn("the unknown count x lies", b.claims)
+        # x sits in A∩B, so n(A), n(B), n(A ∪ B) and n(U) all need it — only the
+        # restatement fallback is left
+        self.assertIn("derive 6 + 0 = 6", b.claims)
+        self.assertEqual(b.claims.count(" derive "), 1)
+        self._ok(b)
+        b3 = self._build(sets=["A", "B"], regions={"A": 6, "AB": 2, "B": "y", "": 3})
+        self.assertIn("derive 6 + 2 = 8", b3.claims)            # n(A) is known
+        self.assertNotIn("derive 2 +", b3.claims)               # n(B) needs y
+        self._ok(b3)
+        b2 = self._build(sets=["A", "B"], regions={"A": "x", "AB": "y", "B": 4}, universal=None)
+        self.assertIn("derive 4 + 0 = 4", b2.claims)             # every sum blocked
+        self._ok(b2)
+
+    def test_refusals(self):
+        bad = [
+            (dict(sets=["A"], regions={"A": [1]}), "2 or 3 distinct"),
+            (dict(sets=["A", "a"], regions={"A": [1]}), "2 or 3 distinct"),
+            (dict(sets=["A", "B"], regions={"AC": ["1"]}), "must be letters"),
+            (dict(sets=["A", "B"], regions={"AB": ["1"], "BA": ["2"]}), "given twice"),
+            (dict(sets=["A", "B"], regions={"": ["1"]}, universal=None), "universal rectangle"),
+            (dict(sets=["A", "B"], regions={"A": ["1"], "B": 3}), "never mixed"),
+            (dict(sets=["A", "B"], regions={"A": 1, "AB": 2}), "missing"),
+            (dict(sets=["A", "B"], regions={"A": 3, "AB": 3, "B": 1, "": 2}), "printed twice"),
+            (dict(sets=["A", "B"], regions={"A": ["7"], "B": ["7"]}), "printed twice"),
+            (dict(sets=["A", "B"], regions={"A": ["B"]}), "printed twice"),
+            (dict(sets=["A", "B"], regions={"A": [], "B": []}), "every region is empty"),
+            (dict(sets=["A", "B"], regions={"A": ["a very long token"]}), "short token"),
+            (dict(sets=["A", "B"], regions={"A": ["$x$"]}), "backtick"),
+            (dict(sets=["A", "B"], regions={"A": ["1"]}, shade=["A"]), "shading not supported yet"),
+            (dict(sets=["A", "B"], regions={"A": "xy", "AB": 1, "B": 1, "": 1}), "never mixed"),
+            (dict(sets=["A", "B"], regions={"A": [str(i) for i in range(40)]}, r=50),
+             "cannot seat"),
+        ]
+        for kw, msg in bad:
+            with self.subTest(kw=kw):
+                with self.assertRaises(vt.TemplateError) as cm:
+                    self._build(**kw)
+                self.assertIn(msg, str(cm.exception))
+
+    def test_adr0021_on_every_medium_and_a11y_exempt(self):
+        for medium in ("sinhala", "english"):
+            for kw in (dict(regions={"A": ["අ"]}), dict(regions={"A": ["1"]}, universal="අ")):
+                with self.subTest(medium=medium, kw=kw):
+                    with self.assertRaises(vt.TemplateError) as cm:
+                        self._build(sets=["A", "B"], medium=medium, **kw)
+                    self.assertIn("ADR 0021", str(cm.exception))
+        b = self._build(sets=["A", "B"], regions={"A": ["1"]}, medium="sinhala",
+                        title="අ — synthetic a11y title", description="අ synthetic description")
+        self.assertIn("අ", b.doc["a11y"]["title"])
+        self._ok(b)
+
+
+class CircleParts(unittest.TestCase):
+    """W14 — a circle and its parts (G7 L18, G8 L23; G10/G11 theorems later)."""
+
+    STEM = "The circle has centre O and radius 4 cm. A chord is 6 cm long. (a) Name the parts."
+
+    def _build(self, stem=None, **kw):
+        return vt.build_circle_parts(figure_id="c1", stem=stem or self.STEM, **kw)
+
+    def _ok(self, b):
+        r = audit(b.claims, tempfile.mkdtemp())
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_diameter_asserted_through_centre(self):
+        b = self._build(points={"A": 30, "B": 210}, features=[{"diameter": "AB"}])
+        self.assertIn("on O AB", b.claims)
+        self.assertRegex(b.claims, r"derive 2 \* \d+ = \d+ \| inferred \| the drawn diameter")
+        self._ok(b)
+
+    def test_chord_length_label_restates_its_own_length(self):
+        # 6 cm chord on a 4 cm radius: separation 2·asin(6/8) = 97.18°
+        sep = 2 * math.degrees(math.asin(6 / 8))
+        b = self._build(points={"C": 200, "D": 200 + sep}, radius=4,
+                        features=[{"chord": "CD", "label": "6 cm"}, {"radius": "OC",
+                                                                       "label": "4 cm"}])
+        self.assertIn('label "6 cm" names CD', b.claims)
+        self.assertIn('label "4 cm" names OC', b.claims)
+        self._ok(b)                    # 2e-iii: the drawn CD/OC must equal 6/4
+        with self.assertRaises(vt.TemplateError) as cm:
+            self._build(points={"C": 200, "D": 290}, radius=4,
+                        features=[{"chord": "CD", "label": "6 cm"}])
+        self.assertIn("only restate its own length", str(cm.exception))
+        self.assertIn("97.18°", str(cm.exception))
+
+    def test_arc_sector_segment_minor_and_major(self):
+        for major in (False, True):
+            with self.subTest(major=major):
+                b = self._build(points={"A": 200, "B": 300, "C": 30, "D": 100},
+                                features=[{"arc": "AB", "major": major, "label": "arc"},
+                                          {"sector": "OCD", "major": major},
+                                          {"segment": "AB", "major": not major}])
+                side = "major" if major else "minor"
+                self.assertIn(f"the {side} arc AB is highlighted", b.claims)
+                self.assertIn(f"the {side} sector OCD", b.claims)
+                self.assertIn("arc centre O from A to B", b.claims)
+                arc = next(e for e in b.doc["elements"] if e["type"] == "arc")
+                sweep = arc["end"] - arc["start"]
+                self.assertEqual(sweep > 180, major)
+                self.assertIn(f'names arc_ab{"_major" if major else ""}', b.claims)
+                self._ok(b)
+
+    def test_no_centre_letter(self):
+        b = self._build(points={"A": 0, "B": 180}, centre=None, features=[{"diameter": "AB"}])
+        self.assertFalse(any(e.get("value") == "O" for e in b.doc["elements"]))
+        self.assertIn("on O AB", b.claims)
+        self._ok(b)
+
+    def test_refusals(self):
+        bad = [
+            (dict(points={"A": 0, "B": 170}, features=[{"diameter": "AB"}]), "not 180°"),
+            (dict(points={"A": 0, "B": 180}, features=[{"chord": "AB"}]), "use the diameter"),
+            (dict(points={"A": 0, "B": 10}), "under 20° apart"),
+            (dict(points={"O": 0}), "other than the centre"),
+            (dict(points={"A": 0}, features=[{"radius": "AB"}]), "starts at the centre"),
+            (dict(points={"A": 0, "B": 90}, features=[{"chord": "AB", "radius": "OA"}]),
+             "exactly one of"),
+            (dict(points={"A": 0, "B": 90}, features=[{"chord": "AB"}, {"chord": "BA"}]),
+             "listed twice"),
+            (dict(points={"A": 0, "B": 90}, features=[{"chord": "AB", "major": True}]),
+             "arc, sector or segment only"),
+            (dict(points={"A": 0, "B": 90}, features=[{"chord": "AB", "label": "6 cm"}]),
+             "pass the stem's"),
+            (dict(points={"A": 0, "B": 90}, radius=4, features=[{"arc": "AB", "label": "6"}]),
+             "only a radius, diameter or chord"),
+            (dict(points={"A": 0}, radius=4, features=[{"radius": "OA", "label": "4 m"}]),
+             "the figure's unit"),
+            (dict(points={"A": 0}, radius=3), "not a number the stem states"),
+            (dict(points={"A": 0, "B": 180}, radius=4,
+                  features=[{"diameter": "AB", "label": "8 cm"}]),
+             "not a number the stem states"),
+            (dict(points={"A": 0, "B": 90}, features=[{"chord": "AB", "label": "A"}]),
+             "printed twice"),
+            (dict(points={"A": 0}, r_px=40), "60–160"),
+            (dict(points={"A": 0, "B": 90}, features=[{"chord": "AB", "label": "$x$"}]),
+             "backtick"),
+        ]
+        for kw, msg in bad:
+            with self.subTest(kw=kw):
+                with self.assertRaises(vt.TemplateError) as cm:
+                    self._build(**kw)
+                self.assertIn(msg, str(cm.exception))
+
+    def test_adr0021_on_every_medium_and_a11y_exempt(self):
+        for medium in ("sinhala", "english"):
+            for kw in (dict(features=[{"chord": "AB", "label": "ජ"}]),
+                       dict(centre=None, features=[{"arc": "AB", "label": "ච"}])):
+                with self.subTest(medium=medium, kw=kw):
+                    with self.assertRaises(vt.TemplateError) as cm:
+                        self._build(points={"A": 0, "B": 100}, medium=medium, **kw)
+                    self.assertIn("ADR 0021", str(cm.exception))
+        b = self._build(points={"A": 0, "B": 100}, medium="sinhala",
+                        features=[{"chord": "AB", "label": "chord"}],
+                        title="ව — synthetic a11y title")
+        self.assertIn("ව", b.doc["a11y"]["title"])
+        self._ok(b)
+
+
 class ByteIdentity(unittest.TestCase):
     """The floating-label machinery must not change any existing template's bytes —
     sha256 over each self-test spec's three emitted files, captured on origin/main."""
@@ -2592,6 +2795,10 @@ class ByteIdentity(unittest.TestCase):
         "selftest-symfull": "3bccecb424edcbcc94a066b68d67dd9c290c9a3e55240d5c3d2bba816c0a9cf9",
         "selftest-composite": "113f21727236ee0812eadcfb22391a80e2cf55dc9cd136bdb78b328e22c74cdb",
         "selftest-trimarks": "efc8b0bb6a5c5027267620ff577fa94a915c9353c3a0286ac10b44265d741b76",
+        # W14 — generated when venn_sets / circle_parts landed
+        "selftest-venn": "3042306ad3f1e9c5b86c6576c84f546ede4762c5894ac9c32b5db2e26604d9f9",
+        "selftest-venn3": "20a145facd71ab9e8126ed70e2ee2015fb7aa795abb691bfd8f55001077dc899",
+        "selftest-circle": "bba42c4d35e57115bd23c50832770f8459ee13b3077a4e4b7eb64b272c601711",
     }
 
     def test_self_test_outputs_unchanged(self):

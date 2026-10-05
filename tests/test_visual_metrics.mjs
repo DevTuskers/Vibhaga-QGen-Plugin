@@ -86,6 +86,18 @@ test("target: a word label (≥3-letter run, any script) is a header/legend — 
   assert.ok(rules(unit).has("target"));
 });
 
+test("target: an AREA label (its claim names region_…) is skipped — edge/stroke still measured", () => {
+  const cs = parseClaimSet('claims:\n  K1 label "7" names region_a | inferred |\n');
+  const far = assess({ doc: doc([]), widths: W([L({ text: "7", geom_u: 40 })]), claims: cs });
+  assert.equal(far.verdict, "PASS");
+  assert.equal(far.labels[0].target_u, null);
+  const onStroke = assess({ doc: doc([]), widths: W([L({ text: "7", geom_u: 40, stroke_u: 0.5 })]), claims: cs });
+  assert.ok(rules(onStroke).has("stroke"));
+  // the same glyph bound to an ordinary target is still measured
+  const cs2 = parseClaimSet('claims:\n  K1 label "7" names AB | inferred |\n');
+  assert.ok(rules(assess({ doc: doc([]), widths: W([L({ text: "7", geom_u: 40 })]), claims: cs2 })).has("target"));
+});
+
 test("target: a far point label fails even when it is short", () => {
   const d = doc([{ id: "pA", type: "point", at: [50, 50], r: 3, label: "A" }]);
   const r = assess({ doc: d, widths: W([L({ text: "A", bbox: [220, 220, 12, 12], geom_u: 5 })]) });
