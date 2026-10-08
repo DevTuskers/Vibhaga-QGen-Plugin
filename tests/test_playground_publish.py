@@ -223,7 +223,7 @@ class PlaygroundTests(unittest.TestCase):
         self.assertEqual(fake.grants, 4)                                    # get, dry-run, loop, readback
         self.assertEqual(fake.logouts, 1)
         self.assertEqual(fake.calls[-1], ("POST", "/auth/v1/logout?scope=global"))
-        self.assertIn(f"q3: PENDING — no VIBHAGA_ADMIN_AUTH_DB_URL; run tools/sql-proof.py q3 --actor {ACTOR}", self.logs)
+        self.assertIn(f"q3: PENDING — no DB URL source; run tools/sql-proof.py q3 --actor {ACTOR}", self.logs)
         secret_words = {"pw", "tok1", "tok2", "tok3", "tok4", FAKE_ENV["VIBHAGA_ADMIN_EMAIL"]}
         self.assertFalse(secret_words & {w for l in self.logs for w in l.replace("'", " ").replace('"', " ").split()})
         self.assertEqual(len(t77_calls), 1)
@@ -450,8 +450,8 @@ class FinishQ3(unittest.TestCase):
     """After a WRITE subcommand's logout the revocation is PROVEN (Q3, sql-proof's own runner,
     mocked here); a read-only command prints nothing past the logout line (B1/B2)."""
 
-    Q3_OK = {"actor_exists": 1, "sessions": 0, "active_refresh_tokens": 0, "wrong_project": False, "ok": True}
-    Q3_BAD = {"actor_exists": 1, "sessions": 2, "active_refresh_tokens": 0, "wrong_project": False, "ok": False}
+    Q3_OK = {"actor_exists": 1, "sessions": 0, "active_refresh_tokens": 0, "actor_is_admin": 1, "ok": True}
+    Q3_BAD = {"actor_exists": 1, "sessions": 2, "active_refresh_tokens": 0, "actor_is_admin": 1, "ok": False}
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -475,7 +475,7 @@ class FinishQ3(unittest.TestCase):
         with mock.patch.object(tool.sqlp, "find_auth_url", return_value=(None, "none")):
             self.assertEqual(self.finish(), 0)
         self.assertEqual(self.logs[-1],
-                         f"q3: PENDING — no VIBHAGA_ADMIN_AUTH_DB_URL; run tools/sql-proof.py q3 --actor {tool.FakePlayground.ACTOR}")
+                         f"q3: PENDING — no DB URL source; run tools/sql-proof.py q3 --actor {tool.FakePlayground.ACTOR}")
         self.assertFalse(any("orchestrator" in l for l in self.logs))
 
     def test_write_ok_records_the_ledger(self):
@@ -484,7 +484,7 @@ class FinishQ3(unittest.TestCase):
             self.assertEqual(self.finish(sid=SID, ledger=self.ledger_path), 0)
         self.assertEqual(self.logs[-1], "q3: ok")
         q3 = json.loads(self.ledger_path.read_text())["sessions"][SID]["q3"]
-        self.assertEqual(q3["counts"], {"actor_exists": 1, "sessions": 0, "active_refresh_tokens": 0, "wrong_project": False})
+        self.assertEqual(q3["counts"], {"actor_exists": 1, "sessions": 0, "active_refresh_tokens": 0, "actor_is_admin": 1})
         self.assertIs(q3["ok"], True)
         self.assertEqual(q3["actor"], tool.FakePlayground.ACTOR)
         self.assertIn("checked_at", q3)

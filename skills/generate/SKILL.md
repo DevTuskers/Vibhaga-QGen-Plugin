@@ -251,31 +251,38 @@ same two checkout paths in the critic's spawn prompt.
     `--accept-signatures 0` on the real publish too; it refuses (exit 4) without it. Exit 0 is the only success; quote
     "published k/n", "read-back 1: staged doc confirms …", `t77: N question(s) · N comparisons · 0 mismatch(es)` and
     "provenance: N id(s) · OK". Exit 1 = staged and live disagree; the run is failed until they agree (**T77**).
-    After the logout the tool runs Q3 itself when `VIBHAGA_ADMIN_AUTH_DB_URL` resolves: `q3: ok` (counts land in the
-    ledger under the session) · `q3: PENDING — no VIBHAGA_ADMIN_AUTH_DB_URL; …` (prove by hand, step 11) ·
-    `q3: NOT ok — <counts>` turns an otherwise-successful write into exit 5.
+    After the logout the tool runs Q3 itself when a DB URL resolves — the transition-era
+    `VIBHAGA_ADMIN_AUTH_DB_URL` sources, else the content-DB chain (`DATABASE_URL` → `Vibhaga-DB/.env`):
+    `q3: ok` (counts land in the ledger under the session) · `q3: PENDING — no DB URL source; …`
+    (prove by hand, step 11) · `q3: NOT ok — <counts>` turns an otherwise-successful write into exit 5.
 11. **Prove it by SQL:** `python3 tools/sql-proof.py q2 <sid> --expected <N> --out $A/q2.json` → `q2: ok` (count,
     flagged, published, paperless, scope, 0 signed, 0 unanswered leaves). Q3 is now automatic: every **write**
-    subcommand's logout runs it (step 10) — on a `q3: PENDING` line (no `VIBHAGA_ADMIN_AUTH_DB_URL`, true on the
-    owner's laptop on 2026-10-02) run the Q3 `SELECT`, actor id substituted, through the Supabase MCP `execute_sql`
-    on the **Admin Auth** project, and record its row (`actor_exists`, `sessions`, `active_refresh_tokens`,
-    `wrong_project`, `ok`) in `q3.json` by hand — same `ok` rule; never `PENDING` at done. A psql
+    subcommand's logout runs it (step 10) — on a `q3: PENDING` line (no URL source at all) run the Q3
+    `SELECT`, actor id substituted, through the Supabase MCP `execute_sql` on the **content**
+    project (the Admin Auth project is merged into it — there is one Supabase project now), and record its
+    row (`actor_exists`, `sessions`, `active_refresh_tokens`, `actor_is_admin`, `ok`) in `q3.json` by
+    hand — same `ok` rule; never `PENDING` at done. `actor_is_admin` is what makes a bare uid count as
+    evidence: only an admin identity's revocation proves the tool's sign-out. A psql
     `function qgen.q3 does not exist` or a `permission denied` means the one-time setup below was
-    not run (or psql landed on the wrong project). Leave the questions published and flagged.
+    not run. Leave the questions published and flagged.
 
-    **One-time Admin Auth setup** (run once as `postgres`): Q3 reads through `qgen.q3`, a
-    counts-only SECURITY DEFINER function — RLS on `auth.*` has no policies, so a plain reader
-    role would see zero rows, and the reader must not be BYPASSRLS. The MCP fallback still works:
-    postgres can execute the function.
+    **One-time qgen.q3 setup on the merged project** (run once as `postgres`): Q3 reads through
+    `qgen.q3`, a counts-only SECURITY DEFINER function — RLS on `auth.*` has no policies, so a plain
+    reader role would see zero rows, and the reader must not be BYPASSRLS. The 4th column needs
+    admins to carry `raw_app_meta_data->>'vibhaga_role' = 'admin'` in `auth.users` (they do — set at
+    merge); without the flag an admin uid reads `actor_is_admin = 0` → NOT ok. The MCP fallback
+    still works: postgres can execute the function.
 
     ```sql
     create schema if not exists qgen;
     create or replace function qgen.q3(actor uuid)
-    returns table(actor_exists bigint, sessions bigint, active_refresh_tokens bigint)
+    returns table(actor_exists bigint, sessions bigint, active_refresh_tokens bigint, actor_is_admin bigint)
     language sql stable security definer set search_path = '' as $$
       select (select count(*) from auth.users where id = actor),
              (select count(*) from auth.sessions where user_id = actor),
-             (select count(*) from auth.refresh_tokens where user_id = actor::text and revoked is not true);
+             (select count(*) from auth.refresh_tokens where user_id = actor::text and revoked is not true),
+             (select count(*) from auth.users where id = actor
+                and raw_app_meta_data->>'vibhaga_role' = 'admin');
     $$;
     revoke all on function qgen.q3(uuid) from public, anon, authenticated, service_role;
     create role qgen_auth_reader login password '<strong password>';   -- skip if it exists
@@ -379,7 +386,8 @@ The critic grades every part against this table (profile §3) — keep it and th
 4. `publish` exits 0 with the four quoted lines of step 10 clean.
 5. `sql-proof.py q2` prints `q2: ok` for the final publish (this is the `verified_by IS NULL` proof); absence from the
    student `GET /v1/questions` is supporting evidence only (§1).
-6. `sql-proof.py q3` prints `q3: ok` on the Admin Auth project for the actor that exists there.
+6. `sql-proof.py q3` prints `q3: ok` on the merged project for the actor — an admin identity that
+   exists there.
 7. The last fresh `qgen-critic` reported SATISFIED; every BLOCKER, MAJOR and MINOR on the way is FIXED (republished
    flagged) or recorded as an owner question.
 8. The ledger (session id, question ids) is in the run's logbook entry.

@@ -288,7 +288,7 @@ class Admin:
         uid = self.user_id or "<actor user_id>"
         if not re.fullmatch(r"[0-9a-fA-F-]{36}|<actor user_id>", uid):
             uid = uid.replace("'", "''")  # never a valid Supabase user id; kept quotable rather than trusted
-        return (f"-- run on the ADMIN Supabase project; both must be 0 before the run is done (T4)\n"
+        return (f"-- run on the merged Supabase project; both must be 0 before the run is done (T4)\n"
                 f"SELECT count(*) AS sessions FROM auth.sessions WHERE user_id = '{uid}';\n"
                 f"SELECT count(*) AS refresh_tokens FROM auth.refresh_tokens WHERE user_id = '{uid}' AND revoked = false;")
 

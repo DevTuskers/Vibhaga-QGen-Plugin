@@ -490,7 +490,7 @@ class ShipTest(unittest.TestCase):
                 (lambda j: " publish " in " " + j + " " and "--dry-run" not in j, 0,
                  "published 2/2\nread-back 1: staged doc confirms 2 published + flagged\n"
                  "t77: 2 question(s) · 40 comparisons · 0 mismatch(es)\n"
-                 "provenance: 2 id(s) · OK\nq3: PENDING — no VIBHAGA_ADMIN_AUTH_DB_URL"),
+                 "provenance: 2 id(s) · OK\nq3: PENDING — no DB URL source"),
                 (lambda j: "sql-proof" in j and " q2 " in " " + j, 0, "q2: ok"),
             ]
             out = io.StringIO()

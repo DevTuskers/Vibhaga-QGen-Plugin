@@ -14,8 +14,9 @@ stem you author. These rules hold in every session that loads the plugin.
 3. **Two or more lessons tagged ⇒ each one is used.** At least one part's solution needs a concept
    from each tagged lesson. A tag the working never touches is a defect, not a bonus.
 4. **Stay inside the scope card.** Nothing on its `not_taught` list, no later-grade notation.
-5. **Prove by SQL, not by the API.** Use `queries.sql` (Q2 post-publish proof, Q3 Auth revocation on
-   the Admin Auth project, actor asserted to exist first). Never select token values.
+5. **Prove by SQL, not by the API.** Use `queries.sql` (Q2 post-publish proof, Q3 Auth revocation —
+   same merged project, actor asserted to exist AND to be an admin first). Never select token
+   values.
 6. **Drawn diagram text is simple English on every medium** (ADR 0021 —
    `Vibhaga-Docs/decisions/0021-english-only-diagram-text.md`). Point letters, labels, text
    elements, math latex, axis/category/series/value titles, units — never Sinhala, whatever the

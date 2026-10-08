@@ -33,7 +33,7 @@ ACTOR = "00000000-0000-4000-8000-0000000000e2"
 Q2_COLS = ["session_exists", "questions", "not_flagged", "not_published", "papered",
            "scope_mismatch", "parts", "answers", "signed_answers", "sub_answers",
            "signed_sub_answers", "unanswered_leaves", "ok"]
-Q3_COLS = ["actor_exists", "sessions", "active_refresh_tokens", "wrong_project", "ok"]
+Q3_COLS = ["actor_exists", "sessions", "active_refresh_tokens", "actor_is_admin", "ok"]
 
 # Canned-output psql: records argv (one per line), asserts the read-only prefix on stdin, prints
 # $FAKE_PSQL_OUT, or exits $FAKE_PSQL_EXIT with a stderr line when set.
@@ -107,10 +107,10 @@ class FailingTests(unittest.TestCase):
 
     def test_q3_failing(self):
         counts = {"actor_exists": 1, "sessions": 2, "active_refresh_tokens": 0,
-                  "wrong_project": False}
+                  "actor_is_admin": 1}
         self.assertEqual(sp.failing_q3(counts), ["sessions=2"])
-        counts["wrong_project"] = True
-        self.assertEqual(sp.failing_q3(counts), ["sessions=2", "wrong_project=t"])
+        counts["actor_is_admin"] = 0   # a student uid is not evidence for an admin sign-out
+        self.assertEqual(sp.failing_q3(counts), ["actor_is_admin=0", "sessions=2"])
 
 
 class EndToEnd(unittest.TestCase):
@@ -214,7 +214,7 @@ class EndToEnd(unittest.TestCase):
         self.assertIn("Connection refused", err)     # the error wording survives
 
     def test_psql_missing_qgen_function_adds_the_setup_hint(self):
-        # on the content project (or before the one-time setup) qgen.q3 is absent
+        # on a project without the one-time step-11 setup qgen.q3 is absent
         canned = ('ERROR:  function qgen.q3(uuid) does not exist\n'
                   "LINE 1: ...FROM qgen.q3('00000000-0000-4000-8000-0000000000f0'::uuid) f\n"
                   "                 ^\n"
@@ -272,7 +272,7 @@ class EndToEnd(unittest.TestCase):
 
     # ---- q3 -----------------------------------------------------------------
     def test_q3_ok_t_exits_0(self):
-        vals = [1, 0, 0, "f", "t"]
+        vals = [1, 0, 0, 1, "t"]
         rc, out, err = self.run_main("q3", "--actor", ACTOR,
                                      extra={"FAKE_PSQL_OUT": out_line(Q3_COLS, vals)})
         self.assertEqual(rc, 0, err)
@@ -285,7 +285,7 @@ class EndToEnd(unittest.TestCase):
         self.assertNotIn("auth.invalid.test", argv)
 
     def test_q3_ok_f_exits_1_naming_sessions(self):
-        vals = [1, 2, 1, "f", "f"]
+        vals = [1, 2, 1, 1, "f"]
         rc, out, _ = self.run_main("q3", "--actor", ACTOR,
                                    extra={"FAKE_PSQL_OUT": out_line(Q3_COLS, vals)})
         self.assertEqual(rc, 1)
@@ -295,19 +295,51 @@ class EndToEnd(unittest.TestCase):
 
     def test_q3_no_url_source_exits_2(self):
         rc, _, err = self.run_main("q3", "--actor", ACTOR,
-                                   drop=("VIBHAGA_ADMIN_AUTH_DB_URL",))
+                                   drop=("VIBHAGA_ADMIN_AUTH_DB_URL", "DATABASE_URL"))
         self.assertEqual(rc, 2)
         self.assertIn("VIBHAGA_ADMIN_AUTH_DB_URL", err)
+        self.assertIn("DATABASE_URL", err)
         self.assertNotIn("postgres://", err)
+
+    def test_q3_falls_back_to_the_content_db_chain(self):
+        # merged project: with the transition-era var absent, q3 resolves like q2
+        vals = [1, 0, 0, 1, "t"]
+        rc, out, err = self.run_main("q3", "--actor", ACTOR,
+                                     drop=("VIBHAGA_ADMIN_AUTH_DB_URL",),
+                                     extra={"FAKE_PSQL_OUT": out_line(Q3_COLS, vals)})
+        self.assertEqual(rc, 0, err)
+        self.assertIn("q3: ok", out)
+        self.assertIn("auth DB URL from DATABASE_URL env", err)
+        argv = self.argv_log.read_text()
+        self.assertIn(f"actor_id={ACTOR}", argv)
+        self.assertNotIn("db.invalid.test", argv)
 
     def test_q3_auth_env_file_beats_env_var(self):
         envfile = Path(self.tmp.name) / "auth.env"
         envfile.write_text("VIBHAGA_ADMIN_AUTH_DB_URL=postgres://proof:x@file.invalid.test/db\n")
-        vals = [1, 0, 0, "f", "t"]
+        vals = [1, 0, 0, 1, "t"]
         rc, _, err = self.run_main("q3", "--actor", ACTOR, "--auth-env", str(envfile),
                                    extra={"FAKE_PSQL_OUT": out_line(Q3_COLS, vals)})
         self.assertEqual(rc, 0, err)
         self.assertIn(f"auth DB URL from --auth-env {envfile}", err)
+
+    def test_q3_auth_env_file_accepts_a_database_url_line(self):
+        # a file with only DATABASE_URL doubles as q2's --db-env on the merged project
+        envfile = Path(self.tmp.name) / "db.env"
+        envfile.write_text("DATABASE_URL=postgres://proof:x@file.invalid.test/db\n")
+        vals = [1, 0, 0, 1, "t"]
+        rc, _, err = self.run_main("q3", "--actor", ACTOR, "--auth-env", str(envfile),
+                                   extra={"FAKE_PSQL_OUT": out_line(Q3_COLS, vals)})
+        self.assertEqual(rc, 0, err)
+        self.assertIn(f"auth DB URL from --auth-env {envfile}", err)
+
+    def test_q3_auth_env_file_without_either_key_exits_2(self):
+        envfile = Path(self.tmp.name) / "empty.env"
+        envfile.write_text("SOME_OTHER_KEY=x\n")
+        rc, _, err = self.run_main("q3", "--actor", ACTOR, "--auth-env", str(envfile))
+        self.assertEqual(rc, 2)
+        self.assertIn("no VIBHAGA_ADMIN_AUTH_DB_URL or DATABASE_URL line", err)
+        self.assertNotIn("postgres://", err)
 
     def test_q3_bad_actor_exits_2(self):
         rc, _, err = self.run_main("q3", "--actor", "nope")

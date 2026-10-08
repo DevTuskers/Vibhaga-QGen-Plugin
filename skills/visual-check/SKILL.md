@@ -118,10 +118,11 @@ Reveal control to click, and the measurement walks every `<svg>` in the scrollpo
 figures included. Then read the actor's `user.id` out of the Supabase session **immediately
 after sign-in** (cookies — never a token), and whatever happens, **Sign out** runs under
 `finally` (a failed click is reported loudly and the session cookies are expired in-page).
-Prove the revocation: queries.sql **Q3** on the **Admin Auth** project — `VIBHAGA_ADMIN_AUTH_DB_URL`
-is parsed into `PG*` env vars for psql (never on argv; `-f -` on stdin so `:'actor_id'`
-interpolates, `-c` does NOT), read-only — or the printed `revocation: PENDING` line when the
-env is unset. Q3 counts through `qgen.q3(actor)`, a SECURITY DEFINER function installed by the
+Prove the revocation: queries.sql **Q3** on the merged (content) project — the Admin Auth project
+was folded into it. The URL resolves through `VIBHAGA_ADMIN_AUTH_DB_URL` (transition-era) or the
+content-DB chain, parsed into `PG*` env vars for psql (never on argv; `-f -` on stdin so
+`:'actor_id'` interpolates, `-c` does NOT), read-only — or a PENDING line when nothing resolves.
+Q3 counts through `qgen.q3(actor)`, a SECURITY DEFINER function installed by the
 one-time setup in generate step 11 — `auth.*` has RLS with no policies, so a reader role
 selecting it directly sees zero rows and would report a false "revoked". Never select token
 values.

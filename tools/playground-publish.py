@@ -25,8 +25,9 @@ per stage, and the same guard-rail shape, adapted to the playground routes:
      staged-vs-published diff plus a per-id provenance query
   6. `POST /auth/v1/logout?scope=global` is the last act of every network subcommand. After a WRITE
      subcommand (session create/archive, doc put, publish, unpublish, flag-review) the revocation is
-     then PROVEN: queries.sql Q3 runs on the Admin Auth project via sql-proof's own resolver +
-     psql runner when VIBHAGA_ADMIN_AUTH_DB_URL resolves, the counts land in the ledger under the
+     then PROVEN: queries.sql Q3 runs on the merged (content) project via sql-proof's own resolver +
+     psql runner when a DB URL resolves (the transition-era VIBHAGA_ADMIN_AUTH_DB_URL sources, else
+     the content-DB chain), the counts land in the ledger under the
      session, and a NOT-ok after a successful write exits 5. With no URL source one `q3: PENDING`
      line stands in for the proof. Read-only subcommands print nothing past the logout line.
 
@@ -349,7 +350,7 @@ def refuse_archived(sess: dict) -> None:
 def q3_after_logout(api: PlaygroundApi, *, sid: str | None, ledger: Path | None,
                     env_path: Path | None, log=print) -> int:
     """Guard-rail 6b — after a WRITE subcommand's global logout, prove the revocation on the
-    ADMIN AUTH project: queries.sql Q3 run through sql-proof's own resolver + runner (imported,
+    merged project: queries.sql Q3 run through sql-proof's own resolver + runner (imported,
     never copied). Returns 0 when the proof is ok or cannot run here (PENDING); 5 when it ran
     and failed — psql error included, that is a NOT-ok not a skip. A write refused BEFORE any
     grant was obtained (no actor id) prints nothing — there is no session to revoke; a write
@@ -359,7 +360,7 @@ def q3_after_logout(api: PlaygroundApi, *, sid: str | None, ledger: Path | None,
         return 0                                    # never completed a grant — nothing to prove
     url, src = sqlp.find_auth_url(None, env_path)
     if not url:
-        log(f"q3: PENDING — no VIBHAGA_ADMIN_AUTH_DB_URL; run tools/sql-proof.py q3 --actor {uid}")
+        log(f"q3: PENDING — no DB URL source; run tools/sql-proof.py q3 --actor {uid}")
         return 0
     print(f"{sqlp.PROG}: auth DB URL from {src}", file=sys.stderr)
     block = sqlp.slice_proof(sqlp.QUERIES.read_text(encoding="utf-8"), "Q3")
