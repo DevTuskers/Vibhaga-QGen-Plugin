@@ -955,22 +955,27 @@ async function sessionMode() {
     // The revocation proof runs whether or not the loop failed — never select token values.
     // Q3 targets the merged (content) project now, so sql-proof.py does ALL resolution itself:
     // the transition-era VIBHAGA_ADMIN_AUTH_DB_URL sources, then the content-DB chain
-    // (DATABASE_URL env → Vibhaga-DB/.env). When the URL came from the admin env FILE it goes
-    // along as --auth-env — sql-proof's own resolver would not find the file when
-    // --admin/VIBHAGA_ADMIN points at a non-sibling checkout (one resolution feeds both; see
-    // sqlProofQ3Argv). Exit 2 = usage/env (no URL source) → one PENDING line; any other
-    // non-zero = a real NOT ok. The URL is never printed and never placed on argv.
+    // (DATABASE_URL env → Vibhaga-DB/.env). The admin env FILE goes along as --auth-env
+    // whenever it holds a URL source sql-proof can use — VIBHAGA_ADMIN_AUTH_DB_URL or, the
+    // natural post-merge end state, a plain DATABASE_URL line — because sql-proof's own
+    // resolver would not find the file when --admin/VIBHAGA_ADMIN points at a non-sibling
+    // checkout (one resolution feeds both; see sqlProofQ3Argv). sql-proof tries --auth-env
+    // FIRST, so a file with no usable line must stay home or it would shadow the env
+    // sources; a set VIBHAGA_ADMIN_AUTH_DB_URL env var wins without the flag anyway. Exit 3
+    // = no URL source at all → one PENDING line; every other non-zero (usage error, a
+    // corrupt Q3 slice, psql down, failing counts) = a real NOT ok. The URL is never
+    // printed and never placed on argv.
     if (actorId) {
       const envFile = adminEnvFile();
-      const fromEnv = !!process.env.VIBHAGA_ADMIN_AUTH_DB_URL;
-      const authUrl = process.env.VIBHAGA_ADMIN_AUTH_DB_URL
-        ?? (envFile ? parseEnvFile(envFile).VIBHAGA_ADMIN_AUTH_DB_URL : null);
+      const fileVars = envFile ? parseEnvFile(envFile) : {};
+      const fileHasUrl = !!(fileVars.VIBHAGA_ADMIN_AUTH_DB_URL || fileVars.DATABASE_URL);
       const r = spawnSync(process.env.PYTHON ?? "python3",
-        sqlProofQ3Argv(PLUGIN, actorId, authUrl && !fromEnv ? envFile : null),
+        sqlProofQ3Argv(PLUGIN, actorId,
+          fileHasUrl && !process.env.VIBHAGA_ADMIN_AUTH_DB_URL ? envFile : null),
         { encoding: "utf8" });
       const text = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
       if (text) console.log(text.split("\n").map((l) => `  ${l}`).join("\n"));
-      if (r.status === 2) {
+      if (r.status === 3) {
         console.log(`  revocation: PENDING — no DB URL resolved; run queries.sql Q3 on the merged project with actor_id=${actorId}`);
       } else if (r.error || r.status !== 0) {
         console.log(`  q3: NOT ok — the proof did not pass (sql-proof exit ${r.status ?? r.error?.message})`);

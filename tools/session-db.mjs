@@ -84,14 +84,15 @@ export function groupStagedFigures(figs) {
 }
 
 /**
- * The argv for --session's post-logout Q3 proof. `authEnv` is the env FILE the URL was read
- * from — sql-proof.py resolves VIBHAGA_ADMIN_AUTH_DB_URL via env → VIBHAGA_ADMIN_ENV → the
+ * The argv for --session's post-logout Q3 proof. `authEnv` is the env FILE a usable URL
+ * source was found in — VIBHAGA_ADMIN_AUTH_DB_URL or, on the merged project, a DATABASE_URL
+ * line. sql-proof.py resolves VIBHAGA_ADMIN_AUTH_DB_URL via env → VIBHAGA_ADMIN_ENV → the
  * admin checkout's own .env.local path, which is NOT necessarily the file visual-check's
  * resolver found it in (a non-sibling --admin/VIBHAGA_ADMIN checkout), so the file goes along
- * as `--auth-env` and one resolution feeds both. null when the URL came from the process env
- * or when nothing resolved — sql-proof falls back to the content-DB chain (DATABASE_URL env →
- * Vibhaga-DB/.env) on the merged project. actorId on argv matches the ship-chain behaviour;
- * the URL itself never goes on argv.
+ * as `--auth-env` and one resolution feeds both. null when the process env supplies the URL
+ * or the file holds no usable line — sql-proof then runs its own chain (env → admin env
+ * file → the content-DB tail: DATABASE_URL env → Vibhaga-DB/.env on the merged project).
+ * actorId on argv matches the ship-chain behaviour; the URL itself never goes on argv.
  */
 export function sqlProofQ3Argv(pluginDir, actorId, authEnv = null) {
   const argv = [path.join(pluginDir, "tools", "sql-proof.py"), "q3", "--actor", actorId];
