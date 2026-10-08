@@ -36,9 +36,10 @@ Output: one `key=value` counts line (every column the query returned), then `q2:
 {"query": "Q2"|"Q3", "session_id"|"actor_id": …, "counts": {…}, "ok": bool, "checked_at": ISO}.
 Counts only — never a token, an email, or a row's contents.
 
-Exit: 0 ok is t · 1 not ok / psql failed / unexpected output · 2 usage or env (non-uuid id,
---expected < 1, no URL source, queries.sql block missing or failing the guard).
-"""
+Exit: 0 ok is t · 1 not ok / psql failed / unexpected output · 2 usage (non-uuid id,
+--expected < 1, queries.sql block missing or failing the guard) · 3 no URL source resolved
+(q3 only — the proof could not run at all, a PENDING for the caller, NOT a failed proof;
+q2's URL comes from critic-read's resolve_db_url, which keeps its own exit 2)."""
 from __future__ import annotations
 
 import argparse
@@ -121,12 +122,14 @@ def find_auth_url(auth_env: str | None, env_path: Path | None = None) -> tuple[s
 
 
 def resolve_auth_url(auth_env: str | None) -> str:
-    """The CLI wrapper over find_auth_url — prints the SOURCE (never the value) or dies."""
+    """The CLI wrapper over find_auth_url — prints the SOURCE (never the value) or dies with
+    exit 3: no URL source means the proof never ran, so a caller must be able to tell it
+    apart from a real failure (a usage error exits 2, a failed proof 1)."""
     url, src = find_auth_url(auth_env)
     if url:
         print(f"{PROG}: auth DB URL from {src}", file=sys.stderr)
         return url
-    die(src)
+    die(src, 3)
 
 
 # psql connection errors echo the server's host and resolved IP (`connection to server at

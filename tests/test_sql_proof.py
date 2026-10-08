@@ -5,7 +5,8 @@
   · a fake `psql` shell script on PATH records its argv and prints a canned header + row —
     the URL must never reach argv (PG* env only) and stdin must carry the read-only prefix;
   · ok=t → exit 0; ok=f → exit 1 naming the failing counts; psql non-zero → exit 1;
-  · non-uuid id / --expected 0 → exit 2; q3 with no URL source anywhere → exit 2.
+  · non-uuid id / --expected 0 / a guard-refused slice → exit 2 (a real NOT ok);
+  · q3 with no URL source anywhere → exit 3 (a PENDING for the caller — the proof never ran).
 
 All ids are synthetic (00000000-0000-4000-8000-0000000000NN); the URLs are *.invalid.test.
 """
@@ -293,13 +294,21 @@ class EndToEnd(unittest.TestCase):
         self.assertIn("sessions=2", out)
         self.assertIn("active_refresh_tokens=1", out)
 
-    def test_q3_no_url_source_exits_2(self):
+    def test_q3_no_url_source_exits_3(self):
+        # exit 3 — distinct from a failed proof — so callers map it to PENDING, not NOT ok
         rc, _, err = self.run_main("q3", "--actor", ACTOR,
                                    drop=("VIBHAGA_ADMIN_AUTH_DB_URL", "DATABASE_URL"))
-        self.assertEqual(rc, 2)
+        self.assertEqual(rc, 3)
         self.assertIn("VIBHAGA_ADMIN_AUTH_DB_URL", err)
         self.assertIn("DATABASE_URL", err)
         self.assertNotIn("postgres://", err)
+
+    def test_q3_unreadable_auth_env_exits_3(self):
+        # an --auth-env that resolves to nothing is the same "no URL source" verdict
+        rc, _, err = self.run_main("q3", "--actor", ACTOR,
+                                   "--auth-env", str(Path(self.tmp.name) / "missing.env"))
+        self.assertEqual(rc, 3)
+        self.assertIn("not a readable file", err)
 
     def test_q3_falls_back_to_the_content_db_chain(self):
         # merged project: with the transition-era var absent, q3 resolves like q2
@@ -333,11 +342,11 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(rc, 0, err)
         self.assertIn(f"auth DB URL from --auth-env {envfile}", err)
 
-    def test_q3_auth_env_file_without_either_key_exits_2(self):
+    def test_q3_auth_env_file_without_either_key_exits_3(self):
         envfile = Path(self.tmp.name) / "empty.env"
         envfile.write_text("SOME_OTHER_KEY=x\n")
         rc, _, err = self.run_main("q3", "--actor", ACTOR, "--auth-env", str(envfile))
-        self.assertEqual(rc, 2)
+        self.assertEqual(rc, 3)
         self.assertIn("no VIBHAGA_ADMIN_AUTH_DB_URL or DATABASE_URL line", err)
         self.assertNotIn("postgres://", err)
 
