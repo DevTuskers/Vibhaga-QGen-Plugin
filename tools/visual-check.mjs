@@ -950,34 +950,31 @@ async function sessionMode() {
           }
         });
       } catch (_) { /* page may be gone — the loud line below still reports it */ }
-      console.error("visual-check: ⚠️ SIGN-OUT FAILED — the admin session may still be live; verify revocation with queries.sql Q3 on the Admin Auth project");
+      console.error("visual-check: ⚠️ SIGN-OUT FAILED — the admin session may still be live; verify revocation with queries.sql Q3 on the merged project");
     }
     // The revocation proof runs whether or not the loop failed — never select token values.
-    // Same resolution playground-publish's post-logout Q3 uses (sql-proof's find_auth_url):
-    // VIBHAGA_ADMIN_AUTH_DB_URL env, then that key's line in the admin env file. When it
-    // resolves, sql-proof.py runs the proof itself (its own resolver + psql runner, output
-    // echoed verbatim); when it doesn't, one PENDING hint stands instead. The URL is never
-    // printed and never placed on argv.
+    // Q3 targets the merged (content) project now, so sql-proof.py does ALL resolution itself:
+    // the transition-era VIBHAGA_ADMIN_AUTH_DB_URL sources, then the content-DB chain
+    // (DATABASE_URL env → Vibhaga-DB/.env). When the URL came from the admin env FILE it goes
+    // along as --auth-env — sql-proof's own resolver would not find the file when
+    // --admin/VIBHAGA_ADMIN points at a non-sibling checkout (one resolution feeds both; see
+    // sqlProofQ3Argv). Exit 2 = usage/env (no URL source) → one PENDING line; any other
+    // non-zero = a real NOT ok. The URL is never printed and never placed on argv.
     if (actorId) {
       const envFile = adminEnvFile();
       const fromEnv = !!process.env.VIBHAGA_ADMIN_AUTH_DB_URL;
       const authUrl = process.env.VIBHAGA_ADMIN_AUTH_DB_URL
         ?? (envFile ? parseEnvFile(envFile).VIBHAGA_ADMIN_AUTH_DB_URL : null);
-      if (authUrl) {
-        // authEnv when the URL came from the FILE: sql-proof's own resolver would not find
-        // this file when --admin/VIBHAGA_ADMIN points at a non-sibling checkout — one
-        // resolution feeds both (see sqlProofQ3Argv).
-        const r = spawnSync(process.env.PYTHON ?? "python3",
-          sqlProofQ3Argv(PLUGIN, actorId, fromEnv ? null : envFile),
-          { encoding: "utf8" });
-        const text = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
-        if (text) console.log(text.split("\n").map((l) => `  ${l}`).join("\n"));
-        if (r.error || r.status !== 0) {
-          console.log(`  q3: NOT ok — the proof did not pass (sql-proof exit ${r.status ?? r.error?.message})`);
-          proofFail = true;
-        }
-      } else {
-        console.log(`revocation: PENDING — run queries.sql Q3 on the Admin Auth project with actor_id=${actorId}`);
+      const r = spawnSync(process.env.PYTHON ?? "python3",
+        sqlProofQ3Argv(PLUGIN, actorId, authUrl && !fromEnv ? envFile : null),
+        { encoding: "utf8" });
+      const text = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
+      if (text) console.log(text.split("\n").map((l) => `  ${l}`).join("\n"));
+      if (r.status === 2) {
+        console.log(`  revocation: PENDING — no DB URL resolved; run queries.sql Q3 on the merged project with actor_id=${actorId}`);
+      } else if (r.error || r.status !== 0) {
+        console.log(`  q3: NOT ok — the proof did not pass (sql-proof exit ${r.status ?? r.error?.message})`);
+        proofFail = true;
       }
     } else {
       console.log("revocation: UNKNOWN — no actor id was captured before the failure");

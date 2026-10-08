@@ -4,11 +4,12 @@
     sql-proof.py q2 <session_id> --expected N [--db-env FILE] [--out FILE.json]
     sql-proof.py q3 --actor <uuid> [--auth-env FILE] [--out FILE.json]
 
-q2 runs queries.sql Q2 — the post-publish proof — on the CONTENT database; q3 runs Q3 — the auth
-revocation proof — on the ADMIN AUTH project (a different Supabase project: zero sessions for a user
-that does not exist there proves nothing, which is why Q3 carries the wrong_project check; and the
-counts come from `qgen.q3(actor)`, a counts-only SECURITY DEFINER function — RLS on auth.* has no
-policies, so a non-BYPASSRLS reader would silently see zero rows). Each block
+q2 runs queries.sql Q2 — the post-publish proof — on the CONTENT database; q3 runs Q3 — the admin
+sign-out revocation proof — on the SAME database: the Admin Auth project is merged into the content
+project, so `public.question_batches` no longer marks a wrong target and Q3 proves the actor is an
+admin via its `actor_is_admin` column instead (a student uid is not revocation evidence for an
+admin sign-out). The counts come from `qgen.q3(actor)`, a counts-only SECURITY DEFINER function —
+RLS on auth.* has no policies, so a non-BYPASSRLS reader would silently see zero rows. Each block
 is sliced out of the REAL queries.sql (from its `-- Q2` / `-- Q3` header comment to the statement's
 terminating `;`), then guarded locally: ONE statement starting WITH or SELECT — Q2 opens `WITH`, so
 critic-read's SELECT-only assertion does not apply — and no write token (a smoke check; the read-only
@@ -24,8 +25,11 @@ reused, not copied).
 URL resolution — the SOURCE is announced on stderr, never the value:
   q2 (content):  --db-env FILE → DATABASE_URL env → Vibhaga-DB/.env beside Vibhaga-Admin
                  (identical to critic-read.py's resolve_db_url — reused, not copied)
-  q3 (auth):     --auth-env FILE (its VIBHAGA_ADMIN_AUTH_DB_URL line) → the same env var → the line
-                 in Vibhaga-Admin/.env.local (VIBHAGA_ADMIN_ENV wins, else _admin_auth's ENV_PATH)
+  q3 (content):  --auth-env FILE (its VIBHAGA_ADMIN_AUTH_DB_URL line, else its DATABASE_URL line) →
+                 VIBHAGA_ADMIN_AUTH_DB_URL env → the line in Vibhaga-Admin/.env.local
+                 (VIBHAGA_ADMIN_ENV wins, else _admin_auth's ENV_PATH) → then the q2 tail:
+                 DATABASE_URL env → Vibhaga-DB/.env beside Vibhaga-Admin. The first three keep the
+                 transition-era auth sources working; Q3 targets the merged content project now.
 
 Output: one `key=value` counts line (every column the query returned), then `q2: ok` or
 `q2: NOT ok — <the failing counts>` (same for q3). `--out` writes
@@ -86,26 +90,34 @@ def slice_proof(sql_text: str, marker: str) -> str:
 
 def find_auth_url(auth_env: str | None, env_path: Path | None = None) -> tuple[str | None, str]:
     """`--auth-env` file → VIBHAGA_ADMIN_AUTH_DB_URL env → that key's line in the admin env file
-    (env_path when given, else VIBHAGA_ADMIN_ENV, else _admin_auth.ENV_PATH). Returns
-    (url, source) or (None, reason); prints nothing — callers announce the source or the miss.
+    (env_path when given, else VIBHAGA_ADMIN_ENV, else _admin_auth.ENV_PATH), then the q2 tail —
+    a DATABASE_URL line in the --auth-env file, the DATABASE_URL env var, Vibhaga-DB/.env beside
+    Vibhaga-Admin — because Q3 targets the merged content project. Returns (url, source) or
+    (None, reason); prints nothing — callers announce the source or the miss.
     Shared with playground-publish.py's post-logout Q3 — resolution order is never copied."""
+    ep = env_path or (Path(os.environ["VIBHAGA_ADMIN_ENV"]) if os.environ.get("VIBHAGA_ADMIN_ENV")
+                      else _auth.ENV_PATH)
     if auth_env:
         p = Path(auth_env)
         if not p.is_file():
             return None, f"--auth-env {auth_env} is not a readable file"
-        url = cr.read_env(p).get("VIBHAGA_ADMIN_AUTH_DB_URL")
+        env_file = cr.read_env(p)
+        url = env_file.get("VIBHAGA_ADMIN_AUTH_DB_URL") or env_file.get("DATABASE_URL")
         if not url:
-            return None, f"--auth-env {auth_env} has no VIBHAGA_ADMIN_AUTH_DB_URL line"
+            return None, f"--auth-env {auth_env} has no VIBHAGA_ADMIN_AUTH_DB_URL or DATABASE_URL line"
         return url, f"--auth-env {auth_env}"
     if os.environ.get("VIBHAGA_ADMIN_AUTH_DB_URL"):
         return os.environ["VIBHAGA_ADMIN_AUTH_DB_URL"], "VIBHAGA_ADMIN_AUTH_DB_URL env"
-    ep = env_path or (Path(os.environ["VIBHAGA_ADMIN_ENV"]) if os.environ.get("VIBHAGA_ADMIN_ENV")
-                      else _auth.ENV_PATH)
     url = cr.read_env(ep).get("VIBHAGA_ADMIN_AUTH_DB_URL") if ep.is_file() else None
     if url:
         return url, str(ep)
-    return None, ("not in the environment, no --auth-env file, and no line in "
-                  f"{ep} (the Admin Auth project URL lives in Vibhaga-Admin/.env.local or the environment)")
+    if os.environ.get("DATABASE_URL"):
+        return os.environ["DATABASE_URL"], "DATABASE_URL env"
+    url = cr.load_db_url(ep)   # Vibhaga-DB/.env beside Vibhaga-Admin — q2's last step
+    if url:
+        return url, "Vibhaga-DB/.env"
+    return None, (f"no VIBHAGA_ADMIN_AUTH_DB_URL (environment, --auth-env, or {ep}) and no content-DB "
+                  "URL (DATABASE_URL env or Vibhaga-DB/.env beside Vibhaga-Admin)")
 
 
 def resolve_auth_url(auth_env: str | None) -> str:
@@ -114,7 +126,7 @@ def resolve_auth_url(auth_env: str | None) -> str:
     if url:
         print(f"{PROG}: auth DB URL from {src}", file=sys.stderr)
         return url
-    die(src if auth_env else f"no VIBHAGA_ADMIN_AUTH_DB_URL — {src}")
+    die(src)
 
 
 # psql connection errors echo the server's host and resolved IP (`connection to server at
@@ -155,7 +167,7 @@ def run_proof(pg: dict[str, str], block: str, variables: list[tuple[str, str]], 
         proc = subprocess.run(argv, input=f"set default_transaction_read_only=on;\n{block}",
                               capture_output=True, text=True, env={**os.environ, **pg})
     except FileNotFoundError:
-        die("psql is not on PATH")
+        die("psql is not on PATH", 1)   # a failed proof, not a usage error
     if proc.returncode != 0:
         # psql stderr carries no URL and no password, but a connection failure DOES carry the
         # host and its IP — every echoed line is redact()ed first. Lead with the ERROR:/FATAL:
@@ -171,8 +183,8 @@ def run_proof(pg: dict[str, str], block: str, variables: list[tuple[str, str]], 
         for l in shown:
             print(f"{PROG}:   {l}", file=sys.stderr)
         if any("qgen" in l and "does not exist" in l for l in err):
-            print(f"{PROG}: qgen.q3 missing — wrong project, or the setup SQL in "
-                  "skills/generate/SKILL.md step 11 was not run", file=sys.stderr)
+            print(f"{PROG}: qgen.q3 missing — the one-time setup SQL in "
+                  "skills/generate/SKILL.md step 11 was not run on the merged project", file=sys.stderr)
         elif any("permission denied" in l for l in err):
             print(f"{PROG}: the Q3 role needs USAGE on schema qgen and EXECUTE on qgen.q3 — "
                   "see the one-time setup in skills/generate/SKILL.md step 11", file=sys.stderr)
@@ -211,16 +223,16 @@ def failing_q2(counts: dict, expected: int) -> list[str]:
 
 
 def failing_q3(counts: dict) -> list[str]:
-    """Q3's `ok`: the actor exists on the AUTH project, no session or live refresh token survives,
-    and the database really is the auth project (public.question_batches absent)."""
+    """Q3's `ok`: the actor exists AND is an admin identity on the merged project
+    (raw_app_meta_data 'vibhaga_role'='admin' — a student uid is not revocation evidence for an
+    admin sign-out), and no session or live refresh token survives."""
     bad = []
-    if counts.get("actor_exists") != 1:
-        bad.append(f"actor_exists={show(counts.get('actor_exists'))}")
+    for k in ("actor_exists", "actor_is_admin"):
+        if counts.get(k) != 1:
+            bad.append(f"{k}={show(counts.get(k))}")
     for k in ("sessions", "active_refresh_tokens"):
         if counts.get(k) != 0:
             bad.append(f"{k}={show(counts.get(k))}")
-    if counts.get("wrong_project") is not False:
-        bad.append(f"wrong_project={show(counts.get('wrong_project'))}")
     return bad
 
 
@@ -251,8 +263,8 @@ def out_payload(tag: str, id_key: str, id_val: str, counts: dict, ok: bool) -> d
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="sql-proof.py",
-        description="queries.sql Q2 (content DB) and Q3 (Admin Auth project) read-only via psql; "
-                    "exits on the ok column.")
+        description="queries.sql Q2 (content DB) and Q3 (admin sign-out revocation, same merged "
+                    "project) read-only via psql; exits on the ok column.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     q2 = sub.add_parser("q2", help="post-publish proof for a playground session (content DB)")
     q2.add_argument("session_id", help="the question_batches uuid")
@@ -260,9 +272,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="how many questions the batch must hold (positive int)")
     q2.add_argument("--db-env", help="a dotenv file to read DATABASE_URL from (wins over the env var)")
     q2.add_argument("--out", help="write the counts JSON to this path")
-    q3 = sub.add_parser("q3", help="auth revocation proof for an actor (Admin Auth project)")
+    q3 = sub.add_parser("q3", help="auth revocation proof for an actor (merged content project)")
     q3.add_argument("--actor", required=True, help="the auth.users uuid the tool signed in as")
-    q3.add_argument("--auth-env", help="a dotenv file to read VIBHAGA_ADMIN_AUTH_DB_URL from")
+    q3.add_argument("--auth-env", help="a dotenv file to read VIBHAGA_ADMIN_AUTH_DB_URL (or "
+                                       "DATABASE_URL) from")
     q3.add_argument("--out", help="write the counts JSON to this path")
     a = ap.parse_args(argv)
 

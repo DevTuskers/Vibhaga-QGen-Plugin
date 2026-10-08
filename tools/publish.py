@@ -475,7 +475,7 @@ def finish(api: Api, *, write: bool = True, log=print) -> None:
     log(f"logout?scope=global → HTTP {st} (a 204 is NOT the proof — agent-identities §3)")
     if not write:
         return
-    log("orchestrator: run these on the ADMIN Supabase project and write both counts to sessions.json (must be 0 / 0):")
+    log("orchestrator: run these on the merged Supabase project and write both counts to sessions.json (must be 0 / 0):")
     log(f"  SELECT count(*) FROM auth.sessions WHERE user_id = '{uid}';")
     log(f"  SELECT count(*) FROM auth.refresh_tokens WHERE user_id = '{uid}';")
 

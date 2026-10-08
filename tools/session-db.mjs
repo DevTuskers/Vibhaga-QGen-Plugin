@@ -88,9 +88,10 @@ export function groupStagedFigures(figs) {
  * from — sql-proof.py resolves VIBHAGA_ADMIN_AUTH_DB_URL via env → VIBHAGA_ADMIN_ENV → the
  * admin checkout's own .env.local path, which is NOT necessarily the file visual-check's
  * resolver found it in (a non-sibling --admin/VIBHAGA_ADMIN checkout), so the file goes along
- * as `--auth-env` and one resolution feeds both. null when the URL came from the process env —
- * sql-proof inherits it anyway. actorId on argv matches the ship-chain behaviour; the URL
- * itself never goes on argv.
+ * as `--auth-env` and one resolution feeds both. null when the URL came from the process env
+ * or when nothing resolved — sql-proof falls back to the content-DB chain (DATABASE_URL env →
+ * Vibhaga-DB/.env) on the merged project. actorId on argv matches the ship-chain behaviour;
+ * the URL itself never goes on argv.
  */
 export function sqlProofQ3Argv(pluginDir, actorId, authEnv = null) {
   const argv = [path.join(pluginDir, "tools", "sql-proof.py"), "q3", "--actor", actorId];

@@ -8,7 +8,7 @@
 -- sub_questions.sub_question_id is the part key, auth.refresh_tokens.user_id is varchar).
 -- Q4 columns checked 2026-10-02 (lessons.sort_order, sub_answers.sub_question_id, answers/sub_answers.diagram_dsl).
 -- Which database each block targets is stated in its header. Hosts and project refs are NOT in this
--- public file: see Vibhaga-Docs AGENTS.md § "Onboarding-tool verification" for the two projects.
+-- public file: see Vibhaga-Docs AGENTS.md § "Onboarding-tool verification" for the project.
 -- Blocks Q2 and Q3 are run non-interactively by `tools/sql-proof.py` (read-only; exits on the `ok` column).
 
 
@@ -89,24 +89,25 @@ FROM r;
 
 
 -- ============================================================================================
--- Q3 — Admin Auth revocation proof for the actor                    DATABASE: Admin Auth project
+-- Q3 — Admin sign-out revocation proof for the actor             DATABASE: content
 -- Variables: actor_id (uuid — the user id the tool signed in as; it prints it on logout).
--- ⚠️ Runs on the ADMIN AUTH project, never the content project: zero sessions for a user that
--- does not exist there proves nothing. `ok` therefore demands actor_exists = 1, and refuses a
--- database that has the content schema (public.question_batches present = wrong project).
+-- The Admin Auth project is MERGED INTO the content project — there is ONE Supabase project now,
+-- and public.question_batches lives on it, so the old wrong_project guard is gone. Its job is done
+-- by actor_is_admin instead: the flag proves the actor is an ADMIN identity
+-- (raw_app_meta_data->>'vibhaga_role' = 'admin'). A student uid is not revocation evidence for an
+-- admin sign-out — it returns actor_exists = 1, actor_is_admin = 0 and reads NOT ok.
 -- The counts come from qgen.q3(actor uuid) — a counts-only SECURITY DEFINER function owned by
 -- postgres, installed once per skills/generate/SKILL.md step 11: RLS is enabled on auth.users /
 -- auth.sessions / auth.refresh_tokens with NO policies, so a reader role (never BYPASSRLS) sees
--- zero rows and a direct count would lie "revoked". On the content project the function does not
--- exist — this query errors, which reads as NOT ok.
--- Counts only — no token, no email, no row is returned. `sessions` deliberately counts EVERY row,
--- expired ones included: a global logout deletes them all, so any surviving row means "not revoked".
+-- zero rows and a direct count would lie "revoked".
+-- Counts only — never a token value, an email, or a row's contents. `sessions` deliberately counts
+-- EVERY row, expired ones included: a global logout deletes them all, so any surviving row means
+-- "not revoked".
 -- ============================================================================================
 
-SELECT f.actor_exists, f.sessions, f.active_refresh_tokens, w.wrong_project,
-       (f.actor_exists = 1 AND f.sessions = 0 AND f.active_refresh_tokens = 0 AND NOT w.wrong_project) AS ok
-FROM qgen.q3(:'actor_id'::uuid) f,
-     (SELECT to_regclass('public.question_batches') IS NOT NULL AS wrong_project) w;
+SELECT f.actor_exists, f.sessions, f.active_refresh_tokens, f.actor_is_admin,
+       (f.actor_exists = 1 AND f.actor_is_admin = 1 AND f.sessions = 0 AND f.active_refresh_tokens = 0) AS ok
+FROM qgen.q3(:'actor_id'::uuid) f;
 
 -- ============================================================================================
 -- Q4 — The critic's read of a playground batch                       DATABASE: content
