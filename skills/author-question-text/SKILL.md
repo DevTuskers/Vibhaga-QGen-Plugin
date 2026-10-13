@@ -282,6 +282,17 @@ difference once it is lost.
 
 ## 5. Writing the stem
 
+- ⭐ **Lay the stem and every part out for a phone.** A single newline is a line break; a blank
+  line is a paragraph break (`remark-breaks`). One idea or step per paragraph:
+
+  | Where | Layout |
+  |---|---|
+  | Stem | Givens/setup paragraph, blank line, then the task in its own paragraph |
+  | Part text | One instruction or question per paragraph |
+  | Follow-up | A separate “why / explain” question gets its own paragraph |
+  | Points/data | One per line or as a list, not packed into a sentence |
+  | STEM/PART cap | WARN above 180 characters or at 2 sentences; FAIL above 240 characters or at 3 or more sentences in one paragraph |
+
 - ⭐ **A data list in the stem wraps only where YOU break it.** Inline `$…$` never wraps (`.katex` is
   `whitespace-nowrap`), so a row of ten values in one `$…$` is cut off at the right edge of a 375 px
   phone — measured: such a row reached x = 391. Put **at most six numbers** on a
@@ -365,6 +376,7 @@ broke. Every rule in §3–§5 applies unchanged to the text you write.
 - [ ] **`G4` even-`$`-parity** run in addition to `hasSwallowedMarkup` (the latter is `false` on odd `$`)
 - [ ] `hasSwallowedMarkup` is `false` for `question_text`, measured with the
       compiled predicate (§3.3) or `tools/markdown-gate.mjs` over the staged doc.
+- [ ] `tools/check-layout.py` reports 0 FAIL for stems and part texts; read every WARN.
 - [ ] No Sinhala inside `\text{}` — this returns nothing (ripgrep `\p{Sinhala}` or Python
       `re.search(r'\\\\text\{[^}]*[\u0D80-\u0DFF]', s)`):
       `python3 -c "import re,sys,json; [print(s) for s in json.load(open('authored.json')) if re.search(r'\\\\text\{[^}]*[\u0D80-\u0DFF]', s)]"`

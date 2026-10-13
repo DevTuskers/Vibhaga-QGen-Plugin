@@ -128,7 +128,7 @@ about the two columns applies to what you type.
 
 ### 4.1 `approach` — the method, in the student's language
 
-- **One short paragraph, or a few short lines.** Multi-line is normal and good (§4.1c).
+- **Short paragraphs, one step each — never one run-on paragraph (§4.1c).**
 - **Teach, don't announce.** The north star is learning, not answer-checking.
 - **Match the question's language.** A Sinhala question gets a Sinhala approach — plain text, maths
   in `$…$`, **never Sinhala inside `\text{}`**.
@@ -195,6 +195,9 @@ with that wrong reading, so every gate was green.
 
 ### ⭐ 4.1c Lay the `approach` out for a phone — one step per paragraph
 
+**Owner ruling (2026-10-13):** stems, part texts, approaches and finals must be laid out so
+students can follow them; a run-on paragraph is not acceptable (T-QG-14).
+
 ⚠️ **An owner ruling on a published answer:** *"format the answer so that students can read it
 easily; now it feels cluttered."* The answer was **correct** and passed every gate — it was also one
 371-character paragraph. A 15-year-old reads an `approach` on a **375 px** screen, one paragraph at
@@ -232,12 +235,17 @@ and reports CLIP / TIGHT / fits; field ids `question_text` · `sq:<id>:text` · 
 adjacent / alternate / corresponding …* — a swapped definition has shipped with the wrong definition
 taught in the approach. Check the term against the lesson corpus before you write it into a method.
 
-**Mechanical checks — §6 #9 and #10.** An `approach` whose longest **prose** paragraph exceeds 180
-characters is a finding (#9); an inline `$…$` run estimated at ≥ 330 px is a finding and 270–330 px
-is borderline (#10 — look at a borderline one in the 375 px preview before deciding). They are smell
-thresholds like the figure element budget, not schema limits.
+**Mechanical checks — §6 #9 and #10.** `tools/check-layout.py staged.json` checks stems, part
+texts, approaches and finals; it runs automatically in `run-gates build`. Require 0 FAIL and read
+every WARN. An inline `$…$` run estimated at ≥ 330 px is a finding and 270–330 px is borderline
+(#10 — look at a borderline one in the 375 px preview before deciding). These are smell thresholds,
+not schema limits.
 
 ### 4.2 `final` — the answer, and only the answer
+
+⭐ **Lay out the final for reading (T-QG-14).** Put the answer on its first line. A reason, if any,
+goes in its own paragraph after a blank line. Three or more sentences in one paragraph FAIL; a
+paragraph over 180 characters also FAILs, and a two-sentence paragraph WARNs.
 
 ⚠️ **`final` must carry its own `$…$` fences, and the markdown gate cannot tell you that.** Bare
 LaTeX is valid markdown — it is just text — so a whole batch can pass the gate and still render
@@ -594,12 +602,8 @@ jq --argjson ids "$IDS" '[.questions[] | select(.question_id | IN($ids[]))
               | test("draw|shade|mark|plot|sketch|figure|diagram|අඳින්න|ඇඳ|ලකුණු කර";"i"))
      | (.answer_id // .sub_answer_id)]' staged.json     # must be []
 
-# 9. ⭐ LAYOUT (§4.1c). Every answer whose longest PROSE paragraph — table rows and list items
-#    excluded — is over 180 characters. A wall of text on a 375 px screen; split it.
-jq --argjson ids "$IDS" '[.questions[] | select(.question_id | IN($ids[]))
-     | .. | objects | select(has("answer_id") or has("sub_answer_id"))
-     | select([ (.approach // "") | split("\n\n")[] | select(test("^\\s*[|*-]") | not) | length ] | max > 180)
-     | (.answer_id // .sub_answer_id)]' staged.json     # must be []
+# 9. ⭐ LAYOUT (§4.1c; T-QG-14). Covers stems, parts, approaches and finals.
+python3 tools/check-layout.py staged.json   # run-gates build runs it automatically; 0 FAIL required; read every WARN
 
 # 10. ⭐ INLINE-MATH WIDTH (§4.1c). Estimates every inline `$…$` run in the scoped questions' stems,
 #     part texts, approaches and finals; exit 1 at >= 330 px, lists 270–330 px borderline.
@@ -616,8 +620,9 @@ a claim, not a check. ⚠️ **And watch the TRUE POSITIVE still fire after you 
 stops the false positive and also stops the true positive converts a noisy check into a silent one,
 which is worse than the bug.
 
-- [ ] ⭐ **Every `approach` reads one step per paragraph on a 375 px screen** (§4.1c): computations
-      on their own lines, lists as lists, a table on its own, no prose paragraph over ~180 chars.
+- [ ] ⭐ **Every stem, part, approach and final reads clearly on a 375 px screen** (§4.1c; T-QG-14):
+      one idea/step per paragraph, computations on their own lines, lists as lists, a table on its own;
+      layout gate 0 FAIL and every WARN read.
 - [ ] ⭐ **No inline `$…$` run is cut off at 375 px** (§4.1c): check #10 exited 0, and each
       borderline run was looked at in the preview.
 - [ ] Every check prints `0` / `[]`, read back out of the file you are about to hand to the gate —

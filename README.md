@@ -55,6 +55,8 @@ PYTHONDONTWRITEBYTECODE=1 VIBHAGA_ADMIN_ENV=/nonexistent/offline-test-only \
 
 Individual tools also carry `--self-test` (`tools/audit-claim-set.py`,
 `tools/playground-publish.py`, `tools/vdd-check.mjs`, `tools/markdown-gate.mjs`).
+`tools/check-layout.py` is the unconditional readable-layout gate in `run-gates build`; run it
+directly with `--fields <fields.json>` or a positional `staged.json`.
 
 ## Public-repo rule
 

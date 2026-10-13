@@ -106,6 +106,8 @@ class BuildTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             run = make_run(Path(td))
             stub = StubRunner()
+            stub.canned.append((lambda j: "check-layout.py" in j, 0,
+                                "check-layout: 0 fail(s) · 0 warn(s) · 2 fields\n"))
             stub.canned.append((lambda j: "visual-check" in j, 0,
                                 "Q1  PASS  font ok · labels 3 · target ok · arc — · shaded ok · "
                                 "aspect ok · 375×131  → /vc/Q1/\n"
@@ -124,6 +126,7 @@ class BuildTest(unittest.TestCase):
             i_staged = next(i for i, c in enumerate(stages) if "build-staged" in c)
             i_chk = next(i for i, c in enumerate(stages) if "check-answers" in c)
             i_mgate = next(i for i, c in enumerate(stages) if "markdown-gate" in c)
+            i_layout = next(i for i, c in enumerate(stages) if "check-layout.py" in c)
             i_vc = next(i for i, c in enumerate(stages) if "visual-check" in c)
             i_lint = next(i for i, c in enumerate(stages) if "precritic-lint" in c)
             self.assertLess(i_tpl, i_aud1)
@@ -131,7 +134,8 @@ class BuildTest(unittest.TestCase):
             self.assertLess(i_vdd1, i_staged)
             self.assertLess(i_staged, i_chk)
             self.assertLess(i_chk, i_mgate)
-            self.assertLess(i_mgate, i_vc)
+            self.assertLess(i_mgate, i_layout)
+            self.assertLess(i_layout, i_vc)
             self.assertLess(i_vc, i_lint)
             self.assertIn(str(run), stages[i_chk])
             # both figures audited before either is vdd-checked? No — per figure, audit then check
@@ -150,6 +154,7 @@ class BuildTest(unittest.TestCase):
                           "/vc/contact-light-375.png", o)
             gates = json.loads((run / "gates.json").read_text())
             self.assertEqual(gates["templates"], 0)
+            self.assertEqual(gates["layout"], 0)
             self.assertEqual(gates["visual-check"], 0)
             self.assertEqual(gates["precritic-lint"], 0)
 
@@ -390,14 +395,36 @@ class BuildTest(unittest.TestCase):
             joined = [" ".join(c) for c in stub.calls]
             i_staged = next(i for i, c in enumerate(joined) if "build-staged" in c)
             i_mg = next(i for i, c in enumerate(joined) if "markdown-gate" in c)
+            i_layout = next(i for i, c in enumerate(joined) if "check-layout.py" in c)
             i_vc = next(i for i, c in enumerate(joined) if "visual-check" in c)
             self.assertLess(i_staged, i_mg)
-            self.assertLess(i_mg, i_vc)
+            self.assertLess(i_mg, i_layout)
+            self.assertLess(i_layout, i_vc)
+            layout_argv = stub.calls[i_layout]
+            self.assertIn("--fields", layout_argv)
+            self.assertIn(str(run / "fields.json"), layout_argv)
             fields = json.loads((run / "fields.json").read_text())
             self.assertEqual([(f["id"], f["field"]) for f in fields],
                              [("Q1", "question_text"), ("Q2", "question_text")])
             self.assertIn("markdown-gate: 2 fields · 0 BLOCKED", out.getvalue())
             self.assertEqual(json.loads((run / "gates.json").read_text())["markdown-gate"], 0)
+            self.assertEqual(json.loads((run / "gates.json").read_text())["layout"], 0)
+
+    def test_layout_fail_stops_the_build(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            stub = StubRunner()
+            stub.canned.append((lambda j: "check-layout.py" in j, 1,
+                                "FAIL Q1 question_text ¶1: 3 sentences in one paragraph\n"
+                                "check-layout: 1 fail(s) · 0 warn(s) · 2 fields\n"))
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run), runner=stub)
+            self.assertEqual(rc, 1)
+            self.assertIn("FAIL Q1 question_text ¶1", out.getvalue())
+            self.assertFalse(any("visual-check" in " ".join(c) for c in stub.calls))
+            gates = json.loads((run / "gates.json").read_text())
+            self.assertEqual(gates["layout"], 1)
 
     def test_staged_fields_matches_fields_py_field_set(self):
         # the same set run-gate.sh's fields_py produces: stems (+_sinhala), answers[] AND the

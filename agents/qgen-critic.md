@@ -82,7 +82,7 @@ Markdown for it and say what you searched.
 
 ## 3. The checks — the generate §3 fit table, row by row
 
-Run all six on every question and every part. Q4b gives you everything you need for each.
+Run all seven on every question and every part. Q4b gives you everything you need for each.
 
 | Fit row | What you do | Finding when |
 |---|---|---|
@@ -92,6 +92,7 @@ Run all six on every question and every part. Q4b gives you everything you need 
 | **Answer right** | your own derivation first, then a second method or a spot value; then the stored `final_answer_latex` and `approach` (does `approach` actually lead to `final`, with no provenance chatter?) | stored final ≠ your answer; `approach` states something false; `approach` and `final` disagree |
 | **Figure honest** | parse `diagram_dsl` (question, part and answer level): every label the stem names exists; ratios/counts/lengths computed from the element coordinates (ratios and counts — never absolute coordinates) match the stem's numbers; `a11y.title` real; `a11y.description` does **not** state what the item asks for (**T125**); then read `report.json` for that figure id | a measured value contradicts the stem; a named label is missing; description gives the answer; report.json rule `FAIL` |
 | **Language** | stems and parts in Q4a's medium; the lesson's printed vocabulary (card `vocabulary`, lesson Markdown) for its key terms; `question_text_sinhala` NULL (a present one must be correct); markup survives: run `node <plugin>/tools/markdown-gate.mjs --self-test`, then `--fields <rows>/fields.json` (it needs the Admin and Web checkouts: siblings of the plugin, or the `VIBHAGA_ADMIN` / `VIBHAGA_WEB` paths in your spawn prompt; if it cannot start, markup is could-not-check — never "clean") | wrong medium; a term the lesson never uses for the idea; a markdown/KaTeX block from the gate |
+| **Readable** | read every stem, part, approach and final as a 13-year-old on a 375 px phone | a paragraph carries more than one step/idea; a computation is buried mid-sentence; a stem's task is buried in its setup; or a final hides its answer behind a reason |
 
 Also note, as MINOR at most: your own **R/M/H rating of every part** (plan appendix rubric:
 R = one fact or reading; M = ≥2 dependent steps, an unfamiliar context, or a figure read first;
@@ -104,8 +105,8 @@ a gap of more than one level becomes a MINOR. Use the card's `difficulty_hooks` 
 | Severity | Use it for |
 |---|---|
 | **BLOCKER** | a child would be taught something false: a wrong final answer, a false statement in `approach`, a figure whose numbers contradict the stem so the answer changes; or a part that cannot be answered from what is stored |
-| **MAJOR** | out of scope (S1–S4); a whole question copied from a textbook exercise / worked example / existing row; `approach` that does not explain `final`; a figure that is dishonest without changing the answer; an `a11y.description` that states the answer; wrong medium; a markdown/KaTeX gate block; a broken part tree (sub-answer on the wrong part, unanswered leaf, gap in labels) |
-| **MINOR** | a scaffold part that mirrors one worked-example step; the lesson's vocabulary not used; clumsy but correct wording; weak `a11y`; a `report.json` metric FAIL that you cannot connect to a content error (the lead judges legibility); your difficulty rating (for the lead to compare) |
+| **MAJOR** | out of scope (S1–S4); a whole question copied from a textbook exercise / worked example / existing row; `approach` that does not explain `final`; a figure that is dishonest without changing the answer; an `a11y.description` that states the answer; wrong medium; a markdown/KaTeX gate block; a layout finding that `check-layout.py` marks FAIL (≥3 sentences or over the field's length cap); a broken part tree (sub-answer on the wrong part, unanswered leaf, gap in labels) |
+| **MINOR** | a scaffold part that mirrors one worked-example step; the lesson's vocabulary not used; clumsy but correct wording; text that passes the layout gate but still reads cluttered; weak `a11y`; a `report.json` metric FAIL that you cannot connect to a content error (the lead judges legibility); your difficulty rating (for the lead to compare) |
 
 One defect, one finding, at the highest severity that applies. An off-lesson part with a correct
 answer and an on-lesson part with a wrong answer are **two different findings needing different

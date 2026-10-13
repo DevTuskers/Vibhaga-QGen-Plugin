@@ -171,12 +171,14 @@ same two checkout paths in the critic's spawn prompt.
 4. **Author `content.yaml`** (the 2026-09-29 shape — `id_seed`, `lessons:` key map, `figures:` key map, `questions:`
    with `n`, `lessons`, `stem`, `figure`, `parts[label, text, figure, approach, final]`; `build-staged.py` docstring):
    - **Stem** — [`author-question-text`](../author-question-text/SKILL.md) §1a + §3: `$…$`/`$$…$$`, never Sinhala
-     inside KaTeX `\text{}`. The stem goes in `question_text` **in the session's medium**; `question_text_sinhala`
-     stays null (author-question-text §0.6). Part text in the medium too.
+     inside KaTeX `\text{}`; lay out stems and part texts per §5. The stem goes in `question_text`
+     **in the session's medium**; `question_text_sinhala` stays null (author-question-text §0.6).
+     Part text in the medium too.
    - **Structure** — [`structure-question-parts`](../structure-question-parts/SKILL.md) §0 + §2: bare unique labels,
      depth ≤ 2. Choose `id_seed`, `n` and labels once — they are the row identity.
    - **Answers** — [`author-question-answers`](../author-question-answers/SKILL.md) §3 (independent derivation + a
-     genuine second method), §4 (`approach` + `final` only; provenance goes to `notes.md`, never to `approach`), §5a.
+     genuine second method), §4.1c (one step per paragraph for the approach; T-QG-14), §4.2 (answer first in the final),
+     §4 (`approach` + `final` only; provenance goes to `notes.md`, never to `approach`), §5a.
      Two actor-only keys now ride on every leaf: `check:` — a small arithmetic expression that must be True
      (`check: "40 * 23 == 920"`, or `divmod(925, 40) == (23, 5)`; numbers, `+ - * / // % **`, comparisons
      incl. tuple comparisons, `and/or/not`, `ceil floor divmod min max abs sum round sorted int len` —
@@ -216,6 +218,7 @@ same two checkout paths in the critic's spawn prompt.
    python3 tools/build-staged.py $A/content.yaml --out $A/staged.json --ids-out $A/ids.json
    python3 tools/check-answers.py $A                                 # every leaf's `check:` must be True
    node tools/markdown-gate.mjs --fields $A/fields.json              # every text field; any BLOCKED fails (T-QG-7)
+   python3 tools/check-layout.py --fields $A/fields.json              # stems, parts, approaches, finals; 0 FAIL (T-QG-14)
    node tools/visual-check.mjs $A/staged.json --claims-dir $A/figures --out wt/<topic>/vc   # mode 1, incl. contact sheet
    python3 tools/precritic-lint.py $A --card <key>=<NN> --grade <g>                          # when --card was passed
                      [--rubric medium-hard] [--existing $A/existing*.json]                   # auto-added by run-gates
@@ -331,7 +334,7 @@ same two checkout paths in the critic's spawn prompt.
 - [ ] 2 dedup: existing.json rows = __ ; stems compared: __
 - [ ] 3 plan: N lines, rubric checked, rule 3 checked
 - [ ] 4 content.yaml + second-method results per leaf in notes.md
-- [ ] 5 run-gates build exit 0 — gates.json: audit + vdd-check per figure (hand-drawn too), staged.json, ids.json = N ids, check-answers, markdown-gate 0 BLOCKED, mode 1, lint
+- [ ] 5 run-gates build exit 0 — gates.json: audit + vdd-check per figure (hand-drawn too), staged.json, ids.json = N ids, check-answers, markdown-gate 0 BLOCKED, layout 0 FAIL, mode 1, lint
 - [ ] FRICTION.md lines: __
 - [ ] 6 contact-light-375.png logged — one line per figure (__ of __)
 - [ ] 7 session id: ________ (in ledger.json AND here — before any further write, T9)
