@@ -34,11 +34,24 @@ PROG = "check-layout"
 
 PARAGRAPHS = re.compile(r"\n[ \t]*\n")
 TABLE_ROW = re.compile(r"^\s*\|")
-LIST_ITEM = re.compile(r"^\s*([-*+]|\d+[.)])\s")
-SENTENCE_END = re.compile(r"""[.?!]+["'”’)\]]*(?=\s|$)""")
+LIST_ITEM = re.compile(
+    r"^\s*([-*+]|\d+[.)]|\(?(?:x|ix|iv|v?i{1,3}|v)[.)])\s",
+    re.I,
+)
+SENTENCE_END = re.compile(r"""(?P<punctuation>[.?!]+)["'”’)\]]*(?=\s|$)""")
 # Dotted tokens such as ප.ව., පෙ.ව., and a.m. are abbreviations; [^\s.\d] also
 # matches Sinhala marks that \w misses.
 DOTTED_ABBREVIATION = re.compile(r"(?:^|\s)[^\s.\d]+(?:\.[^\s.\d]+)+\.$")
+# Runs of two or more periods mark fill-in blanks, not sentence ends.
+DOT_RUN = re.compile(r"\.{2,}")
+# Currency marker periods do not end the sentence.
+CURRENCY_ABBREVIATION = re.compile(r"(?:^|[\s(])(?:රු|Rs|rs)\.$")
+# The second period in a spaced Sinhala time abbreviation is not a sentence end.
+SPACED_TIME_ABBREVIATION = re.compile(r"(?:^|\s)(?:ප|පෙ)\.\s+ව\.$")
+# A spaced time abbreviation's first period is followed by the token ව.
+SPACED_TIME_PREFIX = re.compile(r"(?:^|\s)(?:ප|පෙ)\.$")
+# The following token completes the spaced Sinhala time abbreviation.
+SPACED_TIME_SUFFIX = re.compile(r"\s+ව\.")
 
 
 def field_kind(field: str) -> str:
@@ -84,16 +97,25 @@ def mask_inline_runs(text: str) -> str:
     return re.sub(r"`+.*?`+", "X", text, flags=re.S)
 
 
+def is_abbreviation(text: str, match: re.Match[str]) -> bool:
+    """Return whether a sentence-end match is a non-ending abbreviation or marker."""
+    head = text[:match.start()] + match.group().rstrip("\"'”’)]")
+    if DOT_RUN.search(match.group("punctuation")):
+        return True
+    if DOTTED_ABBREVIATION.search(head) or CURRENCY_ABBREVIATION.search(head):
+        return True
+    if SPACED_TIME_ABBREVIATION.search(head):
+        return True
+    return bool(
+        SPACED_TIME_PREFIX.search(head)
+        and SPACED_TIME_SUFFIX.match(text, match.end())
+    )
+
+
 def sentence_count(prose: str) -> int:
     """Count prose sentence endings and any final unterminated sentence."""
     text = mask_inline_runs(prose)
-    matches = [
-        match for match in SENTENCE_END.finditer(text)
-        if DOTTED_ABBREVIATION.search(
-            text[:match.start()]
-            + text[match.start():match.end()].rstrip("\"'”’)]")
-        ) is None
-    ]
+    matches = [match for match in SENTENCE_END.finditer(text) if not is_abbreviation(text, match)]
     trailing = text[matches[-1].end():] if matches else text
     return len(matches) + int(bool(trailing.strip()))
 
