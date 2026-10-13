@@ -121,6 +121,82 @@ class CheckLayoutTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("0 fail(s) · 0 warn(s)", result.stdout)
 
+    def test_currency_marker_periods_are_not_sentence_ends(self):
+        result = self.run_fields([
+            self.field("question_text", "පොතක මිල රු. 250 කි."),
+            self.field("a:one:approach", "It costs Rs. 120 in total."),
+        ])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("0 fail(s) · 0 warn(s)", result.stdout)
+
+    def test_currency_marker_does_not_hide_real_sentence_ends(self):
+        result = self.run_fields([
+            self.field(
+                "a:one:approach",
+                "ඔහු රු. 50 ක් දුන්නේ ය. ඔහු ගියේ ය. ඇය ආවා ය.",
+            )
+        ])
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("3 sentences", result.stdout)
+
+    def test_spaced_sinhala_time_abbreviations_are_not_sentence_ends(self):
+        result = self.run_fields([
+            self.field("question_text", "සමන් පෙ. ව. 7.30 ට පිටත් වෙයි."),
+            self.field("a:one:approach", "ඔහු එන්නේ ප. ව."),
+        ])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("0 fail(s) · 0 warn(s)", result.stdout)
+
+    def test_lone_sinhala_time_tokens_are_not_abbreviations(self):
+        result = self.run_fields([
+            self.field("a:one:approach", "ප. අද."),
+            self.field("a:two:approach", "ව. අද."),
+        ])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("2 sentences"), 2, result.stdout)
+
+    def test_dot_runs_for_fill_in_blanks_are_not_sentence_ends(self):
+        result = self.run_fields([
+            self.field("sq:one:text", "පාද ගණන ............ වේ.")
+        ])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("0 fail(s) · 0 warn(s)", result.stdout)
+
+    def test_roman_numeral_list_lines_are_excluded(self):
+        result = self.run_fields([
+            self.field(
+                "question_text",
+                "හිස් තැන් පුරවන්න:\n\n"
+                "i. පළමුවැන්න ........ වේ.\n"
+                "ii. දෙවැන්න ........ වේ.\n"
+                "iii. තෙවැන්න ........ වේ.",
+            ),
+            self.field(
+                "question_text",
+                "(i) පළමුවැන්න ........ වේ. (ii) දෙවැන්න ........ වේ.",
+            ),
+        ])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("0 fail(s) · 0 warn(s)", result.stdout)
+
+    def test_roman_numeral_list_marker_regex(self):
+        for marker in (
+            "i. ", "ii. ", "iii. ", "iv. ", "v. ", "vi. ",
+            "viii. ", "ix. ", "x. ", "(i) ", "II. ",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIsNotNone(check_layout.LIST_ITEM.match(marker))
+        for marker in ("il. ", "xi. "):
+            with self.subTest(marker=marker):
+                self.assertIsNone(check_layout.LIST_ITEM.match(marker))
+
+    def test_roman_list_marker_in_middle_does_not_hide_sentence_end(self):
+        result = self.run_fields([
+            self.field("a:one:approach", "Find x. Then add 2. Then stop.")
+        ])
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("3 sentences", result.stdout)
+
     def test_stem_length_warn_and_fail_thresholds(self):
         warning = self.run_fields([self.field("question_text", "a" * 199 + ".")])
         self.assertEqual(warning.returncode, 0, warning.stdout + warning.stderr)
