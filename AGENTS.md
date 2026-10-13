@@ -22,6 +22,12 @@ stem you author. These rules hold in every session that loads the plugin.
    elements, math latex, axis/category/series/value titles, units — never Sinhala, whatever the
    question's `medium` (the old T-S6b-6 medium condition is superseded; TRAPS T-QG-12). The a11y
    `title`/`description` are not drawn and keep the question's medium.
+7. **Student text is laid out for reading.** Stems, part texts, approaches and finals use one
+   idea/step per paragraph with a blank line between; put every computation on its own line and
+   separate a stem's setup from its task. `run-gates build` runs `tools/check-layout.py`; any FAIL
+   stops the build. Owner ruling: 2026-10-13. See
+   [`author-question-text` §5](skills/author-question-text/SKILL.md#5-writing-the-stem) and
+   [`author-question-answers` §4.1c](skills/author-question-answers/SKILL.md#-41c-lay-the-approach-out-for-a-phone--one-step-per-paragraph).
 
 ## Session discipline
 - **One image per `read` call.** An image is seen only if the result shows it. Log what you saw at

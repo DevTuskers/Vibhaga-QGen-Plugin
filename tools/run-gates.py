@@ -22,8 +22,9 @@ forked or re-implemented and no gate is lowered:
           4. check-answers.py <run> — every leaf's `check:` expression must evaluate True
           5. markdown-gate.mjs --fields <run>/fields.json — the fields list is the same set
              run-gate.sh's fields_py produces; any BLOCKED field fails the stage
-          6. visual-check.mjs staged.json --claims-dir figures --out DIR (default ../vc)
-          7. precritic-lint.py (runs when --card, --rubric or an existing*.json file is
+          6. check-layout.py --fields <run>/fields.json — FAIL stops the build; WARN is logged
+          7. visual-check.mjs staged.json --claims-dir figures --out DIR (default ../vc)
+          8. precritic-lint.py (runs when --card, --rubric or an existing*.json file is
              present — every <run>/existing*.json is auto-passed as --existing)
   ship:   1. validate · 2. doc put --ledger · 3. doc get → compare questions against
              staged.json by question_id key-by-key (server-added `published`/`published_at`
@@ -329,7 +330,19 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     m = re.search(r"\d+ fields · \d+ BLOCKED", out)
     log(f"  markdown-gate: {m.group(0) if m else f'{len(fields)} fields · 0 BLOCKED'}")
 
-    # 6. visual-check mode 1
+    # 6. mechanical student-text layout gate — unconditional and over the markdown gate's fields
+    rc, out = runner([sys.executable, str(TOOLS / "check-layout.py"),
+                      "--fields", str(fields_path)])
+    gates["layout"] = rc
+    if rc:
+        shown = quote(out, r"FAIL", log=log)
+        return fail(gates, run, "layout", rc, out, shown)
+    quote(out, r"WARN", log=log)
+    m = re.search(r"check-layout: .*", out)
+    if m:
+        log(f"  {m.group(0)}")
+
+    # 7. visual-check mode 1
     vc_out = Path(args.vc_out) if args.vc_out else run.parent / "vc"
     rc, vc_out_text = runner([str(NODE_BIN), str(TOOLS / "visual-check.mjs"), str(staged),
                               "--claims-dir", str(figs_dir), "--out", str(vc_out)])
@@ -337,7 +350,7 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     if rc:
         return fail(gates, run, "visual-check", rc, vc_out_text)
 
-    # 7. pre-critic lint — runs when cards are bound, a rubric is asked for, or the run has
+    # 8. pre-critic lint — runs when cards are bound, a rubric is asked for, or the run has
     #    existing*.json dumps to dedup against (--card ⇒ --grade checked up front)
     existing = sorted(run.glob("existing*.json"))
     if args.card or args.rubric or existing:
@@ -515,7 +528,7 @@ def main(argv: list[str] | None = None) -> int:
                                  description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("build", help="the offline chain: templates → audit+vdd-check → "
-                       "build-staged → markdown-gate → visual-check → precritic-lint")
+                       "build-staged → markdown-gate → layout → visual-check → precritic-lint")
     b.add_argument("run")
     b.add_argument("--medium", required=True, choices=["sinhala", "english", "tamil"])
     b.add_argument("--vc-out", help="visual-check output dir (default: <run>/../vc)")

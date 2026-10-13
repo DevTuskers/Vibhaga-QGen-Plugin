@@ -38,6 +38,7 @@ a stale cache, an unrecorded id, a flag that lives on the row but not the doc.
 | T-QG-7 | a gate that is never wired into the chain cannot fail it — a `$$…$$` on one line passed build, validate, publish and both visual checks; only the critic's standalone markdown-gate saw it |
 | T-QG-8 | two variants of one blueprint in a batch read as ONE question to a student — build-staged refuses a second question carrying a batch-mate's `blueprint_id` (across sessions variants count as distinct) |
 | T-QG-12 | a medium-conditional label rule ships figures that can never render on the other medium — drawn diagram text is simple English on EVERY medium (ADR 0021) |
+| T-QG-14 | a readability rule enforced only by a hand-run checklist lets run-on approaches through while stems and parts have no layout rule |
 
 ---
 ## T4 — A `204` from `/auth/v1/logout` is not proof of revocation
@@ -946,3 +947,17 @@ waived. A trefoil's overlap regions hold about one short token each at a readabl
 template says so when it refuses.
 
 *Source: this plugin — W14, 2026-10-05.*
+
+## T-QG-14 — The readability rule that lived only in a checklist
+
+**Looked true:** `author-question-answers` §4.1c described readable approach paragraphs, and its
+hand-run jq check looked for paragraphs over 180 characters.
+**Actually:** `run-gates build` never ran that check, so it could not stop a build; stems and part
+texts had no layout rule at all. A published batch shipped single-paragraph approaches the owner
+rejected as cluttered.
+**The check:** `tools/check-layout.py` now checks stems, parts, approaches and finals, and
+`run-gates build` runs it after markdown-gate. Blank lines separate prose paragraphs; any FAIL
+stops the build and every WARN must be read. The authoring rules live in
+`author-question-answers` §4.1c and `generate` step 4.
+
+*Source: this plugin — owner ruling, 2026-10-13.*
