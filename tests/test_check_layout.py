@@ -89,6 +89,38 @@ class CheckLayoutTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("WARN Q1 question_text ¶1: 2 sentences", result.stdout)
 
+    def test_sinhala_dotted_abbreviation_is_not_a_sentence_end(self):
+        result = self.run_fields([
+            self.field("question_text", "සමන් ප.ව. 4.30 ට පාසලෙන් පිටත් වෙයි.")
+        ])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("0 fail(s) · 0 warn(s)", result.stdout)
+
+    def test_english_dotted_abbreviation_is_not_a_sentence_end(self):
+        result = self.run_fields([
+            self.field("a:one:approach", "Leave at 7 a.m. and walk home.")
+        ])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("0 fail(s) · 0 warn(s)", result.stdout)
+
+    def test_abbreviation_does_not_hide_real_sentence_ends(self):
+        result = self.run_fields([
+            self.field(
+                "a:one:approach",
+                "සමන් පෙ.ව. 7 ට පිටත් වෙයි. ඔහු පැයක් ඇවිදියි. "
+                "ඉන්පසු ඔහු නවතියි.",
+            )
+        ])
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("3 sentences", result.stdout)
+
+    def test_abbreviation_at_paragraph_end_counts_once(self):
+        result = self.run_fields([
+            self.field("a:one:approach", "ඔහු එන්නේ ප.ව.")
+        ])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("0 fail(s) · 0 warn(s)", result.stdout)
+
     def test_stem_length_warn_and_fail_thresholds(self):
         warning = self.run_fields([self.field("question_text", "a" * 199 + ".")])
         self.assertEqual(warning.returncode, 0, warning.stdout + warning.stderr)

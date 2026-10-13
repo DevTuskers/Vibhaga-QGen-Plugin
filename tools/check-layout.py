@@ -36,6 +36,9 @@ PARAGRAPHS = re.compile(r"\n[ \t]*\n")
 TABLE_ROW = re.compile(r"^\s*\|")
 LIST_ITEM = re.compile(r"^\s*([-*+]|\d+[.)])\s")
 SENTENCE_END = re.compile(r"""[.?!]+["'”’)\]]*(?=\s|$)""")
+# Dotted tokens such as ප.ව., පෙ.ව., and a.m. are abbreviations; [^\s.\d] also
+# matches Sinhala marks that \w misses.
+DOTTED_ABBREVIATION = re.compile(r"(?:^|\s)[^\s.\d]+(?:\.[^\s.\d]+)+\.$")
 
 
 def field_kind(field: str) -> str:
@@ -84,7 +87,13 @@ def mask_inline_runs(text: str) -> str:
 def sentence_count(prose: str) -> int:
     """Count prose sentence endings and any final unterminated sentence."""
     text = mask_inline_runs(prose)
-    matches = list(SENTENCE_END.finditer(text))
+    matches = [
+        match for match in SENTENCE_END.finditer(text)
+        if DOTTED_ABBREVIATION.search(
+            text[:match.start()]
+            + text[match.start():match.end()].rstrip("\"'”’)]")
+        ) is None
+    ]
     trailing = text[matches[-1].end():] if matches else text
     return len(matches) + int(bool(trailing.strip()))
 
