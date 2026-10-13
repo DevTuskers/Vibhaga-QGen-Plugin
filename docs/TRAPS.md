@@ -957,7 +957,8 @@ texts had no layout rule at all. A published batch shipped single-paragraph appr
 rejected as cluttered.
 **The check:** `tools/check-layout.py` now checks stems, parts, approaches and finals, and
 `run-gates build` runs it after markdown-gate. Blank lines separate prose paragraphs; any FAIL
-stops the build and every WARN must be read. The authoring rules live in
+stops the build and every WARN must be read. Dotted abbreviations (ප.ව., පෙ.ව., a.m.) are not
+sentence ends for the gate. The authoring rules live in
 `author-question-answers` §4.1c and `generate` step 4.
 
 *Source: this plugin — owner ruling, 2026-10-13.*
