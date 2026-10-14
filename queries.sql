@@ -33,7 +33,7 @@ SELECT q.question_id,
        q.question_number,
        cardinality(q.lesson_ids)                         AS lesson_count,
        (SELECT count(*) FROM sub_questions s WHERE s.question_id = q.question_id) AS parts,
-       left(q.question_text, 240)                        AS stem_excerpt
+       left(COALESCE(q.question_text_english, q.question_text_sinhala), 240) AS stem_excerpt
 FROM questions q
 WHERE :'lesson_id'::uuid = ANY (q.lesson_ids)
 ORDER BY q.source_paper_id NULLS FIRST, q.source_batch_id, q.question_number, q.question_id;
@@ -143,20 +143,23 @@ SELECT q.question_number, q.question_id, q.status, q.needs_human_review, q.is_mu
                          ORDER BY l.sort_order)
           FROM lessons l WHERE l.lesson_id = ANY (q.lesson_ids))       AS lessons,
        cardinality(q.lesson_ids)                                        AS lesson_id_count,
-       q.question_text, q.question_text_sinhala, q.diagram_dsl,
-       (SELECT jsonb_agg(jsonb_build_object('answer_id', a.answer_id, 'approach', a.approach,
-                                            'final_answer_latex', a.final_answer_latex,
+       COALESCE(q.question_text_english, q.question_text_sinhala)       AS question_text,
+       CASE WHEN q.question_text_english IS NOT NULL
+            THEN q.question_text_sinhala END                           AS question_text_sinhala,
+       q.diagram_dsl,
+       (SELECT jsonb_agg(jsonb_build_object('answer_id', a.answer_id, 'approach', COALESCE(a.approach_sinhala, a.approach_english),
+                                            'final_answer_latex', COALESCE(a.final_answer_sinhala, a.final_answer_english),
                                             'diagram_dsl', a.diagram_dsl,
                                             'verified_by', a.verified_by, 'verified_at', a.verified_at)
                          ORDER BY a.created_at, a.answer_id)
           FROM answers a WHERE a.question_id = q.question_id)           AS answers,
        (SELECT jsonb_agg(jsonb_build_object(
                  'sub_question_id', s.sub_question_id, 'parent_sub_question_id', s.parent_sub_question_id,
-                 'label', s.label, 'sort_order', s.sort_order, 'text', s.text,
-                 'text_sinhala', s.text_sinhala, 'diagram_dsl', s.diagram_dsl,
+                 'label', s.label, 'sort_order', s.sort_order, 'text', COALESCE(s.text_english, s.text_sinhala),
+                 'text_sinhala', CASE WHEN s.text_english IS NOT NULL THEN s.text_sinhala END, 'diagram_dsl', s.diagram_dsl,
                  'sub_answers', (SELECT jsonb_agg(jsonb_build_object(
-                                          'sub_answer_id', x.sub_answer_id, 'approach', x.approach,
-                                          'final_answer_latex', x.final_answer_latex,
+                                          'sub_answer_id', x.sub_answer_id, 'approach', COALESCE(x.approach_sinhala, x.approach_english),
+                                          'final_answer_latex', COALESCE(x.final_answer_sinhala, x.final_answer_english),
                                           'diagram_dsl', x.diagram_dsl,
                                           'verified_by', x.verified_by, 'verified_at', x.verified_at)
                                         ORDER BY x.created_at, x.sub_answer_id)
@@ -170,8 +173,8 @@ ORDER BY r.question_number, r.question_id;
 -- Q4c — every other question tagged with a lesson the batch uses (dedup / not-a-copy), one JSON line each
 SELECT to_jsonb(r) FROM (
 SELECT q.question_id, q.source_batch_id, q.source_paper_id, q.status, q.question_number,
-       q.question_text,
-       (SELECT string_agg(s.label || ') ' || s.text, ' | ' ORDER BY s.parent_sub_question_id NULLS FIRST, s.sort_order)
+       COALESCE(q.question_text_english, q.question_text_sinhala)       AS question_text,
+       (SELECT string_agg(s.label || ') ' || COALESCE(s.text_english, s.text_sinhala), ' | ' ORDER BY s.parent_sub_question_id NULLS FIRST, s.sort_order)
           FROM sub_questions s WHERE s.question_id = q.question_id)     AS part_texts
 FROM questions q
 WHERE q.source_batch_id IS DISTINCT FROM :'batch_id'::uuid

@@ -381,7 +381,7 @@ broke. Every rule in §3–§5 applies unchanged to the text you write.
       `re.search(r'\\\\text\{[^}]*[\u0D80-\u0DFF]', s)`):
       `python3 -c "import re,sys,json; [print(s) for s in json.load(open('authored.json')) if re.search(r'\\\\text\{[^}]*[\u0D80-\u0DFF]', s)]"`
 - [ ] The stem carries no question number and no mark allocation.
-- [ ] After publish: `SELECT question_text FROM questions WHERE question_id = '<id>';` returns your
+- [ ] After publish: `SELECT COALESCE(question_text_english, question_text_sinhala) FROM questions WHERE question_id = '<id>';` returns your
       string **byte-for-byte** (⚠️ a direct `SELECT` — the API read goes through Hyperdrive, whose query
       cache is not write-invalidated for ~75 s; `docs/TRAPS.md` T5).
 
