@@ -69,12 +69,12 @@ def main():
     idlist = ",".join(f"'{i}'" for i in ids)
     rows = psql_json(f"""
       SELECT json_agg(json_build_object(
-        'question_id', q.question_id, 'question_number', q.question_number, 'question_text', q.question_text,
-        'question_text_sinhala', q.question_text_sinhala, 'needs_human_review', q.needs_human_review, 'diagram_dsl', q.diagram_dsl,
-        'answers', (SELECT json_agg(json_build_object('answer_id', a.answer_id, 'approach', a.approach, 'final_answer_latex', a.final_answer_latex, 'diagram_dsl', a.diagram_dsl)) FROM answers a WHERE a.question_id = q.question_id),
-        'parts', (SELECT json_agg(json_build_object('sub_question_id', s.sub_question_id, 'label', s.label, 'text', s.text, 'text_sinhala', s.text_sinhala,
+        'question_id', q.question_id, 'question_number', q.question_number, 'question_text', COALESCE(q.question_text_english, q.question_text_sinhala),
+        'question_text_sinhala', CASE WHEN q.question_text_english IS NOT NULL THEN q.question_text_sinhala END, 'needs_human_review', q.needs_human_review, 'diagram_dsl', q.diagram_dsl,
+        'answers', (SELECT json_agg(json_build_object('answer_id', a.answer_id, 'approach', COALESCE(a.approach_sinhala, a.approach_english), 'final_answer_latex', COALESCE(a.final_answer_sinhala, a.final_answer_english), 'diagram_dsl', a.diagram_dsl)) FROM answers a WHERE a.question_id = q.question_id),
+        'parts', (SELECT json_agg(json_build_object('sub_question_id', s.sub_question_id, 'label', s.label, 'text', COALESCE(s.text_english, s.text_sinhala), 'text_sinhala', CASE WHEN s.text_english IS NOT NULL THEN s.text_sinhala END,
                     'sort_order', s.sort_order, 'parent', s.parent_sub_question_id, 'diagram_dsl', s.diagram_dsl,
-                    'answers', (SELECT json_agg(json_build_object('sub_answer_id', sa.sub_answer_id, 'approach', sa.approach, 'final_answer_latex', sa.final_answer_latex, 'diagram_dsl', sa.diagram_dsl)) FROM sub_answers sa WHERE sa.sub_question_id = s.sub_question_id)))
+                    'answers', (SELECT json_agg(json_build_object('sub_answer_id', sa.sub_answer_id, 'approach', COALESCE(sa.approach_sinhala, sa.approach_english), 'final_answer_latex', COALESCE(sa.final_answer_sinhala, sa.final_answer_english), 'diagram_dsl', sa.diagram_dsl)) FROM sub_answers sa WHERE sa.sub_question_id = s.sub_question_id)))
                   FROM sub_questions s WHERE s.question_id = q.question_id)))
       FROM questions q WHERE q.question_id::text IN ({idlist});""")
     live = {r["question_id"]: r for r in rows}
