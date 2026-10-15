@@ -55,19 +55,22 @@ STAGED = {
 
 
 def live_rows():
+    # the Q4b-shape row t77's SQL now selects: the COALESCE compat keys AND the explicit
+    # *_english/*_sinhala sides (0024) — English primary staged docs land in *_english.
+    ans = lambda aid, ap, fin: {"sub_answer_id": aid, "approach": ap,
+        "final_answer_latex": fin, "approach_english": ap, "approach_sinhala": None,
+        "final_answer_english": fin, "final_answer_sinhala": None, "diagram_dsl": None}
+    part = lambda sq, lab, txt, so, anss: {"sub_question_id": sq, "label": lab, "text": txt,
+        "text_sinhala": None, "text_english": txt, "part_text_sinhala": None,
+        "sort_order": so, "parent": None, "diagram_dsl": None, "answers": anss}
     return [{
         "question_id": Q1, "question_number": 1, "question_text": "synthetic stem",
-        "question_text_sinhala": None, "needs_human_review": True, "diagram_dsl": None,
+        "question_text_sinhala": None, "question_text_english": "synthetic stem",
+        "question_text_sinhala_side": None, "needs_human_review": True, "diagram_dsl": None,
         "answers": None,
         "parts": [
-            {"sub_question_id": SQ_A, "label": "a", "text": "part a", "text_sinhala": None,
-             "sort_order": 0, "parent": None, "diagram_dsl": None,
-             "answers": [{"sub_answer_id": SA_A, "approach": "do the sum",
-                          "final_answer_latex": "$1 + 1 = 2$", "diagram_dsl": None}]},
-            {"sub_question_id": SQ_B, "label": "b", "text": "part b", "text_sinhala": None,
-             "sort_order": 1, "parent": None, "diagram_dsl": None,
-             "answers": [{"sub_answer_id": SA_B, "approach": "halve it",
-                          "final_answer_latex": "$4 / 2 = 2$", "diagram_dsl": None}]},
+            part(SQ_A, "a", "part a", 0, [ans(SA_A, "do the sum", "$1 + 1 = 2$")]),
+            part(SQ_B, "b", "part b", 1, [ans(SA_B, "halve it", "$4 / 2 = 2$")]),
         ],
     }]
 
@@ -95,7 +98,7 @@ class T77SubAnswerShapes(unittest.TestCase):
 
     def test_wrong_field_still_mismatches(self):
         rows = live_rows()
-        rows[0]["parts"][0]["answers"][0]["final_answer_latex"] = "$1 + 1 = 3$"
+        rows[0]["parts"][0]["answers"][0]["final_answer_english"] = "$1 + 1 = 3$"
         rc, out = run_t77(STAGED, rows)
         self.assertEqual(rc, 1)
         self.assertIn("MISMATCH", out)

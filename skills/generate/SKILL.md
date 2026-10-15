@@ -172,9 +172,11 @@ same two checkout paths in the critic's spawn prompt.
 4. **Author `content.yaml`** (the 2026-09-29 shape — `id_seed`, `lessons:` key map, `figures:` key map, `questions:`
    with `n`, `lessons`, `stem`, `figure`, `parts[label, text, figure, approach, final]`; `build-staged.py` docstring):
    - **Stem** — [`author-question-text`](../author-question-text/SKILL.md) §1a + §3: `$…$`/`$$…$$`, never Sinhala
-     inside KaTeX `\text{}`; lay out stems and part texts per §5. The stem goes in `question_text`
-     **in the session's medium**; `question_text_sinhala` stays null (author-question-text §0.6).
-     Part text in the medium too.
+     inside KaTeX `\text{}`; lay out stems and part texts per §5. Since 0024 every stem, part text,
+     approach and final is authored in BOTH English and Sinhala: `stem`/`stem_si`, part `text`/`text_si`,
+     leaf `approach`/`approach_si`, `final`/`final_si` — the Sinhala side natural everyday Sinhala, the
+     English side plain school English, same numbers/steps; maths-only text (`$x = 4$`) may be identical
+     (author-question-text §0.6). `build-staged.py` refuses a missing or copied side.
    - **Structure** — [`structure-question-parts`](../structure-question-parts/SKILL.md) §0 + §2: bare unique labels,
      depth ≤ 2. Choose `id_seed`, `n` and labels once — they are the row identity.
    - **Answers** — [`author-question-answers`](../author-question-answers/SKILL.md) §3 (independent derivation + a
@@ -259,7 +261,8 @@ same two checkout paths in the critic's spawn prompt.
     `VIBHAGA_ADMIN_AUTH_DB_URL` sources, else the content-DB chain (`DATABASE_URL` → `Vibhaga-DB/.env`):
     `q3: ok` (counts land in the ledger under the session) · `q3: PENDING — no DB URL source; …`
     (prove by hand, step 11) · `q3: NOT ok — <counts>` turns an otherwise-successful write into exit 5.
-11. **Prove it by SQL:** `python3 tools/sql-proof.py q2 <sid> --expected <N> --out $A/q2.json` → `q2: ok` (count,
+11. **Prove it by SQL:** `python3 tools/sql-proof.py q2 <sid> --expected <N> --out $A/q2.json` → `q2: ok` AND
+    `q2b: ok` (Q2b is the 0024 bilingual-completeness proof — every stem and approach has both sides;
     flagged, published, paperless, scope, 0 signed, 0 unanswered leaves). Q3 is now automatic: every **write**
     subcommand's logout runs it (step 10) — on a `q3: PENDING` line (no URL source at all) run the Q3
     `SELECT`, actor id substituted, through the Supabase MCP `execute_sql` on the **content**
@@ -359,7 +362,7 @@ The critic grades every part against this table (profile §3) — keep it and th
 | Self-contained | a student cannot answer it from the stem and figure alone (no "see the table on page 87") |
 | Answer right | the second method disagrees, or the figure's measured values contradict the stem |
 | Figure honest | the drawing *looks* like the claim but measures differently (S6b §5) |
-| Language | the stem is not in the session's medium, or it does not use the lesson's own vocabulary as printed |
+| Language | a missing `*_si` side, a copied side, or it does not use the lesson's own vocabulary as printed |
 
 ## 4. Traps — stories with the catch
 

@@ -130,8 +130,9 @@ about the two columns applies to what you type.
 
 - **Short paragraphs, one step each — never one run-on paragraph (§4.1c).**
 - **Teach, don't announce.** The north star is learning, not answer-checking.
-- **Match the question's language.** A Sinhala question gets a Sinhala approach — plain text, maths
-  in `$…$`, **never Sinhala inside `\text{}`**.
+- **Write both languages (0024).** `approach` in plain school English AND `approach_si` in natural
+  everyday Sinhala — same steps, same numbers. Same for `final`/`final_si`; identical maths-only text
+  (`$x = 4$`) may be shared. Plain text, maths in `$…$`, **never Sinhala inside `\text{}`**.
 - **Never** put in it: provenance, "the scheme says", your confidence, a reference to another
   question, or an apology.
 

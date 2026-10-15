@@ -574,19 +574,45 @@ class FakeAdmin:
 FAKE_ENV = {"NEXT_PUBLIC_API_BASE_URL": "https://admin-api.invalid", "NEXT_PUBLIC_SUPABASE_URL": "https://sb.invalid", "NEXT_PUBLIC_SUPABASE_ANON_KEY": "anon", "VIBHAGA_ADMIN_EMAIL": "actor@invalid", "VIBHAGA_ADMIN_PASSWORD": "pw"}
 FAKE_PSQL = r'''#!/usr/bin/env python3
 # fake psql for publish.py --self-test: ignores the SQL, prints the JSON rows built from $FAKE_LIVE (a staged doc)
-import json, os, sys
+import json, os, re, sys
+SI = re.compile(r"[අ-ෆ]")
+def stem(p, si):
+    """Mirror of split_stem: primary + translation → (english, sinhala) columns."""
+    p = p or ""; t = (si or "").strip()
+    if p.strip() == "": return None, (si or None)
+    if not SI.search(p): return p, (si if t else None)
+    return None, p
+def pair(p, si):
+    """Mirror of split_answer: translation blank → the old rule; maths-only copy → sinhala NULL."""
+    p = p or ""; t = (si or "").strip()
+    if t == "":
+        if p.strip() == "": return None, None
+        return (None, p) if SI.search(p) else (p, None)
+    if SI.search(p): return None, p
+    if SI.search(si): return (p or None), si
+    return (p or None), (None if t == p.strip() else si)
+def ans(a, key):
+    out = {"approach": a.get("approach"), "final_answer_latex": a.get("final_answer_latex"), "diagram_dsl": a.get("diagram_dsl")}
+    ae, asi = pair(a.get("approach"), a.get("approach_sinhala")); fe, fsi = pair(a.get("final_answer_latex"), a.get("final_answer_latex_sinhala"))
+    out.update({"approach_english": ae, "approach_sinhala": asi, "final_answer_english": fe, "final_answer_sinhala": fsi})
+    return {key: a[key], **out}
 doc = json.load(open(os.environ["FAKE_LIVE"])); rows = []
 for q in doc["questions"]:
     parts = []
     def walk(lst, parent):
         for s in lst or []:
-            parts.append({"sub_question_id": s["sub_question_id"], "label": s.get("label"), "text": s.get("text"), "text_sinhala": s.get("text_sinhala"), "sort_order": s.get("sort_order"), "parent": parent, "diagram_dsl": s.get("diagram_dsl"),
-                          "answers": [{"sub_answer_id": a["sub_answer_id"], "approach": a.get("approach"), "final_answer_latex": a.get("final_answer_latex"), "diagram_dsl": a.get("diagram_dsl")} for a in s.get("answers") or []]})
+            te, tsi = stem(s.get("text"), s.get("text_sinhala"))
+            parts.append({"sub_question_id": s["sub_question_id"], "label": s.get("label"), "text": s.get("text"), "text_sinhala": s.get("text_sinhala"),
+                          "text_english": te, "part_text_sinhala": tsi,
+                          "sort_order": s.get("sort_order"), "parent": parent, "diagram_dsl": s.get("diagram_dsl"),
+                          "answers": [ans(a, "sub_answer_id") for a in s.get("answers") or []]})
             walk(s.get("sub_questions"), s["sub_question_id"])
     walk(q.get("sub_questions"), None)
+    qe, qsi = stem(q.get("question_text"), q.get("question_text_sinhala"))
     rows.append({"question_id": q["question_id"], "question_number": q["question_number"], "question_text": q.get("question_text"), "question_text_sinhala": q.get("question_text_sinhala"),
+                 "question_text_english": qe, "question_text_sinhala_side": qsi,
                  "needs_human_review": bool((q.get("ingestion_metadata") or {}).get("needs_human_review")), "diagram_dsl": q.get("diagram_dsl"),
-                 "answers": [{"answer_id": a["answer_id"], "approach": a.get("approach"), "final_answer_latex": a.get("final_answer_latex"), "diagram_dsl": a.get("diagram_dsl")} for a in q.get("answers") or []], "parts": parts or None})
+                 "answers": [ans(a, "answer_id") for a in q.get("answers") or []], "parts": parts or None})
 print(json.dumps(rows))
 '''
 

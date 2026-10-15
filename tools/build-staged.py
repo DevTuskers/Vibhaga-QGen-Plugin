@@ -19,28 +19,35 @@ content.yaml shape (keys in `lessons:`/`figures:` are local names resolved by th
       - n: 1
         lessons: [L07, L09]
         stem: "A cuboid face is 5 cm by 2 cm. Find its area."
+        stem_si: "…"                            # REQUIRED — the Sinhala version (0024)
         figure: F1                              # optional → question diagram_dsl
         blueprint_id: "rect-split"              # optional, actor-only — tools/blueprint.py's
         blueprint_seed: 7                       #   provenance (a pair; never emitted; at most
                                                 #   ONE variant per blueprint per batch)
         approach: "…"                           # only when there are NO parts (whole-question answer)
+        approach_si: "…"                        #   — each '_si' key REQUIRED beside its English one
         final: "…"
+        final_si: "…"
         parts:
           - label: a                            # BARE label — "(a)", "a)", "a." are refused
             text: "…"
+            text_si: "…"                        # REQUIRED — the Sinhala version
             figure: F2                          # optional → sub-question diagram_dsl
             approach: "…"
+            approach_si: "…"
             final: "…"
+            final_si: "…"
             parts: [ … ]                        # optional second level — depth 2 is the cap
 
 Output item shape = the staged-doc schema Vibhaga-API serves (`api/src/shared/staged-question.ts` +
 `onboarding/publish.ts buildQuestionRows`/`collectSubAnswers`):
 question_id · question_number (JSON number) · sort_order · is_multipart · question_text ·
-question_text_sinhala: null · lesson_ids (uuids) · diagram_dsl · answers[{answer_id, approach,
-final_answer_latex}] only on part-less questions · sub_questions[{sub_question_id, label, sort_order,
-text, text_sinhala, diagram_dsl, sub_answer{sub_answer_id, approach, final_answer_latex},
-sub_questions}] · ingestion_metadata {needs_human_review: true} · NO exam key anywhere (0018 PD-6 —
-scope lives on the batch row, never on a question).
+question_text_sinhala (stem_si) · lesson_ids (uuids) · diagram_dsl · answers[{answer_id, approach,
+approach_sinhala, final_answer_latex, final_answer_latex_sinhala}] only on part-less questions ·
+sub_questions[{sub_question_id, label, sort_order, text, text_sinhala (text_si), diagram_dsl,
+sub_answer{sub_answer_id, approach, approach_sinhala, final_answer_latex,
+final_answer_latex_sinhala}, sub_questions}] · ingestion_metadata {needs_human_review: true} ·
+NO exam key anywhere (0018 PD-6 — scope lives on the batch row, never on a question).
 
 ids are uuid5(NAMESPACE, f"{id_seed}/q{n}" for the question, + "/<label-path>" per part,
 + "+answer" for the (sub-)answer) — two runs on the same spec are byte-identical.
@@ -53,7 +60,9 @@ two parts labelled `a` under one parent collide on the same sub_question_id, and
 Exit 0 wrote the doc · exit 2 refused (duplicate n · duplicate sibling label · unknown lesson/figure
 key · missing figure file · parts deeper than 2 · leaf part without approach+final · a question
 carrying both parts and a whole answer · non-bare label · non-uuid lesson · two questions sharing a
-blueprint_id · malformed spec). A student text field opening with `<digits>. ` (a markdown
+blueprint_id · malformed spec · a missing `_si` key · Sinhala in an English-side field · a `_si`
+side that is a copy of English prose or not Sinhala — identical maths-only text like `$x = 4$` IS
+allowed). A student text field opening with `<digits>. ` (a markdown
 ordered-list marker) is a WARN on stderr, not a refusal — reword it or escape the dot.
 """
 import argparse
@@ -78,9 +87,45 @@ BP_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")   # the same contract tools/bluep
 # the item number). WARN — never refuse: the author may want exactly that. The marker needs
 # whitespace or EOL after the dot in CommonMark, so "3.14 …" does NOT warn.
 LIST_LEAD = re.compile(r"^\s*\d+\.(\s|$)")
-Q_KEYS = {"n", "lessons", "stem", "figure", "approach", "final", "parts", "check", "level",
-          "blueprint_id", "blueprint_seed"}
-P_KEYS = {"label", "text", "figure", "approach", "final", "parts", "check", "level"}
+
+# 0024 bilingual contract — every student-facing string is authored in BOTH languages. `stem_si` /
+# `text_si` / `approach_si` / `final_si` are REQUIRED wherever their English key is; build-staged
+# refuses a missing, a Sinhala-in-English, or a copied side (precritic-lint reuses these same
+# helpers — imported, never copied).
+SINHALA_CHAR = re.compile(r"[\u0D80-\u0DFF]")
+LATIN_WORD = re.compile(r"[A-Za-z]{2,}")
+MATH_SPAN = re.compile(r"\$\$[\s\S]*?\$\$|\$[^$]*\$")
+
+
+def bilingual_problem(en, si, si_key):
+    """The 0024 rule as a message-or-None — precritic-lint runs it as a per-field FAIL while
+    build-staged wraps it in `die` below (same rule, never copied). `si` is required; the ENGLISH
+    side must hold no Sinhala codepoint; the `_si` side must be Sinhala — unless it is the identical
+    maths-only text (identical to `en` AND no Latin word outside the `$…$`/`$$…$$` spans, e.g.
+    `$x = 4$` — the same string serves both media)."""
+    if not isinstance(si, str) or not si.strip():
+        return (f"'{si_key}' is required — every student text is authored in English AND Sinhala")
+    if isinstance(en, str) and SINHALA_CHAR.search(en):
+        return (f"the English side of '{si_key[:-3]}' contains Sinhala text — English goes in "
+                f"the primary key, Sinhala in '{si_key}'")
+    if SINHALA_CHAR.search(si):
+        return None
+    en_text = en if isinstance(en, str) else ""
+    if si.strip() == en_text.strip() and not LATIN_WORD.search(MATH_SPAN.sub("", si)):
+        return None  # shared maths-only — stored once in `_english`, both media read it
+    return f"'{si_key}' is a copy of English prose / not Sinhala"
+
+
+def check_bilingual(en, si, where, si_key):
+    problem = bilingual_problem(en, si, si_key)
+    if problem:
+        die(f"{where}: {problem}")
+
+
+Q_KEYS = {"n", "lessons", "stem", "stem_si", "figure", "approach", "approach_si", "final",
+          "final_si", "parts", "check", "level", "blueprint_id", "blueprint_seed"}
+P_KEYS = {"label", "text", "text_si", "figure", "approach", "approach_si", "final", "final_si",
+          "parts", "check", "level"}
 TOP_KEYS = {"id_seed", "lessons", "figures", "questions"}
 
 
@@ -129,14 +174,20 @@ def resolve_figure(key, figures, base, where):
 
 def answer_pair(node, where, required):
     approach, final = node.get("approach"), node.get("final")
+    approach_si, final_si = node.get("approach_si"), node.get("final_si")
     if (approach is None) != (final is None):
         die(f"{where}: 'approach' and 'final' must come as a pair (got {'approach' if approach is not None else 'final'} only)")
+    if approach is None and (approach_si is not None or final_si is not None):
+        die(f"{where}: 'approach_si'/'final_si' without 'approach'/'final'")
     if required and approach is None:
         die(f"{where}: a leaf part needs 'approach' and 'final'")
     if approach is not None and (not isinstance(approach, str) or not approach.strip()):
         die(f"{where}: 'approach' must be nonempty text")
     if final is not None and (not isinstance(final, str) or not final.strip()):
         die(f"{where}: 'final' must be nonempty text")
+    if approach is not None:
+        check_bilingual(approach, approach_si, where, "approach_si")
+        check_bilingual(final, final_si, where, "final_si")
     return approach is not None
 
 
@@ -195,7 +246,8 @@ def build_part(node, base_id, sort_order, depth, figures, base, where):
     text = node.get("text")
     if not isinstance(text, str) or not text.strip():
         die(f"{where}: part 'text' is required")
-    warn_ordered_list(node, where, ("text", "approach", "final"))
+    check_bilingual(text, node.get("text_si"), where, "text_si")
+    warn_ordered_list(node, where, ("text", "text_si", "approach", "approach_si", "final", "final_si"))
     if depth > 2:
         die(f"{where}: parts nest at most 2 levels deep")
     children = node.get("parts") or []
@@ -209,12 +261,15 @@ def build_part(node, base_id, sort_order, depth, figures, base, where):
         "label": label,
         "sort_order": sort_order,
         "text": text,
-        "text_sinhala": None,
+        "text_sinhala": node["text_si"],
         "diagram_dsl": resolve_figure(node["figure"], figures, base, where) if node.get("figure") else None,
     }
     if has_answer:
         out["sub_answer"] = {"sub_answer_id": q_id(part_base, "+answer"),
-                             "approach": node["approach"], "final_answer_latex": node["final"]}
+                             "approach": node["approach"],
+                             "approach_sinhala": node["approach_si"],
+                             "final_answer_latex": node["final"],
+                             "final_answer_latex_sinhala": node["final_si"]}
     out["sub_questions"] = [
         build_part(child, part_base, i, depth + 1, figures, base, f"{where}.{child.get('label', i) if isinstance(child, dict) else i}")
         for i, child in enumerate(children)
@@ -246,7 +301,9 @@ def build_question(node, index, figures, lessons, base, seed):
     stem = node.get("stem")
     if not isinstance(stem, str) or not stem.strip():
         die(f"{where} (q{n}): 'stem' is required")
-    warn_ordered_list(node, f"{where} (q{n})", ("stem", "approach", "final"))
+    check_bilingual(stem, node.get("stem_si"), f"{where} (q{n})", "stem_si")
+    warn_ordered_list(node, f"{where} (q{n})", ("stem", "stem_si", "approach", "approach_si",
+                                               "final", "final_si"))
     lesson_keys = node.get("lessons")
     if not isinstance(lesson_keys, list) or not lesson_keys:
         die(f"{where} (q{n}): 'lessons' must be a nonempty list of lesson keys")
@@ -259,8 +316,9 @@ def build_question(node, index, figures, lessons, base, seed):
     if not isinstance(children, list):
         die(f"{where} (q{n}): 'parts' must be a list")
     check_sibling_labels(children, f"{where} (q{n})")
-    if children and (node.get("approach") is not None or node.get("final") is not None):
-        die(f"{where} (q{n}): a question carries either parts OR a whole answer — 'approach'/'final' are only for a part-less question")
+    if children and (node.get("approach") is not None or node.get("final") is not None
+                     or node.get("approach_si") is not None or node.get("final_si") is not None):
+        die(f"{where} (q{n}): a question carries either parts OR a whole answer — 'approach'/'final' (and their '_si' keys) are only for a part-less question")
     has_answer = answer_pair(node, f"{where} (q{n})", required=not children)
     seed_q = f"{seed}/{qbase}"
     out = {
@@ -269,13 +327,16 @@ def build_question(node, index, figures, lessons, base, seed):
         "sort_order": index,
         "is_multipart": bool(children),
         "question_text": stem,
-        "question_text_sinhala": None,
+        "question_text_sinhala": node["stem_si"],
         "lesson_ids": lesson_ids,
         "diagram_dsl": resolve_figure(node["figure"], figures, base, f"{where} (q{n})") if node.get("figure") else None,
     }
     if has_answer:
         out["answers"] = [{"answer_id": q_id(seed_q, "+answer"),
-                           "approach": node["approach"], "final_answer_latex": node["final"]}]
+                           "approach": node["approach"],
+                           "approach_sinhala": node["approach_si"],
+                           "final_answer_latex": node["final"],
+                           "final_answer_latex_sinhala": node["final_si"]}]
     else:
         out["answers"] = []
     if children:

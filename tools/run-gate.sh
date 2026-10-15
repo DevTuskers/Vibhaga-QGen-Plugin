@@ -73,14 +73,18 @@ for q in s["questions"]:
     qn = f"Q{q.get('question_number')}"
     add(qn, "question_text", q.get("question_text")); add(qn, "question_text_sinhala", q.get("question_text_sinhala"))
     for a in answers(q):
-        add(qn, f"a:{a.get('answer_id') or a.get('sub_answer_id')}:approach", a.get("approach")); add(qn, f"a:{a.get('answer_id') or a.get('sub_answer_id')}:final", a.get("final_answer_latex"))
+        aid = a.get('answer_id') or a.get('sub_answer_id')
+        add(qn, f"a:{aid}:approach", a.get("approach")); add(qn, f"a:{aid}:approach_sinhala", a.get("approach_sinhala"))
+        add(qn, f"a:{aid}:final", a.get("final_answer_latex")); add(qn, f"a:{aid}:final_sinhala", a.get("final_answer_latex_sinhala"))
     def parts(lst, path, depth):
         sq, sa = ("sq", "sa") if depth == 1 else ("sq2", "sa2")
         for p in lst or []:
             pid = f"{path}/{p.get('label')}"
             add(pid, f"{sq}:{p.get('sub_question_id')}:text", p.get("text")); add(pid, f"{sq}:{p.get('sub_question_id')}:text_sinhala", p.get("text_sinhala"))
             for a in answers(p):
-                add(pid, f"{sa}:{a.get('sub_answer_id') or a.get('answer_id')}:approach", a.get("approach")); add(pid, f"{sa}:{a.get('sub_answer_id') or a.get('answer_id')}:final", a.get("final_answer_latex"))
+                aid = a.get('sub_answer_id') or a.get('answer_id')
+                add(pid, f"{sa}:{aid}:approach", a.get("approach")); add(pid, f"{sa}:{aid}:approach_sinhala", a.get("approach_sinhala"))
+                add(pid, f"{sa}:{aid}:final", a.get("final_answer_latex")); add(pid, f"{sa}:{aid}:final_sinhala", a.get("final_answer_latex_sinhala"))
             parts(p.get("sub_questions"), pid, depth + 1)
     parts(q.get("sub_questions"), qn, 1)
 print(json.dumps(out, ensure_ascii=False, indent=1))

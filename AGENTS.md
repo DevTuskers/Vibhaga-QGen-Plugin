@@ -22,7 +22,9 @@ stem you author. These rules hold in every session that loads the plugin.
    elements, math latex, axis/category/series/value titles, units — never Sinhala, whatever the
    question's `medium` (the old T-S6b-6 medium condition is superseded; TRAPS T-QG-12). The a11y
    `title`/`description` are not drawn and keep the question's medium.
-7. **Student text is laid out for reading.** Stems, part texts, approaches and finals use one
+7. **Bilingual.** Every stem, part text, approach and final is written in English AND Sinhala
+   (`*_si` keys); build-staged refuses a missing or copied side; queries.sql Q2b proves both landed.
+8. **Student text is laid out for reading.** Stems, part texts, approaches and finals use one
    idea/step per paragraph with a blank line between; put every computation on its own line and
    separate a stem's setup from its task. `run-gates build` runs `tools/check-layout.py`; any FAIL
    stops the build. Owner ruling: 2026-10-13. See

@@ -1,6 +1,6 @@
 ---
 name: author-question-text
-description: Author one generated question's student-facing stem — there is no source paper, so every stem is written from scratch inside the lesson's scope — write the `$…$` / `$$…$$` / backtick markers correctly, and gate the authored strings on `hasSwallowedMarkup` plus the markdown gate before they go anywhere near a staged doc. Emits `question_text` (with `question_text_sinhala` left null). Use when authoring, writing, correcting or reviewing the question text/stem of a generated maths question, or when a swallowed `$`, a stray backtick or a markdown table in a stem needs adjudicating before publish.
+description: Author one generated question's student-facing stem — there is no source paper, so every stem is written from scratch inside the lesson's scope, in BOTH English and Sinhala — write the `$…$` / `$$…$$` / backtick markers correctly, and gate the authored strings on `hasSwallowedMarkup` plus the markdown gate before they go anywhere near a staged doc. Emits `question_text` + `question_text_sinhala` (0024). Use when authoring, writing, correcting or reviewing the question text/stem of a generated maths question, or when a swallowed `$`, a stray backtick or a markdown table in a stem needs adjudicating before publish.
 argument-hint: "[question number or staged item]"
 ---
 
@@ -17,8 +17,9 @@ argument-hint: "[question number or staged item]"
 > numeral you write is a choice: it must serve the skill being tested, survive the figure's measured
 > geometry (the stem-ratio check), and not silently be the textbook's own exercise numbers.
 
-**Emits:** `question_text` for `content.yaml` (`tools/build-staged.py` compiles it into the staged doc;
-`question_text_sinhala` stays null — §0.6).
+**Emits:** `question_text` AND `question_text_sinhala` for `content.yaml` — `stem` + `stem_si`
+(`tools/build-staged.py` compiles them into the staged doc and refuses a missing, a Sinhala-in-English,
+or a copied side — §0.6).
 
 ---
 
@@ -43,11 +44,12 @@ argument-hint: "[question number or staged item]"
 5. **Trust > coverage.** A question you cannot author confidently inside the lesson is **not guessed** —
    drop it or put it to the owner. Wrong content that reads fluently is the worst thing this pipeline
    can produce (`0008` PD-3).
-6. **The stem has no Sinhala box in the Admin UI.** `0003` PD-C removed the question-level Sinhala
-   field; only *sub-questions* have `text_sinhala` (`Vibhaga-Admin/src/features/onboarding/QuestionCard.tsx:598-616`).
-   The **column and the staged-doc field still exist** and a whole-doc `PUT` can write them
-   (`Vibhaga-API/api/src/onboarding/validation.ts:72`, `publish.ts:352`) — but no human can then see or
-   repair it through the workspace. `build-staged.py` writes it null; keep it null.
+6. **The stem is bilingual (0024).** Author `stem` in plain school English AND `stem_si` in natural
+   everyday Sinhala — same numbers, same task. `build-staged.py` emits `question_text` +
+   `question_text_sinhala` and refuses a missing `_si`, Sinhala in the English side, or an
+   English-prose copy in the `_si` side (identical maths-only text like `$x = 4$` is allowed — the same
+   string serves both media). The reviewer's `English | සිංහල` preview toggle in Admin reads both
+   sides, so a copied or machine-stiff translation is visible in review.
 7. **You do not decide the batch's scope.** `grade` XOR `exam`, subject and medium are session-level;
    a per-question `exam` is accepted by the save schema and then **ignored**
    (`validation.ts:73-78` → `publish.ts:356` takes the batch's). `build-staged.py` emits no `exam` key.
@@ -381,6 +383,8 @@ broke. Every rule in §3–§5 applies unchanged to the text you write.
       `re.search(r'\\\\text\{[^}]*[\u0D80-\u0DFF]', s)`):
       `python3 -c "import re,sys,json; [print(s) for s in json.load(open('authored.json')) if re.search(r'\\\\text\{[^}]*[\u0D80-\u0DFF]', s)]"`
 - [ ] The stem carries no question number and no mark allocation.
+- [ ] Both sides authored: `stem` plain school English, `stem_si` natural everyday Sinhala — same
+      numbers, same task (build-staged's `bilingual_problem` is the machine check).
 - [ ] After publish: `SELECT COALESCE(question_text_english, question_text_sinhala) FROM questions WHERE question_id = '<id>';` returns your
       string **byte-for-byte** (⚠️ a direct `SELECT` — the API read goes through Hyperdrive, whose query
       cache is not write-invalidated for ~75 s; `docs/TRAPS.md` T5).
