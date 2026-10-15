@@ -38,6 +38,8 @@ Checks:
       printed as `heuristic` so nobody treats it as a gate.
 
   (d) `--rubric medium-hard` — the plan appendix's set rules, read off the leaf `level:`
+      keys, or (f) FAIL — a student field missing its `*_si` twin, a Sinhala codepoint in
+      the English side, or an English-prose copy in the `_si` side (build-staged's rule).
       keys (R|M/H, actor-only — build-staged never emits them): every question ≥3 leaf
       parts; at most one R per question and only as part (a), i.e. its first leaf in
       document order; the last leaf is H; ≥60 % of the set's RATED leaves M/H and ≥30 % H —
@@ -67,6 +69,10 @@ TOOLS = Path(__file__).resolve().parent
 _spec = importlib.util.spec_from_file_location("scope_cards", TOOLS / "scope-cards.py")
 sc = importlib.util.module_from_spec(_spec)          # corpus resolution + probe_norm — reused
 _spec.loader.exec_module(sc)
+
+_spec2 = importlib.util.spec_from_file_location("build_staged", TOOLS / "build-staged.py")
+bs = importlib.util.module_from_spec(_spec2)         # bilingual_problem — the same 0024 rule
+_spec2.loader.exec_module(bs)                        # build-staged refuses on, never copied
 
 PROG = "precritic-lint"
 
@@ -410,6 +416,37 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
         f, w = rubric_medium_hard(questions, log)
         fails += f
         warns += w
+
+    # (f) 0024 bilingual sides — every student field carries its `*_si` twin, in the right
+    # script (build-staged.bilingual_problem — the same rule the builder refuses on, run here so
+    # the critic sees the failures named rather than the build just dying).
+    for q in questions:
+        qn = f"Q{q.get('n')}"
+        pairs = [(q, "stem", "stem_si", qn)]
+        if not q.get("parts"):
+            pairs += [(q, "approach", "approach_si", qn), (q, "final", "final_si", qn)]
+
+        def walk_pairs(parts, prefix):
+            for p in parts or []:
+                if not isinstance(p, dict):
+                    continue
+                pid = f"{prefix}.{p.get('label')}"
+                pairs.append((p, "text", "text_si", pid))
+                if not p.get("parts"):
+                    pairs.append((p, "approach", "approach_si", pid))
+                    pairs.append((p, "final", "final_si", pid))
+                walk_pairs(p.get("parts"), pid)
+
+        walk_pairs(q.get("parts"), qn)
+        for node, en_key, si_key, where in pairs:
+            # a wholly absent answer pair is a different defect (build-staged's leaf check) —
+            # flag it only when one side IS present
+            if node.get(en_key) is None and node.get(si_key) is None:
+                continue
+            problem = bs.bilingual_problem(node.get(en_key), node.get(si_key), si_key)
+            if problem:
+                fails += 1
+                log(f"  FAIL {where}: {problem}")
 
     # (e) duplicate fingerprint — digits masked, Jaccard vs each existing row's stem_excerpt
     for path in getattr(args, "existing", []) or []:

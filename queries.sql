@@ -9,7 +9,7 @@
 -- Q4 columns checked 2026-10-02 (lessons.sort_order, sub_answers.sub_question_id, answers/sub_answers.diagram_dsl).
 -- Which database each block targets is stated in its header. Hosts and project refs are NOT in this
 -- public file: see Vibhaga-Docs AGENTS.md § "Onboarding-tool verification" for the project.
--- Blocks Q2 and Q3 are run non-interactively by `tools/sql-proof.py` (read-only; exits on the `ok` column).
+-- Blocks Q2, Q2b and Q3 are run non-interactively by `tools/sql-proof.py` (read-only; exits on the `ok` column).
 
 
 -- ============================================================================================
@@ -89,6 +89,34 @@ FROM r;
 
 
 -- ============================================================================================
+-- Q2b — Bilingual completeness for a playground session           DATABASE: content
+-- Variables: batch_id (uuid — the session id).
+-- One row. `ok` is true only when every published string has both languages, where maths-only text
+-- may be shared: a part text or a final with no Sinhala side is allowed (it is stored once in
+-- `_english`, students of both media read it), but a stem and every approach need both sides.
+WITH q  AS (SELECT q.* FROM questions q WHERE q.source_batch_id = :'batch_id'::uuid),
+     sq AS (SELECT s.* FROM sub_questions s JOIN q USING (question_id)),
+     a  AS (SELECT a.* FROM answers a JOIN q USING (question_id)),
+     sa AS (SELECT x.* FROM sub_answers x JOIN sq USING (sub_question_id)),
+     r  AS (
+       SELECT (SELECT count(*) FROM q)                                                     AS questions,
+              (SELECT count(*) FROM q  WHERE q.question_text_english IS NULL)              AS stem_no_english,
+              (SELECT count(*) FROM q  WHERE q.question_text_sinhala IS NULL)              AS stem_no_sinhala,
+              (SELECT count(*) FROM sq WHERE sq.text_english IS NULL)                      AS part_text_no_english,
+              (SELECT count(*) FROM a  WHERE a.approach_english IS NULL)                   AS approach_no_english,
+              (SELECT count(*) FROM a  WHERE a.approach_sinhala IS NULL)                   AS approach_no_sinhala,
+              (SELECT count(*) FROM a  WHERE a.final_answer_english IS NULL)               AS final_no_english,
+              (SELECT count(*) FROM sa WHERE sa.approach_english IS NULL)                  AS part_approach_no_english,
+              (SELECT count(*) FROM sa WHERE sa.approach_sinhala IS NULL)                  AS part_approach_no_sinhala,
+              (SELECT count(*) FROM sa WHERE sa.final_answer_english IS NULL)              AS part_final_no_english
+     )
+SELECT r.*,
+       (r.questions > 0 AND r.stem_no_english = 0 AND r.stem_no_sinhala = 0 AND r.part_text_no_english = 0
+        AND r.approach_no_english = 0 AND r.approach_no_sinhala = 0 AND r.final_no_english = 0
+        AND r.part_approach_no_english = 0 AND r.part_approach_no_sinhala = 0 AND r.part_final_no_english = 0) AS ok
+FROM r;
+
+-- ============================================================================================
 -- Q3 — Admin sign-out revocation proof for the actor             DATABASE: content
 -- Variables: actor_id (uuid — the user id the tool signed in as; it prints it on logout).
 -- The Admin Auth project is MERGED INTO the content project — there is ONE Supabase project now,
@@ -146,9 +174,13 @@ SELECT q.question_number, q.question_id, q.status, q.needs_human_review, q.is_mu
        COALESCE(q.question_text_english, q.question_text_sinhala)       AS question_text,
        CASE WHEN q.question_text_english IS NOT NULL
             THEN q.question_text_sinhala END                           AS question_text_sinhala,
+       q.question_text_english                                         AS question_text_english,
+       q.question_text_sinhala                                         AS stem_sinhala,
        q.diagram_dsl,
        (SELECT jsonb_agg(jsonb_build_object('answer_id', a.answer_id, 'approach', COALESCE(a.approach_sinhala, a.approach_english),
                                             'final_answer_latex', COALESCE(a.final_answer_sinhala, a.final_answer_english),
+                                            'approach_english', a.approach_english, 'approach_sinhala', a.approach_sinhala,
+                                            'final_answer_english', a.final_answer_english, 'final_answer_sinhala', a.final_answer_sinhala,
                                             'diagram_dsl', a.diagram_dsl,
                                             'verified_by', a.verified_by, 'verified_at', a.verified_at)
                          ORDER BY a.created_at, a.answer_id)
@@ -156,10 +188,13 @@ SELECT q.question_number, q.question_id, q.status, q.needs_human_review, q.is_mu
        (SELECT jsonb_agg(jsonb_build_object(
                  'sub_question_id', s.sub_question_id, 'parent_sub_question_id', s.parent_sub_question_id,
                  'label', s.label, 'sort_order', s.sort_order, 'text', COALESCE(s.text_english, s.text_sinhala),
-                 'text_sinhala', CASE WHEN s.text_english IS NOT NULL THEN s.text_sinhala END, 'diagram_dsl', s.diagram_dsl,
+                 'text_sinhala', CASE WHEN s.text_english IS NOT NULL THEN s.text_sinhala END,
+                 'text_english', s.text_english, 'part_text_sinhala', s.text_sinhala, 'diagram_dsl', s.diagram_dsl,
                  'sub_answers', (SELECT jsonb_agg(jsonb_build_object(
                                           'sub_answer_id', x.sub_answer_id, 'approach', COALESCE(x.approach_sinhala, x.approach_english),
                                           'final_answer_latex', COALESCE(x.final_answer_sinhala, x.final_answer_english),
+                                          'approach_english', x.approach_english, 'approach_sinhala', x.approach_sinhala,
+                                          'final_answer_english', x.final_answer_english, 'final_answer_sinhala', x.final_answer_sinhala,
                                           'diagram_dsl', x.diagram_dsl,
                                           'verified_by', x.verified_by, 'verified_at', x.verified_at)
                                         ORDER BY x.created_at, x.sub_answer_id)

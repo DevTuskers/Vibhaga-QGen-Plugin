@@ -31,7 +31,9 @@ BASE = {
     "figures": {"F1": "figures/q3.json"},
     "questions": [{
         "n": 1, "lessons": ["L07"], "stem": "A cuboid face measures 5 cm by 2 cm.",
-        "approach": "length x width", "final": "10 cm^2",
+        "stem_si": "සිංහල stem පරිවර්තනය",
+        "approach": "length x width", "approach_si": "සිංහල approach පරිවර්තනය",
+        "final": "10 cm^2", "final_si": "සිංහල final පරිවර්තනය",
     }],
 }
 
@@ -42,7 +44,24 @@ def run_tool(spec_path, out_path):
 
 
 class BuildStagedTest(unittest.TestCase):
+    SI_VALUE = "සිංහල පරිවර්තනය"
+    # The 0024 key each English key needs — auto-filled by write_spec so a spec that is testing
+    # some OTHER refusal (duplicate label, depth, lone approach) stays legal. Tests of the
+    # bilingual rule itself set/pop these keys explicitly.
+    SI_KEYS = {"stem": "stem_si", "text": "text_si", "approach": "approach_si", "final": "final_si"}
+
+    def with_si(self, node):
+        for en, si in self.SI_KEYS.items():
+            if node.get(en) is not None and node.get(si) is None:
+                node[si] = self.SI_VALUE
+        for p in node.get("parts") or []:
+            if isinstance(p, dict):
+                self.with_si(p)
+
     def write_spec(self, spec, tmp, name="content.json"):
+        for q in spec.get("questions") or []:
+            if isinstance(q, dict):
+                self.with_si(q)
         p = Path(tmp) / name
         p.write_text(json.dumps(spec), encoding="utf-8")
         return p
@@ -86,7 +105,7 @@ class BuildStagedTest(unittest.TestCase):
                 self.assertIs(type(q["question_number"]), int)
                 self.assertEqual(q.get("ingestion_metadata", {}).get("needs_human_review"), True)
                 self.assertNotIn("exam", q)
-                self.assertIsNone(q["question_text_sinhala"])
+                self.assertIsInstance(q["question_text_sinhala"], str)
                 self.assertTrue(q["lesson_ids"])
                 for lid in q["lesson_ids"]:
                     self.assertTrue(UUID_RE.match(lid))
@@ -248,6 +267,7 @@ class BuildStagedTest(unittest.TestCase):
             self.assert_refuses(spec, tmp, "unknown question keys")
 
     def test_refuse_lone_approach(self):
+        # deleting 'final' also strands 'final_si' — the pair refusal fires first either way
         spec = copy.deepcopy(BASE)
         del spec["questions"][0]["final"]
         with tempfile.TemporaryDirectory() as tmp:
@@ -340,7 +360,9 @@ class BuildStagedTest(unittest.TestCase):
         spec2["questions"][0]["parts"] = [
             {"label": "a", "text": "t", "level": "M", "parts": [
                 {"label": "i", "text": "t", "approach": "x", "final": "1"}]}]
+        # _si keys travel with the pair — the whole-answer+parts refusal would fire first
         del spec2["questions"][0]["approach"], spec2["questions"][0]["final"]
+        spec2["questions"][0].pop("approach_si", None); spec2["questions"][0].pop("final_si", None)
         with tempfile.TemporaryDirectory() as tmp:
             self.assert_refuses(spec2, tmp, "leaf-only")
 
@@ -383,6 +405,96 @@ class BuildStagedTest(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertNotIn("WARN", r.stderr)
             self.assertTrue(out.exists())
+
+
+class BilingualTest(unittest.TestCase):
+    """The 0024 contract: every student field carries its *_si twin; build-staged refuses a
+    missing, a Sinhala-in-English, or a copied side (identical maths-only allowed)."""
+    K = BuildStagedTest
+
+    def write_spec(self, spec, tmp):
+        p = Path(tmp) / "content.json"
+        p.write_text(json.dumps(spec), encoding="utf-8")
+        return p
+
+    def run_spec(self, spec, tmp):
+        out = Path(tmp) / "staged.json"
+        return out, run_tool(self.write_spec(spec, tmp), out)
+
+    def good(self):
+        spec = copy.deepcopy(BASE)
+        spec["questions"][0]["parts"] = [
+            {"label": "a", "text": "Part a.", "text_si": "කොටස අ.",
+             "approach": "Do it.", "approach_si": "කරන්න.", "final": "$y = 2$",
+             "final_si": "$y = 2$",
+             "parts": [{"label": "i", "text": "Sub i.", "text_si": "උපකොටස i.",
+                        "approach": "Deep.", "approach_si": "ගැඹුරු.", "final": "$z$",
+                        "final_si": "$z$"}]},
+        ]
+        del spec["questions"][0]["approach"], spec["questions"][0]["final"]
+        del spec["questions"][0]["approach_si"], spec["questions"][0]["final_si"]
+        return spec
+
+    def assert_refuses(self, spec, tmp, needle):
+        out, r = self.run_spec(spec, tmp)
+        self.assertEqual(r.returncode, 2, f"{needle}: {r.stdout} {r.stderr}")
+        self.assertIn(needle, r.stderr)
+
+    def test_emits_all_eight_keys_nested_and_whole(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.good()
+            out, r = self.run_spec(spec, tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            doc = json.loads(out.read_text())
+            q = doc["questions"][0]
+            self.assertEqual(q["question_text_sinhala"], spec["questions"][0]["stem_si"])
+            leaf = q["sub_questions"][0]["sub_questions"][0]
+            self.assertEqual(leaf["text_sinhala"], "උපකොටස i.")
+            sa = leaf["sub_answer"]
+            for k in ("approach", "approach_sinhala", "final_answer_latex",
+                      "final_answer_latex_sinhala"):
+                self.assertIn(k, sa)
+            # whole-question answer (BASE's q1 has approach/final — strip the parts we added)
+            out2 = Path(tmp) / "s2.json"
+            r2 = run_tool(self.write_spec(copy.deepcopy(BASE), tmp), out2)
+            self.assertEqual(r2.returncode, 0, r2.stderr)
+            a = json.loads(out2.read_text())["questions"][0]["answers"][0]
+            self.assertEqual(a["approach_sinhala"], BASE["questions"][0]["approach_si"])
+            self.assertEqual(a["final_answer_latex_sinhala"], BASE["questions"][0]["final_si"])
+
+    def test_refuses_each_missing_si(self):
+        for pop in ("stem_si",):
+            spec = self.good(); spec["questions"][0].pop(pop)
+            with tempfile.TemporaryDirectory() as tmp:
+                self.assert_refuses(spec, tmp, "stem_si")
+        spec = self.good(); spec["questions"][0]["parts"][0].pop("text_si")
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec, tmp, "text_si")
+        spec = self.good(); spec["questions"][0]["parts"][0]["parts"][0].pop("approach_si")
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec, tmp, "approach_si")
+        spec = self.good(); spec["questions"][0]["parts"][0]["parts"][0].pop("final_si")
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec, tmp, "final_si")
+
+    def test_refuses_sinhala_in_the_english_side(self):
+        spec = self.good(); spec["questions"][0]["stem"] = "සිංහල in the English key"
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec, tmp, "contains Sinhala")
+
+    def test_refuses_english_prose_copied_into_si(self):
+        spec = self.good()
+        spec["questions"][0]["parts"][0]["approach_si"] = "Just the English approach again."
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec, tmp, "copy of English prose")
+
+    def test_allows_identical_maths_only_si(self):
+        spec = self.good()
+        spec["questions"][0]["parts"][0]["parts"][0]["final"] = "$x = 4$"
+        spec["questions"][0]["parts"][0]["parts"][0]["final_si"] = "$x = 4$"
+        with tempfile.TemporaryDirectory() as tmp:
+            out, r = self.run_spec(spec, tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
 
 
 if __name__ == "__main__":

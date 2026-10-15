@@ -16,10 +16,14 @@ blueprint:
   question:                       # a normal content.yaml question minus `n`
     lessons: [L07]
     stem: "A rectangle is ${ln}\\,\\text{cm}$ by ${wd}\\,\\text{cm}$."
+    stem_si: "සෘජුකෝණාස්‍රයක් ${ln}\\,\\text{cm}$ සහ ${wd}\\,\\text{cm}$ වේ."
     parts:
       - label: a
         text: "Find its perimeter."
+        text_si: "එහි පරිමිතිය සොයන්න."
         approach: "$2({ln}+{wd})$"
+        approach_si: "පරිමිතිය = $2({ln}+{wd})$"
         final: "${per}\\,\\text{cm}$"
+        final_si: "${per}\\,\\text{cm}$"
         check: "{ln} + {ln} + {wd} + {wd} == {per}"
         level: M

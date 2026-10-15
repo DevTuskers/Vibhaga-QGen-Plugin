@@ -185,8 +185,9 @@ def staged_figure_uses(content: dict) -> dict:
 def staged_fields(staged: dict) -> list[dict]:
     """[{id, field, text}] over a staged doc — the same field set run-gate.sh's fields_py
     produces for the markdown gate: question_text(+_sinhala), every answer's
-    approach/final_answer_latex (the `answers[]` list AND the singular `sub_answer`), and
-    per-part text(+text_sinhala), recursing sub_questions (sq/sa at depth 1, sq2/sa2 below)."""
+    approach/final_answer_latex (+approach_sinhala/+final_answer_latex_sinhala — 0024), the
+    `answers[]` list AND the singular `sub_answer`, and per-part text(+text_sinhala), recursing
+    sub_questions (sq/sa at depth 1, sq2/sa2 below)."""
     out: list[dict] = []
 
     def add(i, f, t):
@@ -206,7 +207,9 @@ def staged_fields(staged: dict) -> list[dict]:
         for a in answers(q):
             aid = a.get("answer_id") or a.get("sub_answer_id")
             add(qn, f"a:{aid}:approach", a.get("approach"))
+            add(qn, f"a:{aid}:approach_sinhala", a.get("approach_sinhala"))
             add(qn, f"a:{aid}:final", a.get("final_answer_latex"))
+            add(qn, f"a:{aid}:final_sinhala", a.get("final_answer_latex_sinhala"))
 
         def parts(lst, path, depth):
             sq, sa_ = ("sq", "sa") if depth == 1 else ("sq2", "sa2")
@@ -217,7 +220,9 @@ def staged_fields(staged: dict) -> list[dict]:
                 for a in answers(p):
                     aid = a.get("sub_answer_id") or a.get("answer_id")
                     add(pid, f"{sa_}:{aid}:approach", a.get("approach"))
+                    add(pid, f"{sa_}:{aid}:approach_sinhala", a.get("approach_sinhala"))
                     add(pid, f"{sa_}:{aid}:final", a.get("final_answer_latex"))
+                    add(pid, f"{sa_}:{aid}:final_sinhala", a.get("final_answer_latex_sinhala"))
                 parts(p.get("sub_questions"), pid, depth + 1)
         parts(q.get("sub_questions"), qn, 1)
     return out

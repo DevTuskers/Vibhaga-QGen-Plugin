@@ -30,7 +30,8 @@ Writes into DIR:
   q4a.json     the session row (exactly one object — else exit 1 "session not found")
   q4b.jsonl    one JSON object per question, exactly as psql printed it (0 lines → exit 1)
   q4c.jsonl    one JSON object per OTHER question sharing a lesson (0 lines is a valid answer)
-  fields.json  markdown-gate input [{id, field, text}] for every non-null student string:
+  fields.json  markdown-gate input [{id, field, text}] for every non-null student string —
+               the COALESCE compat keys AND the explicit *_english/*_sinhala sides (0024):
                `Q1.stem`/`Q1.stem_sinhala`, `Q2.b.text`/`Q2.b.text_sinhala`, `Q2.b.approach`/
                `Q2.b.final` per answer (nested label paths `Q3.a.i`; `ans<k>` suffix when a node
                carries more than one answer)
@@ -246,6 +247,14 @@ def question_artefacts(q: dict) -> tuple[list[dict], list[str], int]:
     fields: list[dict] = []
     figs: list[str] = []
     qid = f"Q{q.get('question_number')}"
+    # 0024: the explicit side columns travel beside the COALESCE compat keys — the critic reads
+    # the English and the Sinhala independently (Translation parity row), so both are emitted.
+    if q.get("question_text_english"):
+        fields.append({"id": f"{qid}.stem_english", "field": "question_text_english",
+                       "text": q["question_text_english"]})
+    if q.get("stem_sinhala"):
+        fields.append({"id": f"{qid}.stem_sinhala_side", "field": "question_text_sinhala",
+                       "text": q["stem_sinhala"]})
     if q.get("question_text"):
         fields.append({"id": f"{qid}.stem", "field": "question_text", "text": q["question_text"]})
     if q.get("question_text_sinhala"):
@@ -258,9 +267,21 @@ def question_artefacts(q: dict) -> tuple[list[dict], list[str], int]:
         base = qid if len(answers) == 1 else f"{qid}.ans{k}"
         if a.get("approach"):
             fields.append({"id": f"{base}.approach", "field": "approach", "text": a["approach"]})
+        if a.get("approach_english"):
+            fields.append({"id": f"{base}.approach_english", "field": "approach_english",
+                           "text": a["approach_english"]})
+        if a.get("approach_sinhala"):
+            fields.append({"id": f"{base}.approach_sinhala", "field": "approach_sinhala",
+                           "text": a["approach_sinhala"]})
         if a.get("final_answer_latex"):
             fields.append({"id": f"{base}.final", "field": "final_answer_latex",
                            "text": a["final_answer_latex"]})
+        if a.get("final_answer_english"):
+            fields.append({"id": f"{base}.final_english", "field": "final_answer_english",
+                           "text": a["final_answer_english"]})
+        if a.get("final_answer_sinhala"):
+            fields.append({"id": f"{base}.final_sinhala", "field": "final_answer_sinhala",
+                           "text": a["final_answer_sinhala"]})
         if a.get("diagram_dsl") is not None:
             figs.append(f"{qid}.ans{k}\t{a.get('answer_id') or '-'}")
     parts, n_orphans = part_tree(q.get("parts") or [], qid)
@@ -272,6 +293,12 @@ def question_artefacts(q: dict) -> tuple[list[dict], list[str], int]:
         if p.get("text_sinhala"):
             fields.append({"id": f"{pid}.text_sinhala", "field": "text_sinhala",
                            "text": p["text_sinhala"]})
+        if p.get("text_english"):
+            fields.append({"id": f"{pid}.text_english", "field": "text_english",
+                           "text": p["text_english"]})
+        if p.get("part_text_sinhala"):
+            fields.append({"id": f"{pid}.part_text_sinhala", "field": "part_text_sinhala",
+                           "text": p["part_text_sinhala"]})
         if p.get("diagram_dsl") is not None:
             figs.append(f"{pid}\t-")
         subs = answers_of(p, "sub_answers")
@@ -279,9 +306,21 @@ def question_artefacts(q: dict) -> tuple[list[dict], list[str], int]:
             base = pid if len(subs) == 1 else f"{pid}.ans{k}"
             if a.get("approach"):
                 fields.append({"id": f"{base}.approach", "field": "approach", "text": a["approach"]})
+            if a.get("approach_english"):
+                fields.append({"id": f"{base}.approach_english", "field": "approach_english",
+                               "text": a["approach_english"]})
+            if a.get("approach_sinhala"):
+                fields.append({"id": f"{base}.approach_sinhala", "field": "approach_sinhala",
+                               "text": a["approach_sinhala"]})
             if a.get("final_answer_latex"):
                 fields.append({"id": f"{base}.final", "field": "final_answer_latex",
                                "text": a["final_answer_latex"]})
+            if a.get("final_answer_english"):
+                fields.append({"id": f"{base}.final_english", "field": "final_answer_english",
+                               "text": a["final_answer_english"]})
+            if a.get("final_answer_sinhala"):
+                fields.append({"id": f"{base}.final_sinhala", "field": "final_answer_sinhala",
+                               "text": a["final_answer_sinhala"]})
             if a.get("diagram_dsl") is not None:
                 figs.append(f"{pid}.ans{k}\t{a.get('sub_answer_id') or '-'}")
     return fields, figs, len(parts)

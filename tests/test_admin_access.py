@@ -737,9 +737,18 @@ class PublishGuardrailTests(unittest.TestCase):
         import importlib.util
         spec = importlib.util.spec_from_file_location("offline_t77", publish.HERE / "t77-staged-vs-published.py")
         t77 = importlib.util.module_from_spec(spec); spec.loader.exec_module(t77)
-        rows = [{"question_id": q["question_id"], "question_number": q["question_number"], "question_text": q["question_text"],
-                 "question_text_sinhala": None, "diagram_dsl": None, "needs_human_review": True,
-                 "answers": [{**a, "diagram_dsl": None} for a in q["answers"]], "parts": None} for q in self.doc["questions"]]
+        def sides(q):
+            qe, qsi = t77.split_stem(q.get("question_text"), q.get("question_text_sinhala"))
+            def arow(a):
+                ae, asi = t77.split_answer(a.get("approach"), a.get("approach_sinhala"))
+                fe, fsi = t77.split_answer(a.get("final_answer_latex"), a.get("final_answer_latex_sinhala"))
+                return {**a, "diagram_dsl": None, "approach_english": ae, "approach_sinhala": asi,
+                        "final_answer_english": fe, "final_answer_sinhala": fsi}
+            return {"question_id": q["question_id"], "question_number": q["question_number"], "question_text": q["question_text"],
+                    "question_text_sinhala": None, "question_text_english": qe, "question_text_sinhala_side": qsi,
+                    "diagram_dsl": None, "needs_human_review": True,
+                    "answers": [arow(a) for a in q["answers"]], "parts": None}
+        rows = [sides(q) for q in self.doc["questions"]]
         def runner(path, ids):
             with patch.dict(os.environ, {"DATABASE_URL": "postgres://fake.invalid/fake"}), patch.object(sys, "argv", ["t77", str(path), "--ids", json.dumps(ids)]), \
                  patch.object(t77.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, json.dumps(rows), "")) as fake_psql, \

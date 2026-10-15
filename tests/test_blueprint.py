@@ -111,6 +111,7 @@ class BlueprintTest(unittest.TestCase):
             tmp = Path(tmp)
             def mutate(b):
                 b["question"]["parts"][0]["final"] = "{per}"
+                b["question"]["parts"][0]["final_si"] = "{per}"   # identical maths-only is allowed
                 b.pop("figure")                     # no figure → no figures: entry needed
             p = write_variant(tmp, mutate)
             r = run_tool("instantiate", str(p), "--seed", "7", "--n", "1")

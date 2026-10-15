@@ -36,6 +36,40 @@ def psql_json(sql: str):
     out = subprocess.run(args, capture_output=True, text=True, check=True, env=env).stdout.strip()
     return json.loads(out) if out else []
 
+SINHALA = re.compile(r"[\u0D80-\u0DFF]")
+
+def split_stem(primary, sinhala):
+    """Mirror of api/src/bilingual.ts splitStem: staged `question_text`/`text` + the `_sinhala`
+    translation key → the (english, sinhala) pair the DB should hold."""
+    p = primary if isinstance(primary, str) else ""
+    t = (sinhala or "").strip() if isinstance(sinhala, str) or sinhala is None else str(sinhala).strip()
+    if p.strip() == "":
+        return None, (t or None)
+    if not SINHALA.search(p):
+        return p, (sinhala if sinhala is not None and str(sinhala).strip() != "" else None)
+    # Sinhala primary: the translation must be blank or equal (the API throws on a conflict —
+    # a staged doc that would throw never reaches publish, so differ = still compare raw)
+    return None, p if (t == "" or t == p.strip()) else f"CONFLICT:{t}"
+
+def split_answer(primary, sinhala):
+    """Mirror of splitAnswerPair: blank translation → the old splitAnswerText rule; a no-Sinhala
+    translation equal to the primary means shared maths-only (sinhala NULL); anything else that
+    lacks Sinhala and differs would have been refused upstream."""
+    t = (sinhala or "").strip() if isinstance(sinhala, str) or sinhala is None else str(sinhala).strip()
+    p = primary if isinstance(primary, str) else ""
+    if t == "":
+        if p.strip() == "":
+            return None, None
+        return (None, p) if SINHALA.search(p) else (p, None)
+    if SINHALA.search(p):
+        return None, p
+    english = p if p.strip() != "" else None
+    if SINHALA.search(sinhala):
+        return english, sinhala
+    if t == p.strip():
+        return english, None            # shared maths-only — sinhala side stays NULL
+    return english, f"CONFLICT:{t}"
+
 def norm(o):
     """JSONB stores 74.0 as 74 — compare numbers by value, not by spelling."""
     if isinstance(o, float) and o == int(o): return int(o)
@@ -70,11 +104,18 @@ def main():
     rows = psql_json(f"""
       SELECT json_agg(json_build_object(
         'question_id', q.question_id, 'question_number', q.question_number, 'question_text', COALESCE(q.question_text_english, q.question_text_sinhala),
-        'question_text_sinhala', CASE WHEN q.question_text_english IS NOT NULL THEN q.question_text_sinhala END, 'needs_human_review', q.needs_human_review, 'diagram_dsl', q.diagram_dsl,
-        'answers', (SELECT json_agg(json_build_object('answer_id', a.answer_id, 'approach', COALESCE(a.approach_sinhala, a.approach_english), 'final_answer_latex', COALESCE(a.final_answer_sinhala, a.final_answer_english), 'diagram_dsl', a.diagram_dsl)) FROM answers a WHERE a.question_id = q.question_id),
+        'question_text_sinhala', CASE WHEN q.question_text_english IS NOT NULL THEN q.question_text_sinhala END,
+        'question_text_english', q.question_text_english, 'question_text_sinhala_side', q.question_text_sinhala,
+        'needs_human_review', q.needs_human_review, 'diagram_dsl', q.diagram_dsl,
+        'answers', (SELECT json_agg(json_build_object('answer_id', a.answer_id, 'approach', COALESCE(a.approach_sinhala, a.approach_english), 'final_answer_latex', COALESCE(a.final_answer_sinhala, a.final_answer_english),
+                    'approach_english', a.approach_english, 'approach_sinhala', a.approach_sinhala,
+                    'final_answer_english', a.final_answer_english, 'final_answer_sinhala', a.final_answer_sinhala, 'diagram_dsl', a.diagram_dsl)) FROM answers a WHERE a.question_id = q.question_id),
         'parts', (SELECT json_agg(json_build_object('sub_question_id', s.sub_question_id, 'label', s.label, 'text', COALESCE(s.text_english, s.text_sinhala), 'text_sinhala', CASE WHEN s.text_english IS NOT NULL THEN s.text_sinhala END,
+                    'text_english', s.text_english, 'part_text_sinhala', s.text_sinhala,
                     'sort_order', s.sort_order, 'parent', s.parent_sub_question_id, 'diagram_dsl', s.diagram_dsl,
-                    'answers', (SELECT json_agg(json_build_object('sub_answer_id', sa.sub_answer_id, 'approach', COALESCE(sa.approach_sinhala, sa.approach_english), 'final_answer_latex', COALESCE(sa.final_answer_sinhala, sa.final_answer_english), 'diagram_dsl', sa.diagram_dsl)) FROM sub_answers sa WHERE sa.sub_question_id = s.sub_question_id)))
+                    'answers', (SELECT json_agg(json_build_object('sub_answer_id', sa.sub_answer_id, 'approach', COALESCE(sa.approach_sinhala, sa.approach_english), 'final_answer_latex', COALESCE(sa.final_answer_sinhala, sa.final_answer_english),
+                                'approach_english', sa.approach_english, 'approach_sinhala', sa.approach_sinhala,
+                                'final_answer_english', sa.final_answer_english, 'final_answer_sinhala', sa.final_answer_sinhala, 'diagram_dsl', sa.diagram_dsl)) FROM sub_answers sa WHERE sa.sub_question_id = s.sub_question_id)))
                   FROM sub_questions s WHERE s.question_id = q.question_id)))
       FROM questions q WHERE q.question_id::text IN ({idlist});""")
     live = {r["question_id"]: r for r in rows}
@@ -91,16 +132,26 @@ def main():
         if not L: bad.append(f"Q{q['question_number']} {q['question_id']}: NOT PUBLISHED"); continue
         p = f"Q{q['question_number']}"
         cmp(p + ".question_number", q["question_number"], L["question_number"])
+        # 0024: compare BOTH sides via the API's split rule — a staged primary lands in
+        # `*_english` (English) or `*_sinhala` (Sinhala prose), and a shared maths-only
+        # `*_si` collapses to NULL on the sinhala side (splitAnswerPair).
+        stem_en, stem_si = split_stem(q.get("question_text"), q.get("question_text_sinhala"))
+        cmp(p + ".question_text_english", stem_en, L["question_text_english"])
+        cmp(p + ".question_text_sinhala", stem_si, L["question_text_sinhala_side"])
         cmp(p + ".question_text", q.get("question_text"), L["question_text"])
-        cmp(p + ".question_text_sinhala", q.get("question_text_sinhala"), L["question_text_sinhala"])
+        cmp(p + ".question_text_sinhala_compat", q.get("question_text_sinhala"), L["question_text_sinhala"])
         cmp(p + ".needs_human_review", bool((q.get("ingestion_metadata") or {}).get("needs_human_review")), L["needs_human_review"])
         cmp(p + ".diagram_dsl", q.get("diagram_dsl"), L["diagram_dsl"])
         la = {a["answer_id"]: a for a in (L["answers"] or [])}
         for a in q.get("answers") or []:
             x = la.pop(a["answer_id"], None)
             if not x: bad.append(f"{p}.answers[{a['answer_id'][:8]}]: missing live"); continue
-            cmp(f"{p}.a[{a['answer_id'][:8]}].approach", a.get("approach"), x["approach"])
-            cmp(f"{p}.a[{a['answer_id'][:8]}].final", a.get("final_answer_latex"), x["final_answer_latex"])
+            ae, asi = split_answer(a.get("approach"), a.get("approach_sinhala"))
+            fe, fsi = split_answer(a.get("final_answer_latex"), a.get("final_answer_latex_sinhala"))
+            cmp(f"{p}.a[{a['answer_id'][:8]}].approach_english", ae, x["approach_english"])
+            cmp(f"{p}.a[{a['answer_id'][:8]}].approach_sinhala", asi, x["approach_sinhala"])
+            cmp(f"{p}.a[{a['answer_id'][:8]}].final_english", fe, x["final_answer_english"])
+            cmp(f"{p}.a[{a['answer_id'][:8]}].final_sinhala", fsi, x["final_answer_sinhala"])
             cmp(f"{p}.a[{a['answer_id'][:8]}].diagram_dsl", a.get("diagram_dsl"), x["diagram_dsl"])
         for k in la: bad.append(f"{p}.answers[{k[:8]}]: live row not in staged")
         lp = {s["sub_question_id"]: s for s in (L["parts"] or [])}
@@ -108,8 +159,10 @@ def main():
             for i, s in enumerate(lst or []):
                 x = lp.pop(s["sub_question_id"], None); pp = f"{p}.{s.get('label')}"
                 if not x: bad.append(f"{pp}: part missing live"); continue
+                te, tsi = split_stem(s.get("text"), s.get("text_sinhala"))
                 cmp(pp + ".label", s.get("label"), x["label"]); cmp(pp + ".text", s.get("text"), x["text"])
-                cmp(pp + ".text_sinhala", s.get("text_sinhala"), x["text_sinhala"]); cmp(pp + ".sort_order", i, x["sort_order"])
+                cmp(pp + ".text_english", te, x["text_english"]); cmp(pp + ".part_text_sinhala", tsi, x["part_text_sinhala"])
+                cmp(pp + ".text_sinhala_compat", s.get("text_sinhala"), x["text_sinhala"]); cmp(pp + ".sort_order", i, x["sort_order"])
                 cmp(pp + ".parent", parent, x["parent"]); cmp(pp + ".diagram_dsl", s.get("diagram_dsl"), x["diagram_dsl"])
                 lsa = {a["sub_answer_id"]: a for a in (x["answers"] or [])}
                 # a part's staged sub-answers live in BOTH shapes publish.ts collectSubAnswers
@@ -121,7 +174,10 @@ def main():
                 for a in staged_sa:
                     y = lsa.pop(a["sub_answer_id"], None)
                     if not y: bad.append(f"{pp}.sa[{a['sub_answer_id'][:8]}]: missing live"); continue
-                    cmp(f"{pp}.sa.approach", a.get("approach"), y["approach"]); cmp(f"{pp}.sa.final", a.get("final_answer_latex"), y["final_answer_latex"])
+                    ae, asi = split_answer(a.get("approach"), a.get("approach_sinhala"))
+                    fe, fsi = split_answer(a.get("final_answer_latex"), a.get("final_answer_latex_sinhala"))
+                    cmp(f"{pp}.sa.approach_english", ae, y["approach_english"]); cmp(f"{pp}.sa.approach_sinhala", asi, y["approach_sinhala"])
+                    cmp(f"{pp}.sa.final_english", fe, y["final_answer_english"]); cmp(f"{pp}.sa.final_sinhala", fsi, y["final_answer_sinhala"])
                     cmp(f"{pp}.sa.diagram_dsl", a.get("diagram_dsl"), y["diagram_dsl"])
                 for k in lsa: bad.append(f"{pp}.sa[{k[:8]}]: live row not in staged")
                 parts(s.get("sub_questions"), s["sub_question_id"], depth + 1)

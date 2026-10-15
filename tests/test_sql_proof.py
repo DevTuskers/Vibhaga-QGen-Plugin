@@ -39,7 +39,7 @@ Q3_COLS = ["actor_exists", "sessions", "active_refresh_tokens", "actor_is_admin"
 # Canned-output psql: records argv (one per line), asserts the read-only prefix on stdin, prints
 # $FAKE_PSQL_OUT, or exits $FAKE_PSQL_EXIT with a stderr line when set.
 FAKE_PSQL = """#!/bin/sh
-printf '%s\\n' "$@" > "$FAKE_PSQL_ARGV"
+printf '%s\\n' "$@" >> "$FAKE_PSQL_ARGV"; printf -- '--\n' >> "$FAKE_PSQL_ARGV"
 data=$(cat)
 case "$data" in
   "set default_transaction_read_only=on;"*) ;;
@@ -53,7 +53,10 @@ if [ -n "$FAKE_PSQL_EXIT" ]; then
   if [ -n "$FAKE_PSQL_ERR" ]; then printf '%s' "$FAKE_PSQL_ERR" >&2; else echo "psql: synthetic failure" >&2; fi
   exit "$FAKE_PSQL_EXIT"
 fi
-printf '%s\\n' "$FAKE_PSQL_OUT"
+case "$data" in
+  *"-- Q2b"*) printf '%s\\n' "${FAKE_PSQL_OUT_B:-$FAKE_PSQL_OUT}";;
+  *)          printf '%s\\n' "$FAKE_PSQL_OUT";;
+esac
 """
 
 
@@ -74,6 +77,18 @@ class SliceTests(unittest.TestCase):
         self.assertNotIn(";", stmt[:-1], "the slice must hold exactly one statement")
         self.assertIn(":'batch_id'", stmt)
         self.assertIn(":expected", stmt)
+
+    def test_real_q2b_block_is_one_guarded_with_statement_and_q2_is_not_q2b(self):
+        """`-- Q2` must NOT swallow `-- Q2b` (and vice versa) — the two proofs are separate rows."""
+        q2 = sp.slice_proof(self.sql, "Q2")
+        q2b = sp.slice_proof(self.sql, "Q2b")
+        self.assertNotIn("stem_no_english", q2)
+        stmt_b = "\n".join(l for l in q2b.splitlines() if not l.lstrip().startswith("--")).strip()
+        self.assertTrue(stmt_b.upper().startswith("WITH"), stmt_b[:80])
+        self.assertIn("stem_no_english", stmt_b)
+        self.assertIn(":'batch_id'", stmt_b)
+        self.assertTrue(stmt_b.endswith(";"))
+        self.assertNotIn(";", stmt_b[:-1])
 
     def test_real_q3_block_is_one_guarded_select(self):
         raw = sp.slice_proof(self.sql, "Q3")
@@ -106,6 +121,15 @@ class FailingTests(unittest.TestCase):
         counts["questions"] = 3
         self.assertIn("questions=3 (expected 4)", sp.failing_q2(counts, 4))
 
+    def test_q2b_failing_names_each_missing_side(self):
+        counts = {"questions": 4, "stem_no_english": 0, "stem_no_sinhala": 2,
+                  "part_text_no_english": 0, "approach_no_english": 0, "approach_no_sinhala": 1,
+                  "final_no_english": 0, "part_approach_no_english": 0,
+                  "part_approach_no_sinhala": 0, "part_final_no_english": 0}
+        self.assertEqual(sp.failing_q2b(counts), ["stem_no_sinhala=2", "approach_no_sinhala=1"])
+        counts["questions"] = 0
+        self.assertIn("questions=0", sp.failing_q2b(counts))
+
     def test_q3_failing(self):
         counts = {"actor_exists": 1, "sessions": 2, "active_refresh_tokens": 0,
                   "actor_is_admin": 1}
@@ -134,6 +158,7 @@ class EndToEnd(unittest.TestCase):
             "VIBHAGA_ADMIN_AUTH_DB_URL": "postgres://proof:s3cret%40pw@auth.invalid.test:6543/authdb",
             # empty defaults: the stub treats "" as unset and ambient leakage can't reach a test
             "FAKE_PSQL_OUT": "",
+            "FAKE_PSQL_OUT_B": "",
             "FAKE_PSQL_EXIT": "",
             "FAKE_PSQL_ERR": "",
         }
@@ -249,6 +274,30 @@ class EndToEnd(unittest.TestCase):
         self.assertNotIn("postgres://", argv)
         self.assertNotIn("s3cret", argv)
         self.assertNotIn("db.invalid.test", argv)
+
+    def test_q2_runs_q2b_and_a_failing_q2b_flips_the_verdict(self):
+        q2_vals = [1, 4, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, "t"]
+        q2b_cols = ["questions", "stem_no_english", "stem_no_sinhala", "part_text_no_english",
+                    "approach_no_english", "approach_no_sinhala", "final_no_english",
+                    "part_approach_no_english", "part_approach_no_sinhala",
+                    "part_final_no_english", "ok"]
+        q2b_bad = [4, 0, 2, 0, 0, 1, 0, 0, 0, 0, "f"]
+        rc, out, _ = self.run_main(
+            "q2", SID, "--expected", "4",
+            extra={"FAKE_PSQL_OUT": out_line(Q2_COLS, q2_vals),
+                   "FAKE_PSQL_OUT_B": out_line(q2b_cols, q2b_bad)})
+        self.assertEqual(rc, 1)
+        self.assertIn("q2: ok", out)
+        self.assertIn("q2b: NOT ok", out)
+        self.assertIn("stem_no_sinhala=2", out)
+        # both sides green → the combined verdict is ok
+        q2b_ok = [4, 0, 0, 0, 0, 0, 0, 0, 0, 0, "t"]
+        rc2, out2, _ = self.run_main(
+            "q2", SID, "--expected", "4",
+            extra={"FAKE_PSQL_OUT": out_line(Q2_COLS, q2_vals),
+                   "FAKE_PSQL_OUT_B": out_line(q2b_cols, q2b_ok)})
+        self.assertEqual(rc2, 0)
+        self.assertIn("q2b: ok", out2)
 
     def test_q2_non_uuid_and_bad_expected_exit_2(self):
         rc, _, err = self.run_main("q2", "not-a-uuid", "--expected", "4")

@@ -58,9 +58,9 @@ def field_kind(field: str) -> str:
     """Return the student-facing field kind from the staged-fields field name."""
     if field in ("question_text", "question_text_sinhala"):
         return "STEM"
-    if field.endswith(":approach"):
+    if field.endswith((":approach", ":approach_sinhala")):
         return "APPROACH"
-    if field.endswith(":final"):
+    if field.endswith((":final", ":final_sinhala")):
         return "FINAL"
     if field.endswith(":text_sinhala") or (
         field.startswith(("sq:", "sq2:")) and field.endswith(":text")

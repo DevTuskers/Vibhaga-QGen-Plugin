@@ -106,6 +106,21 @@ claims:
 """
 
 
+SI = {"stem": "stem_si", "text": "text_si", "approach": "approach_si", "final": "final_si"}
+
+
+def with_si(node):
+    """0024: every student field in a fixture carries its *_si twin (synthetic Sinhala) —
+    mirrors build-staged's requirement so a fixture testing another check stays legal."""
+    for en, si in SI.items():
+        if node.get(en) is not None and node.get(si) is None:
+            node[si] = "සිංහල අන්තර්ගතය"
+    for p in node.get("parts") or []:
+        if isinstance(p, dict):
+            with_si(p)
+    return node
+
+
 def write(p: Path, text: str) -> Path:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(text, encoding="utf-8")
@@ -126,7 +141,7 @@ def make_run(tmp: Path, stem: str = "Shade the strip.", parts=None, approach=Non
     import yaml
     write(run / "content.yaml",
           yaml.safe_dump({"id_seed": "synthetic", "lessons": {"L07": "placeholder"},
-                          "questions": [q]}, allow_unicode=True, sort_keys=False))
+                          "questions": [with_si(q)]}, allow_unicode=True, sort_keys=False))
     cards = tmp / "cards"
     write(cards / "07-Fractions.yaml", CARD)
     return run
@@ -141,7 +156,7 @@ def make_run_two_cards(tmp: Path, questions: list) -> Path:
     write(run / "content.yaml",
           yaml.safe_dump({"id_seed": "synthetic",
                           "lessons": {"L07": "placeholder", "L08": "placeholder2"},
-                          "questions": questions},
+                          "questions": [with_si(q) for q in questions]},
                          allow_unicode=True, sort_keys=False))
     write(tmp / "cards" / "07-Fractions.yaml", CARD)
     write(tmp / "cards" / "08-Perimeter.yaml", CARD8)
@@ -168,7 +183,9 @@ def lint_plain(run: Path, *extra):
                           capture_output=True, text=True)
 
 
-PART = '      - label: {label}\n        text: "t"\n        approach: "x"\n        final: "1"{lvl}\n'
+PART = ('      - label: {label}\n        text: "t"\n        text_si: "සිංහල"\n'
+        '        approach: "x"\n        approach_si: "සිංහල"\n        final: "1"\n'
+        '        final_si: "සිංහල"{lvl}\n')
 
 
 def write_levels_run(tmp: Path, *question_levels) -> Path:
@@ -177,7 +194,7 @@ def write_levels_run(tmp: Path, *question_levels) -> Path:
     for i, levels in enumerate(question_levels, 1):
         parts = "".join(PART.format(label=chr(96 + k), lvl=f"\n        level: {l}" if l else "")
                         for k, l in enumerate(levels, 1))
-        qs.append(f'  - n: {i}\n    lessons: [L07]\n    stem: "s"\n    parts:\n{parts}')
+        qs.append(f'  - n: {i}\n    lessons: [L07]\n    stem: "s"\n    stem_si: "සිංහල"\n    parts:\n{parts}')
     run = tmp / "run"
     run.mkdir(parents=True, exist_ok=True)
     (run / "content.yaml").write_text(

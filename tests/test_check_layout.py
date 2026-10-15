@@ -27,6 +27,20 @@ class CheckLayoutTest(unittest.TestCase):
     def field(self, field, text, item_id="Q1"):
         return {"id": item_id, "field": field, "text": text}
 
+    def test_sinhala_answer_fields_parse_and_gate(self):
+        """0024: the *_sinhala answer fields are the same kinds in the other language — a Sinhala
+        approach with two steps on ONE line FAILs exactly like the English one does."""
+        self.assertEqual(check_layout.field_kind("a:one:approach_sinhala"), "APPROACH")
+        self.assertEqual(check_layout.field_kind("a:one:final_sinhala"), "FINAL")
+        self.assertEqual(check_layout.field_kind("sa:x:approach_sinhala"), "APPROACH")
+        self.assertEqual(check_layout.field_kind("sa:x:final_sinhala"), "FINAL")
+        result = self.run_fields([
+            self.field("a:one:approach_sinhala",
+                       "පළමු පියවර. දෙවන පියවර. තුන්වන පියවර."),
+        ])
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("FAIL Q1 a:one:approach_sinhala", result.stdout)
+
     def test_three_sentence_approach_fails(self):
         result = self.run_fields([
             self.field("a:one:approach", "First step. Second step. Third step.")

@@ -4,13 +4,13 @@
     sql-proof.py q2 <session_id> --expected N [--db-env FILE] [--out FILE.json]
     sql-proof.py q3 --actor <uuid> [--auth-env FILE] [--out FILE.json]
 
-q2 runs queries.sql Q2 — the post-publish proof — on the CONTENT database; q3 runs Q3 — the admin
+q2 runs queries.sql Q2 — the post-publish proof — and Q2b — the bilingual completeness proof (0024) — on the CONTENT database; q3 runs Q3 — the admin
 sign-out revocation proof — on the SAME database: the Admin Auth project is merged into the content
 project, so `public.question_batches` no longer marks a wrong target and Q3 proves the actor is an
 admin via its `actor_is_admin` column instead (a student uid is not revocation evidence for an
 admin sign-out). The counts come from `qgen.q3(actor)`, a counts-only SECURITY DEFINER function —
 RLS on auth.* has no policies, so a non-BYPASSRLS reader would silently see zero rows. Each block
-is sliced out of the REAL queries.sql (from its `-- Q2` / `-- Q3` header comment to the statement's
+is sliced out of the REAL queries.sql (from its `-- Q2` / `-- Q2b` / `-- Q3` header comment to the statement's
 terminating `;`), then guarded locally: ONE statement starting WITH or SELECT — Q2 opens `WITH`, so
 critic-read's SELECT-only assertion does not apply — and no write token (a smoke check; the read-only
 transaction is the real guard; slicing stops at the first `;` on a non-comment line, so a block must
@@ -225,6 +225,20 @@ def failing_q2(counts: dict, expected: int) -> list[str]:
     return bad
 
 
+def failing_q2b(counts: dict) -> list[str]:
+    """Q2b's `ok`: questions exist and every language-side count is zero — maths-only part texts
+    and finals share `_english`, but a stem and every approach need both sides."""
+    bad = []
+    if not counts.get("questions"):
+        bad.append(f"questions={show(counts.get('questions'))}")
+    for k in ("stem_no_english", "stem_no_sinhala", "part_text_no_english",
+              "approach_no_english", "approach_no_sinhala", "final_no_english",
+              "part_approach_no_english", "part_approach_no_sinhala", "part_final_no_english"):
+        if counts.get(k) != 0:
+            bad.append(f"{k}={show(counts.get(k))}")
+    return bad
+
+
 def failing_q3(counts: dict) -> list[str]:
     """Q3's `ok`: the actor exists AND is an admin identity on the merged project
     (raw_app_meta_data 'vibhaga_role'='admin' — a student uid is not revocation evidence for an
@@ -289,15 +303,23 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(a.expected, int) or a.expected < 1:
             die("--expected must be a positive integer (how many questions you published)")
         block = slice_proof(sql_text, "Q2")
+        block_b = slice_proof(sql_text, "Q2b")
         pg = cr.pg_env_from_url(cr.resolve_db_url(a.db_env))
         row = run_proof(pg, block, [("batch_id", a.session_id), ("expected", str(a.expected))], "q2")
         counts = {k: v for k, v in row.items() if k != "ok"}
         bad = failing_q2(counts, a.expected)
         rc = report("q2", row, bad)
+        # Q2b — bilingual completeness (0024): the same `ok` convention, run alongside Q2; the
+        # command's verdict is `Q2 ok AND Q2b ok`.
+        row_b = run_proof(pg, block_b, [("batch_id", a.session_id)], "q2b")
+        counts_b = {k: v for k, v in row_b.items() if k != "ok"}
+        bad_b = failing_q2b(counts_b)
+        rc_b = report("q2b", row_b, bad_b)
         if a.out:
-            write_out(a.out, out_payload("q2", "session_id", a.session_id, counts,
-                                         row.get("ok") is True))
-        return rc
+            write_out(a.out, out_payload("q2", "session_id", a.session_id,
+                                         {**counts, "q2b": counts_b},
+                                         row.get("ok") is True and row_b.get("ok") is True))
+        return rc or rc_b
 
     # q3
     if not UUID_RE.match(a.actor):
