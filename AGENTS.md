@@ -32,6 +32,11 @@ stem you author. These rules hold in every session that loads the plugin.
    [`author-question-answers` §4.1c](skills/author-question-answers/SKILL.md#-41c-lay-the-approach-out-for-a-phone--one-step-per-paragraph).
 
 ## Session discipline
+- **Session names follow the standard** (owner ruling 2026-10-15): `G<grade> Maths · <Easy|Medium|Hard> · <N>Q · <d Mon YYYY, h:mm AM/PM>`
+  — `·` is U+00B7 with a space each side, the time is the creation time in Asia/Colombo
+  (`TZ=Asia/Colombo date '+%-d %b %Y, %-I:%M %p'`), and there is **no medium indicator**, no lesson
+  list and no extra words — e.g. `G8 Maths · Easy · 10Q · 15 Oct 2026, 3:05 PM`. A misnamed session
+  is renamed via the session PATCH (`name` field), never recreated.
 - **One image per `read` call.** An image is seen only if the result shows it. Log what you saw at
   once; never re-read an image already confirmed. A read that came back without the image may be
   retried once, alone; after that, change approach.
