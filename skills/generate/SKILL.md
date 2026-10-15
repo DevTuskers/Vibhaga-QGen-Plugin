@@ -234,7 +234,11 @@ same two checkout paths in the critic's spawn prompt.
    `notes.md` the moment it is seen (what it shows; anything wrong; its pixel dimensions from the verdict line).
    Open a single figure's `light-375.png` only when the sheet shows a problem or is too small to judge — still one
    image per `read`. A defect → back to step 4/5.
-7. **Create the session** (once): `python3 $T session create --name "<what> — G<g> <lesson> <date>" --scope grade=<g>,subject=Mathematics,medium=<medium> --lessons <ids> --ledger $A/ledger.json`.
+7. **Create the session** (once): `python3 $T session create --name "G<g> Maths · <Easy|Medium|Hard> · <N>Q · <d Mon YYYY, h:mm AM/PM>" --scope grade=<g>,subject=Mathematics,medium=<medium> --lessons <ids> --ledger $A/ledger.json`.
+   The name follows the owner standard (ruling 2026-10-15): `·` is U+00B7 with a space each side, the
+   time is the session's creation time from `TZ=Asia/Colombo date '+%-d %b %Y, %-I:%M %p'`, and there
+   is **no medium indicator**, no lesson list and no extra words — e.g. `G8 Maths · Easy · 10Q · 15 Oct 2026, 3:05 PM`.
+   A misnamed session is renamed via the session PATCH (`name` field), never recreated.
    Copy the printed id into `RUN.md` now.
 8. **Validate until clean** — steps 8–11 in one command (the default):
    `python3 tools/run-gates.py ship $A --sid <sid> --scope <same as step 7> --session-check` — runs validate →
