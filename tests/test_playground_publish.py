@@ -397,6 +397,54 @@ class PlaygroundTests(unittest.TestCase):
         self.assertEqual(self.call(tool.cmd_questions_list, {"grade": 6, "exam": "ol"}, False, None, write=False), 2)
         self.assertEqual(self.call(tool.cmd_questions_list, {"batch_id": "nope"}, False, None, write=False), 2)
 
+    def coverage_body(self, **kw):
+        body = {"scope": {"grade": 6, "exam": None, "subject": "Mathematics", "status": "all", "needs_human_review": False, "medium": "sinhala"},
+                "total_questions": 7, "untagged": 1, "multi_lesson": 0,
+                "lessons": [{"lesson_id": LESSON, "name": "Fractions", "name_sinhala": None, "sort_order": 2},
+                            {"lesson_id": ID4, "name": "Numbers", "name_sinhala": None, "sort_order": 1},
+                            {"lesson_id": ID1, "name": "Angles", "name_sinhala": None, "sort_order": 3}],
+                "lesson_counts": {ID4: {"total": 2, "published": 2, "draft": 0, "flagged": 1, "single_lesson": 1},
+                                  ID1: {"total": 5, "published": 5, "draft": 0, "flagged": 0, "single_lesson": 4}},
+                "pairs": [{"lesson_a": ID4, "lesson_b": ID1, "count": 1}], "orphan_lesson_ids": []}
+        body.update(kw)
+        return body
+
+    def test_coverage_table_and_params(self):
+        self.fake_obj = tool.FakePlayground({}, {}, coverage=self.coverage_body())
+        params = {"grade": 6, "subject": "Mathematics", "status": "all", "needs_human_review": "false", "medium": "sinhala"}
+        out = self.root / "cov.json"
+        self.assertEqual(self.call(tool.cmd_coverage, params, 2, True, out, write=False), 0)
+        calls = [p for m, p in self.fake_obj.calls if m == "GET" and p.startswith("/v1/admin/coverage")]
+        self.assertEqual(len(calls), 1)
+        for frag in ("grade=6", "subject=Mathematics", "status=all", "needs_human_review=false", "medium=sinhala"):
+            self.assertIn(frag, calls[0])
+        self.assertEqual(self.fake_obj.grants, 1); self.assertEqual(self.fake_obj.logouts, 1)   # fresh grant, logout last
+        rows = [l for l in self.logs if l.rstrip().endswith((LESSON, ID4, ID1))]
+        self.assertEqual([r.split()[-1] for r in rows], [LESSON, ID4, ID1])                     # thinnest first
+        self.assertTrue(rows[0].startswith("None")) and self.assertTrue(rows[1].startswith("Thin"))
+        self.assertFalse(rows[2].startswith(("None", "Thin")))
+        self.assertIn("    1", rows[1].split("Numbers")[0])                                     # flagged column
+        self.assertTrue(any(l.startswith("lessons: 3 · None 1 · Thin (1..2) 1 · pair cells 1") for l in self.logs))
+        self.assertTrue(any(l.startswith("pair    1  Numbers × Angles") for l in self.logs))
+        self.assertTrue(any("untagged 1" in l and "orphans 0" in l for l in self.logs))
+        self.assertEqual(json.loads(out.read_text())["total_questions"], 7)
+        self.assertFalse(any("tok1" in l or "Bearer" in l for l in self.logs))                   # no token in output
+
+    def test_coverage_refusals(self):
+        self.fake_obj = tool.FakePlayground({}, {}, coverage=self.coverage_body())
+        self.assertEqual(self.call(tool.cmd_coverage, {"grade": 6, "exam": "ol"}, 2, False, None, write=False), 2)
+        self.assertEqual(self.call(tool.cmd_coverage, {"subject": "Mathematics"}, 2, False, None, write=False), 2)
+        self.assertEqual(self.call(tool.cmd_coverage, {"grade": 6}, -1, False, None, write=False), 2)
+        self.assertEqual(self.fake_obj.grants, 0)                                                # refused before any grant
+        self.fake_obj = tool.FakePlayground({}, {}, coverage=self.coverage_body(pairs=[{"lesson_a": "x", "lesson_b": ID1, "count": 1}]))
+        self.assertEqual(self.call(tool.cmd_coverage, {"grade": 6}, 2, False, None, write=False), 5)
+        self.assertIn("malformed coverage response (body withheld)", self.logs)
+        self.fake_obj = tool.FakePlayground({}, {}, coverage=self.coverage_body(total_questions="7"))
+        self.assertEqual(self.call(tool.cmd_coverage, {"grade": 6}, 2, False, None, write=False), 5)
+        self.fake_obj = tool.FakePlayground({}, {}, coverage=self.coverage_body(orphan_lesson_ids=[ID3]))
+        self.assertEqual(self.call(tool.cmd_coverage, {"exam": "ol"}, 2, False, None, write=False), 0)
+        self.assertTrue(any(ID3 in l and "orphan" in l for l in self.logs))
+
     def test_question_show(self):
         detail = {"question": {"question_id": ID1, "question_number": 1}, "sub_questions": [], "sub_answers": [], "answers": []}
         self.fake_obj = tool.FakePlayground({}, {}, question_detail=detail)

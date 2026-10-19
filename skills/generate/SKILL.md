@@ -1,6 +1,6 @@
 ---
 name: generate
-description: The orchestrator for generating new practice questions FROM A LESSON (no source paper) through the Agent Question Playground, as ONE ordered flow — scope cards → a one-line-per-question plan → the lead-authored `content.yaml` → figure templates → visual-check → validate → `doc put` → visual-check `--session` → publish FLAGGED with `tools/playground-publish.py` → SQL proof (queries.sql Q2 + Q3 via `tools/sql-proof.py`) → a fresh `qgen-critic` until SATISFIED → logbook line. Every row lands flagged and hidden from students until a human marks it reviewed. Use when asked to generate, write, create or author questions for a lesson, topic or grade, to "fill a lesson with practice questions", or to run or resume a playground session. Not for onboarding an existing PDF paper — this plugin only generates.
+description: The orchestrator for generating new practice questions FROM A LESSON (no source paper) through the Agent Question Playground, as ONE ordered flow — scope cards (and, for a grade with no named lesson, a coverage snapshot that picks the thinnest lessons) → a one-line-per-question plan → the lead-authored `content.yaml` → figure templates → visual-check → validate → `doc put` → visual-check `--session` → publish FLAGGED with `tools/playground-publish.py` → SQL proof (queries.sql Q2 + Q3 via `tools/sql-proof.py`) → a fresh `qgen-critic` until SATISFIED → logbook line. Every row lands flagged and hidden from students until a human marks it reviewed. Use when asked to generate, write, create or author questions for a lesson, topic or grade, to "fill a lesson with practice questions", to fill the least-covered lessons of a grade, or to run or resume a playground session. Not for onboarding an existing PDF paper — this plugin only generates.
 argument-hint: "[grade] [lesson number or name] [how many questions]"
 ---
 
@@ -18,6 +18,7 @@ argument-hint: "[grade] [lesson number or name] [how many questions]"
 > 2026-10-04 first G7 run on the W11 templates (10 questions, 33 leaves, 10 template figures — 6 from coordinate_plane/parallel_lines/bar_chart — 0 hand-drawn; 2 critic rounds → SATISFIED; 0 tool repairs, 3 FRICTION lines).
 > 2026-10-05 G7 run on the three least-covered lessons (Solids, Construction, Likelihood — picked by a SQL count of every tagged question; 10 questions, 40 leaves, 6 template figures, 0 hand-drawn; critic chunk 1 SATISFIED in r1, chunk 2 closed after r3 with one finding rejected under ADR 0021 and one MINOR left as an owner question; 0 tool repairs, 2 FRICTION lines).
 > 2026-10-07 first run executed by a Devin session (previous runs ran on the owner's laptop) — G6, three least-covered lessons (Algebraic Symbols + Data Collection + Data Interpretation; 10 questions, 30 leaves, 3 pictograph template figures, 0 hand-drawn; critic: chunk 1 SATISFIED in r2 after 6 MINOR fixes, chunk 2 SATISFIED in r3 after a MAJOR re-skin-of-worked-example rewrite + 6 MINOR fixes; 0 tool repairs, 8 FRICTION lines — all first-run environment gaps, not tool defects).
+> 2026-10-19 first coverage-driven run (G8; lessons picked from `GET /v1/admin/coverage` — the one 0-question lesson plus two thin ones, one two-lesson row filling an empty pair cell; 10 questions, 31 leaves, 1 template figure; critic: chunk 1 SATISFIED in r1, chunk 2 SATISFIED in r2 after a MAJOR same-task-as-a-published-row rewrite; 0 tool repairs, 4 FRICTION lines → the `coverage` subcommand).
 > 2026-10-13 first generated G8 batch — one lesson per question across ten least-covered, figure-free lessons (10 questions, 31 leaves, 0 figures; first run under the readable-layout gate, 0 fail / 0 warn; critic: r1 2 MAJOR re-skins/duplicates → 9 questions redesigned, r2 SATISFIED, r3 1 MAJOR ("multiples of 4 below 20" admits 0) fixed, r4 0 MAJOR with 3 scaffold-level MINORs left as owner notes; 0 tool repairs, 2 FRICTION lines).
 > Distilled lessons are folded into the steps below: a lesson that teaches angle types *without degrees*
 > demands comparison-with-a-right-angle reasoning; measure label↔canvas-edge clearance, not only
@@ -153,13 +154,24 @@ same two checkout paths in the critic's spawn prompt.
    - **O/L:** composed from the G10 + G11 *scope cards* via Vibhaga-Docs `lessons/ol/mathematics.md`, tagged with O/L
      lesson ids (owner ruling 2026-09-29). **Refused until BOTH card sets exist** (plan OD-3). Never copy a card into
      this public repo.
-2. **Taxonomy and what exists.** `python3 $T lessons --grade 6 --subject Mathematics` → the `lesson_id`.
+2. **Coverage, taxonomy and what exists.** First the snapshot: `python3 $T coverage --grade <g> --subject Mathematics
+   --pairs --out $A/coverage-before.json` (read-only; every taxonomy lesson listed, thinnest first, `None` = 0 rows,
+   `Thin` = 1..`--thin` (default 2); `flagged` = still awaiting review, hidden from students; `pairs` = two-lesson
+   cells the lesson sits in). Add `--status all` and `--needs-human-review false` runs when the student-visible picture
+   matters — the default `published` view counts flagged rows too. **When the ask names a grade but no lesson, the
+   coverage picks:** `None` lessons first, then `Thin`, and among equals the one whose scope card is strongest (most
+   worked examples/exercises, a usable `difficulty_hooks` block); skip a lesson whose card cannot carry the batch and
+   say why in `notes.md`. A deliberate two-lesson question may fill a missing natural pair cell (both lessons used in
+   the working — AGENTS rule 3); the API lists only the cells that exist, so a missing one is your judgment, named in
+   the plan line. Coverage reads the API (Hyperdrive, ~75 s stale — T5): it chooses lessons; it never proves rows.
+   `python3 $T lessons --grade 6 --subject Mathematics` → the `lesson_id`.
    `python3 $T questions list --lesson-id <id> --all --out $A/existing.json` → every row on the lesson; for any row close
    to a plan line, `questions show <id>` for the full stem and answers. Read for duplicates and house style (register,
    markup, answer length). queries.sql Q1 is the same list by direct SQL when you need it uncached (T5).
    Record the row count and which stems you compared in `notes.md`.
 3. **Plan — one line per question** in `notes.md`, before any authoring:
-   `Q<n> · <skill / section> · <R/M/H per part> · not a duplicate because <…> · figure: <template | hand-draw | none>`.
+   `Q<n> · <skill / section> · <R/M/H per part> · not a duplicate because <…> · figure: <template | hand-draw | none>`
+   (a coverage-picked lesson may cite its before-count, e.g. `L26 Triangle Constructions (0 before)`).
    Check the set against the plan appendix rubric (for "medium–hard": ≥3 parts each, ≤1 R part and only as (a), an H
    part last, ≥60 % M/H and ≥30 % H across the set's levelled parts) and against AGENTS rule 3 for every multi-lesson tag. A figure that has nothing
    derivable (a pure shape to name) is dropped or put to the owner, never given an invented claim.
@@ -266,7 +278,7 @@ same two checkout paths in the critic's spawn prompt.
     `q3: ok` (counts land in the ledger under the session) · `q3: PENDING — no DB URL source; …`
     (prove by hand, step 11) · `q3: NOT ok — <counts>` turns an otherwise-successful write into exit 5.
 11. **Prove it by SQL:** `python3 tools/sql-proof.py q2 <sid> --expected <N> --out $A/q2.json` → `q2: ok` AND
-    `q2b: ok` (Q2b is the 0024 bilingual-completeness proof — every stem and approach has both sides;
+    `q2b: ok` (both lines come from the one `q2` command — there is no `q2b` subcommand; Q2b is the 0024 bilingual-completeness proof — every stem and approach has both sides;
     flagged, published, paperless, scope, 0 signed, 0 unanswered leaves). Q3 is now automatic: every **write**
     subcommand's logout runs it (step 10) — on a `q3: PENDING` line (no URL source at all) run the Q3
     `SELECT`, actor id substituted, through the Supabase MCP `execute_sql` on the **content**
@@ -331,7 +343,7 @@ same two checkout paths in the critic's spawn prompt.
     holding ≥1 changed question; a chunk with no changes carries its verdict (record that in the ledger — profile
     §6: CARRIED / FIXED / OPEN / REGRESSED by hash). Never ask the same critic twice.
 15. **Logbook line** — one dated entry in the plan logbook (private Docs repo): session id, N questions / parts /
-    figures, the publish and Q2/Q3 lines, critic rounds and verdicts, owner questions, effort. Add a line under "Runs so
+    figures, the publish and Q2/Q3 lines, the coverage before → after diff (§5 item 5), critic rounds and verdicts, owner questions, effort. Add a line under "Runs so
     far" above — without ids.
 
 ### Per-run checklist — `$A/RUN.md`, ticked as you go
@@ -339,7 +351,7 @@ same two checkout paths in the critic's spawn prompt.
 ```
 - [ ] env: VIBHAGA_ADMIN / VIBHAGA_WEB / VIBHAGA_CORPUS / VIBHAGA_ADMIN_ENV set (worktree) or siblings confirmed
 - [ ] 1 scope statement in notes.md (card file + lesson file + sha256)
-- [ ] 2 dedup: existing.json rows = __ ; stems compared: __
+- [ ] 2 coverage-before.json saved · lessons picked (None/Thin + card) __ ; dedup: existing.json rows = __ ; stems compared: __
 - [ ] 3 plan: N lines, rubric checked, rule 3 checked
 - [ ] 4 content.yaml + second-method results per leaf in notes.md
 - [ ] 5 run-gates build exit 0 — gates.json: audit + vdd-check per figure (hand-drawn too), staged.json, ids.json = N ids, check-answers, markdown-gate 0 BLOCKED, layout 0 FAIL, mode 1, lint
@@ -395,13 +407,17 @@ The critic grades every part against this table (profile §3) — keep it and th
 3. Every figure: `channel: constructed` claim set with a `stem:` header, `audit-claim-set.py` exit 0, `vdd-check.mjs`
    0 findings, visual-check mode 1 and `--session` exit 0.
 4. `publish` exits 0 with the four quoted lines of step 10 clean.
-5. `sql-proof.py q2` prints `q2: ok` for the final publish (this is the `verified_by IS NULL` proof); absence from the
+5. Coverage after: `coverage … --out $A/coverage-after.json` re-run with the same flags as step 2; every picked lesson
+   rose by its question count, a two-lesson row raised both lessons and its pair cell, nothing else moved, and the
+   student-visible (`--needs-human-review false`) total did not change (every new row is flagged). The diff goes in
+   `notes.md` beside Q2 — it is supporting evidence; Q2 is the proof.
+6. `sql-proof.py q2` prints `q2: ok` for the final publish (this is the `verified_by IS NULL` proof); absence from the
    student `GET /v1/questions` is supporting evidence only (§1).
-6. `sql-proof.py q3` prints `q3: ok` on the merged project for the actor — an admin identity that
+7. `sql-proof.py q3` prints `q3: ok` on the merged project for the actor — an admin identity that
    exists there.
-7. The last fresh `qgen-critic` reported SATISFIED; every BLOCKER, MAJOR and MINOR on the way is FIXED (republished
+8. The last fresh `qgen-critic` reported SATISFIED; every BLOCKER, MAJOR and MINOR on the way is FIXED (republished
    flagged) or recorded as an owner question.
-8. The ledger (session id, question ids) is in the run's logbook entry.
+9. The ledger (session id, question ids) is in the run's logbook entry.
 
 ## 6. Keep this skill alive
 
