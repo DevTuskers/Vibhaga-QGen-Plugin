@@ -176,11 +176,10 @@ Also re-assert from Q4b that every row is still `needs_human_review = true` with
 NULL on every answer and sub-answer; a cleared flag before the critique is SATISFIED is a BLOCKER on
 the process, reported first.
 
-## 7. Large batches — chunking
+## 7. One critic per batch (lean runs, owner ruling 2026-10-20)
 
-Above **8 questions**, the lead spawns one fresh critic per chunk of ≤ 8 `question_number`s, all
-in parallel, each with the same four inputs — the corpus checkout included, passed to critic-read
-with `--corpus` — and its own report path (a file path, per §0.6). A chunk critic reads the whole
-Q4b (needed for within-batch duplicates and self-containment) but writes findings only for its chunk.
-The lead merges: totals, one combined OUT OF SCOPE list, and the union of could-not-check. A chunk
-critic never sees another chunk's report.
+A batch of up to **12 questions** gets **one** fresh critic, started as a separate session in **Normal**
+mode (not Fusion) — fresh eyes are kept, the duplicate session startup is not. Only above 12 does the
+lead split into chunks of ≤ 12 `question_number`s; a chunk critic still reads the whole Q4b (needed for
+within-batch duplicates and self-containment) but writes findings only for its chunk, never sees another
+chunk's report, and the lead merges totals, one OUT OF SCOPE list and the union of could-not-check.

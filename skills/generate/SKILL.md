@@ -6,6 +6,28 @@ argument-hint: "[grade] [lesson number or name] [how many questions]"
 
 # Generate questions from a lesson — the orchestrator
 
+## Quick run (lean, ~10 questions — target 2–3 ACUs; owner ruling 2026-10-20)
+
+Read **this section, AGENTS.md, §2 steps you are on, and the TRAPS it names** — not every skill end to end.
+Open an S4–S8 skill only when its step needs a rule you do not know (a figure, a failing gate).
+`T=tools/playground-publish.py`, `A=wt/<topic>/actor`.
+
+1. `python3 tools/qgen-setup.py` → `export VIBHAGA_ADMIN_ENV=/dev/shm/qgen-admin.env` (one command; prints names only).
+2. `python3 $T coverage --grade <g> --subject Mathematics --pairs --out $A/coverage-before.json` → pick 2–3 None/Thin
+   lessons with a strong scope card (`python3 tools/scope-cards.py brief …`).
+3. Plan 10 one-liners → `$A/plan-items.yaml` → `python3 $T similar --grade <g> --items $A/plan-items.yaml
+   --out $A/similar-plan.json`; every plan line names its closest row and why the **task** differs (step 3).
+4. Write `$A/content.yaml` (bilingual, readable layout, `check:` on every leaf). **No figures by default** — a
+   figure only when the question cannot be asked without one, and then only from a template (figure-templates).
+5. `run-gates.py build … --card …` → exit 0. 6. `session create` (standard name) → `run-gates.py ship …` →
+   `sql-proof.py q2 <sid> --expected 10` (`q2: ok`, `q2b: ok`) → `embeddings-refresh --grade <g> --subject Mathematics`.
+7. **One** fresh `qgen-critic` session for all 10, **Normal** mode, paths only (step 13). Fix BLOCKER/MAJOR; MINORs
+   only if one-line, else owner notes (step 14). Round 2 = fresh critic with `Previous report:`, changed questions only.
+8. Coverage after, logbook line (step 15), report in plain English.
+
+Cost rules: start the generation session itself in **Normal** mode; no headed browser when there are no figures;
+never re-read a skill or corpus file already read; one `build` + one `ship` per fix round.
+
 > Moved from Vibhaga-Docs `.devin/skills/generate-lesson-questions` @08c09a9 (see docs/MIGRATION.md);
 > rewritten as the orchestrator in W7 (2026-10-02). The S4–S8 skills hold the *rules* of each step;
 > this file holds the *order*, who does each step, and the per-run checklist.
@@ -342,14 +364,16 @@ same two checkout paths in the critic's spawn prompt.
     checkout to critic-read itself). [VIBHAGA_ADMIN=<Admin checkout> VIBHAGA_WEB=<Web checkout> — when the plugin is
     not a sibling of them, e.g. a worktree.] [Chunk: questions <n..m>.] [Previous report: <path>.]
     ```
-    Never `content.yaml`, claim sets, staged docs, notes or a hint about which items you doubt (**T25**). Above 8
-    questions, spawn one critic per chunk of ≤ 8, in parallel (profile §7), and merge the reports yourself. The critic is
+    Never `content.yaml`, claim sets, staged docs, notes or a hint about which items you doubt (**T25**). **One
+    critic for the whole batch** (≤ 12 questions — profile §7), started as a separate session in **Normal** mode,
+    not Fusion (owner ruling 2026-10-20: fresh eyes kept, cost cut). The critic is
     **image-blind**: its could-not-check list names the figure look, which step 6b already covered — say so in the
     ledger, do not re-open the PNGs. Compare its R/M/H with your plan line: a gap of more than one level on a part is a
     MINOR. `critic-read.py` also writes `brief.txt` beside the rows — the session's own scope pack — so the critic
     opens the lesson Markdown only at the sections a finding needs, never whole.
-14. **Fix and re-critique until SATISFIED.** Every BLOCKER/MAJOR/MINOR is fixed or written down as an owner question
-    (with the reason). A fix is: edit `content.yaml` (same `id_seed`, `n`, labels) → `run-gates.py build` → 6b (only
+14. **Fix and re-critique until SATISFIED.** SATISFIED = 0 BLOCKER and 0 MAJOR. Fix every BLOCKER/MAJOR; fix a
+    MINOR only when it is a one-line edit, otherwise write it down as an owner note (with the reason) — a MINOR
+    alone never buys another critic round (lean runs, owner ruling 2026-10-20). A fix is: edit `content.yaml` (same `id_seed`, `n`, labels) → `run-gates.py build` → 6b (only
     for a figure that changed) → `run-gates.py ship` (`doc put`; `--session-check` only if a figure or stem changed)
     → Q2 each time; Q3 runs itself after every write, or by MCP after the **last** republish on a `q3: PENDING`
     laptop. Then `python3 tools/critic-read.py hashes <sid>` prints `Q<n> <sha256>` per question — diff it against
