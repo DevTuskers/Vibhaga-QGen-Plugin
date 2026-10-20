@@ -40,6 +40,9 @@ stem you author. These rules hold in every session that loads the plugin.
 - **One image per `read` call.** An image is seen only if the result shows it. Log what you saw at
   once; never re-read an image already confirmed. A read that came back without the image may be
   retried once, alone; after that, change approach.
+- **Lean by default (owner ruling 2026-10-20).** A ~10-question run targets 2–3 ACUs: follow the
+  generate skill's "Quick run", start the session and its single critic in Normal mode, no figures unless
+  a question needs one.
 - **30-ACU cap per session.** When you reach it, or the rest cannot fit, stop: commit clean work,
   write a hand-off prompt under `wt/<topic>/`, and report what is done and what is left.
 
