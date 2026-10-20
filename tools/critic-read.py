@@ -22,8 +22,8 @@ non-comment line, so Q4 must never hold a `;` inside a literal), and runs each r
 PG* environment variables (a password on argv leaks into `ps`; `-f -` on stdin so `:'actor_id'`
 interpolates — `psql -c` does not).
 
-DB URL resolution: `--db-env` file → `DATABASE_URL` env → `publish.load_db_url` (env, then
-`Vibhaga-DB/.env` beside Vibhaga-Admin — reused, not copied). The SOURCE (never the value) is
+DB URL resolution: `--db-env` file → `DATABASE_URL` env → `publish.find_db_url` (env, then the
+admin env file's DATABASE_URL line, then `Vibhaga-DB/.env` beside Vibhaga-Admin — reused, not copied). The SOURCE (never the value) is
 printed to stderr as `critic-read: DB URL from <…>`.
 
 Writes into DIR:
@@ -72,7 +72,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _admin_auth as _auth  # noqa: E402  (shared env-file resolver; ENV_PATH is resolved at import)
-from publish import load_db_url, read_env  # noqa: E402  (the W1 loader — reused, not copied)
+from publish import find_db_url, load_db_url, read_env  # noqa: E402  (the W1 loader — reused, not copied)
 
 import importlib.util  # noqa: E402
 _spec_sc = importlib.util.spec_from_file_location(
@@ -159,7 +159,7 @@ def pg_env_from_url(raw: str) -> dict[str, str]:
 
 
 def resolve_db_url(db_env: str | None) -> str:
-    """`--db-env` file → `DATABASE_URL` env → publish.load_db_url (env, then Vibhaga-DB/.env beside
+    """`--db-env` file → `DATABASE_URL` env → publish.find_db_url (env, then the admin env file's DATABASE_URL line, then Vibhaga-DB/.env beside
     Admin). An explicit --db-env beats an ambient env var. Prints the SOURCE — never the value."""
     if db_env:
         p = Path(db_env)
@@ -173,11 +173,11 @@ def resolve_db_url(db_env: str | None) -> str:
     if os.environ.get("DATABASE_URL"):
         print(f"{PROG}: DB URL from DATABASE_URL env", file=sys.stderr)
         return os.environ["DATABASE_URL"]
-    url = load_db_url(_auth.ENV_PATH)
+    url, src = find_db_url(_auth.ENV_PATH)
     if not url:
-        die("no DATABASE_URL in the environment, no --db-env, and no Vibhaga-DB/.env beside "
-            f"Vibhaga-Admin ({_auth.ENV_PATH})")
-    print(f"{PROG}: DB URL from Vibhaga-DB/.env", file=sys.stderr)
+        die("no DATABASE_URL in the environment, no --db-env, no DATABASE_URL line in the admin env "
+            f"({_auth.ENV_PATH}), and no Vibhaga-DB/.env beside Vibhaga-Admin")
+    print(f"{PROG}: DB URL from {src}", file=sys.stderr)
     return url
 
 

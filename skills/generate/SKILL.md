@@ -274,7 +274,7 @@ same two checkout paths in the critic's spawn prompt.
     "published k/n", "read-back 1: staged doc confirms …", `t77: N question(s) · N comparisons · 0 mismatch(es)` and
     "provenance: N id(s) · OK". Exit 1 = staged and live disagree; the run is failed until they agree (**T77**).
     After the logout the tool runs Q3 itself when a DB URL resolves — the transition-era
-    `VIBHAGA_ADMIN_AUTH_DB_URL` sources, else the content-DB chain (`DATABASE_URL` → `Vibhaga-DB/.env`):
+    `VIBHAGA_ADMIN_AUTH_DB_URL` sources, else the content-DB chain (`DATABASE_URL` env → the admin env file's `DATABASE_URL` line → `Vibhaga-DB/.env`; no manual export needed when `VIBHAGA_ADMIN_ENV` carries it):
     `q3: ok` (counts land in the ledger under the session) · `q3: PENDING — no DB URL source; …`
     (prove by hand, step 11) · `q3: NOT ok — <counts>` turns an otherwise-successful write into exit 5.
 11. **Prove it by SQL:** `python3 tools/sql-proof.py q2 <sid> --expected <N> --out $A/q2.json` → `q2: ok` AND

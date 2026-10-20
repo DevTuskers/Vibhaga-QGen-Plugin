@@ -56,7 +56,7 @@ Usage (from anywhere; credentials + URLs are read at run time from Vibhaga-Admin
   every network subcommand: --env PATH (default: Vibhaga-Admin/.env.local, found by walking up) · --cred-prefix VIBHAGA_ADMIN
   `--scope` is parse_kv format: grade=<int>|exam=<slug> (XOR), subject as catalogued, medium ∈ sinhala|english|tamil.
   publish always sends question_ids (omitting them would publish ALL); --ids-file is therefore required.
-  Read-back 2 needs DATABASE_URL (or Vibhaga-DB/.env beside Vibhaga-Admin) and the `psql` binary; publish
+  Read-back 2 needs DATABASE_URL (env, else the admin env file's DATABASE_URL line, else Vibhaga-DB/.env beside Vibhaga-Admin) and the `psql` binary; publish
   makes FOUR grants per run: publish:get, publish:dry-run, publish:loop, publish:readback.
 
 Ledger shape (--ledger, merged by session id, never dropping a key):
@@ -852,11 +852,11 @@ def t77_runner(env_path: Path | None, log=print):
 
 def provenance_sql_runner(env_path: Path | None, log=print):
     """sql -> list[dict] | None (None = could not run; counts as a failure). Loads psql_json out of
-    t77-staged-vs-published.py; DATABASE_URL from _pub.load_db_url (env first, then Vibhaga-DB/.env)."""
+    t77-staged-vs-published.py; DATABASE_URL from _pub.find_db_url (env, then the admin env file, then Vibhaga-DB/.env)."""
     def run(sql: str):
-        url = _pub.load_db_url(env_path)
+        url, why = _pub.find_db_url(env_path)
         if not url:
-            log("provenance: DATABASE_URL not set and no Vibhaga-DB/.env found — could NOT run (counts as a failure)")
+            log(f"provenance: {why} — could NOT run (counts as a failure)")
             return None
         try:
             spec = importlib.util.spec_from_file_location("t77_staged_vs_published", HERE / "t77-staged-vs-published.py")

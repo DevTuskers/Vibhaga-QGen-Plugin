@@ -25,7 +25,7 @@ Usage (from anywhere; credentials + URLs are read at run time from Vibhaga-Admin
           (→ VIBHAGA_ADMIN_EMAIL / VIBHAGA_ADMIN_PASSWORD; another actor: --cred-prefix VIBHAGA_ADMIN_WATHSALA)
   `--scope` values are compared EXACTLY against the API's PaperMetadataSchema shape (validation.ts): grade int,
   subject as catalogued ("Mathematics"), medium ∈ sinhala|english|tamil, optional exam slug.
-  T77 needs DATABASE_URL (or Vibhaga-DB/.env beside Vibhaga-Admin) and the `psql` binary.
+  T77 needs DATABASE_URL (env, else a DATABASE_URL line in the admin env file, else Vibhaga-DB/.env beside Vibhaga-Admin) and the `psql` binary.
 
 Exit codes: 0 ok · 1 T77 mismatch or self-test failure · 2 usage / missing input · 3 refused (scope, unflagged, drop,
             staged≠server) · 4 refused at the dry-run (signatures) · 5 a publish request failed (stopped; ids file stands)
@@ -243,12 +243,24 @@ def ids_of(q: dict) -> dict:
 def dump(o) -> str: return json.dumps(o, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
 
 
-def load_db_url(env_path: Path | None) -> str | None:
-    if os.environ.get("DATABASE_URL"): return os.environ["DATABASE_URL"]
+def find_db_url(env_path: Path | None) -> tuple[str | None, str]:
+    """Content-DB URL: `DATABASE_URL` env → a DATABASE_URL line in the admin env file itself (env_path, e.g.
+    VIBHAGA_ADMIN_ENV) → Vibhaga-DB/.env beside Vibhaga-Admin. Returns (url, source) — the source names
+    where it came from, never the value — or (None, reason)."""
+    if os.environ.get("DATABASE_URL"): return os.environ["DATABASE_URL"], "DATABASE_URL env"
     if env_path:
+        if env_path.is_file():
+            url = read_env(env_path).get("DATABASE_URL")
+            if url: return url, f"admin env {env_path}"
         cand = env_path.parent.parent / "Vibhaga-DB" / ".env"
-        if cand.exists(): return read_env(cand).get("DATABASE_URL")
-    return None
+        if cand.is_file():
+            url = read_env(cand).get("DATABASE_URL")
+            if url: return url, "Vibhaga-DB/.env"
+    return None, "DATABASE_URL not set, not in the admin env file, and no Vibhaga-DB/.env found"
+
+
+def load_db_url(env_path: Path | None) -> str | None:
+    return find_db_url(env_path)[0]
 
 
 # ----------------------------------------------------------------------------------------------- stages
@@ -459,8 +471,8 @@ def run_publish(api: Api, job: str, staged_path: Path, scope: dict, accept: int 
 
 def t77_subprocess(env_path: Path | None, log=print):
     def run(staged_path: Path, ids: list[str]) -> int:
-        url = load_db_url(env_path)
-        if not url: log("t77: DATABASE_URL not set and no Vibhaga-DB/.env found — T77 could NOT run (counts as a failure)"); return 1
+        url, why = find_db_url(env_path)
+        if not url: log(f"t77: {why} — T77 could NOT run (counts as a failure)"); return 1
         env = {**os.environ, "DATABASE_URL": url}
         p = subprocess.run([sys.executable, str(HERE / "t77-staged-vs-published.py"), str(staged_path), "--ids", json.dumps(ids)], env=env, capture_output=True, text=True)
         for line in (p.stdout + p.stderr).strip().splitlines(): log("  " + line)
