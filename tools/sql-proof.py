@@ -23,12 +23,12 @@ PG* environment variables — NEVER on argv, never printed (critic-read.py's pg_
 reused, not copied).
 
 URL resolution — the SOURCE is announced on stderr, never the value:
-  q2 (content):  --db-env FILE → DATABASE_URL env → Vibhaga-DB/.env beside Vibhaga-Admin
+  q2 (content):  --db-env FILE → DATABASE_URL env → the admin env file's DATABASE_URL line → Vibhaga-DB/.env beside Vibhaga-Admin
                  (identical to critic-read.py's resolve_db_url — reused, not copied)
   q3 (content):  --auth-env FILE (its VIBHAGA_ADMIN_AUTH_DB_URL line, else its DATABASE_URL line) →
                  VIBHAGA_ADMIN_AUTH_DB_URL env → the line in Vibhaga-Admin/.env.local
                  (VIBHAGA_ADMIN_ENV wins, else _admin_auth's ENV_PATH) → then the q2 tail:
-                 DATABASE_URL env → Vibhaga-DB/.env beside Vibhaga-Admin. The first three keep the
+                 DATABASE_URL env → the admin env's DATABASE_URL line → Vibhaga-DB/.env beside Vibhaga-Admin. The first three keep the
                  transition-era auth sources working; Q3 targets the merged content project now.
 
 Output: one `key=value` counts line (every column the query returned), then `q2: ok` or
@@ -92,7 +92,7 @@ def slice_proof(sql_text: str, marker: str) -> str:
 def find_auth_url(auth_env: str | None, env_path: Path | None = None) -> tuple[str | None, str]:
     """`--auth-env` file → VIBHAGA_ADMIN_AUTH_DB_URL env → that key's line in the admin env file
     (env_path when given, else VIBHAGA_ADMIN_ENV, else _admin_auth.ENV_PATH), then the q2 tail —
-    a DATABASE_URL line in the --auth-env file, the DATABASE_URL env var, Vibhaga-DB/.env beside
+    a DATABASE_URL line in the --auth-env file, the DATABASE_URL env var, the admin env file's DATABASE_URL line, Vibhaga-DB/.env beside
     Vibhaga-Admin — because Q3 targets the merged content project. Returns (url, source) or
     (None, reason); prints nothing — callers announce the source or the miss.
     Shared with playground-publish.py's post-logout Q3 — resolution order is never copied."""
@@ -114,11 +114,11 @@ def find_auth_url(auth_env: str | None, env_path: Path | None = None) -> tuple[s
         return url, str(ep)
     if os.environ.get("DATABASE_URL"):
         return os.environ["DATABASE_URL"], "DATABASE_URL env"
-    url = cr.load_db_url(ep)   # Vibhaga-DB/.env beside Vibhaga-Admin — q2's last step
+    url, src = cr.find_db_url(ep)   # the admin env's DATABASE_URL line, then Vibhaga-DB/.env — q2's tail
     if url:
-        return url, "Vibhaga-DB/.env"
+        return url, src
     return None, (f"no VIBHAGA_ADMIN_AUTH_DB_URL (environment, --auth-env, or {ep}) and no content-DB "
-                  "URL (DATABASE_URL env or Vibhaga-DB/.env beside Vibhaga-Admin)")
+                  f"URL (DATABASE_URL env, a DATABASE_URL line in {ep}, or Vibhaga-DB/.env beside Vibhaga-Admin)")
 
 
 def resolve_auth_url(auth_env: str | None) -> str:

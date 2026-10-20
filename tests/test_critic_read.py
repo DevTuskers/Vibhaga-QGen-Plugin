@@ -132,6 +132,35 @@ class PgEnvTests(unittest.TestCase):
             os.unlink(envfile)
 
 
+    def test_admin_env_database_url_line_is_used(self):
+        """No DATABASE_URL in the environment and the admin env file sits outside the umbrella (e.g.
+        VIBHAGA_ADMIN_ENV=/dev/shm/…): its own DATABASE_URL line resolves; the source is named, the value never."""
+        with tempfile.TemporaryDirectory() as d:
+            admin_env = Path(d) / "a" / "admin.env"
+            admin_env.parent.mkdir()
+            admin_env.write_text("VIBHAGA_ADMIN_EMAIL=x@auth.example.test\nDATABASE_URL=postgres://admin.invalid/z\n")
+            env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+            with patch.dict(os.environ, env, clear=True):
+                self.assertEqual(cr.find_db_url(admin_env), ("postgres://admin.invalid/z", f"admin env {admin_env}"))
+                with patch.object(cr._auth, "ENV_PATH", admin_env):
+                    err = io.StringIO()
+                    with contextlib.redirect_stderr(err):
+                        self.assertEqual(cr.resolve_db_url(None), "postgres://admin.invalid/z")
+                    self.assertIn(f"DB URL from admin env {admin_env}", err.getvalue())
+                    self.assertNotIn("postgres://", err.getvalue())
+                # no line in the admin env → Vibhaga-DB/.env two levels up, as before
+                admin_env.write_text("VIBHAGA_ADMIN_EMAIL=x@auth.example.test\n")
+                (Path(d) / "Vibhaga-DB").mkdir()
+                (Path(d) / "Vibhaga-DB" / ".env").write_text("DATABASE_URL=postgres://db.invalid/w\n")
+                self.assertEqual(cr.find_db_url(admin_env), ("postgres://db.invalid/w", "Vibhaga-DB/.env"))
+                (Path(d) / "Vibhaga-DB" / ".env").unlink()
+                url, why = cr.find_db_url(admin_env)
+                self.assertIsNone(url)
+                self.assertIn("admin env file", why)
+            with patch.dict(os.environ, {"DATABASE_URL": "postgres://env.invalid/x"}):
+                self.assertEqual(cr.find_db_url(admin_env), ("postgres://env.invalid/x", "DATABASE_URL env"))
+
+
 class ArtefactTests(unittest.TestCase):
     def setUp(self):
         self.line = FIXTURE.read_text(encoding="utf-8").splitlines()[0]
