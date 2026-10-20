@@ -248,8 +248,8 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     # exactly like template-built ones), each id once, sorted for a stable report
     fig_ids = sorted(set(spec_ids) | {fid for fid, _, _ in hand}, key=_fig_sort)
     if not fig_ids:
-        die("no figures to gate — specs/figures.json is absent/empty and content.yaml "
-            "declares no figures: nothing would be audited or vdd-checked")
+        log("figures: none — templates, audit, vdd-check and visual-check skipped "
+            "(a figureless run is the Quick run's default)")
     hand_by_id = {fid: (fig, claims) for fid, fig, claims in hand}
     gates: dict = {}
     per_fig: dict[str, dict] = {f: {} for f in fig_ids}
@@ -347,13 +347,15 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     if m:
         log(f"  {m.group(0)}")
 
-    # 7. visual-check mode 1
+    # 7. visual-check mode 1 — only when there is a figure to measure
     vc_out = Path(args.vc_out) if args.vc_out else run.parent / "vc"
-    rc, vc_out_text = runner([str(NODE_BIN), str(TOOLS / "visual-check.mjs"), str(staged),
-                              "--claims-dir", str(figs_dir), "--out", str(vc_out)])
-    gates["visual-check"] = rc
-    if rc:
-        return fail(gates, run, "visual-check", rc, vc_out_text)
+    vc_out_text = ""
+    if fig_ids:
+        rc, vc_out_text = runner([str(NODE_BIN), str(TOOLS / "visual-check.mjs"), str(staged),
+                                  "--claims-dir", str(figs_dir), "--out", str(vc_out)])
+        gates["visual-check"] = rc
+        if rc:
+            return fail(gates, run, "visual-check", rc, vc_out_text)
 
     # 8. pre-critic lint — runs when cards are bound, a rubric is asked for, or the run has
     #    existing*.json dumps to dedup against (--card ⇒ --grade checked up front)
@@ -384,9 +386,12 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
         vc = f"{m.group(1)} {m.group(2)}" if m else "—"
         log(f"{fid} audit ok · vdd-check ok · vc {vc}")
     n_q = len(json.loads(staged.read_text(encoding="utf-8")).get("questions", []))
-    m = re.search(r"contact: (\S+) (\d+×\d+)", vc_out_text)
-    contact = m.group(1) if m else str(vc_out / "contact-light-375.png")
-    log(f"gates: ok — {len(fig_ids)} figures, {n_q} questions, contact sheet {contact}")
+    if fig_ids:
+        m = re.search(r"contact: (\S+) (\d+×\d+)", vc_out_text)
+        contact = m.group(1) if m else str(vc_out / "contact-light-375.png")
+        log(f"gates: ok — {len(fig_ids)} figures, {n_q} questions, contact sheet {contact}")
+    else:
+        log(f"gates: ok — 0 figures, {n_q} questions")
     write_gates(run, gates)
     return 0
 

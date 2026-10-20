@@ -226,6 +226,27 @@ class BuildTest(unittest.TestCase):
                 self.assertIn(k, gates)
             self.assertIn("2 figures", out.getvalue())
 
+    def test_figureless_run_skips_figure_stages_and_passes(self):
+        # the Quick run's default: no specs, no content.yaml figures → text gates only
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "specs" / "figures.json").unlink()
+            stub = StubRunner()
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run), runner=stub)
+            self.assertEqual(rc, 0, out.getvalue())
+            joined = [" ".join(c) for c in stub.calls]
+            for tool in ("vdd_templates.py", "audit-claim-set.py", "vdd-check.mjs",
+                         "visual-check.mjs"):
+                self.assertFalse(any(tool in c for c in joined), tool)
+            for tool in ("build-staged.py", "check-answers.py", "markdown-gate.mjs",
+                         "check-layout.py"):
+                self.assertTrue(any(tool in c for c in joined), tool)
+            self.assertIn("figures: none", out.getvalue())
+            self.assertIn("gates: ok — 0 figures, 2 questions", out.getvalue())
+            self.assertNotIn("visual-check", json.loads((run / "gates.json").read_text()))
+
     def test_nonempty_specs_with_no_figure_ids_dies_before_stage_1(self):
         # a non-empty file that yields zero figure ids must not report "gates: ok — 0 figures"
         with tempfile.TemporaryDirectory() as td:

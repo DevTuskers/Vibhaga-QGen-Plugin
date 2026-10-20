@@ -19,11 +19,29 @@ Open an S4–S8 skill only when its step needs a rule you do not know (a figure,
    --out $A/similar-plan.json`; every plan line names its closest row and why the **task** differs (step 3).
 4. Write `$A/content.yaml` (bilingual, readable layout, `check:` on every leaf). **No figures by default** — a
    figure only when the question cannot be asked without one, and then only from a template (figure-templates).
-5. `run-gates.py build … --card …` → exit 0. 6. `session create` (standard name) → `run-gates.py ship …` →
-   `sql-proof.py q2 <sid> --expected 10` (`q2: ok`, `q2b: ok`) → `embeddings-refresh --grade <g> --subject Mathematics`.
+5. `run-gates.py build … --card …` → exit 0 (a figureless run skips the figure stages and says so).
+6. `session create` (standard name) → `run-gates.py ship …` (takes ~5 min for 10 questions — run it in the
+   background, not under a short timeout) → `sql-proof.py q2 <sid> --expected 10` (`q2: ok`, `q2b: ok`) →
+   `embeddings-refresh --grade <g> --subject Mathematics`.
 7. **One** fresh `qgen-critic` session for all 10, **Normal** mode, paths only (step 13). Fix BLOCKER/MAJOR; MINORs
    only if one-line, else owner notes (step 14). Round 2 = fresh critic with `Previous report:`, changed questions only.
 8. Coverage after, logbook line (step 15), report in plain English.
+
+Authoring lessons from earlier runs (each one cost a fix round or a critic finding):
+- **Sinhala key terms come from the lesson.** Grep the lesson Markdown for the term before writing it
+  (`grep -o '<root>[^ ]*' <lesson>.md | sort | uniq -c`); a close word is still wrong (a fold line was written
+  `නැවුම් රේඛාව` for the lesson's `නැමුම් රේඛාව`; a floor tile `උළු කැටය` — a roof tile — for `ටයිල්`).
+- **A stem must not name what a part asks.** Calling ∠AOB's region "the smaller sector" answered (a)
+  "what is this region called?". Give the data (`$\angle AOB = 75^\circ$`), not the vocabulary.
+- **Do not lift the lesson's own worked example or activity as a part**, and vary the part pattern across
+  questions of one lesson — the critic flags both, and neither is a one-line fix after publish.
+- **`check:` must compute from the question's numbers.** A constant-only comparison (`12 > 11`,
+  `60 != 120`) is refused; a classification or "which one" leaf gets `check: none — <reason>`.
+- **Keep names outside the maths span**: `OP $= 4.5$` cm, not `$OP = 4.5$ cm` (the markdown gate blocks the
+  latter as swallowed prose).
+- **A maths-only `final_si` identical to English is stored once**, in `_english` (the Sinhala column is
+  NULL by design, 0024). If a Sinhala reader should see a Sinhala word, write one around the maths
+  (`කෝණවල එකතුව: $…$`).
 
 Cost rules: start the generation session itself in **Normal** mode; no headed browser when there are no figures;
 never re-read a skill or corpus file already read; one `build` + one `ship` per fix round.

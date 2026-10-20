@@ -20,7 +20,7 @@ Exit: 0 ready · 2 something required is missing (named).
 """
 from __future__ import annotations
 
-import argparse, os, shutil, subprocess, sys
+import argparse, os, shutil, subprocess, sys, urllib.parse
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -76,10 +76,32 @@ def preflight(vals: dict[str, str]) -> list[str]:
     except ImportError:
         problems.append("PyYAML missing (pip install pyyaml)")
     if "DATABASE_URL" in vals and shutil.which("psql"):
-        r = subprocess.run(["psql", "-X", "-A", "-t", "-w", "-c", "SELECT 1"], capture_output=True, text=True,
-                           env={**os.environ, "PGCONNECT_TIMEOUT": "10", "PGDATABASE": vals["DATABASE_URL"]})
-        if r.returncode != 0 or r.stdout.strip() != "1": problems.append("content DB: SELECT 1 failed (check DATABASE_URL)")
+        pg = pg_env(vals["DATABASE_URL"])
+        if pg is None:
+            problems.append("content DB: DATABASE_URL is not a postgres URL (needs host + user)")
+        else:
+            r = subprocess.run(["psql", "-X", "-A", "-t", "-w", "-c", "SELECT 1"], capture_output=True, text=True,
+                               env={**os.environ, "PGCONNECT_TIMEOUT": "10", **pg})
+            if r.returncode != 0 or r.stdout.strip() != "1": problems.append("content DB: SELECT 1 failed (check DATABASE_URL)")
     return problems
+
+
+def pg_env(url: str) -> dict | None:
+    """postgres URL → libpq env vars (libpq never expands a URL held in PGDATABASE, and argv
+    would expose the password). `?sslmode=` honoured; default `require`. None if malformed."""
+    try:
+        u = urllib.parse.urlsplit(url)
+        port = u.port
+    except ValueError:
+        return None
+    if not u.hostname or not u.username:
+        return None
+    q = urllib.parse.parse_qs(u.query)
+    return {"PGHOST": u.hostname, "PGPORT": str(port or 5432),
+            "PGUSER": urllib.parse.unquote(u.username),
+            "PGPASSWORD": urllib.parse.unquote(u.password or ""),
+            "PGDATABASE": urllib.parse.unquote(u.path.lstrip("/")) or "postgres",
+            "PGSSLMODE": (q.get("sslmode") or ["require"])[0]}
 
 
 def main(argv=None) -> int:
