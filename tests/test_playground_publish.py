@@ -397,6 +397,67 @@ class PlaygroundTests(unittest.TestCase):
         self.assertEqual(self.call(tool.cmd_questions_list, {"grade": 6, "exam": "ol"}, False, None, write=False), 2)
         self.assertEqual(self.call(tool.cmd_questions_list, {"batch_id": "nope"}, False, None, write=False), 2)
 
+    def similar_body(self, n=1, **kw):
+        nb = {"question_id": ID1, "score": 0.812, "lesson_ids": [LESSON], "source_batch_id": None, "needs_human_review": False,
+              "stem": "A synthetic stored stem about angles.", "parts": ["Part a.", "Part b."]}
+        body = {"scope": {"grade": 6, "exam": None, "subject": "Mathematics"}, "model": "@cf/baai/bge-m3", "k": 5,
+                "pool_size": 40, "pool_unembedded": 0, "results": [{"key": f"Q{i + 1}", "neighbours": [nb]} for i in range(n)]}
+        body.update(kw)
+        return body
+
+    def test_similar_prints_neighbours_and_sends_items(self):
+        self.fake_obj = tool.FakePlayground({}, {}, similar=self.similar_body(pool_unembedded=3))
+        out = self.root / "sim.json"
+        items = [{"key": "Q1", "stem": "Draw a triangle.", "parts": ["Measure the angle."]}]
+        rc = self.call(tool.cmd_similar, {"grade": 6, "exam": None, "subject": "Mathematics"}, items, 5, ID2, out, write=False)
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.fake_obj.bodies[-1], {"grade": 6, "subject": "Mathematics", "items": items, "k": 5, "exclude_batch_id": ID2})
+        self.assertTrue(any("0.812" in l and ID1 in l and "live" in l for l in self.logs))
+        self.assertTrue(any(l.startswith("WARN: 3 published row(s)") for l in self.logs))
+        self.assertTrue(any("evidence, not a verdict" in l for l in self.logs))
+        self.assertEqual(json.loads(out.read_text())["pool_size"], 40)
+
+    def test_similar_refusals_and_malformed(self):
+        self.fake_obj = tool.FakePlayground({}, {}, similar=self.similar_body())
+        items = [{"key": "Q1", "stem": "x", "parts": []}]
+        self.assertEqual(self.call(tool.cmd_similar, {"grade": 6, "exam": "ol", "subject": "Mathematics"}, items, 5, None, None, write=False), 2)
+        self.assertEqual(self.call(tool.cmd_similar, {"grade": None, "exam": None, "subject": "Mathematics"}, items, 5, None, None, write=False), 2)
+        self.assertEqual(self.call(tool.cmd_similar, {"grade": 6, "exam": None, "subject": "Mathematics"}, items, 11, None, None, write=False), 2)
+        self.assertEqual(self.call(tool.cmd_similar, {"grade": 6, "exam": None, "subject": "Mathematics"}, [], 5, None, None, write=False), 2)
+        self.assertEqual(self.fake_obj.bodies, [])
+        # wrong result count / bad uuid → refused, body withheld
+        self.fake_obj = tool.FakePlayground({}, {}, similar=self.similar_body(n=2))
+        self.assertEqual(self.call(tool.cmd_similar, {"grade": 6, "exam": None, "subject": "Mathematics"}, items, 5, None, None, write=False), 5)
+        self.assertIn("malformed similar response (body withheld)", self.logs)
+        bad = self.similar_body()
+        bad["results"][0]["neighbours"][0]["question_id"] = "nope"
+        self.fake_obj = tool.FakePlayground({}, {}, similar=bad)
+        self.assertEqual(self.call(tool.cmd_similar, {"grade": 6, "exam": None, "subject": "Mathematics"}, items, 5, None, None, write=False), 5)
+
+    def test_load_similar_items_content_yaml_and_plain_list(self):
+        p = self.root / "content.json"
+        p.write_text(json.dumps({"questions": [{"n": 3, "stem": "S", "stem_si": "සි", "parts": [
+            {"label": "a", "text": "A", "parts": [{"label": "i", "text": "A.i"}]}, {"label": "b", "text": "B"}]}]}))
+        self.assertEqual(tool.load_similar_items(p), [{"key": "Q3", "stem": "S", "parts": ["A", "A.i", "B"]}])
+        p.write_text(json.dumps([{"key": "plan-1", "stem": "S", "parts": ["x"]}, {"parts": ["only parts"]}]))
+        self.assertEqual(tool.load_similar_items(p), [{"key": "plan-1", "stem": "S", "parts": ["x"]}, {"key": "#2", "stem": None, "parts": ["only parts"]}])
+        p.write_text(json.dumps([{"stem": "s"}] * 21))
+        with self.assertRaises(tool.Refuse): tool.load_similar_items(p)
+
+    def test_embeddings_refresh_loops_until_done(self):
+        mk = lambda emb, rem: {"scope": {}, "model": "@cf/baai/bge-m3", "dry_run": False, "scanned": 10, "up_to_date": 10 - emb - rem, "embedded": emb, "remaining": rem}
+        self.fake_obj = tool.FakePlayground({}, {}, refresh=[mk(4, 4), mk(4, 0)])
+        self.assertEqual(self.call(tool.cmd_embeddings_refresh, {"grade": 6, "exam": None, "subject": None}, 4, 20, False, write=False), 0)
+        self.assertEqual(self.fake_obj.bodies, [{"grade": 6, "limit": 4}, {"grade": 6, "limit": 4}])
+        self.assertTrue(any("embedded 8 this run" in l for l in self.logs))
+        # stops at --max-calls with work left → exit 1 (re-run resumes)
+        self.fake_obj = tool.FakePlayground({}, {}, refresh=[mk(4, 4), mk(4, 0)])
+        self.assertEqual(self.call(tool.cmd_embeddings_refresh, {"grade": None, "exam": None, "subject": None}, 4, 1, False, write=False), 1)
+        self.assertEqual(self.call(tool.cmd_embeddings_refresh, {"grade": 6, "exam": "ol", "subject": None}, 4, 1, False, write=False), 2)
+        self.assertEqual(self.call(tool.cmd_embeddings_refresh, {"grade": 6, "exam": None, "subject": None}, 301, 1, False, write=False), 2)
+        self.fake_obj = tool.FakePlayground({}, {}, refresh=[{"embedded": "4"}])
+        self.assertEqual(self.call(tool.cmd_embeddings_refresh, {"grade": 6, "exam": None, "subject": None}, 4, 1, False, write=False), 5)
+
     def coverage_body(self, **kw):
         body = {"scope": {"grade": 6, "exam": None, "subject": "Mathematics", "status": "all", "needs_human_review": False, "medium": "sinhala"},
                 "total_questions": 7, "untagged": 1, "multi_lesson": 0,

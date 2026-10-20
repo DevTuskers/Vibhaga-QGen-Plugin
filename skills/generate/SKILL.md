@@ -78,7 +78,9 @@ Plan: [`plans/2026-09-29-question-generation-plugin.md`](https://github.com/DevT
    Tag with the `lesson_id` from the live taxonomy (`lessons` subcommand), never a guessed uuid.
 3. **Dedup before you author, against everything.** `questions list --lesson-id <id> --all` returns **every** row,
    drafts included, flagged or not, papered or paperless (0018 PD-4). The same exercise with the numbers changed is a
-   duplicate. Change the *task*, not only the numbers.
+   duplicate. Change the *task*, not only the numbers. Then ask the similarity finder (decision 0026) — it also
+   searches **untagged** rows and other lessons, which a lesson list cannot: `similar` before authoring, the critic's
+   Q4e after publish. Its score only ranks; there is no threshold — the verdict is yours and the critic's.
 4. **Every staged question carries `ingestion_metadata.needs_human_review: true`, and no `exam` key.** `build-staged`
    writes the flag; `playground-publish` refuses both before a save (0014 PD-1 guard-rail 4; 0018 PD-6).
 5. **Record ids before they matter (T9).** The session id goes into the ledger the moment `session create` returns; the
@@ -170,7 +172,16 @@ same two checkout paths in the critic's spawn prompt.
    markup, answer length). queries.sql Q1 is the same list by direct SQL when you need it uncached (T5).
    Record the row count and which stems you compared in `notes.md`.
 3. **Plan — one line per question** in `notes.md`, before any authoring:
-   `Q<n> · <skill / section> · <R/M/H per part> · not a duplicate because <…> · figure: <template | hand-draw | none>`
+   `Q<n> · <skill / section> · <R/M/H per part> · closest: <question_id> (<score>) — differs because <task, not numbers> · figure: <template | hand-draw | none>`
+   **Similarity check (decision 0026), before step 4.** Sketch each planned question as `{key, stem, parts}` in
+   `$A/plan-items.yaml` (a list; one-sentence stem + one line per part is enough) and run
+   `python3 $T similar --grade <g> --subject Mathematics --items $A/plan-items.yaml --out $A/similar-plan.json`
+   (`--exam <slug>` for an exam pool). It prints the 5 nearest published questions per item with a score, flags a
+   `WARN` if any pool row has no vector yet (run `embeddings-refresh` for the pool, then re-run). Read each
+   neighbour's stem and parts (`questions show <id>` for the full row) and fill `closest:` with the top one; when a
+   neighbour asks for the **same sequence of tasks** (e.g. "find the bearing · reverse it · walk back") with a new
+   story or new numbers, change the plan, not the wording. Calibration (0026): the known 2026-10-19 copy ranked #1
+   at only 0.64 — a low score is **not** a pass. Re-run `similar --items $A/content.yaml` once the spec is written.
    (a coverage-picked lesson may cite its before-count, e.g. `L26 Triangle Constructions (0 before)`).
    Check the set against the plan appendix rubric (for "medium–hard": ≥3 parts each, ≤1 R part and only as (a), an H
    part last, ≥60 % M/H and ≥30 % H across the set's levelled parts) and against AGENTS rule 3 for every multi-lesson tag. A figure that has nothing
@@ -277,6 +288,9 @@ same two checkout paths in the critic's spawn prompt.
     `VIBHAGA_ADMIN_AUTH_DB_URL` sources, else the content-DB chain (`DATABASE_URL` env → the admin env file's `DATABASE_URL` line → `Vibhaga-DB/.env`; no manual export needed when `VIBHAGA_ADMIN_ENV` carries it):
     `q3: ok` (counts land in the ledger under the session) · `q3: PENDING — no DB URL source; …`
     (prove by hand, step 11) · `q3: NOT ok — <counts>` turns an otherwise-successful write into exit 5.
+    **Then refresh the similarity vectors** for the pool so the critic's Q4e (and the next run's `similar`) sees
+    these rows: `python3 $T embeddings-refresh --grade <g> --subject Mathematics` → `remaining 0`. It writes only
+    derived vectors, never content; a 502 `embedding_unavailable` does not undo the publish — retry it later.
 11. **Prove it by SQL:** `python3 tools/sql-proof.py q2 <sid> --expected <N> --out $A/q2.json` → `q2: ok` AND
     `q2b: ok` (both lines come from the one `q2` command — there is no `q2b` subcommand; Q2b is the 0024 bilingual-completeness proof — every stem and approach has both sides;
     flagged, published, paperless, scope, 0 signed, 0 unanswered leaves). Q3 is now automatic: every **write**
@@ -352,7 +366,7 @@ same two checkout paths in the critic's spawn prompt.
 - [ ] env: VIBHAGA_ADMIN / VIBHAGA_WEB / VIBHAGA_CORPUS / VIBHAGA_ADMIN_ENV set (worktree) or siblings confirmed
 - [ ] 1 scope statement in notes.md (card file + lesson file + sha256)
 - [ ] 2 coverage-before.json saved · lessons picked (None/Thin + card) __ ; dedup: existing.json rows = __ ; stems compared: __
-- [ ] 3 plan: N lines, rubric checked, rule 3 checked
+- [ ] 3 plan: N lines, rubric checked, rule 3 checked · similar-plan.json saved, every line names its closest row
 - [ ] 4 content.yaml + second-method results per leaf in notes.md
 - [ ] 5 run-gates build exit 0 — gates.json: audit + vdd-check per figure (hand-drawn too), staged.json, ids.json = N ids, check-answers, markdown-gate 0 BLOCKED, layout 0 FAIL, mode 1, lint
 - [ ] FRICTION.md lines: __
