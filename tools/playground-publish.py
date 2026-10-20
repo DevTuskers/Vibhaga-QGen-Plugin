@@ -51,6 +51,10 @@ Usage (from anywhere; credentials + URLs are read at run time from Vibhaga-Admin
   playground-publish.py questions show <question_id> [--out F]
   playground-publish.py coverage --grade N|--exam SLUG [--subject S] [--status published|draft|all] [--needs-human-review true|false]
                             [--medium M] [--thin N] [--pairs] [--out F]    # read-only: per-lesson counts, thinnest first
+  playground-publish.py similar --grade N|--exam SLUG [--subject S] (--items content.yaml|plan.yaml | --text STEM ...)
+                            [--k 5] [--exclude-batch-id SID] [--out F]     # read-only: k nearest published questions (0026)
+  playground-publish.py embeddings-refresh [--grade N|--exam SLUG] [--subject S] [--limit 100] [--max-calls 20] [--dry-run]
+                                                                           # embed missing/stale vectors; no scope = backfill
   playground-publish.py --self-test                                        # NO network: runs test_playground_publish.py
 
   every network subcommand: --env PATH (default: Vibhaga-Admin/.env.local, found by walking up) · --cred-prefix VIBHAGA_ADMIN
@@ -64,7 +68,7 @@ Ledger shape (--ledger, merged by session id, never dropping a key):
     "published":  {question_ids, questions:[ids_of…], written_at, updated_at, last_publish_ids},
     "unpublished": [ids…], "flag_raised": [ids…]}}}
 
-Exit codes: 0 ok · 1 read-back mismatch / staged doc stale / self-test failure · 2 usage / missing input
+Exit codes: 0 ok · 1 read-back mismatch / staged doc stale / self-test failure / embeddings-refresh left rows (re-run) · 2 usage / missing input
             · 3 refused (scope, archived, unflagged, exam-keyed, drop, staged≠server, validate errors)
             · 4 refused at the dry-run (signatures) · 5 a network call or write failed mid-run,
             or the post-write Q3 proof ran and was NOT ok · 6 auth failed.
@@ -104,6 +108,12 @@ class PlaygroundApi(_pub.Api):
         if st not in ok:
             raise Refuse(f"{method} {path} → {_auth.response_error(st, js)}", 5)
         return js
+
+    def similar(self, body: dict) -> dict:
+        return checked_similar(self._pg("POST", "/v1/admin/similar", body), len(body.get("items") or []))
+
+    def embeddings_refresh(self, body: dict) -> dict:
+        return checked_refresh(self._pg("POST", "/v1/admin/embeddings/refresh", body))
 
     def create_session(self, meta: dict) -> dict:
         return checked_session(self._pg("POST", "/v1/admin/playground/sessions", meta, ok=(201,)))
@@ -249,7 +259,70 @@ def checked_summary(js) -> dict:
     return js
 
 
+def checked_similar(js, n_items: int) -> dict:
+    """POST /v1/admin/similar (Vibhaga-Docs decision 0026) — one result per item, neighbours closest first."""
+    bad = Refuse("malformed similar response (body withheld)", 5)
+    if not isinstance(js, dict) or not isinstance(js.get("model"), str) or type(js.get("k")) is not int: raise bad
+    if type(js.get("pool_size")) is not int or type(js.get("pool_unembedded")) is not int: raise bad
+    res = js.get("results")
+    if not isinstance(res, list) or len(res) != n_items: raise bad
+    for r in res:
+        if not isinstance(r, dict) or not isinstance(r.get("key"), str) or not isinstance(r.get("neighbours"), list): raise bad
+        for nb in r["neighbours"]:
+            if not isinstance(nb, dict) or not _auth.valid_uuid(nb.get("question_id")) \
+                    or not isinstance(nb.get("score"), (int, float)) or isinstance(nb.get("score"), bool) \
+                    or type(nb.get("needs_human_review")) is not bool or not isinstance(nb.get("stem"), str) \
+                    or not isinstance(nb.get("parts"), list) or not isinstance(nb.get("lesson_ids"), list) \
+                    or not (nb.get("source_batch_id") is None or _auth.valid_uuid(nb.get("source_batch_id"))):
+                raise bad
+    return js
+
+
+def checked_refresh(js) -> dict:
+    """POST /v1/admin/embeddings/refresh — counts for one call."""
+    if not isinstance(js, dict) or any(type(js.get(k)) is not int for k in ("scanned", "up_to_date", "embedded", "remaining")) \
+            or not isinstance(js.get("model"), str):
+        raise Refuse("malformed embeddings refresh response (body withheld)", 5)
+    return js
+
+
 # ----------------------------------------------------------------------------------------------- local inputs / ledger
+def load_similar_items(path: Path) -> list[dict]:
+    """Candidates for `similar`: a content.yaml (its `questions:` — `n`, `stem`, `parts[].text`, nested parts
+    flattened in order) or a plain list of `{key, stem, parts: [str]}` (a plan-stage sketch), YAML or JSON.
+    English sides only — the API embeds the English canonical text (0026 PD-4)."""
+    raw = path.read_text(encoding="utf-8")
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        try:
+            import yaml
+        except ImportError:
+            raise Refuse("similar --items: PyYAML is needed for a YAML file (pip install pyyaml) or pass JSON", 2)
+        data = yaml.safe_load(raw)
+
+    def flat(parts) -> list[str]:
+        out: list[str] = []
+        for pt in parts or []:
+            if isinstance(pt, str): out.append(pt)
+            elif isinstance(pt, dict):
+                if isinstance(pt.get("text"), str): out.append(pt["text"])
+                out += flat(pt.get("parts"))
+        return out
+
+    rows = data.get("questions") if isinstance(data, dict) else data
+    if not isinstance(rows, list) or not rows:
+        raise Refuse(f"similar --items: {path} has no questions/items list", 2)
+    items = []
+    for i, q in enumerate(rows):
+        if not isinstance(q, dict): raise Refuse(f"similar --items: entry {i + 1} is not a mapping", 2)
+        key = str(q.get("key") or (f"Q{q['n']}" if q.get("n") is not None else f"#{i + 1}"))[:64]
+        stem = q.get("stem") if isinstance(q.get("stem"), str) else None
+        items.append({"key": key, "stem": stem, "parts": flat(q.get("parts"))})
+    if len(items) > 20: raise Refuse("similar: at most 20 items per call — split the file", 2)
+    return items
+
+
 def checked_coverage(js) -> dict:
     """GET /v1/admin/coverage — every taxonomy lesson listed (zero counts included), lesson_counts keyed
     by lesson id, unordered two-lesson pairs, 3+-lesson rows in multi_lesson, tags outside the taxonomy in
@@ -788,6 +861,74 @@ def cmd_questions_list(api: PlaygroundApi, params: dict, fetch_all: bool, out_pa
     return 0
 
 
+def _one_line(text: str, width: int = 110) -> str:
+    t = " ".join(text.split())
+    return t if len(t) <= width else t[: width - 1] + "…"
+
+
+def cmd_similar(api: PlaygroundApi, scope: dict, items: list[dict], k: int, exclude_batch_id: str | None,
+                out_path: Path | None, log=print) -> int:
+    """Read-only: the k nearest PUBLISHED questions to each candidate (decision 0026 — a finder, never a
+    judge). The score is information only; there is no threshold. Read every neighbour's stem and parts and
+    say in the plan line why the new question asks for a different TASK."""
+    if (scope.get("grade") is None) == (not scope.get("exam")):
+        raise Refuse("similar needs exactly one of --grade N or --exam SLUG (0006)", 2)
+    if not scope.get("subject"):
+        raise Refuse("similar needs --subject", 2)
+    if not 1 <= k <= 10:
+        raise Refuse("--k must be 1..10", 2)
+    if not items:
+        raise Refuse("similar needs --items FILE or --text", 2)
+    body = {**{key: v for key, v in scope.items() if v is not None}, "items": items, "k": k}
+    if exclude_batch_id: body["exclude_batch_id"] = exclude_batch_id
+    api.fresh_token("similar")
+    js = api.similar(body)
+    log(f"similar: {json.dumps({x: scope.get(x) for x in ('grade', 'exam', 'subject')}, sort_keys=True)} · {js['model']}"
+        f" · pool {js['pool_size']} published · k {js['k']}")
+    if js["pool_unembedded"]:
+        log(f"WARN: {js['pool_unembedded']} published row(s) in this pool have no current vector — they cannot appear below;"
+            f" run `embeddings-refresh` for the pool first")
+    for r in js["results"]:
+        log(f"{r['key']}:")
+        if not r["neighbours"]: log("  (no embedded neighbours)")
+        for i, nb in enumerate(r["neighbours"], 1):
+            tag = "flagged" if nb["needs_human_review"] else "live"
+            src = "playground" if nb["source_batch_id"] else "paper/other"
+            log(f"  {i}. {nb['score']:.3f}  {nb['question_id']}  {tag} · {src} · {len(nb['lesson_ids'])} lesson tag(s) · {len(nb['parts'])} part(s)")
+            log(f"     {_one_line(nb['stem'])}")
+    log("scores are evidence, not a verdict — compare the TASKS (decision 0026 PD-1)")
+    if out_path:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(_pub.dump(js), encoding="utf-8")
+        log(f"→ {out_path}")
+    return 0
+
+
+def cmd_embeddings_refresh(api: PlaygroundApi, scope: dict, limit: int, max_calls: int, dry_run: bool, log=print) -> int:
+    """Embed published questions whose similarity vector is missing or stale (decision 0026 PD-5) — call after a
+    publish; with no scope it is the one-off whole-bank backfill. Writes only derived vectors (question_embeddings),
+    never content; repeated until `remaining` is 0 or --max-calls is spent (it is resumable: re-run it)."""
+    if scope.get("grade") is not None and scope.get("exam"):
+        raise Refuse("--grade and --exam are mutually exclusive (0006)", 2)
+    if not 1 <= limit <= 300:
+        raise Refuse("--limit must be 1..300", 2)
+    if max_calls < 1:
+        raise Refuse("--max-calls must be >= 1", 2)
+    body = {**{key: v for key, v in scope.items() if v is not None}, "limit": limit}
+    if dry_run: body["dry_run"] = True
+    api.fresh_token("embeddings-refresh")
+    total, js = 0, {}
+    for call in range(1, max_calls + 1):
+        js = api.embeddings_refresh(body)
+        total += js["embedded"]
+        log(f"embeddings-refresh call {call}: scanned {js['scanned']} · up to date {js['up_to_date']} · embedded {js['embedded']}"
+            f" · remaining {js['remaining']}{' (dry run)' if dry_run else ''}")
+        if dry_run or js["remaining"] == 0 or js["embedded"] == 0:
+            break
+    log(f"embeddings-refresh: {js.get('model')} · embedded {total} this run · remaining {js.get('remaining')}")
+    return 0 if js.get("remaining") == 0 or dry_run else 1
+
+
 def cmd_coverage(api: PlaygroundApi, params: dict, thin: int, show_pairs: bool, out_path: Path | None, log=print) -> int:
     """Read-only coverage table, thinnest lesson first. `total` counts every row in the status filter,
     `flagged` the ones still awaiting review (hidden from students), `pairs` how many two-lesson cells the
@@ -909,7 +1050,7 @@ class FakePlayground:
     def __init__(self, sessions, docs, risk=0, fail_publish_at=None, flake_first=False, validate_errors=None,
                  validate_warnings=None, archived=(), mirror_publish_flag=False, put_drops_published=False,
                  flag_stale_doc=False, lessons=None, corpus=None, page_size=2, question_detail=None, fail_status=500,
-                 coverage=None):
+                 coverage=None, similar=None, refresh=None):
         self.sessions = json.loads(json.dumps(sessions))
         for sid in archived:
             if sid in self.sessions: self.sessions[sid]["status"] = "archived"
@@ -919,6 +1060,7 @@ class FakePlayground:
         self.mirror = mirror_publish_flag; self.drop_pub = put_drops_published; self.flag_stale = flag_stale_doc
         self.lessons = lessons or []; self.corpus = corpus or []; self.page_size = page_size; self.detail = question_detail
         self.coverage = coverage
+        self.similar, self.refresh, self.bodies = similar, list(refresh or []), []
         self.calls: list[tuple[str, str]] = []; self.publishes: list[list[str]] = []; self.put_bodies: list[list] = []
         self.on_publish = None; self.grants = 0; self.logouts = 0; self.created = 0
 
@@ -941,6 +1083,12 @@ class FakePlayground:
             return 401, b'{"error":"unauthorized"}'
         if path == "/v1/admin/lessons" and method == "GET":
             return 200, json.dumps({"data": self.lessons}).encode()
+        if path == "/v1/admin/similar" and method == "POST":
+            self.bodies.append(js)
+            return (200, json.dumps(self.similar).encode()) if self.similar is not None else (404, b'{"error":"not_found"}')
+        if path == "/v1/admin/embeddings/refresh" and method == "POST":
+            self.bodies.append(js)
+            return (200, json.dumps(self.refresh.pop(0)).encode()) if self.refresh else (404, b'{"error":"not_found"}')
         if path == "/v1/admin/coverage" and method == "GET":
             return (200, json.dumps(self.coverage).encode()) if self.coverage is not None else (404, b'{"error":"not_found"}')
         if path == "/v1/admin/playground/questions" and method == "GET":
@@ -1076,6 +1224,11 @@ def main(argv=None) -> int:
     cv.add_argument("--status", choices=["published", "draft", "all"]); cv.add_argument("--needs-human-review", choices=["true", "false"])
     cv.add_argument("--medium", choices=MEDIUMS); cv.add_argument("--thin", type=int, default=2); cv.add_argument("--pairs", action="store_true")
     cv.add_argument("--out")
+    sm = sub.add_parser("similar", parents=[common]); sm.add_argument("--grade", type=int); sm.add_argument("--exam"); sm.add_argument("--subject", default="Mathematics")
+    sm.add_argument("--items", help="content.yaml or a list of {key, stem, parts} (YAML/JSON)"); sm.add_argument("--text", action="append", help="one candidate stem (repeatable)")
+    sm.add_argument("--k", type=int, default=5); sm.add_argument("--exclude-batch-id", dest="batch_id"); sm.add_argument("--out")
+    er = sub.add_parser("embeddings-refresh", parents=[common]); er.add_argument("--grade", type=int); er.add_argument("--exam"); er.add_argument("--subject")
+    er.add_argument("--limit", type=int, default=100); er.add_argument("--max-calls", type=int, default=20); er.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
     if a.self_test: return self_test()
     if not a.cmd: ap.print_help(); return 2
@@ -1127,6 +1280,13 @@ def main(argv=None) -> int:
                 params = {k: v for k, v in (("grade", a.grade), ("exam", a.exam), ("subject", a.subject), ("status", a.status),
                                             ("needs_human_review", a.needs_human_review), ("medium", a.medium)) if v is not None}
                 return cmd_coverage(api, params, a.thin, a.pairs, Path(a.out) if a.out else None)
+            if a.cmd == "similar":
+                items = load_similar_items(Path(a.items)) if a.items else []
+                items += [{"key": f"text{i + 1}", "stem": t, "parts": []} for i, t in enumerate(a.text or [])]
+                return cmd_similar(api, {"grade": a.grade, "exam": a.exam, "subject": a.subject}, items, a.k, a.batch_id,
+                                   Path(a.out) if a.out else None)
+            if a.cmd == "embeddings-refresh":
+                return cmd_embeddings_refresh(api, {"grade": a.grade, "exam": a.exam, "subject": a.subject}, a.limit, a.max_calls, a.dry_run)
             return 2
         rc = None
         try:

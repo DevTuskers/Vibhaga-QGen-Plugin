@@ -40,7 +40,7 @@ data = sys.stdin.read()
 with open(os.environ["FAKE_PSQL_ARGV"], "a") as f:
     f.write("\\t".join(sys.argv) + "\\n")
 assert data.startswith("set default_transaction_read_only=on;"), "read-only prefix missing"
-for marker in ("Q4a", "Q4b", "Q4c"):
+for marker in ("Q4a", "Q4b", "Q4c", "Q4d", "Q4e"):
     if f"-- {marker}" in data:
         if os.environ.get("FAKE_PSQL_FAIL") == marker.lower():
             sys.stderr.write(f"psql: {marker} synthetic failure\\n")
@@ -59,7 +59,7 @@ class SliceTests(unittest.TestCase):
         self.sql = QUERIES.read_text(encoding="utf-8")
 
     def test_real_q4_blocks_slice_cleanly(self):
-        for marker in ("Q4a", "Q4b", "Q4c"):
+        for marker in ("Q4a", "Q4b", "Q4c", "Q4d", "Q4e"):
             raw = cr.slice_block(self.sql, marker)
             self.assertTrue(raw.startswith(f"-- {marker}"), marker)
             stmt = cr.assert_single_select(raw, marker)
@@ -258,10 +258,37 @@ class EndToEnd(unittest.TestCase):
                 rc = e.code
         return rc, out.getvalue(), err.getvalue()
 
-    def write_canned(self, q4a=None, q4b=None, q4c=None):
-        for marker, text in (("q4a", q4a), ("q4b", q4b), ("q4c", q4c)):
+    def write_canned(self, q4a=None, q4b=None, q4c=None, q4d=None, q4e=None):
+        for marker, text in (("q4a", q4a), ("q4b", q4b), ("q4c", q4c), ("q4d", q4d), ("q4e", q4e)):
             if text is not None:
                 (self.canned / f"{marker}.out").write_text(text, encoding="utf-8")
+
+    def test_neighbours_q4e_written_when_the_table_exists(self):
+        nb = {"for_question_number": 1, "rank": 1, "question_id": "00000000-0000-4000-8000-000000000099",
+              "score": 0.64, "question_text": "synthetic neighbour", "part_texts": "a) x"}
+        self.write_canned(q4a=json.dumps({"batch_id": BID}) + "\n", q4b=FIXTURE.read_text(encoding="utf-8"),
+                          q4c="", q4d="t\n", q4e=json.dumps(nb) + "\n")
+        rc, out, err = self.run_main(BID, "--out", str(self.out))
+        self.assertEqual(rc, 0, err)
+        self.assertIn("critic-read: neighbours: 1 neighbour row(s)", out)
+        self.assertNotIn("no vector yet", out)
+        self.assertEqual(json.loads((self.out / "q4e.jsonl").read_text(encoding="utf-8"))["score"], 0.64)
+
+    def test_neighbours_name_unrefreshed_questions(self):
+        self.write_canned(q4a=json.dumps({"batch_id": BID}) + "\n", q4b=FIXTURE.read_text(encoding="utf-8"),
+                          q4c="", q4d="t\n", q4e="")
+        rc, out, err = self.run_main(BID, "--out", str(self.out))
+        self.assertEqual(rc, 0, err)
+        self.assertIn("no vector yet for ['Q1']", out)
+        self.assertEqual((self.out / "q4e.jsonl").read_text(encoding="utf-8"), "")
+
+    def test_neighbours_skipped_before_migration_0024(self):
+        self.write_canned(q4a=json.dumps({"batch_id": BID}) + "\n", q4b=FIXTURE.read_text(encoding="utf-8"),
+                          q4c="", q4d="f\n")
+        self.env["FAKE_PSQL_FAIL"] = "q4e"   # Q4e must not even be run
+        rc, out, err = self.run_main(BID, "--out", str(self.out))
+        self.assertEqual(rc, 0, err)
+        self.assertIn("question_embeddings not in this DB yet", out)
 
     def test_non_uuid_batch_id_exits_2(self):
         rc, _, err = self.run_main("not-a-uuid", "--out", str(self.out))

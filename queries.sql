@@ -146,7 +146,8 @@ FROM qgen.q3(:'actor_id'::uuid) f;
 -- with its parent id (rebuild the tree from parent_sub_question_id; depth ≤ 2) and its sub-answers;
 -- diagram_dsl at every level; lesson_ids resolved to (sort_order = lesson number, name). Q4c lists
 -- every OTHER question sharing a lesson with the batch — full stems plus part texts — for the
--- "not a copy" check. Each block emits ONE JSON object per line (newlines inside text are escaped),
+-- "not a copy" check. Q4d/Q4e (decision 0026) add each batch question's 5 nearest published neighbours in the
+-- same pool by stored embedding — tagged or not — so a look-alike on another lesson is not missed. Each block emits ONE JSON object per line (newlines inside text are escaped),
 -- so run it with `psql -X -A -t -v ON_ERROR_STOP=1` and parse line by line. For G6, a lesson's
 -- sort_order is its lesson number × 10 (70 = lesson 07) — match the scope card by number AND name. All statuses are returned: a row unpublished back to draft is still shown,
 -- with its status, so read the status column before judging.
@@ -217,3 +218,32 @@ WHERE q.source_batch_id IS DISTINCT FROM :'batch_id'::uuid
                          FROM questions x CROSS JOIN LATERAL unnest(x.lesson_ids) AS t
                         WHERE x.source_batch_id = :'batch_id'::uuid)
 ORDER BY q.source_paper_id NULLS FIRST, q.source_batch_id, q.question_number, q.question_id) r;
+
+-- Q4d — does the similarity table exist yet? (expect 1 line: t or f) — Vibhaga-DB 0024, decision 0026
+SELECT to_regclass('public.question_embeddings') IS NOT NULL AND :'batch_id'::uuid IS NOT NULL;
+
+-- Q4e — the 5 nearest PUBLISHED questions in the same pool, outside the batch, for each batch question (decision 0026), one JSON line per pair
+-- Needs Q4d = t. A batch question with no vector (not refreshed yet) has no lines — run `playground-publish.py embeddings-refresh`.
+-- Scores are cosine similarity and only rank; judge the TASK from question_text + part_texts. Untagged rows are included.
+SELECT to_jsonb(r) FROM (
+SELECT b.question_number AS for_question_number, n.rank, n.question_id, n.score, n.source_batch_id, n.source_paper_id,
+       n.needs_human_review, n.lesson_names, n.question_text, n.part_texts
+FROM questions b
+JOIN question_embeddings be ON be.question_id = b.question_id
+CROSS JOIN LATERAL (
+  SELECT row_number() OVER (ORDER BY e.embedding <=> be.embedding)        AS rank,
+         q.question_id, round((1 - (e.embedding <=> be.embedding))::numeric, 3) AS score,
+         q.source_batch_id, q.source_paper_id, q.needs_human_review,
+         (SELECT array_agg(l.name ORDER BY l.sort_order) FROM lessons l WHERE l.lesson_id = ANY (q.lesson_ids)) AS lesson_names,
+         COALESCE(q.question_text_english, q.question_text_sinhala)       AS question_text,
+         (SELECT string_agg(s.label || ') ' || COALESCE(s.text_english, s.text_sinhala), ' | ' ORDER BY s.parent_sub_question_id NULLS FIRST, s.sort_order)
+            FROM sub_questions s WHERE s.question_id = q.question_id)     AS part_texts
+    FROM question_embeddings e
+    JOIN questions q ON q.question_id = e.question_id
+   WHERE e.model = be.model AND q.status = 'published'
+     AND q.source_batch_id IS DISTINCT FROM :'batch_id'::uuid
+     AND q.subject IS NOT DISTINCT FROM b.subject AND q.grade IS NOT DISTINCT FROM b.grade AND q.exam IS NOT DISTINCT FROM b.exam
+   ORDER BY e.embedding <=> be.embedding
+   LIMIT 5) n
+WHERE b.source_batch_id = :'batch_id'::uuid
+ORDER BY b.question_number, n.rank) r;

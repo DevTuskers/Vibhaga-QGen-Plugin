@@ -12,7 +12,7 @@ hashes.txt) or a hashes file: fields.json + figures.txt then cover only CHANGED-
 questions, the unchanged ones land in `carried.txt` (`Q<n> <hash>` each), and stdout prints
 `changed: […] · carried: […] · gone: […]`.
 
-Slices the Q4a/Q4b/Q4c blocks out of `queries.sql` (from each `-- Q4x` header comment line to the
+Slices the Q4a/Q4b/Q4c/Q4d/Q4e blocks out of `queries.sql` (from each `-- Q4x` header comment line to the
 terminating `;` of its statement — a `;` inside a `-- ` comment line does not terminate), asserts
 each slice is a single SELECT with no write token (a
 smoke check — the read-only transaction is the guard; slicing stops at the first `;` on a
@@ -30,6 +30,10 @@ Writes into DIR:
   q4a.json     the session row (exactly one object — else exit 1 "session not found")
   q4b.jsonl    one JSON object per question, exactly as psql printed it (0 lines → exit 1)
   q4c.jsonl    one JSON object per OTHER question sharing a lesson (0 lines is a valid answer)
+  q4e.jsonl    decision 0026: per batch question, its 5 nearest PUBLISHED neighbours in the same pool by
+               stored embedding (any lesson, untagged included), `for_question_number` + `rank` + `score`;
+               empty when Q4d says `question_embeddings` is not in the DB yet or nothing is refreshed —
+               stdout names any batch question with no vector
   fields.json  markdown-gate input [{id, field, text}] for every non-null student string —
                the COALESCE compat keys AND the explicit *_english/*_sinhala sides (0024):
                `Q1.stem`/`Q1.stem_sinhala`, `Q2.b.text`/`Q2.b.text_sinhala`, `Q2.b.approach`/
@@ -88,7 +92,7 @@ UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 WRITE_TOKENS = re.compile(
     r"\b(INSERT|UPDATE|DELETE|ALTER|DROP|TRUNCATE|CREATE|GRANT|REVOKE|COPY|CALL|DO|MERGE|INTO|EXPLAIN)\b",
     re.I)
-BLOCKS = {"q4a": "Q4a", "q4b": "Q4b", "q4c": "Q4c"}
+BLOCKS = {"q4a": "Q4a", "q4b": "Q4b", "q4c": "Q4c", "q4d": "Q4d", "q4e": "Q4e"}
 
 # Message prefix — sql-proof.py imports these helpers and sets its own name before calling them.
 PROG = "critic-read"
@@ -499,7 +503,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv[:1] == ["hashes"]:
         return cmd_hashes(argv[1:])
     ap = argparse.ArgumentParser(prog="critic-read.py",
-                                 description="Read one playground batch for the qgen-critic: Q4a/b/c "
+                                 description="Read one playground batch for the qgen-critic: Q4a/b/c/e "
                                              "read-only via psql, plus fields/hashes/figures artefacts.")
     ap.add_argument("batch_id", help="the playground session id (a question_batches uuid)")
     ap.add_argument("--out", required=True, help="output directory for q4a.json, q4b/q4c.jsonl, …")
@@ -551,6 +555,20 @@ def main(argv: list[str] | None = None) -> int:
     q4c_lines = run_block(pg, a.batch_id, blocks["q4c"], "q4c")
     (out_dir / "q4c.jsonl").write_text(("\n".join(q4c_lines) + "\n") if q4c_lines else "",
                                      encoding="utf-8")
+
+    # Q4d/Q4e (decision 0026): nearest neighbours by stored embedding — optional until Vibhaga-DB 0024 is applied
+    q4e_lines: list[str] = []
+    has_table = run_block(pg, a.batch_id, blocks["q4d"], "q4d") == ["t"]
+    if has_table:
+        q4e_lines = run_block(pg, a.batch_id, blocks["q4e"], "q4e")
+        covered = {json.loads(l).get("for_question_number") for l in q4e_lines}
+        missing = sorted(f"Q{q.get('question_number')}" for q in questions if q.get("question_number") not in covered)
+        neighbours_note = (f"{len(q4e_lines)} neighbour row(s)" + (f" · no vector yet for {missing} — run "
+                           f"`playground-publish.py embeddings-refresh --grade/--exam … --subject …`" if missing else ""))
+    else:
+        neighbours_note = "question_embeddings not in this DB yet (Vibhaga-DB 0024) — compare against Q4c only"
+    (out_dir / "q4e.jsonl").write_text(("\n".join(q4e_lines) + "\n") if q4e_lines else "", encoding="utf-8")
+    print(f"{PROG}: neighbours: {neighbours_note}")
 
     parts_total = 0
     hashes: list[str] = []
