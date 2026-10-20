@@ -43,6 +43,22 @@ Authoring lessons from earlier runs (each one cost a fix round or a critic findi
   NULL by design, 0024). If a Sinhala reader should see a Sinhala word, write one around the maths
   (`කෝණවල එකතුව: $…$`).
 
+- **A yes/no final gets its own paragraph.** `No.` / `නැත.` first, the reason after a blank line. The Sinhala side
+  splits into more sentences than the English and trips check-layout's 3-sentences-in-one-paragraph FAIL first.
+- **A unit outside the maths span is English prose.** `final_si: "$22$ cm"` is refused as a copy of English; write
+  `$22\ \text{cm}$` (shared maths-only) or put a Sinhala word around it.
+- **No Sinhala words inside `$…$`** (markdown gate M2). Name the quantity with a letter (`$w$`) and keep the
+  words outside the span.
+- **Give every template spec its own `title` + `description` in the question's medium.** The default a11y text
+  is English and states counts ("15 equal squares … 6 fully shaded", even "0 cut by a diagonal") that answer
+  part (a) (T125); a Sinhala-medium run needs Sinhala a11y (rule 6).
+- **A "how many more" part must fit the cells actually drawn.** "Cut more squares in half" needed 4 empty
+  squares on a grid with 3 left — count the free cells on the spec before fixing the target fraction.
+- **A high `similar` score on the finished batch usually means the same task chain.** A tank question
+  (capacity → water used → height of what is left) scored 0.83 against an existing row with the same three
+  steps; new numbers would not fix it, so the question became "compare two containers → repeated pours, when
+  does it overflow" (0.74, different steps).
+
 Cost rules: start the generation session itself in **Normal** mode; no headed browser when there are no figures;
 never re-read a skill or corpus file already read; one `build` + one `ship` per fix round.
 
@@ -200,7 +216,9 @@ same two checkout paths in the critic's spawn prompt.
    --pairs --out $A/coverage-before.json` (read-only; every taxonomy lesson listed, thinnest first, `None` = 0 rows,
    `Thin` = 1..`--thin` (default 2); `flagged` = still awaiting review, hidden from students; `pairs` = two-lesson
    cells the lesson sits in). Add `--status all` and `--needs-human-review false` runs when the student-visible picture
-   matters — the default `published` view counts flagged rows too. **When the ask names a grade but no lesson, the
+   matters — the default `published` view counts flagged rows too. If the default view says `None 0 · Thin 0` but the
+   ask wants None/Thin lessons, re-run with `--thin <lowest count present>` (e.g. `--thin 3`) and say in the logbook
+   line which threshold picked the lessons. **When the ask names a grade but no lesson, the
    coverage picks:** `None` lessons first, then `Thin`, and among equals the one whose scope card is strongest (most
    worked examples/exercises, a usable `difficulty_hooks` block); skip a lesson whose card cannot carry the batch and
    say why in `notes.md`. A deliberate two-lesson question may fill a missing natural pair cell (both lessons used in
