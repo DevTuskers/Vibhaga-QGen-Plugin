@@ -49,6 +49,8 @@ Usage (from anywhere; credentials + URLs are read at run time from Vibhaga-Admin
   playground-publish.py questions list [--lesson-id UUID[,UUID]] [--status draft|published] [--needs-human-review true|false]
                             [--grade N] [--exam S] [--subject S] [--medium M] [--batch-id UUID] [--q TEXT] [--limit N] [--all] [--out F]
   playground-publish.py questions show <question_id> [--out F]
+  playground-publish.py coverage --grade N|--exam SLUG [--subject S] [--status published|draft|all] [--needs-human-review true|false]
+                            [--medium M] [--thin N] [--pairs] [--out F]    # read-only: per-lesson counts, thinnest first
   playground-publish.py --self-test                                        # NO network: runs test_playground_publish.py
 
   every network subcommand: --env PATH (default: Vibhaga-Admin/.env.local, found by walking up) · --cred-prefix VIBHAGA_ADMIN
@@ -155,6 +157,10 @@ class PlaygroundApi(_pub.Api):
     def get_question(self, qid: str) -> dict:
         return self._pg("GET", f"/v1/admin/playground/questions/{qid}")
 
+    def coverage(self, params: dict) -> dict:
+        qs = urllib.parse.urlencode(params)
+        return checked_coverage(self._pg("GET", f"/v1/admin/coverage{'?' + qs if qs else ''}"))
+
 
 # ----------------------------------------------------------------------------------------------- response shapes (openapi.admin.yaml)
 def checked_session(js) -> dict:
@@ -244,6 +250,32 @@ def checked_summary(js) -> dict:
 
 
 # ----------------------------------------------------------------------------------------------- local inputs / ledger
+def checked_coverage(js) -> dict:
+    """GET /v1/admin/coverage — every taxonomy lesson listed (zero counts included), lesson_counts keyed
+    by lesson id, unordered two-lesson pairs, 3+-lesson rows in multi_lesson, tags outside the taxonomy in
+    orphan_lesson_ids."""
+    bad = Refuse("malformed coverage response (body withheld)", 5)
+    if not isinstance(js, dict): raise bad
+    for k in ("total_questions", "untagged", "multi_lesson"):
+        if type(js.get(k)) is not int: raise bad
+    lessons, counts, pairs, orphans = js.get("lessons"), js.get("lesson_counts"), js.get("pairs"), js.get("orphan_lesson_ids")
+    if not isinstance(lessons, list) or not isinstance(counts, dict) or not isinstance(pairs, list) or not isinstance(orphans, list):
+        raise bad
+    for it in lessons:
+        if not isinstance(it, dict) or not _auth.valid_uuid(it.get("lesson_id")) or not isinstance(it.get("name"), str) \
+                or type(it.get("sort_order")) is not int:
+            raise bad
+    for lid, c in counts.items():
+        if not _auth.valid_uuid(lid) or not isinstance(c, dict) or any(type(v) is not int for v in c.values()):
+            raise bad
+    for pr in pairs:
+        if not isinstance(pr, dict) or not _auth.valid_uuid(pr.get("lesson_a")) or not _auth.valid_uuid(pr.get("lesson_b")) \
+                or type(pr.get("count")) is not int:
+            raise bad
+    if not all(_auth.valid_uuid(o) for o in orphans): raise bad
+    return js
+
+
 def need_uuid(v, what="id") -> str:
     """Validate + case-normalise: Postgres renders uuids lower-case, so every id we keep/compare
     or interpolate into SQL must be lowered at the input boundary."""
@@ -756,6 +788,48 @@ def cmd_questions_list(api: PlaygroundApi, params: dict, fetch_all: bool, out_pa
     return 0
 
 
+def cmd_coverage(api: PlaygroundApi, params: dict, thin: int, show_pairs: bool, out_path: Path | None, log=print) -> int:
+    """Read-only coverage table, thinnest lesson first. `total` counts every row in the status filter,
+    `flagged` the ones still awaiting review (hidden from students), `pairs` how many two-lesson cells the
+    lesson sits in. The API reads Hyperdrive (cached ~75 s, T5) — this chooses lessons; SQL Q2 stays the
+    proof of what landed."""
+    if params.get("grade") is not None and params.get("exam"):
+        raise Refuse("--grade and --exam are mutually exclusive (0006)", 2)
+    if params.get("grade") is None and not params.get("exam"):
+        raise Refuse("coverage needs --grade N or --exam SLUG", 2)
+    if thin < 0:
+        raise Refuse("--thin must be >= 0", 2)
+    api.fresh_token("coverage")
+    js = api.coverage(params)
+    counts, names = js["lesson_counts"], {it["lesson_id"]: it["name"] for it in js["lessons"]}
+    in_pairs: dict = {}
+    for pr in js["pairs"]:
+        for k in ("lesson_a", "lesson_b"): in_pairs[pr[k]] = in_pairs.get(pr[k], 0) + 1
+    rows = []
+    for it in js["lessons"]:
+        c = counts.get(it["lesson_id"]) or {}
+        rows.append((c.get("total", 0), c.get("flagged", 0), c.get("single_lesson", 0), in_pairs.get(it["lesson_id"], 0), it))
+    rows.sort(key=lambda r: (r[0], r[4]["sort_order"], r[4]["name"]))
+    log(f"coverage: {json.dumps(js.get('scope'), sort_keys=True)} · {js['total_questions']} question(s) · untagged {js['untagged']}"
+        f" · multi-lesson(3+) {js['multi_lesson']} · orphans {len(js['orphan_lesson_ids'])}")
+    log("mark  total  flagged  single  pairs  #   lesson")
+    for total, flagged, single, npairs, it in rows:
+        mark = "None" if total == 0 else ("Thin" if total <= thin else "")
+        log(f"{mark:<4}  {total:>5}  {flagged:>7}  {single:>6}  {npairs:>5}  {it['sort_order']:<3} {it['name']}  {it['lesson_id']}")
+    none_n = sum(1 for r in rows if r[0] == 0)
+    log(f"lessons: {len(rows)} · None {none_n} · Thin (1..{thin}) {sum(1 for r in rows if 0 < r[0] <= thin)} · pair cells {len(js['pairs'])}")
+    if show_pairs:
+        for pr in sorted(js["pairs"], key=lambda p: (-p["count"], names.get(p["lesson_a"], ""), names.get(p["lesson_b"], ""))):
+            log(f"pair  {pr['count']:>3}  {names.get(pr['lesson_a'], pr['lesson_a'])} × {names.get(pr['lesson_b'], pr['lesson_b'])}")
+    for o in js["orphan_lesson_ids"]:
+        log(f"orphan lesson id (not in the taxonomy): {o}")
+    if out_path:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(_pub.dump(js), encoding="utf-8")
+        log(f"→ {out_path}")
+    return 0
+
+
 def cmd_question_show(api: PlaygroundApi, qid: str, out_path: Path | None, log=print) -> int:
     qid = need_uuid(qid, "question id")
     api.fresh_token("question-show")
@@ -822,7 +896,7 @@ class FakePlayground:
     """In-memory playground plane: password grant, logout, session GET/POST/PATCH (409 batch_archived on
     writes to archived sessions), the staged-doc GET/PUT with the raise-never-lower flag clamp, validate,
     publish (dry-run returns `risk`; a real publish returns PublishResult but does NOT touch the doc —
-    the worst case, matching live), unpublish, flag-review, the corpus list and the lessons table.
+    the worst case, matching live), unpublish, flag-review, the corpus list, the lessons table and the coverage read (`coverage=` body; 404 when unset).
     Records every (method, path) call. Knobs: fail_publish_at (HTTP fail_status on the Nth real publish),
     flake_first (first real publish → status 0), validate_errors {question_id: [errors]},
     put_drops_published (the PUT ignores published/published_at — breaks read-back 1),
@@ -834,7 +908,8 @@ class FakePlayground:
 
     def __init__(self, sessions, docs, risk=0, fail_publish_at=None, flake_first=False, validate_errors=None,
                  validate_warnings=None, archived=(), mirror_publish_flag=False, put_drops_published=False,
-                 flag_stale_doc=False, lessons=None, corpus=None, page_size=2, question_detail=None, fail_status=500):
+                 flag_stale_doc=False, lessons=None, corpus=None, page_size=2, question_detail=None, fail_status=500,
+                 coverage=None):
         self.sessions = json.loads(json.dumps(sessions))
         for sid in archived:
             if sid in self.sessions: self.sessions[sid]["status"] = "archived"
@@ -843,6 +918,7 @@ class FakePlayground:
         self.validate_errors = validate_errors or {}; self.validate_warnings = validate_warnings or {}
         self.mirror = mirror_publish_flag; self.drop_pub = put_drops_published; self.flag_stale = flag_stale_doc
         self.lessons = lessons or []; self.corpus = corpus or []; self.page_size = page_size; self.detail = question_detail
+        self.coverage = coverage
         self.calls: list[tuple[str, str]] = []; self.publishes: list[list[str]] = []; self.put_bodies: list[list] = []
         self.on_publish = None; self.grants = 0; self.logouts = 0; self.created = 0
 
@@ -865,6 +941,8 @@ class FakePlayground:
             return 401, b'{"error":"unauthorized"}'
         if path == "/v1/admin/lessons" and method == "GET":
             return 200, json.dumps({"data": self.lessons}).encode()
+        if path == "/v1/admin/coverage" and method == "GET":
+            return (200, json.dumps(self.coverage).encode()) if self.coverage is not None else (404, b'{"error":"not_found"}')
         if path == "/v1/admin/playground/questions" and method == "GET":
             qs = urllib.parse.parse_qs(u.query)
             start = int((qs.get("cursor") or ["0"])[0]); end = start + self.page_size
@@ -994,6 +1072,10 @@ def main(argv=None) -> int:
     ql.add_argument("--subject"); ql.add_argument("--medium", choices=MEDIUMS); ql.add_argument("--batch-id"); ql.add_argument("--q"); ql.add_argument("--limit", type=int)
     ql.add_argument("--all", action="store_true", dest="fetch_all"); ql.add_argument("--out")
     qs = qsub.add_parser("show", parents=[common]); qs.add_argument("question_id"); qs.add_argument("--out")
+    cv = sub.add_parser("coverage", parents=[common]); cv.add_argument("--grade", type=int); cv.add_argument("--exam"); cv.add_argument("--subject")
+    cv.add_argument("--status", choices=["published", "draft", "all"]); cv.add_argument("--needs-human-review", choices=["true", "false"])
+    cv.add_argument("--medium", choices=MEDIUMS); cv.add_argument("--thin", type=int, default=2); cv.add_argument("--pairs", action="store_true")
+    cv.add_argument("--out")
     a = ap.parse_args(argv)
     if a.self_test: return self_test()
     if not a.cmd: ap.print_help(); return 2
@@ -1041,6 +1123,10 @@ def main(argv=None) -> int:
                                                 ("batch_id", a.batch_id), ("q", a.q), ("limit", a.limit)) if v is not None}
                     return cmd_questions_list(api, params, a.fetch_all, Path(a.out) if a.out else None)
                 if a.sub == "show": return cmd_question_show(api, a.question_id, Path(a.out) if a.out else None)
+            if a.cmd == "coverage":
+                params = {k: v for k, v in (("grade", a.grade), ("exam", a.exam), ("subject", a.subject), ("status", a.status),
+                                            ("needs_human_review", a.needs_human_review), ("medium", a.medium)) if v is not None}
+                return cmd_coverage(api, params, a.thin, a.pairs, Path(a.out) if a.out else None)
             return 2
         rc = None
         try:
