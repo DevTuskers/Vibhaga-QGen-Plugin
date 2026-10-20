@@ -38,5 +38,14 @@ class QgenSetupTests(unittest.TestCase):
             self.assertNotIn("synthetic-", printed)
 
 
+    def test_pg_env_splits_the_url_so_libpq_never_sees_it_as_a_dbname(self):
+        env = qs.pg_env("postgresql://u%40x:p%2Fw@db.example.test:6543/postgres?sslmode=verify-full")
+        self.assertEqual(env, {"PGHOST": "db.example.test", "PGPORT": "6543", "PGUSER": "u@x",
+                               "PGPASSWORD": "p/w", "PGDATABASE": "postgres",
+                               "PGSSLMODE": "verify-full"})
+        self.assertEqual(qs.pg_env("postgresql://u@h/d")["PGSSLMODE"], "require")
+        self.assertIsNone(qs.pg_env("not a url"))
+        self.assertIsNone(qs.pg_env("postgresql://h:notaport/d"))
+
 if __name__ == "__main__":
     unittest.main()
