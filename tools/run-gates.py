@@ -244,6 +244,11 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     if content is None:
         die(f"no content.yaml in {run}")
     content_doc = _load_content(content)
+    rubric = args.rubric or {
+        "easy": "easy",
+        "medium": "medium",
+        "hard": "medium-hard",
+    }.get(content_doc.get("difficulty"))
     spec_ids, hand = figure_ids(run, specs_path, content_doc)
     # the audit/vdd-check set = specs ∪ content.yaml figures (hand-drawn figures are gated
     # exactly like template-built ones), each id once, sorted for a stable report
@@ -366,7 +371,7 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     # 8. pre-critic lint — runs when cards are bound, a rubric is asked for, or the run has
     #    existing*.json dumps to dedup against (--card ⇒ --grade checked up front)
     existing = sorted(run.glob("existing*.json"))
-    if args.card or args.rubric or existing:
+    if args.card or rubric or existing:
         argv = [sys.executable, str(TOOLS / "precritic-lint.py"), str(run)]
         for c in args.card:
             argv += ["--card", c]
@@ -374,8 +379,8 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
             argv += ["--grade", str(args.grade)]
         if args.cards_dir:
             argv += ["--cards-dir", args.cards_dir]
-        if args.rubric:
-            argv += ["--rubric", args.rubric]
+        if rubric:
+            argv += ["--rubric", rubric]
         if existing:
             argv += ["--existing", *[str(p) for p in existing]]
         rc, out = runner(argv)
@@ -552,8 +557,7 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--grade", type=int, help="required with --card")
     b.add_argument("--cards-dir", help="passed through to precritic-lint")
     b.add_argument("--rubric", choices=["easy", "medium", "medium-hard"], default=None,
-                   help="passed to precritic-lint — checks the leaf `level:` keys against "
-                        "the set rubric")
+                   help="override the rubric inferred from content.yaml difficulty")
     s = sub.add_parser("ship", help="the live chain: validate → doc put → doc get diff → "
                        "[--session check] → publish dry-run → publish → q2")
     s.add_argument("run")

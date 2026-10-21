@@ -41,7 +41,7 @@ def questions3(flag=True):
 
 def session_row(sid=SID, **kw):
     return {"id": sid, "name": "test session", "grade": 6, "exam": None, "subject": "Mathematics",
-            "medium": "sinhala", "lesson_ids": [LESSON], "r2_key": f"playground/{sid}/questions.json",
+            "medium": "sinhala", "difficulty_band": None, "lesson_ids": [LESSON], "r2_key": f"playground/{sid}/questions.json",
             "status": "active", "question_count": 3, "created_by_admin_id": ACTOR,
             "created_at": STAMP, "updated_at": STAMP, **kw}
 
@@ -78,11 +78,11 @@ class PlaygroundTests(unittest.TestCase):
     def api(self, fake):
         return tool.PlaygroundApi(FAKE_ENV, transport=fake, log=self.logs.append)
 
-    def call(self, fn, *args, write=True):
+    def call(self, fn, *args, write=True, **kwargs):
         self.logs.clear()
         api = self.api(self.fake_obj)
         try:
-            return fn(api, *args, log=self.logs.append)
+            return fn(api, *args, log=self.logs.append, **kwargs)
         except tool.Refuse as e:
             self.logs.append(str(e))
             return e.code
@@ -313,23 +313,27 @@ class PlaygroundTests(unittest.TestCase):
     # ---------- 16. session create records the ledger; grade+exam refuses before any call ----------
     def test_session_create_ledger_and_scope_rules(self):
         fake = self.new_fake()
-        self.assertEqual(self.call(tool.cmd_session_create, "run 1", SCOPE_KV, LESSON, self.ledger_path), 0)
+        self.assertEqual(self.call(tool.cmd_session_create, "run 1", SCOPE_KV, LESSON, "easy", self.ledger_path), 0)
         new_sid = fake.created and f"00000000-0000-4000-8000-{fake.created:012d}"
         led = json.loads(self.ledger_path.read_text())
         ent = led["sessions"][new_sid]
         self.assertEqual(ent["name"], "run 1")
         self.assertEqual(ent["scope"], {"grade": 6, "subject": "Mathematics", "medium": "sinhala", "exam": None})
+        self.assertEqual(ent["difficulty_band"], "easy")
         self.assertEqual(ent["lesson_ids"], [LESSON])
         self.assertEqual(ent["status"], "active")
         self.assertIn(new_sid, self.logs)
         for bad in ("grade=6,exam=ol,medium=sinhala", "medium=klingon,grade=6", "grade=6"):
             with self.subTest(scope=bad):
                 fake = self.new_fake()
-                self.assertEqual(self.call(tool.cmd_session_create, "x", bad, "", self.ledger_path), 2)
+                self.assertEqual(self.call(tool.cmd_session_create, "x", bad, "", "easy", self.ledger_path), 2)
                 self.assertFalse(fake.calls)          # refused BEFORE the password grant
         fake = self.new_fake()
         bad_ledger = self.root / "ledger.txt"
-        self.assertEqual(self.call(tool.cmd_session_create, "run", SCOPE_KV, LESSON, bad_ledger), 2)
+        self.assertEqual(self.call(tool.cmd_session_create, "run", SCOPE_KV, LESSON, "easy", bad_ledger), 2)
+        self.assertFalse(fake.calls)
+        fake = self.new_fake()
+        self.assertEqual(self.call(tool.cmd_session_create, "run", SCOPE_KV, LESSON, "extreme", self.ledger_path), 2)
         self.assertFalse(fake.calls)
 
     def test_session_update_adds_lessons_and_reports_before_after(self):
@@ -347,6 +351,13 @@ class PlaygroundTests(unittest.TestCase):
         fake.sessions[SID]["status"] = "archived"
         self.assertEqual(self.call(tool.cmd_session_update, SID, LESSON, None), 3)
         self.assertFalse(any(m == "PATCH" for m, _ in fake.calls))
+
+    def test_session_update_persists_band(self):
+        fake = self.new_fake()
+        self.assertEqual(self.call(tool.cmd_session_update, SID, None, None, self.ledger_path,
+                                   difficulty="hard"), 0)
+        self.assertEqual(fake.sessions[SID]["difficulty_band"], "hard")
+        self.assertTrue(any("difficulty_band" in line and '"hard"' in line for line in self.logs))
 
     # ---------- 17. a bad session id exits 2 with zero calls ----------
     def test_bad_session_id_zero_calls(self):
@@ -492,12 +503,14 @@ class PlaygroundTests(unittest.TestCase):
 
     def test_coverage_table_and_params(self):
         self.fake_obj = tool.FakePlayground({}, {}, coverage=self.coverage_body())
-        params = {"grade": 6, "subject": "Mathematics", "status": "all", "needs_human_review": "false", "medium": "sinhala"}
+        params = {"grade": 6, "subject": "Mathematics", "status": "all", "needs_human_review": "false",
+                  "medium": "sinhala", "difficulty_band": "none"}
         out = self.root / "cov.json"
         self.assertEqual(self.call(tool.cmd_coverage, params, 2, True, out, write=False), 0)
         calls = [p for m, p in self.fake_obj.calls if m == "GET" and p.startswith("/v1/admin/coverage")]
         self.assertEqual(len(calls), 1)
-        for frag in ("grade=6", "subject=Mathematics", "status=all", "needs_human_review=false", "medium=sinhala"):
+        for frag in ("grade=6", "subject=Mathematics", "status=all", "needs_human_review=false",
+                     "medium=sinhala", "difficulty_band=none"):
             self.assertIn(frag, calls[0])
         self.assertEqual(self.fake_obj.grants, 1); self.assertEqual(self.fake_obj.logouts, 1)   # fresh grant, logout last
         rows = [l for l in self.logs if l.rstrip().endswith((LESSON, ID4, ID1))]
