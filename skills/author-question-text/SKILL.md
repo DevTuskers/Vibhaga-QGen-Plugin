@@ -322,6 +322,17 @@ difference once it is lost.
 
 ---
 
+## Writing natural Sinhala
+
+The Sinhala side is not a translation of the English. Write it as a Sinhala maths teacher would write it in the textbook.
+1. **Write from the lesson, not from the English.** Before writing, grep the lesson's exercises for their sentence endings and verbs (`grep -oE '[^ ]+ න්න|[^ ]+න්න[ .?]' <lesson>.md | sort | uniq -c | sort -rn | head`). Use the same instruction verbs (සොයන්න, ගණනය කරන්න, ලියන්න, හේතු දක්වන්න, අඳින්න …) and the lesson's own words for objects (the lesson says ඉරටු කැබලි, so do not write බට කෑලි).
+2. **Short sentences.** One idea per sentence. Split "… වන අතර එය …" into two sentences: `$3 + 4 = 7$ වේ.` / `$7$, $8$ ට වඩා කුඩා ය.`
+3. **Active verbs.** Prefer `බෙදා දෙයි` / `බෙදා දුන්නේ ය` to `බෙදා දෙනු ලැබේ`, unless the lesson itself uses the passive.
+4. **Sinhala word order.** Write the count after the noun with ක්: `පවුල් $3$ක්`, not `$3$ පවුල්`. Put the verb last. Ask questions with ද: `… කීය ද?`, `… කුමක් ද?`.
+5. **No calques.** Avoid "හි" chains copied from English "of" (`AC හි දිග හි අගය`). Write `AC පාදයේ දිග`. Do not open with කරුණාකර.
+6. **Read it alone.** Cover the English and read the Sinhala aloud. If a student would read a sentence twice, rewrite it.
+7. `tools/si-style.py` (run by `run-gates build`) warns on the mechanical signs of these. A warning is a prompt to reread, not proof of a defect.
+
 ## 6. Traps — stories with the catch
 
 Cross-cutting traps live in [`docs/TRAPS.md`](../../docs/TRAPS.md); these are

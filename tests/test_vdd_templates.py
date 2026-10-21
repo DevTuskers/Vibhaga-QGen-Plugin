@@ -28,6 +28,28 @@ import vdd_templates as vt                              # noqa: E402
 AUDIT = TOOLS / "audit-claim-set.py"
 
 
+class TemplateInputTests(unittest.TestCase):
+    def test_rays_endpoint_label_nudges_outside_nearby_arc(self):
+        built = vt.build_rays_from_point(
+            figure_id="synthetic-ray-clearance", stem="Two rays.",
+            ask=[["a", "the marked angle"]],
+            rays={"A": "E", "B": "NE"}, ray_len=100, north_arrow=False,
+            angles=[("A", "B", "x")], arc_r=110)
+        label = next(el for el in built.doc["elements"] if el.get("id") == "lblA")
+        self.assertGreater(label["labelOffset"][0], 14)
+
+    def test_missing_template_names_figure_and_valid_templates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "spec.json"
+            spec.write_text(json.dumps({"figure_id": "synthetic-missing", "kind": "rays_from_point"}))
+            proc = subprocess.run([sys.executable, str(TOOLS / "vdd_templates.py"),
+                                   "build", str(spec)], capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("synthetic-missing", proc.stderr)
+        self.assertIn("missing key 'template'", proc.stderr)
+        self.assertIn("rays_from_point", proc.stderr)
+
+
 def audit(claims: str, tmpdir: str) -> subprocess.CompletedProcess:
     p = Path(tmpdir) / "claims.txt"
     p.write_text(claims, encoding="utf-8")

@@ -176,7 +176,7 @@ class BuildTest(unittest.TestCase):
             self.assertFalse(any("build-staged" in c for c in joined))
             self.assertFalse(any("visual-check" in c for c in joined))
             gates = json.loads((run / "gates.json").read_text())
-            self.assertEqual(gates, {"templates": 0, "audit:Q1": 1})
+            self.assertEqual(gates, {"si-style": 0, "templates": 0, "audit:Q1": 1})
 
     def test_precritic_skipped_without_cards(self):
         with tempfile.TemporaryDirectory() as td:
@@ -207,6 +207,24 @@ class BuildTest(unittest.TestCase):
             self.assertIn("--existing", lint_argv)
             self.assertIn("existing.json", lint_argv)
             self.assertIn("existing-ol.json", lint_argv)
+
+    def test_easy_rubric_passes_through_and_sinhala_style_is_nonblocking(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            stub = StubRunner()
+            stub.canned.append((lambda joined: "si-style.py" in joined, 1,
+                                "si-style: unable to check synthetic fixture\n"))
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run, rubric="easy", card=["L07=7"], grade=6),
+                                  runner=stub)
+            self.assertEqual(rc, 0, out.getvalue())
+            commands = [" ".join(call) for call in stub.calls]
+            lint = next(command for command in commands if "precritic-lint.py" in command)
+            self.assertIn("--rubric easy", lint)
+            self.assertTrue(any("si-style.py" in command for command in commands))
+            self.assertIn("si-style: non-blocking stage exited 1", out.getvalue())
+            self.assertEqual(json.loads((run / "gates.json").read_text())["si-style"], 0)
 
     def test_dict_keyed_specs_gate_every_figure(self):
         # a {figure_id: spec} map yields its values — the shared normalisation, so stage 2

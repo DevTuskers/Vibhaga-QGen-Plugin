@@ -506,6 +506,49 @@ class PrecriticLintTest(unittest.TestCase):
             self.assertIn("WARN Q1: last part has no level — cannot check it is H",
                           r.stdout)
 
+    def test_easy_rubric_requires_r_and_at_most_three_leaves(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_levels_run(Path(td), ["R", "R", "R"])
+            passed = lint_plain(run, "--rubric", "easy")
+            self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
+            run = write_levels_run(Path(td) / "b", ["R", "M"])
+            wrong_level = lint_plain(run, "--rubric", "easy")
+            self.assertEqual(wrong_level.returncode, 1)
+            self.assertIn("easy requires R", wrong_level.stdout)
+            run = write_levels_run(Path(td) / "c", ["R", "R", "R", "R"])
+            too_many = lint_plain(run, "--rubric", "easy")
+            self.assertEqual(too_many.returncode, 1)
+            self.assertIn("easy allows at most 3", too_many.stdout)
+
+    def test_easy_and_medium_missing_levels_warn(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_levels_run(Path(td), ["R", None])
+            easy = lint_plain(run, "--rubric", "easy")
+            self.assertEqual(easy.returncode, 0, easy.stdout + easy.stderr)
+            self.assertIn("WARN Q1.b: no level", easy.stdout)
+            run = write_levels_run(Path(td) / "m", ["M", None])
+            medium = lint_plain(run, "--rubric", "medium")
+            self.assertEqual(medium.returncode, 0, medium.stdout + medium.stderr)
+            self.assertIn("WARN Q1.b: no level", medium.stdout)
+
+    def test_medium_requires_m_no_h_and_two_to_four_leaves(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_levels_run(Path(td), ["M", "R", "R", "R"])
+            good = lint_plain(run, "--rubric", "medium")
+            self.assertEqual(good.returncode, 0, good.stdout + good.stderr)
+            run = write_levels_run(Path(td) / "b", ["R", "R"])
+            no_m = lint_plain(run, "--rubric", "medium")
+            self.assertEqual(no_m.returncode, 1)
+            self.assertIn("no M leaf", no_m.stdout)
+            run = write_levels_run(Path(td) / "c", ["M", "H"])
+            has_h = lint_plain(run, "--rubric", "medium")
+            self.assertEqual(has_h.returncode, 1)
+            self.assertIn("medium does not allow H", has_h.stdout)
+            run = write_levels_run(Path(td) / "d", ["M"])
+            too_few = lint_plain(run, "--rubric", "medium")
+            self.assertEqual(too_few.returncode, 1)
+            self.assertIn("medium wants 2–4", too_few.stdout)
+
     # ---- (e) --existing: digits-masked Jaccard duplicate warn ----------------
     def test_existing_duplicate_warns(self):
         with tempfile.TemporaryDirectory() as td:

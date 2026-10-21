@@ -2,7 +2,7 @@
 """precritic-lint.py — the mechanical pre-critic pass over a generate run dir (W9 item G).
 
     precritic-lint.py <run> [--card KEY=NN …] [--grade N] [--cards-dir DIR]
-                            [--all-probes] [--rubric medium-hard] [--existing FILE …]
+                            [--all-probes] [--rubric easy|medium|medium-hard] [--existing FILE …]
 
 `<run>` is the generate §2 actor dir (`content.yaml`, `specs/figures.json`, `figures/`). Each
 `--card KEY=NN` binds a `content.yaml` `lessons:` key to a lesson's scope card, resolved as
@@ -37,7 +37,7 @@ Checks:
       silenced the WARN). Cards without `phrases` still work. A smell, not a proof —
       printed as `heuristic` so nobody treats it as a gate.
 
-  (d) `--rubric medium-hard` — the plan appendix's set rules, read off the leaf `level:`
+  (d) `--rubric easy|medium|medium-hard` — checks the selected difficulty band from leaf `level:`
       keys, or (f) FAIL — a student field missing its `*_si` twin, a Sinhala codepoint in
       the English side, or an English-prose copy in the `_si` side (build-staged's rule).
       keys (R|M/H, actor-only — build-staged never emits them): every question ≥3 leaf
@@ -312,6 +312,46 @@ def rubric_medium_hard(questions: list, log) -> tuple[int, int]:
     return fails, warns
 
 
+def rubric_easy(questions: list, log) -> tuple[int, int]:
+    fails = warns = 0
+    for q in questions:
+        levels = leaf_levels(q)
+        qn = f"Q{q.get('n')}"
+        if len(levels) > 3:
+            fails += 1
+            log(f"  FAIL {qn}: {len(levels)} leaf part(s) — easy allows at most 3")
+        for name, level in levels:
+            if level is None:
+                warns += 1
+                log(f"  WARN {name}: no level — the easy rubric cannot check it")
+            elif level != "R":
+                fails += 1
+                log(f"  FAIL {name}: level {level} — easy requires R")
+    return fails, warns
+
+
+def rubric_medium(questions: list, log) -> tuple[int, int]:
+    fails = warns = 0
+    for q in questions:
+        levels = leaf_levels(q)
+        qn = f"Q{q.get('n')}"
+        if not 2 <= len(levels) <= 4:
+            fails += 1
+            log(f"  FAIL {qn}: {len(levels)} leaf part(s) — medium wants 2–4")
+        rated = [level for _, level in levels if level is not None]
+        if "M" not in rated:
+            fails += 1
+            log(f"  FAIL {qn}: no M leaf — medium requires at least one M")
+        for name, level in levels:
+            if level is None:
+                warns += 1
+                log(f"  WARN {name}: no level — the medium rubric cannot check it")
+            elif level == "H":
+                fails += 1
+                log(f"  FAIL {name}: level H — medium does not allow H")
+    return fails, warns
+
+
 def card_terms(card: dict) -> list[str]:
     """The card's cleaned `phrases` ∪ `vocabulary` + section-title words (check c) — each
     through scope-cards' enough_letters: a term needs ≥2 letters when Sinhala-bearing / ≥3
@@ -412,8 +452,10 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
                     f"text/approach uses its vocabulary, phrases or section words — heuristic")
 
     # (d) set rubric — the leaf `level:` keys against the plan appendix's rules
-    if args.rubric == "medium-hard":
-        f, w = rubric_medium_hard(questions, log)
+    if args.rubric in ("easy", "medium", "medium-hard"):
+        rubric = {"easy": rubric_easy, "medium": rubric_medium,
+                  "medium-hard": rubric_medium_hard}[args.rubric]
+        f, w = rubric(questions, log)
         fails += f
         warns += w
 
@@ -482,7 +524,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="check every question against ALL bound cards' not_taught probes "
                          "(the pre-W12 run-wide behaviour); the default is per-question — "
                          "only the cards the question's lessons: keys bind")
-    ap.add_argument("--rubric", choices=["medium-hard"], default=None,
+    ap.add_argument("--rubric", choices=["easy", "medium", "medium-hard"], default=None,
                     help="check the leaf `level:` keys against a set rubric (check d — R "
                          "only as part (a), i.e. the first part in document order)")
     ap.add_argument("--existing", action="append", nargs="+", default=[], metavar="FILE",

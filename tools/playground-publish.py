@@ -38,6 +38,7 @@ on the Admin /generate page.
 Usage (from anywhere; credentials + URLs are read at run time from Vibhaga-Admin/.env.local — never printed):
   playground-publish.py session create --name N --scope grade=6,subject=Mathematics,medium=sinhala --lessons uuid,uuid --ledger L.json
   playground-publish.py session show <sid> · session list [--status active|archived] [--limit N] · session archive <sid> --ledger L.json
+  playground-publish.py session update <sid> [--lessons UUID[,UUID]] [--name N] [--ledger L.json]
   playground-publish.py doc get <sid> --out staged.json
   playground-publish.py doc put <sid> --staged Q.json --ledger L.json [--drop-missing [--allow-drop]]
   playground-publish.py validate <sid> --staged Q.json
@@ -509,6 +510,8 @@ def finish(api: PlaygroundApi, *, write: bool, sid: str | None = None, ledger: P
 
 # ----------------------------------------------------------------------------------------------- subcommands
 def cmd_session_create(api: PlaygroundApi, name: str, scope_kv, lessons_csv: str, ledger_path: Path, log=print, sid_out: dict | None = None) -> int:
+    if ledger_path.suffix != ".json":
+        raise Refuse("--ledger must have a .json suffix", 2)
     scope = scope_from_kv(scope_kv)                       # local rules BEFORE the first call
     lessons = parse_uuid_list(lessons_csv, "--lessons")
     if not lessons:
@@ -545,6 +548,34 @@ def cmd_session_archive(api: PlaygroundApi, sid: str, ledger_path: Path, log=pri
     sess = api.patch_session(sid, {"status": "archived"})
     led, ent = ledger_entry(ledger_path, sid); upsert_meta(ent, sess); save_ledger(ledger_path, led)
     log(f"session archive: {sid} → archived (re-open via 'Unarchive' on the Admin /generate page — there is no reopen subcommand)")
+    return 0
+
+
+def cmd_session_update(api: PlaygroundApi, sid: str, lessons_csv: str | None, name: str | None,
+                       ledger_path: Path | None = None, log=print) -> int:
+    sid = need_uuid(sid, "session id")
+    api.fresh_token("session-update")
+    before = api.get_session(sid)
+    refuse_archived(before)
+    patch = {}
+    if name is not None:
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 200:
+            raise Refuse("--name must be 1–200 characters", 2)
+        patch["name"] = name
+    if lessons_csv is not None:
+        lesson_ids = parse_uuid_list(lessons_csv, "--lessons")
+        if not lesson_ids:
+            raise Refuse("--lessons must name at least one lesson uuid", 2)
+        patch["lesson_ids"] = union_ids(before["lesson_ids"], lesson_ids)
+    if not patch:
+        raise Refuse("session update needs --lessons or --name", 2)
+    after = api.patch_session(sid, patch)
+    if ledger_path:
+        led, ent = ledger_entry(ledger_path, sid)
+        upsert_meta(ent, after)
+        save_ledger(ledger_path, led)
+    log(f"session update before: {json.dumps({'name': before['name'], 'lesson_ids': before['lesson_ids']}, ensure_ascii=False)}")
+    log(f"session update after: {json.dumps({'name': after['name'], 'lesson_ids': after['lesson_ids']}, ensure_ascii=False)}")
     return 0
 
 
@@ -1203,6 +1234,8 @@ def main(argv=None) -> int:
     sh = ssub.add_parser("show", parents=[common]); sh.add_argument("sid")
     li = ssub.add_parser("list", parents=[common]); li.add_argument("--status", choices=["active", "archived"]); li.add_argument("--limit", type=int)
     ar = ssub.add_parser("archive", parents=[common]); ar.add_argument("sid"); ar.add_argument("--ledger", required=True)
+    up = ssub.add_parser("update", parents=[common]); up.add_argument("sid"); up.add_argument("--lessons")
+    up.add_argument("--name"); up.add_argument("--ledger")
     doc = sub.add_parser("doc"); dsub = doc.add_subparsers(dest="sub")
     dg = dsub.add_parser("get", parents=[common]); dg.add_argument("sid"); dg.add_argument("--out", required=True)
     dp = dsub.add_parser("put", parents=[common]); dp.add_argument("sid"); dp.add_argument("--staged", required=True); dp.add_argument("--ledger", required=True); dp.add_argument("--drop-missing", action="store_true"); dp.add_argument("--allow-drop", action="store_true")
@@ -1242,6 +1275,8 @@ def main(argv=None) -> int:
             v = getattr(a, attr, None)
             if v is not None: setattr(a, attr, need_uuid(v, what))
         if getattr(a, "lesson_id", None): a.lesson_id = ",".join(parse_uuid_list(a.lesson_id, "--lesson-id"))
+        if a.cmd == "session" and a.sub == "create" and Path(a.ledger).suffix != ".json":
+            raise Refuse("--ledger must have a .json suffix", 2)
         env_path = Path(a.env) if getattr(a, "env", None) else (Path(os.environ["VIBHAGA_ADMIN_ENV"]) if os.environ.get("VIBHAGA_ADMIN_ENV") else None) \
             or _pub.find_up("Vibhaga-Admin/.env.local", HERE) or _pub.find_up("Vibhaga-Admin/.env.local", Path.cwd())
         if not env_path or not env_path.exists():
@@ -1249,7 +1284,7 @@ def main(argv=None) -> int:
         api = PlaygroundApi(_pub.read_env(env_path), cred_prefix=getattr(a, "cred_prefix", "VIBHAGA_ADMIN"))
         # WRITE subcommands — the ones whose logout leaves a revocation to prove (B1/B2: reads
         # print no hint at all; writes get the auto-Q3 or the PENDING line).
-        write = (a.cmd == "session" and a.sub in ("create", "archive")) or \
+        write = (a.cmd == "session" and a.sub in ("create", "archive", "update")) or \
                 (a.cmd == "doc" and a.sub == "put") or \
                 a.cmd in ("publish", "unpublish", "flag-review")
         created: dict = {}
@@ -1260,6 +1295,9 @@ def main(argv=None) -> int:
                 if a.sub == "show": return cmd_session_show(api, a.sid)
                 if a.sub == "list": return cmd_session_list(api, a.status, a.limit)
                 if a.sub == "archive": return cmd_session_archive(api, a.sid, Path(a.ledger))
+                if a.sub == "update":
+                    return cmd_session_update(api, a.sid, a.lessons, a.name,
+                                              Path(a.ledger) if a.ledger else None)
             if a.cmd == "doc":
                 if a.sub == "get": return cmd_doc_get(api, a.sid, Path(a.out))
                 if a.sub == "put": return cmd_doc_put(api, a.sid, Path(a.staged), Path(a.ledger), a.drop_missing, a.allow_drop)

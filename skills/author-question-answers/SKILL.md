@@ -128,6 +128,8 @@ about the two columns applies to what you type.
 
 ### 4.1 `approach` — the method, in the student's language
 
+For Sinhala `approach` and `final`, follow [Writing natural Sinhala](../author-question-text/SKILL.md#writing-natural-sinhala).
+
 - **Short paragraphs, one step each — never one run-on paragraph (§4.1c).**
 - **Teach, don't announce.** The north star is learning, not answer-checking.
 - **Write both languages (0024).** `approach` in plain school English AND `approach_si` in natural

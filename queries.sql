@@ -38,6 +38,30 @@ FROM questions q
 WHERE :'lesson_id'::uuid = ANY (q.lesson_ids)
 ORDER BY q.source_paper_id NULLS FIRST, q.source_batch_id, q.question_number, q.question_id;
 
+-- Q1c — the full bilingual stem and every part tagged with the lesson
+-- Variables: lesson_id (uuid). The caller wraps this query in BEGIN TRANSACTION READ ONLY … ROLLBACK.
+SELECT jsonb_build_object(
+         'question_id', q.question_id,
+         'status', q.status,
+         'needs_human_review', q.needs_human_review,
+         'question_number', q.question_number,
+         'stem_english', q.question_text_english,
+         'stem_sinhala', q.question_text_sinhala,
+         'parts', COALESCE((
+           SELECT jsonb_agg(jsonb_build_object(
+             'label', s.label,
+             'sort_order', s.sort_order,
+             'text_english', s.text_english,
+             'text_sinhala', s.text_sinhala
+           ) ORDER BY s.sort_order, s.sub_question_id)
+           FROM sub_questions s
+           WHERE s.question_id = q.question_id
+         ), '[]'::jsonb)
+       )::text
+FROM questions q
+WHERE :'lesson_id'::uuid = ANY (q.lesson_ids)
+ORDER BY q.source_paper_id NULLS FIRST, q.source_batch_id, q.question_number, q.question_id;
+
 
 -- ============================================================================================
 -- Q2 — Post-publish proof for a playground session                  DATABASE: content
