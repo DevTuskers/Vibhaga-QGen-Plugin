@@ -2,7 +2,7 @@
 """run-gates.py — the two mechanical chains of generate §2 as ONE command each (W9 item E).
 
     run-gates.py build <run> --medium M [--vc-out DIR] [--card KEY=NN …] --grade N
-                       [--rubric medium-hard]
+                       [--rubric easy|medium|medium-hard]
     run-gates.py ship  <run> --sid SID --scope K=V,… [--session-check]
                        [--vc-session-out DIR] [--accept-signatures N] [--expected N]
 
@@ -12,7 +12,8 @@
 This tool ONLY chains the existing tools as subprocesses with their own flags — nothing is
 forked or re-implemented and no gate is lowered:
 
-  build:  1. vdd_templates.py build specs/figures.json → figures/ (skipped when the file is
+  build:  0. si-style.py content.yaml — warning-only, never blocks the build
+          1. vdd_templates.py build specs/figures.json → figures/ (skipped when the file is
              absent or [] — every figure is then hand-drawn)
           2. per figure id — ids from specs/figures.json ∪ the basenames of every file in
              content.yaml's `figures:` map, so HAND-DRAWN figures are gated exactly like
@@ -250,8 +251,13 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     if not fig_ids:
         log("figures: none — templates, audit, vdd-check and visual-check skipped "
             "(a figureless run is the Quick run's default)")
+    rc, style_out = runner([sys.executable, str(TOOLS / "si-style.py"), str(run)])
+    gates: dict = {"si-style": 0}
+    if style_out.strip():
+        log(style_out.rstrip())
+    if rc:
+        log(f"si-style: non-blocking stage exited {rc}")
     hand_by_id = {fid: (fig, claims) for fid, fig, claims in hand}
-    gates: dict = {}
     per_fig: dict[str, dict] = {f: {} for f in fig_ids}
 
     # 1. template build — only when there are specs (an all-hand-drawn run has none)
@@ -545,7 +551,7 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--card", action="append", default=[], help="KEY=NN for precritic-lint")
     b.add_argument("--grade", type=int, help="required with --card")
     b.add_argument("--cards-dir", help="passed through to precritic-lint")
-    b.add_argument("--rubric", choices=["medium-hard"], default=None,
+    b.add_argument("--rubric", choices=["easy", "medium", "medium-hard"], default=None,
                    help="passed to precritic-lint — checks the leaf `level:` keys against "
                         "the set rubric")
     s = sub.add_parser("ship", help="the live chain: validate → doc put → doc get diff → "
