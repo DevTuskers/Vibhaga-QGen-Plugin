@@ -2,7 +2,7 @@
 """precritic-lint.py — the mechanical pre-critic pass over a generate run dir (W9 item G).
 
     precritic-lint.py <run> [--card KEY=NN …] [--grade N] [--cards-dir DIR]
-                            [--all-probes] [--rubric easy|medium|medium-hard] [--existing FILE …]
+                            [--all-probes] [--rubric easy|medium|medium-hard|by-band] [--existing FILE …]
 
 `<run>` is the generate §2 actor dir (`content.yaml`, `specs/figures.json`, `figures/`). Each
 `--card KEY=NN` binds a `content.yaml` `lessons:` key to a lesson's scope card, resolved as
@@ -184,7 +184,7 @@ def part_texts(q: dict) -> list[str]:
         for p in parts or []:
             if not isinstance(p, dict):
                 continue
-            for k in ("text", "approach"):
+            for k in ("text", "approach", "text_si", "approach_si"):
                 if isinstance(p.get(k), str):
                     texts.append(p[k])
             walk(p.get("parts"))
@@ -452,12 +452,22 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
                     f"text/approach uses its vocabulary, phrases or section words — heuristic")
 
     # (d) set rubric — the leaf `level:` keys against the plan appendix's rules
-    if args.rubric in ("easy", "medium", "medium-hard"):
-        rubric = {"easy": rubric_easy, "medium": rubric_medium,
-                  "medium-hard": rubric_medium_hard}[args.rubric]
-        f, w = rubric(questions, log)
+    rubrics = {"easy": rubric_easy, "medium": rubric_medium, "medium-hard": rubric_medium_hard}
+    if args.rubric in rubrics:
+        f, w = rubrics[args.rubric](questions, log)
         fails += f
         warns += w
+    elif args.rubric == "by-band":
+        # a mixed batch (`difficulty: medium` + `difficulty: hard` overrides): each question is
+        # checked against its OWN band's rubric; set-wide fractions are per band group
+        default = content.get("difficulty")
+        for band, name in (("easy", "easy"), ("medium", "medium"), ("hard", "medium-hard")):
+            group = [q for q in questions if q.get("difficulty", default) == band]
+            if group:
+                log(f"  rubric {name}: " + " ".join(f"Q{q.get('n')}" for q in group))
+                f, w = rubrics[name](group, log)
+                fails += f
+                warns += w
 
     # (f) 0024 bilingual sides — every student field carries its `*_si` twin, in the right
     # script (build-staged.bilingual_problem — the same rule the builder refuses on, run here so
@@ -524,7 +534,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="check every question against ALL bound cards' not_taught probes "
                          "(the pre-W12 run-wide behaviour); the default is per-question — "
                          "only the cards the question's lessons: keys bind")
-    ap.add_argument("--rubric", choices=["easy", "medium", "medium-hard"], default=None,
+    ap.add_argument("--rubric", choices=["easy", "medium", "medium-hard", "by-band"], default=None,
                     help="check the leaf `level:` keys against a set rubric (check d — R "
                          "only as part (a), i.e. the first part in document order)")
     ap.add_argument("--existing", action="append", nargs="+", default=[], metavar="FILE",

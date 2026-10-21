@@ -24,14 +24,17 @@ a skill or corpus file already read; allow one `build` + one `ship` per fix roun
    the **task** differs. Re-run `python3 tools/dedup-sheet.py --grade <g> --card <key>=<NN>
    --plan $A/plan-items.yaml --similar $A/similar-plan.json --out $A/dedup-sheet.md` to pair every plan line
    with its neighbours before the critic. Apply [Difficulty bands](#difficulty-bands).
-   See [T143–T154](../../docs/TRAPS.md).
+   See [T143–T154](../../docs/TRAPS.md). Tips: Hard Q stems may leave R only as part (a) and must end on an H
+   leaf; `number_line` takes only non-negative endpoints and needs every drawn number (incl. step `1`) written in
+   the stem — write `$0, 1, 2, \ldots, 8$`; a maths-only `approach_si` identical to English fails Q2b
+   (`part_approach_no_sinhala`) — always add a Sinhala sentence to the approach.
 3b. **Plan critic** — follow [Plan-stage critic](#plan-stage-critic): one fresh `qgen-critic` session, Normal
    mode, `Mode: plan`; paths only. Replace every REPLACE line, then rerun `similar` and the dedup sheet. A second
    plan round is only for changed lines; then the stop rule applies. Create the session only when every line is OK.
 4. Write `$A/content.yaml` (bilingual, readable layout, required `difficulty: easy|medium|hard`; questions may override it; `check:` on every leaf). **No figures by default**; only
    add one when the question cannot be asked without it, and use a template (`figure-templates`).
 5. `python3 tools/run-gates.py build $A --medium <medium> --grade <g> --card <key>=<NN>`
-   → exit 0. Rubric defaults from content difficulty (easy→easy, medium→medium, hard→medium-hard); `--rubric` overrides. Build also runs warning-only `si-style.py`; a figureless run skips figure stages.
+   → exit 0. Rubric defaults from content difficulty (easy→easy, medium→medium, hard→medium-hard); a mixed batch (`difficulty: medium` + per-question `difficulty: hard`) defaults to `--rubric by-band`, which checks each question against its own band (Hard: R only as (a), last leaf H); `--rubric` overrides. Build also runs warning-only `si-style.py`; a figureless run skips figure stages.
 6. `session create --name "<standard name>" --scope "grade=<g>,subject=Mathematics,medium=<medium>" --lessons <ids> --difficulty <content band>
    --ledger $A/ledger.json` → `run-gates.py ship …` (takes ~5 min for 10 questions; run in the background, not
    under a short timeout) → `sql-proof.py q2 <sid> --expected 10` (`q2: ok`, `q2b: ok`) →
