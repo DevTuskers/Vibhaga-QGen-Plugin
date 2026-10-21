@@ -72,6 +72,7 @@ ORDER BY q.source_paper_id NULLS FIRST, q.source_batch_id, q.question_number, q.
 --     partial landing never passes);
 --   * every question is flagged (needs_human_review), status 'published', paperless
 --     (source_paper_id IS NULL), and has the session's grade/exam/subject/medium;
+--   * every question has a difficulty band;
 --   * no answer and no sub-answer of any of its parts (nested parts included — every
 --     sub_questions row carries question_id) has verified_by or verified_at set;
 --   * every leaf has an answer: a question with no parts has an `answers` row, and every part with
@@ -89,6 +90,7 @@ WITH b  AS (SELECT * FROM question_batches WHERE batch_id = :'batch_id'::uuid),
               (SELECT count(*) FROM q)                                                    AS questions,
               (SELECT count(*) FROM q WHERE q.needs_human_review IS NOT TRUE)             AS not_flagged,
               (SELECT count(*) FROM q WHERE q.status IS DISTINCT FROM 'published')        AS not_published,
+              (SELECT count(*) FROM q WHERE q.difficulty_band IS NULL)                    AS no_band,
               (SELECT count(*) FROM q WHERE q.source_paper_id IS NOT NULL)                AS papered,
               (SELECT count(*) FROM q CROSS JOIN b
                 WHERE q.grade   IS DISTINCT FROM b.grade   OR q.exam   IS DISTINCT FROM b.exam
@@ -107,7 +109,8 @@ WITH b  AS (SELECT * FROM question_batches WHERE batch_id = :'batch_id'::uuid),
      )
 SELECT r.*,
        (r.session_exists = 1 AND r.questions = :expected AND r.questions > 0
-        AND r.not_flagged = 0 AND r.not_published = 0 AND r.papered = 0 AND r.scope_mismatch = 0
+        AND r.not_flagged = 0 AND r.not_published = 0 AND r.no_band = 0
+        AND r.papered = 0 AND r.scope_mismatch = 0
         AND r.signed_answers = 0 AND r.signed_sub_answers = 0 AND r.unanswered_leaves = 0) AS ok
 FROM r;
 

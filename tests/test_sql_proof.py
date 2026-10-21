@@ -31,7 +31,7 @@ SPEC.loader.exec_module(sp)
 SID = "00000000-0000-4000-8000-0000000000e1"
 ACTOR = "00000000-0000-4000-8000-0000000000e2"
 
-Q2_COLS = ["session_exists", "questions", "not_flagged", "not_published", "papered",
+Q2_COLS = ["session_exists", "questions", "not_flagged", "not_published", "no_band", "papered",
            "scope_mismatch", "parts", "answers", "signed_answers", "sub_answers",
            "signed_sub_answers", "unanswered_leaves", "ok"]
 Q3_COLS = ["actor_exists", "sessions", "active_refresh_tokens", "actor_is_admin", "ok"]
@@ -115,9 +115,13 @@ class SliceTests(unittest.TestCase):
 class FailingTests(unittest.TestCase):
     def test_q2_failing_names_each_broken_invariant(self):
         counts = {"session_exists": 1, "questions": 4, "not_flagged": 0, "not_published": 4,
+                  "no_band": 0,
                   "papered": 0, "scope_mismatch": 0, "signed_answers": 0, "signed_sub_answers": 0,
                   "unanswered_leaves": 0}
         self.assertEqual(sp.failing_q2(counts, 4), ["not_published=4"])
+        counts["not_published"] = 0
+        counts["no_band"] = 2
+        self.assertEqual(sp.failing_q2(counts, 4), ["no_band=2"])
         counts["questions"] = 3
         self.assertIn("questions=3 (expected 4)", sp.failing_q2(counts, 4))
 
@@ -181,7 +185,7 @@ class EndToEnd(unittest.TestCase):
 
     # ---- q2 -----------------------------------------------------------------
     def test_q2_ok_t_exits_0(self):
-        vals = [1, 4, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, "t"]
+        vals = [1, 4, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, "t"]
         rc, out, err = self.run_main("q2", SID, "--expected", "4",
                                      extra={"FAKE_PSQL_OUT": out_line(Q2_COLS, vals)})
         self.assertEqual(rc, 0, err)
@@ -192,7 +196,7 @@ class EndToEnd(unittest.TestCase):
         self.assertNotIn("s3cret", err + out)
 
     def test_q2_ok_f_exits_1_naming_the_failing_counts(self):
-        vals = [1, 4, 0, 4, 0, 0, 0, 4, 0, 0, 0, 0, "f"]
+        vals = [1, 4, 0, 4, 0, 0, 0, 0, 4, 0, 0, 0, 0, "f"]
         rc, out, _ = self.run_main("q2", SID, "--expected", "4",
                                    extra={"FAKE_PSQL_OUT": out_line(Q2_COLS, vals)})
         self.assertEqual(rc, 1)
@@ -262,7 +266,7 @@ class EndToEnd(unittest.TestCase):
         self.assertIn("step 11", err)
 
     def test_q2_argv_never_carries_the_url(self):
-        vals = [1, 4, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, "t"]
+        vals = [1, 4, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, "t"]
         rc, _, _ = self.run_main("q2", SID, "--expected", "4",
                                  extra={"FAKE_PSQL_OUT": out_line(Q2_COLS, vals)})
         self.assertEqual(rc, 0)
@@ -276,7 +280,7 @@ class EndToEnd(unittest.TestCase):
         self.assertNotIn("db.invalid.test", argv)
 
     def test_q2_runs_q2b_and_a_failing_q2b_flips_the_verdict(self):
-        q2_vals = [1, 4, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, "t"]
+        q2_vals = [1, 4, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, "t"]
         q2b_cols = ["questions", "stem_no_english", "stem_no_sinhala", "part_text_no_english",
                     "approach_no_english", "approach_no_sinhala", "final_no_english",
                     "part_approach_no_english", "part_approach_no_sinhala",
@@ -308,7 +312,7 @@ class EndToEnd(unittest.TestCase):
         self.assertIn("positive", err)
 
     def test_q2_out_writes_counts_json(self):
-        vals = [1, 4, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, "t"]
+        vals = [1, 4, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, "t"]
         out_path = Path(self.tmp.name) / "proof.json"
         rc, _, _ = self.run_main("q2", SID, "--expected", "4", "--out", str(out_path),
                                  extra={"FAKE_PSQL_OUT": out_line(Q2_COLS, vals)})

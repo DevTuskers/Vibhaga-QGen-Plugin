@@ -28,11 +28,11 @@ a skill or corpus file already read; allow one `build` + one `ship` per fix roun
 3b. **Plan critic** — follow [Plan-stage critic](#plan-stage-critic): one fresh `qgen-critic` session, Normal
    mode, `Mode: plan`; paths only. Replace every REPLACE line, then rerun `similar` and the dedup sheet. A second
    plan round is only for changed lines; then the stop rule applies. Create the session only when every line is OK.
-4. Write `$A/content.yaml` (bilingual, readable layout, `check:` on every leaf). **No figures by default**; only
+4. Write `$A/content.yaml` (bilingual, readable layout, required `difficulty: easy|medium|hard`; questions may override it; `check:` on every leaf). **No figures by default**; only
    add one when the question cannot be asked without it, and use a template (`figure-templates`).
-5. `python3 tools/run-gates.py build $A --medium <medium> --grade <g> --card <key>=<NN> --rubric <easy|medium|medium-hard>`
-   → exit 0. Build also runs warning-only `si-style.py`; a figureless run skips figure stages.
-6. `session create --name "<standard name>" --scope "grade=<g>,subject=Mathematics,medium=<medium>" --lessons <ids>
+5. `python3 tools/run-gates.py build $A --medium <medium> --grade <g> --card <key>=<NN>`
+   → exit 0. Rubric defaults from content difficulty (easy→easy, medium→medium, hard→medium-hard); `--rubric` overrides. Build also runs warning-only `si-style.py`; a figureless run skips figure stages.
+6. `session create --name "<standard name>" --scope "grade=<g>,subject=Mathematics,medium=<medium>" --lessons <ids> --difficulty <content band>
    --ledger $A/ledger.json` → `run-gates.py ship …` (takes ~5 min for 10 questions; run in the background, not
    under a short timeout) → `sql-proof.py q2 <sid> --expected 10` (`q2: ok`, `q2b: ok`) →
    `embeddings-refresh --grade <g> --subject Mathematics`.

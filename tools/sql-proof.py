@@ -218,7 +218,7 @@ def failing_q2(counts: dict, expected: int) -> list[str]:
         bad.append(f"session_exists={show(counts.get('session_exists'))}")
     if counts.get("questions") != expected:
         bad.append(f"questions={show(counts.get('questions'))} (expected {expected})")
-    for k in ("not_flagged", "not_published", "papered", "scope_mismatch",
+    for k in ("not_flagged", "not_published", "no_band", "papered", "scope_mismatch",
               "signed_answers", "signed_sub_answers", "unanswered_leaves"):
         if counts.get(k) != 0:
             bad.append(f"{k}={show(counts.get(k))}")
