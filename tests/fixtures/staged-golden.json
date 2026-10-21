@@ -7,6 +7,7 @@
    "is_multipart": false,
    "question_text": "A cuboid face measures $5\\,\\text{cm}$ by $2\\,\\text{cm}$. Find its area.",
    "question_text_sinhala": "පැතිකඩ මතුපිටක් $5\\,\\text{cm}$ සහ $2\\,\\text{cm}$ වේ. එහි වර්ගඵලය සොයන්න.",
+   "difficulty_band": "easy",
    "lesson_ids": [
     "00000000-0000-4000-8000-000000000007"
    ],
@@ -31,6 +32,7 @@
    "is_multipart": true,
    "question_text": "A rectangle is $10$ cm by $4$ cm.",
    "question_text_sinhala": "සෘජුකෝණාස්‍රයක් $10$ cm වැඩි $4$ cm පළල වේ.",
+   "difficulty_band": "easy",
    "lesson_ids": [
     "00000000-0000-4000-8000-000000000007",
     "00000000-0000-4000-8000-000000000009"
@@ -108,6 +110,7 @@
    "is_multipart": false,
    "question_text": "The rectangle in the figure has sides in the ratio $9:4$.",
    "question_text_sinhala": "රූපයේ සෘජුකෝණාස්‍රයේ පැති අනුපාතය $9:4$ වේ.",
+   "difficulty_band": "easy",
    "lesson_ids": [
     "00000000-0000-4000-8000-000000000009"
    ],

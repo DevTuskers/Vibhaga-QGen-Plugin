@@ -27,6 +27,7 @@ UUID_RE = __import__("re").compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 
 BASE = {
     "id_seed": "w0-selftest",
+    "difficulty": "easy",
     "lessons": {"L07": L07, "L09": L09},
     "figures": {"F1": "figures/q3.json"},
     "questions": [{
@@ -101,6 +102,7 @@ class BuildStagedTest(unittest.TestCase):
             doc = json.loads(out.read_text())
             self.assertEqual(set(doc), {"questions"})
             for q in doc["questions"]:
+                self.assertEqual(q["difficulty_band"], "easy")
                 self.assertTrue(UUID_RE.match(q["question_id"]))
                 self.assertIs(type(q["question_number"]), int)
                 self.assertEqual(q.get("ingestion_metadata", {}).get("needs_human_review"), True)
@@ -167,6 +169,37 @@ class BuildStagedTest(unittest.TestCase):
         spec["lessons"]["L07"] = "lesson-7"
         with tempfile.TemporaryDirectory() as tmp:
             self.assert_refuses(spec, tmp, "not a uuid")
+
+    def test_difficulty_defaults_and_question_override(self):
+        spec = copy.deepcopy(BASE)
+        spec["difficulty"] = "medium"
+        spec["questions"][0]["difficulty"] = "hard"
+        default_question = copy.deepcopy(spec["questions"][0])
+        default_question["n"] = 2
+        default_question.pop("difficulty")
+        spec["questions"].append(default_question)
+        with tempfile.TemporaryDirectory() as tmp:
+            _, out, r = self.build(spec, tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            bands = [q["difficulty_band"] for q in json.loads(out.read_text())["questions"]]
+            self.assertEqual(bands, ["hard", "medium"])
+
+    def test_refuse_missing_or_non_string_difficulty(self):
+        for value in ("extreme", None, [], {"band": "easy"}):
+            spec = copy.deepcopy(BASE)
+            spec["difficulty"] = value
+            with tempfile.TemporaryDirectory() as tmp:
+                self.assert_refuses(spec, tmp, "must be easy, medium, or hard")
+        spec = copy.deepcopy(BASE)
+        spec.pop("difficulty")
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec, tmp, "must be easy, medium, or hard")
+
+    def test_refuse_invalid_question_difficulty_override(self):
+        spec = copy.deepcopy(BASE)
+        spec["questions"][0]["difficulty"] = []
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assert_refuses(spec, tmp, "must be easy, medium, or hard")
 
     def test_refuse_unknown_figure_key(self):
         spec = copy.deepcopy(BASE)

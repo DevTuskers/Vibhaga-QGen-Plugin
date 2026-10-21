@@ -36,9 +36,9 @@ flag is a human act (decision 0014 PD-1 guard-rail 4 / PD-2, 0009, 0020) — use
 on the Admin /generate page.
 
 Usage (from anywhere; credentials + URLs are read at run time from Vibhaga-Admin/.env.local — never printed):
-  playground-publish.py session create --name N --scope grade=6,subject=Mathematics,medium=sinhala --lessons uuid,uuid --ledger L.json
+  playground-publish.py session create --name N --scope grade=6,subject=Mathematics,medium=sinhala --lessons uuid,uuid --difficulty easy|medium|hard --ledger L.json
   playground-publish.py session show <sid> · session list [--status active|archived] [--limit N] · session archive <sid> --ledger L.json
-  playground-publish.py session update <sid> [--lessons UUID[,UUID]] [--name N] [--ledger L.json]
+  playground-publish.py session update <sid> [--lessons UUID[,UUID]] [--name N] [--difficulty easy|medium|hard] [--ledger L.json]
   playground-publish.py doc get <sid> --out staged.json
   playground-publish.py doc put <sid> --staged Q.json --ledger L.json [--drop-missing [--allow-drop]]
   playground-publish.py validate <sid> --staged Q.json
@@ -437,9 +437,13 @@ def ledger_entry(path: Path, sid: str) -> tuple[dict, dict]:
     return led, led["sessions"].setdefault(sid, {})
 
 
+DIFFICULTIES = ("easy", "medium", "hard")
+
+
 def upsert_meta(ent: dict, sess: dict) -> None:
     """Refresh the session-meta mirror from the row we just read. Never touches published/unpublished/flag_raised."""
-    ent.update({"name": sess.get("name"), "scope": _pub.norm_scope(sess), "lesson_ids": sess.get("lesson_ids") or [], "status": sess.get("status")})
+    ent.update({"name": sess.get("name"), "scope": _pub.norm_scope(sess), "lesson_ids": sess.get("lesson_ids") or [],
+                "difficulty_band": sess.get("difficulty_band"), "status": sess.get("status")})
     ent.setdefault("created_at", sess.get("created_at"))
 
 
@@ -509,16 +513,19 @@ def finish(api: PlaygroundApi, *, write: bool, sid: str | None = None, ledger: P
 
 
 # ----------------------------------------------------------------------------------------------- subcommands
-def cmd_session_create(api: PlaygroundApi, name: str, scope_kv, lessons_csv: str, ledger_path: Path, log=print, sid_out: dict | None = None) -> int:
+def cmd_session_create(api: PlaygroundApi, name: str, scope_kv, lessons_csv: str, difficulty: str,
+                       ledger_path: Path, log=print, sid_out: dict | None = None) -> int:
     if ledger_path.suffix != ".json":
         raise Refuse("--ledger must have a .json suffix", 2)
+    if difficulty not in DIFFICULTIES:
+        raise Refuse("--difficulty needs easy|medium|hard", 2)
     scope = scope_from_kv(scope_kv)                       # local rules BEFORE the first call
     lessons = parse_uuid_list(lessons_csv, "--lessons")
     if not lessons:
         raise Refuse("--lessons must name at least one lesson uuid (the session's lesson intent)", 2)
     if not isinstance(name, str) or not 1 <= len(name.strip()) <= 200:
         raise Refuse("--name required (1–200 chars)", 2)
-    body = {"name": name, "medium": scope["medium"], "lesson_ids": lessons}
+    body = {"name": name, "medium": scope["medium"], "difficulty_band": difficulty, "lesson_ids": lessons}
     for k in ("grade", "exam", "subject"):                # send each scope key only when set
         if scope.get(k) is not None: body[k] = scope[k]
     api.fresh_token("session-create")
@@ -552,8 +559,11 @@ def cmd_session_archive(api: PlaygroundApi, sid: str, ledger_path: Path, log=pri
 
 
 def cmd_session_update(api: PlaygroundApi, sid: str, lessons_csv: str | None, name: str | None,
-                       ledger_path: Path | None = None, log=print) -> int:
+                       ledger_path: Path | None = None, log=print, *,
+                       difficulty: str | None = None) -> int:
     sid = need_uuid(sid, "session id")
+    if difficulty is not None and difficulty not in DIFFICULTIES:
+        raise Refuse("--difficulty needs easy|medium|hard", 2)
     api.fresh_token("session-update")
     before = api.get_session(sid)
     refuse_archived(before)
@@ -567,15 +577,18 @@ def cmd_session_update(api: PlaygroundApi, sid: str, lessons_csv: str | None, na
         if not lesson_ids:
             raise Refuse("--lessons must name at least one lesson uuid", 2)
         patch["lesson_ids"] = union_ids(before["lesson_ids"], lesson_ids)
+    if difficulty is not None:
+        patch["difficulty_band"] = difficulty
     if not patch:
-        raise Refuse("session update needs --lessons or --name", 2)
+        raise Refuse("session update needs --lessons, --name or --difficulty", 2)
     after = api.patch_session(sid, patch)
     if ledger_path:
         led, ent = ledger_entry(ledger_path, sid)
         upsert_meta(ent, after)
         save_ledger(ledger_path, led)
-    log(f"session update before: {json.dumps({'name': before['name'], 'lesson_ids': before['lesson_ids']}, ensure_ascii=False)}")
-    log(f"session update after: {json.dumps({'name': after['name'], 'lesson_ids': after['lesson_ids']}, ensure_ascii=False)}")
+    fields = ("name", "lesson_ids", "difficulty_band")
+    log(f"session update before: {json.dumps({k: before.get(k) for k in fields}, ensure_ascii=False)}")
+    log(f"session update after: {json.dumps({k: after.get(k) for k in fields}, ensure_ascii=False)}")
     return 0
 
 
@@ -1143,7 +1156,8 @@ class FakePlayground:
                 self.created += 1
                 sid = f"00000000-0000-4000-8000-{self.created:012d}"
                 row = {"id": sid, "name": js["name"], "grade": js.get("grade"), "exam": js.get("exam"), "subject": js.get("subject"),
-                       "medium": js["medium"], "lesson_ids": js.get("lesson_ids") or [], "r2_key": f"playground/{sid}/questions.json",
+                       "medium": js["medium"], "difficulty_band": js.get("difficulty_band"),
+                       "lesson_ids": js.get("lesson_ids") or [], "r2_key": f"playground/{sid}/questions.json",
                        "status": "active", "question_count": 0, "created_by_admin_id": self.ACTOR, "created_at": self.STAMP, "updated_at": self.STAMP}
                 self.sessions[sid] = row
                 return 201, json.dumps(row).encode()
@@ -1230,12 +1244,12 @@ def main(argv=None) -> int:
     common.add_argument("--env", help="path to Vibhaga-Admin/.env.local"); common.add_argument("--cred-prefix", default="VIBHAGA_ADMIN")
     sub = ap.add_subparsers(dest="cmd")
     sess = sub.add_parser("session"); ssub = sess.add_subparsers(dest="sub")
-    c = ssub.add_parser("create", parents=[common]); c.add_argument("--name", required=True); c.add_argument("--scope", required=True); c.add_argument("--lessons", required=True); c.add_argument("--ledger", required=True)
+    c = ssub.add_parser("create", parents=[common]); c.add_argument("--name", required=True); c.add_argument("--scope", required=True); c.add_argument("--lessons", required=True); c.add_argument("--difficulty", choices=DIFFICULTIES, required=True); c.add_argument("--ledger", required=True)
     sh = ssub.add_parser("show", parents=[common]); sh.add_argument("sid")
     li = ssub.add_parser("list", parents=[common]); li.add_argument("--status", choices=["active", "archived"]); li.add_argument("--limit", type=int)
     ar = ssub.add_parser("archive", parents=[common]); ar.add_argument("sid"); ar.add_argument("--ledger", required=True)
     up = ssub.add_parser("update", parents=[common]); up.add_argument("sid"); up.add_argument("--lessons")
-    up.add_argument("--name"); up.add_argument("--ledger")
+    up.add_argument("--name"); up.add_argument("--difficulty", choices=DIFFICULTIES); up.add_argument("--ledger")
     doc = sub.add_parser("doc"); dsub = doc.add_subparsers(dest="sub")
     dg = dsub.add_parser("get", parents=[common]); dg.add_argument("sid"); dg.add_argument("--out", required=True)
     dp = dsub.add_parser("put", parents=[common]); dp.add_argument("sid"); dp.add_argument("--staged", required=True); dp.add_argument("--ledger", required=True); dp.add_argument("--drop-missing", action="store_true"); dp.add_argument("--allow-drop", action="store_true")
@@ -1255,7 +1269,8 @@ def main(argv=None) -> int:
     qs = qsub.add_parser("show", parents=[common]); qs.add_argument("question_id"); qs.add_argument("--out")
     cv = sub.add_parser("coverage", parents=[common]); cv.add_argument("--grade", type=int); cv.add_argument("--exam"); cv.add_argument("--subject")
     cv.add_argument("--status", choices=["published", "draft", "all"]); cv.add_argument("--needs-human-review", choices=["true", "false"])
-    cv.add_argument("--medium", choices=MEDIUMS); cv.add_argument("--thin", type=int, default=2); cv.add_argument("--pairs", action="store_true")
+    cv.add_argument("--medium", choices=MEDIUMS); cv.add_argument("--band", choices=[*DIFFICULTIES, "none"])
+    cv.add_argument("--thin", type=int, default=2); cv.add_argument("--pairs", action="store_true")
     cv.add_argument("--out")
     sm = sub.add_parser("similar", parents=[common]); sm.add_argument("--grade", type=int); sm.add_argument("--exam"); sm.add_argument("--subject", default="Mathematics")
     sm.add_argument("--items", help="content.yaml or a list of {key, stem, parts} (YAML/JSON)"); sm.add_argument("--text", action="append", help="one candidate stem (repeatable)")
@@ -1291,13 +1306,14 @@ def main(argv=None) -> int:
 
         def go() -> int:
             if a.cmd == "session":
-                if a.sub == "create": return cmd_session_create(api, a.name, a.scope, a.lessons, Path(a.ledger), sid_out=created)
+                if a.sub == "create": return cmd_session_create(api, a.name, a.scope, a.lessons, a.difficulty, Path(a.ledger), sid_out=created)
                 if a.sub == "show": return cmd_session_show(api, a.sid)
                 if a.sub == "list": return cmd_session_list(api, a.status, a.limit)
                 if a.sub == "archive": return cmd_session_archive(api, a.sid, Path(a.ledger))
                 if a.sub == "update":
                     return cmd_session_update(api, a.sid, a.lessons, a.name,
-                                              Path(a.ledger) if a.ledger else None)
+                                              Path(a.ledger) if a.ledger else None,
+                                              difficulty=a.difficulty)
             if a.cmd == "doc":
                 if a.sub == "get": return cmd_doc_get(api, a.sid, Path(a.out))
                 if a.sub == "put": return cmd_doc_put(api, a.sid, Path(a.staged), Path(a.ledger), a.drop_missing, a.allow_drop)
@@ -1316,7 +1332,8 @@ def main(argv=None) -> int:
                 if a.sub == "show": return cmd_question_show(api, a.question_id, Path(a.out) if a.out else None)
             if a.cmd == "coverage":
                 params = {k: v for k, v in (("grade", a.grade), ("exam", a.exam), ("subject", a.subject), ("status", a.status),
-                                            ("needs_human_review", a.needs_human_review), ("medium", a.medium)) if v is not None}
+                                            ("needs_human_review", a.needs_human_review), ("medium", a.medium),
+                                            ("difficulty_band", a.band)) if v is not None}
                 return cmd_coverage(api, params, a.thin, a.pairs, Path(a.out) if a.out else None)
             if a.cmd == "similar":
                 items = load_similar_items(Path(a.items)) if a.items else []
