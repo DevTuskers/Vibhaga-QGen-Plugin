@@ -436,6 +436,21 @@ class PrecriticLintTest(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("0 fail(s)", r.stdout)
 
+    def test_rubric_by_band_checks_each_question_against_its_own_band(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_levels_run(Path(td), ["R", "M"], ["M", "M", "H"])
+            c = run / "content.yaml"
+            t = c.read_text(encoding="utf-8").replace('id_seed: "synthetic"\n',
+                                                      'id_seed: "synthetic"\ndifficulty: medium\n')
+            c.write_text(t.replace("  - n: 2\n", "  - n: 2\n    difficulty: hard\n"), encoding="utf-8")
+            r = lint_plain(run, "--rubric", "by-band")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("rubric medium: Q1", r.stdout)
+            self.assertIn("rubric medium-hard: Q2", r.stdout)
+            r2 = lint_plain(run, "--rubric", "medium")
+            self.assertEqual(r2.returncode, 1)
+            self.assertIn("level H — medium does not allow H", r2.stdout)
+
     def test_rubric_fails_under_3_parts(self):
         with tempfile.TemporaryDirectory() as td:
             run = write_levels_run(Path(td), ["M", "H"])

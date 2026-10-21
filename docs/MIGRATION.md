@@ -160,6 +160,7 @@ Plan: [`plans/2026-09-29-question-generation-plugin.md`](https://github.com/DevT
 > still sits between them — the plan, the spec, the PNG look, the critic judgment — so the W7 decision stands: a chain
 > of existing commands, never a forked driver.
 
+> 2026-10-21 first mixed-band run (G8, 6 Medium + 4 Hard over Fractions II / Solids / Number Line & Cartesian Plane; 10 questions, 30 leaves, 3 number_line figures; plan critic 2 rounds → SATISFIED). Tool repairs: coverage parser accepts the nested `by_band` counts and prints E/M/H/none; precritic `--rubric by-band` (run-gates default for mixed batches — the single medium rubric failed every Hard H leaf); the vocabulary heuristic now reads `text_si`/`approach_si` (it warned on every Sinhala-medium question).
 Calibration (0026): the known 2026-10-19 copy ranked #1 at only 0.64 — a low score is **not** a pass.
 
 The route table in §1 was diffed against `openapi.admin.yaml` on 2026-09-27.

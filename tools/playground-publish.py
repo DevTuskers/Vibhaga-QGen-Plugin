@@ -340,8 +340,13 @@ def checked_coverage(js) -> dict:
                 or type(it.get("sort_order")) is not int:
             raise bad
     for lid, c in counts.items():
-        if not _auth.valid_uuid(lid) or not isinstance(c, dict) or any(type(v) is not int for v in c.values()):
+        if not _auth.valid_uuid(lid) or not isinstance(c, dict):
             raise bad
+        for k, v in c.items():
+            if k == "by_band":
+                if not isinstance(v, dict) or any(type(n) is not int for n in v.values()): raise bad
+            elif type(v) is not int:
+                raise bad
     for pr in pairs:
         if not isinstance(pr, dict) or not _auth.valid_uuid(pr.get("lesson_a")) or not _auth.valid_uuid(pr.get("lesson_b")) \
                 or type(pr.get("count")) is not int:
@@ -993,14 +998,16 @@ def cmd_coverage(api: PlaygroundApi, params: dict, thin: int, show_pairs: bool, 
     rows = []
     for it in js["lessons"]:
         c = counts.get(it["lesson_id"]) or {}
-        rows.append((c.get("total", 0), c.get("flagged", 0), c.get("single_lesson", 0), in_pairs.get(it["lesson_id"], 0), it))
+        bb = c.get("by_band") or {}
+        rows.append((c.get("total", 0), c.get("flagged", 0), c.get("single_lesson", 0), in_pairs.get(it["lesson_id"], 0), it,
+                     "/".join(str(bb.get(b, 0)) for b in ("easy", "medium", "hard", "none"))))
     rows.sort(key=lambda r: (r[0], r[4]["sort_order"], r[4]["name"]))
     log(f"coverage: {json.dumps(js.get('scope'), sort_keys=True)} · {js['total_questions']} question(s) · untagged {js['untagged']}"
         f" · multi-lesson(3+) {js['multi_lesson']} · orphans {len(js['orphan_lesson_ids'])}")
-    log("mark  total  flagged  single  pairs  #   lesson")
-    for total, flagged, single, npairs, it in rows:
+    log("mark  total  flagged  single  pairs  E/M/H/none  #   lesson")
+    for total, flagged, single, npairs, it, bands in rows:
         mark = "None" if total == 0 else ("Thin" if total <= thin else "")
-        log(f"{mark:<4}  {total:>5}  {flagged:>7}  {single:>6}  {npairs:>5}  {it['sort_order']:<3} {it['name']}  {it['lesson_id']}")
+        log(f"{mark:<4}  {total:>5}  {flagged:>7}  {single:>6}  {npairs:>5}  {bands:<10}  {it['sort_order']:<3} {it['name']}  {it['lesson_id']}")
     none_n = sum(1 for r in rows if r[0] == 0)
     log(f"lessons: {len(rows)} · None {none_n} · Thin (1..{thin}) {sum(1 for r in rows if 0 < r[0] <= thin)} · pair cells {len(js['pairs'])}")
     if show_pairs:

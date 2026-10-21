@@ -244,11 +244,13 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     if content is None:
         die(f"no content.yaml in {run}")
     content_doc = _load_content(content)
-    rubric = args.rubric or {
+    bands = {q.get("difficulty", content_doc.get("difficulty"))
+             for q in content_doc.get("questions") or [] if isinstance(q, dict)}
+    rubric = args.rubric or ("by-band" if len(bands) > 1 else {
         "easy": "easy",
         "medium": "medium",
         "hard": "medium-hard",
-    }.get(content_doc.get("difficulty"))
+    }.get(content_doc.get("difficulty")))
     spec_ids, hand = figure_ids(run, specs_path, content_doc)
     # the audit/vdd-check set = specs ∪ content.yaml figures (hand-drawn figures are gated
     # exactly like template-built ones), each id once, sorted for a stable report
@@ -556,7 +558,7 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--card", action="append", default=[], help="KEY=NN for precritic-lint")
     b.add_argument("--grade", type=int, help="required with --card")
     b.add_argument("--cards-dir", help="passed through to precritic-lint")
-    b.add_argument("--rubric", choices=["easy", "medium", "medium-hard"], default=None,
+    b.add_argument("--rubric", choices=["easy", "medium", "medium-hard", "by-band"], default=None,
                    help="override the rubric inferred from content.yaml difficulty")
     s = sub.add_parser("ship", help="the live chain: validate → doc put → doc get diff → "
                        "[--session check] → publish dry-run → publish → q2")
