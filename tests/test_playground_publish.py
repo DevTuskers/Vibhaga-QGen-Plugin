@@ -327,6 +327,26 @@ class PlaygroundTests(unittest.TestCase):
                 fake = self.new_fake()
                 self.assertEqual(self.call(tool.cmd_session_create, "x", bad, "", self.ledger_path), 2)
                 self.assertFalse(fake.calls)          # refused BEFORE the password grant
+        fake = self.new_fake()
+        bad_ledger = self.root / "ledger.txt"
+        self.assertEqual(self.call(tool.cmd_session_create, "run", SCOPE_KV, LESSON, bad_ledger), 2)
+        self.assertFalse(fake.calls)
+
+    def test_session_update_adds_lessons_and_reports_before_after(self):
+        extra = "00000000-0000-4000-8000-000000000099"
+        fake = self.new_fake()
+        self.assertEqual(self.call(tool.cmd_session_update, SID, extra, "renamed", self.ledger_path), 0)
+        self.assertEqual(fake.sessions[SID]["lesson_ids"], [LESSON, extra])
+        self.assertEqual(fake.sessions[SID]["name"], "renamed")
+        self.assertTrue(any("session update before:" in line for line in self.logs))
+        self.assertTrue(any("session update after:" in line for line in self.logs))
+        self.assertTrue(any(m == "PATCH" and p.endswith(f"/sessions/{SID}") for m, p in fake.calls))
+
+    def test_session_update_refuses_archived_before_patch(self):
+        fake = self.new_fake()
+        fake.sessions[SID]["status"] = "archived"
+        self.assertEqual(self.call(tool.cmd_session_update, SID, LESSON, None), 3)
+        self.assertFalse(any(m == "PATCH" for m, _ in fake.calls))
 
     # ---------- 17. a bad session id exits 2 with zero calls ----------
     def test_bad_session_id_zero_calls(self):

@@ -1613,6 +1613,29 @@ def build_rays_from_point(*, figure_id, stem, ask=None, title=None, description=
         "rays, a north arrow and angle arcs only")
     segs = [f"{centre}{n}" for n in bearings]
     points = [centre] + list(bearings)
+    strokes = stroke_segments(elements)
+    clear_strokes = stroke_segments([el for el in elements if not _grid_line(el)])
+    for name, deg in bearings.items():
+        label = next(el for el in elements if el.get("id") == f"lbl{name}")
+        ux, uy = vc.unit(O, tips[name])
+
+        def render_scale():
+            boxes = [box for element in elements for box in label_boxes([element])]
+            _, _, width, _ = _fit_extent(strokes, boxes)
+            return min(1.0, PLATE_INNER / (width + 60.0))
+
+        def clearance():
+            _text, x0, y0, x1, y1 = label_boxes([label])[0]
+            return min(_seg_rect_dist(a, b, (x0, y0, x1, y1)) - stroke_width / 2
+                       for a, b, stroke_width in clear_strokes) * render_scale() if clear_strokes else 99
+
+        if clearance() < STROKE_PX + SLACK_STROKE:
+            ox, oy = label.get("labelOffset", [8, -8])
+            for rendered_px in range(2, 22, 2):
+                distance = rendered_px / render_scale()
+                label["labelOffset"] = [vc.r2(ox + ux * distance), vc.r2(oy + uy * distance)]
+                if clearance() >= STROKE_PX + SLACK_STROKE:
+                    break
     return finish(kind="rays_from_point", figure_id=figure_id, stem=stem, elements=elements,
                   anchors=anchors, points=points, segments=segs, claims=claims, ask=ask,
                   title=title or f"{len(bearings)} rays from point {centre} with marked angles",
@@ -6191,9 +6214,18 @@ def main() -> int:
         specs = json.loads(spec_path.read_text(encoding="utf-8"))
         if isinstance(specs, dict):
             specs = [specs]
-        for spec in specs:
+        for index, spec in enumerate(specs, 1):
             spec = dict(spec)
+            figure_key = spec.get("figure_id", f"figure {index}")
+            if "template" not in spec:
+                print(f"TemplateError: {figure_key}: missing key 'template'; valid template names: "
+                      + ", ".join(sorted(BUILDERS)), file=sys.stderr)
+                return 2
             kind = spec.pop("template")
+            if kind not in BUILDERS:
+                print(f"TemplateError: {figure_key}: unknown template {kind!r}; valid template names: "
+                      + ", ".join(sorted(BUILDERS)), file=sys.stderr)
+                return 2
             vc.reset_ids()          # deterministic element ids even inside one process
             try:
                 b = BUILDERS[kind](**spec)
