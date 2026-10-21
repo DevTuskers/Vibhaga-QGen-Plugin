@@ -13,6 +13,7 @@ file `playground-publish.py publish --ids-file` consumes (non-empty unique uuids
 content.yaml shape (keys in `lessons:`/`figures:` are local names resolved by the builder):
 
     id_seed: "w0-session"                    # required — feeds every deterministic id
+    difficulty: medium                       # required: easy | medium | hard
     lessons: {L07: <lesson uuid>, L09: <uuid>}   # key → real lesson uuid
     figures: {F1: figures/q1.json}               # key → VDD JSON file, relative to this file
     questions:
@@ -57,7 +58,7 @@ label stable: renumbering or relabelling a part creates NEW uuids, and publish w
 orphan the published ones — it does not rename in place. (Sibling labels must therefore be unique —
 two parts labelled `a` under one parent collide on the same sub_question_id, and the builder refuses.)
 
-Exit 0 wrote the doc · exit 2 refused (duplicate n · duplicate sibling label · unknown lesson/figure
+Exit 0 wrote the doc · exit 2 refused (missing/invalid difficulty · duplicate n · duplicate sibling label · unknown lesson/figure
 key · missing figure file · parts deeper than 2 · leaf part without approach+final · a question
 carrying both parts and a whole answer · non-bare label · non-uuid lesson · two questions sharing a
 blueprint_id · malformed spec · a missing `_si` key · Sinhala in an English-side field · a `_si`
@@ -123,10 +124,11 @@ def check_bilingual(en, si, where, si_key):
 
 
 Q_KEYS = {"n", "lessons", "stem", "stem_si", "figure", "approach", "approach_si", "final",
-          "final_si", "parts", "check", "level", "blueprint_id", "blueprint_seed"}
+          "final_si", "parts", "check", "level", "blueprint_id", "blueprint_seed", "difficulty"}
 P_KEYS = {"label", "text", "text_si", "figure", "approach", "approach_si", "final", "final_si",
           "parts", "check", "level"}
-TOP_KEYS = {"id_seed", "lessons", "figures", "questions"}
+TOP_KEYS = {"id_seed", "difficulty", "lessons", "figures", "questions"}
+DIFFICULTIES = {"easy", "medium", "hard"}
 
 
 def die(msg):
@@ -277,7 +279,7 @@ def build_part(node, base_id, sort_order, depth, figures, base, where):
     return out
 
 
-def build_question(node, index, figures, lessons, base, seed):
+def build_question(node, index, figures, lessons, base, seed, default_difficulty):
     where = f"questions[{index}]"
     if not isinstance(node, dict):
         die(f"{where}: a question must be a mapping")
@@ -285,6 +287,10 @@ def build_question(node, index, figures, lessons, base, seed):
     if unknown:
         die(f"{where}: unknown question keys {sorted(unknown)} (allowed: {sorted(Q_KEYS)})")
     check_meta(node, f"{where} (q{node.get('n')})")
+    difficulty = node.get("difficulty", default_difficulty)
+    if not isinstance(difficulty, str) or difficulty not in DIFFICULTIES:
+        die(f"{where} (q{node.get('n')}): 'difficulty' must be easy, medium, or hard "
+            f"(got {difficulty!r})")
     n = node.get("n")
     if not isinstance(n, int) or isinstance(n, bool):
         die(f"{where}: 'n' must be an integer question number (got {n!r})")
@@ -328,6 +334,7 @@ def build_question(node, index, figures, lessons, base, seed):
         "is_multipart": bool(children),
         "question_text": stem,
         "question_text_sinhala": node["stem_si"],
+        "difficulty_band": difficulty,
         "lesson_ids": lesson_ids,
         "diagram_dsl": resolve_figure(node["figure"], figures, base, f"{where} (q{n})") if node.get("figure") else None,
     }
@@ -357,6 +364,10 @@ def build(spec_path):
     seed = spec.get("id_seed")
     if not isinstance(seed, str) or not seed.strip():
         die("spec: 'id_seed' is required (a stable string — it feeds every deterministic id)")
+    difficulty = spec.get("difficulty")
+    if not isinstance(difficulty, str) or difficulty not in DIFFICULTIES:
+        die(f"spec: 'difficulty' is required and must be easy, medium, or hard "
+            f"(got {difficulty!r})")
     lessons = spec.get("lessons") or {}
     if not isinstance(lessons, dict):
         die("spec: 'lessons' must be a {key: lesson-uuid} mapping")
@@ -374,7 +385,7 @@ def build(spec_path):
     seen = {}
     seen_blueprints = {}                       # blueprint_id -> (index, question_number)
     for i, node in enumerate(questions):
-        q = build_question(node, i, figures, lessons, base, seed.strip())
+        q = build_question(node, i, figures, lessons, base, seed.strip(), difficulty)
         if q["question_number"] in seen:
             die(f"duplicate question number n={q['question_number']} (first at {seen[q['question_number']]})")
         seen[q["question_number"]] = f"questions[{i}]"

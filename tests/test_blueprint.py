@@ -120,6 +120,7 @@ class BlueprintTest(unittest.TestCase):
             self.assertIsInstance(item["parts"][0]["final"], str)
             self.assertRegex(item["parts"][0]["final"], r"^\d+$")
             spec = {"id_seed": "w10d-test",
+                    "difficulty": "easy",
                     "lessons": {"L07": "00000000-0000-4000-8000-000000000007"},
                     "questions": [item]}
             c = tmp / "content.json"

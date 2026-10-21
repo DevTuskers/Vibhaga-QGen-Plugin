@@ -226,6 +226,31 @@ class BuildTest(unittest.TestCase):
             self.assertIn("si-style: non-blocking stage exited 1", out.getvalue())
             self.assertEqual(json.loads((run / "gates.json").read_text())["si-style"], 0)
 
+    def test_content_difficulty_selects_default_rubric_and_cli_overrides(self):
+        for band, expected in (("easy", "easy"), ("medium", "medium"), ("hard", "medium-hard")):
+            with self.subTest(band=band), tempfile.TemporaryDirectory() as td:
+                run = make_run(Path(td))
+                (run / "content.yaml").write_text(f"difficulty: {band}\nquestions: []\n",
+                                                  encoding="utf-8")
+                stub = StubRunner()
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    rc = rg.cmd_build(build_args(run), runner=stub)
+                self.assertEqual(rc, 0, out.getvalue())
+                lint = next(" ".join(c) for c in stub.calls if "precritic-lint.py" in " ".join(c))
+                self.assertIn(f"--rubric {expected}", lint)
+
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "content.yaml").write_text("difficulty: hard\nquestions: []\n",
+                                              encoding="utf-8")
+            stub = StubRunner()
+            with redirect_stdout(io.StringIO()):
+                rc = rg.cmd_build(build_args(run, rubric="easy"), runner=stub)
+            self.assertEqual(rc, 0)
+            lint = next(" ".join(c) for c in stub.calls if "precritic-lint.py" in " ".join(c))
+            self.assertIn("--rubric easy", lint)
+
     def test_dict_keyed_specs_gate_every_figure(self):
         # a {figure_id: spec} map yields its values — the shared normalisation, so stage 2
         # audits/vdd-checks each figure instead of silently gating zero
