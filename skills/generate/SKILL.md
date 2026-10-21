@@ -8,59 +8,50 @@ argument-hint: "[grade] [lesson number or name] [how many questions]"
 
 ## Quick run (lean, ~10 questions — target 2–3 ACUs; owner ruling 2026-10-20)
 
-Read **this section, AGENTS.md, §2 steps you are on, and the TRAPS it names** — not every skill end to end.
-Open an S4–S8 skill only when its step needs a rule you do not know (a figure, a failing gate).
-`T=tools/playground-publish.py`, `A=wt/<topic>/actor`.
+This run is self-contained: read **this section and AGENTS.md**; use its linked rules and steps as needed.
+Open an S4–S8 skill only when a step needs a rule you do not know (a figure or a failing gate).
+`T=tools/playground-publish.py`, `A=wt/<topic>/actor`. A ~10-question run targets **2–3 ACUs**; start the
+generation session and its one critic in **Normal** mode. No figures unless a question needs one. Never re-read
+a skill or corpus file already read; allow one `build` + one `ship` per fix round.
 
 1. `python3 tools/qgen-setup.py` → `export VIBHAGA_ADMIN_ENV=/dev/shm/qgen-admin.env` (one command; prints names only).
-2. `python3 $T coverage --grade <g> --subject Mathematics --pairs --out $A/coverage-before.json` → pick 2–3 None/Thin
-   lessons with a strong scope card (`python3 tools/scope-cards.py brief …`).
-3. Plan 10 one-liners → `$A/plan-items.yaml` → `python3 $T similar --grade <g> --items $A/plan-items.yaml
-   --out $A/similar-plan.json`; every plan line names its closest row and why the **task** differs (step 3).
-4. Write `$A/content.yaml` (bilingual, readable layout, `check:` on every leaf). **No figures by default** — a
-   figure only when the question cannot be asked without one, and then only from a template (figure-templates).
-5. `run-gates.py build … --card …` → exit 0 (a figureless run skips the figure stages and says so).
-6. `session create` (standard name) → `run-gates.py ship …` (takes ~5 min for 10 questions — run it in the
-   background, not under a short timeout) → `sql-proof.py q2 <sid> --expected 10` (`q2: ok`, `q2b: ok`) →
+2. `python3 $T coverage --grade <g> --subject Mathematics --pairs --out $A/coverage-before.json` → pick the lessons
+   the request needs (default 2–3) — None/Thin with room left; prefer a strong scope card
+   (`python3 tools/scope-cards.py brief …`). Apply the [Room left and stop rule](#room-left-and-stop-rule).
+### Room left and stop rule
+
+- **Room left, not just row count.** Before you keep a thin lesson, read its dedup sheet. If its live rows already use every card section task and every `difficulty_hooks` entry at the target band, the lesson is **full**. Skip it and take the next thin lesson.
+- **Stop rule.** If one slot draws two copy MAJORs (from the plan critic or the batch critic), stop rewriting it. Move the slot to a different lesson (`playground-publish.py session update <sid> --lessons …` adds the lesson to the session), or drop the question and tell the owner.
+3. Read each chosen lesson's full [Copy check](#copy-check) sheet with `python3 tools/dedup-sheet.py --grade <g>
+   --card <key>=<NN> --out $A/dedup-sheet.md`. Plan 10 one-liners → `$A/plan-items.yaml` → `python3 $T similar
+   --grade <g> --items $A/plan-items.yaml --out $A/similar-plan.json`; each line names its closest item and why
+   the **task** differs. Re-run `python3 tools/dedup-sheet.py --grade <g> --card <key>=<NN>
+   --plan $A/plan-items.yaml --similar $A/similar-plan.json --out $A/dedup-sheet.md` to pair every plan line
+   with its neighbours before the critic. Apply [Difficulty bands](#difficulty-bands).
+   See [T143–T154](../../docs/TRAPS.md).
+3b. **Plan critic** — follow [Plan-stage critic](#plan-stage-critic): one fresh `qgen-critic` session, Normal
+   mode, `Mode: plan`; paths only. Replace every REPLACE line, then rerun `similar` and the dedup sheet. A second
+   plan round is only for changed lines; then the stop rule applies. Create the session only when every line is OK.
+4. Write `$A/content.yaml` (bilingual, readable layout, `check:` on every leaf). **No figures by default**; only
+   add one when the question cannot be asked without it, and use a template (`figure-templates`).
+5. `python3 tools/run-gates.py build $A --medium <medium> --grade <g> --card <key>=<NN> --rubric <easy|medium|medium-hard>`
+   → exit 0. Build also runs warning-only `si-style.py`; a figureless run skips figure stages.
+6. `session create --name "<standard name>" --scope "grade=<g>,subject=Mathematics,medium=<medium>" --lessons <ids>
+   --ledger $A/ledger.json` → `run-gates.py ship …` (takes ~5 min for 10 questions; run in the background, not
+   under a short timeout) → `sql-proof.py q2 <sid> --expected 10` (`q2: ok`, `q2b: ok`) →
    `embeddings-refresh --grade <g> --subject Mathematics`.
-7. **One** fresh `qgen-critic` session for all 10, **Normal** mode, paths only (step 13). Fix BLOCKER/MAJOR; MINORs
-   only if one-line, else owner notes (step 14). Round 2 = fresh critic with `Previous report:`, changed questions only.
-8. Coverage after, logbook line (step 15), report in plain English.
+7. **One** fresh `qgen-critic` session for all 10, **Normal** mode, paths only. Fix BLOCKER/MAJOR; MINORs only if
+   one-line, otherwise owner notes. **Sinhala-fluency MINORs are must-fix: apply the critic's rewrite.** Round 2
+   uses a fresh critic with `Previous report:`, changed questions only. See [Sinhala fluency](../../agents/qgen-critic.md).
+8. Coverage after, logbook line, report in plain English.
 
-Authoring lessons from earlier runs (each one cost a fix round or a critic finding):
-- **Sinhala key terms come from the lesson.** Grep the lesson Markdown for the term before writing it
-  (`grep -o '<root>[^ ]*' <lesson>.md | sort | uniq -c`); a close word is still wrong (a fold line was written
-  `නැවුම් රේඛාව` for the lesson's `නැමුම් රේඛාව`; a floor tile `උළු කැටය` — a roof tile — for `ටයිල්`).
-- **A stem must not name what a part asks.** Calling ∠AOB's region "the smaller sector" answered (a)
-  "what is this region called?". Give the data (`$\angle AOB = 75^\circ$`), not the vocabulary.
-- **Do not lift the lesson's own worked example or activity as a part**, and vary the part pattern across
-  questions of one lesson — the critic flags both, and neither is a one-line fix after publish.
-- **`check:` must compute from the question's numbers.** A constant-only comparison (`12 > 11`,
-  `60 != 120`) is refused; a classification or "which one" leaf gets `check: none — <reason>`.
-- **Keep names outside the maths span**: `OP $= 4.5$` cm, not `$OP = 4.5$ cm` (the markdown gate blocks the
-  latter as swallowed prose).
-- **A maths-only `final_si` identical to English is stored once**, in `_english` (the Sinhala column is
-  NULL by design, 0024). If a Sinhala reader should see a Sinhala word, write one around the maths
-  (`කෝණවල එකතුව: $…$`).
-
-- **A yes/no final gets its own paragraph.** `No.` / `නැත.` first, the reason after a blank line. The Sinhala side
-  splits into more sentences than the English and trips check-layout's 3-sentences-in-one-paragraph FAIL first.
-- **A unit outside the maths span is English prose.** `final_si: "$22$ cm"` is refused as a copy of English; write
-  `$22\ \text{cm}$` (shared maths-only) or put a Sinhala word around it.
-- **No Sinhala words inside `$…$`** (markdown gate M2). Name the quantity with a letter (`$w$`) and keep the
-  words outside the span.
-- **Give every template spec its own `title` + `description` in the question's medium.** The default a11y text
-  is English and states counts ("15 equal squares … 6 fully shaded", even "0 cut by a diagonal") that answer
-  part (a) (T125); a Sinhala-medium run needs Sinhala a11y (rule 6).
-- **A "how many more" part must fit the cells actually drawn.** "Cut more squares in half" needed 4 empty
-  squares on a grid with 3 left — count the free cells on the spec before fixing the target fraction.
-- **A high `similar` score on the finished batch usually means the same task chain.** A tank question
-  (capacity → water used → height of what is left) scored 0.83 against an existing row with the same three
-  steps; new numbers would not fix it, so the question became "compare two containers → repeated pours, when
-  does it overflow" (0.74, different steps).
-
-Cost rules: start the generation session itself in **Normal** mode; no headed browser when there are no figures;
-never re-read a skill or corpus file already read; one `build` + one `ship` per fix round.
+Authoring lessons from earlier runs (see [T143–T154](../../docs/TRAPS.md)):
+- Sinhala key terms come from the lesson (T143); a stem must not give away what a part asks (T144).
+- Do not lift worked examples or activities; vary part patterns (T145). `check:` must compute from the question (T146).
+- Keep names outside maths spans (T147); shared maths-only Sinhala is stored once (T148).
+- Keep yes/no answers in their own paragraph (T149); keep units in Sinhala prose or shared maths (T150).
+- Keep Sinhala words outside maths spans (T151); provide medium-appropriate figure descriptions that do not give answers (T152).
+- Count available figure cells before asking for more (T153); treat a similar task chain as a copy even at low scores (T154).
 
 > Moved from Vibhaga-Docs `.devin/skills/generate-lesson-questions` @08c09a9 (see docs/MIGRATION.md);
 > rewritten as the orchestrator in W7 (2026-10-02). The S4–S8 skills hold the *rules* of each step;
@@ -205,7 +196,7 @@ same two checkout paths in the critic's spawn prompt.
    + `vocabulary` + `not_taught` say what is and is not taught; `phrases` is the mined bank of the lesson's own
    language (emphasis terms, section-title words, recurring words — grade-wide document frequency keeps the
    lesson-common filler out) — write stems in it, and expect `precritic-lint.py` to warn when a tagged question
-   uses none of it; `worked_examples` + `exercises` are the don't-copy list; `figure_kinds` are reusable
+   uses none of it; [Copy check](#copy-check) is the don't-copy list; `figure_kinds` are reusable
    *kinds* of figure; `difficulty_hooks` anchor R/M/H. Then open the lesson file **only at the sections and anchors
    the plan uses** — `grep -n` the card's `source.file` for the section headings and each figure's
    `**Description:**` — never read it whole. Write the scope statement into `notes.md`.
@@ -219,16 +210,17 @@ same two checkout paths in the critic's spawn prompt.
    matters — the default `published` view counts flagged rows too. If the default view says `None 0 · Thin 0` but the
    ask wants None/Thin lessons, re-run with `--thin <lowest count present>` (e.g. `--thin 3`) and say in the logbook
    line which threshold picked the lessons. **When the ask names a grade but no lesson, the
-   coverage picks:** `None` lessons first, then `Thin`, and among equals the one whose scope card is strongest (most
-   worked examples/exercises, a usable `difficulty_hooks` block); skip a lesson whose card cannot carry the batch and
-   say why in `notes.md`. A deliberate two-lesson question may fill a missing natural pair cell (both lessons used in
+   coverage picks:** the lessons the request needs (default 2–3), preferring `None`/`Thin` with room left and a
+   strong scope card; skip a lesson whose card cannot carry the batch and say why in `notes.md`. Before keeping a thin
+   lesson, read its dedup sheet. If its live rows already use every card section task and every `difficulty_hooks`
+   entry at the target band, the lesson is full. Skip it and take the next thin lesson. A deliberate two-lesson
+   question may fill a missing natural pair cell (both lessons used in
    the working — AGENTS rule 3); the API lists only the cells that exist, so a missing one is your judgment, named in
    the plan line. Coverage reads the API (Hyperdrive, ~75 s stale — T5): it chooses lessons; it never proves rows.
    `python3 $T lessons --grade 6 --subject Mathematics` → the `lesson_id`.
-   `python3 $T questions list --lesson-id <id> --all --out $A/existing.json` → every row on the lesson; for any row close
-   to a plan line, `questions show <id>` for the full stem and answers. Read for duplicates and house style (register,
-   markup, answer length). queries.sql Q1 is the same list by direct SQL when you need it uncached (T5).
-   Record the row count and which stems you compared in `notes.md`.
+   `python3 tools/dedup-sheet.py --grade <g> --card <key>=<NN> --out $A/dedup-sheet.md` → every live row and each
+   card example, exercise and activity, with full text. Read the sheet before planning; note the closest item and how
+   the task differs for each plan line. Apply [Room left and stop rule (T3)](#room-left-and-stop-rule).
 3. **Plan — one line per question** in `notes.md`, before any authoring:
    `Q<n> · <skill / section> · <R/M/H per part> · closest: <question_id> (<score>) — differs because <task, not numbers> · figure: <template | hand-draw | none>`
    **Similarity check (decision 0026), before step 4.** Sketch each planned question as `{key, stem, parts}` in
@@ -241,15 +233,21 @@ same two checkout paths in the critic's spawn prompt.
    story or new numbers, change the plan, not the wording. Calibration (0026): the known 2026-10-19 copy ranked #1
    at only 0.64 — a low score is **not** a pass. Re-run `similar --items $A/content.yaml` once the spec is written.
    (a coverage-picked lesson may cite its before-count, e.g. `L26 Triangle Constructions (0 before)`).
-   Check the set against the plan appendix rubric (for "medium–hard": ≥3 parts each, ≤1 R part and only as (a), an H
-   part last, ≥60 % M/H and ≥30 % H across the set's levelled parts) and against AGENTS rule 3 for every multi-lesson tag. A figure that has nothing
+   Check the set against [Difficulty bands](#difficulty-bands) (the existing medium-hard rubric is unchanged) and
+   against AGENTS rule 3 for every multi-lesson tag. A figure that has nothing
    derivable (a pure shape to name) is dropped or put to the owner, never given an invented claim.
+   Re-run `tools/dedup-sheet.py --grade <g> --card <key>=<NN> --plan $A/plan-items.yaml
+   --similar $A/similar-plan.json --out $A/dedup-sheet.md` so each plan line and its neighbours are on the
+   sheet before the plan critic.
    - **An H part is not just a longer chain** (owner ruling 2026-10-04, plan OD-8). If every step is a move the
      lesson's worked examples show in that order — "find the 9th term" by continuing the steps, "list the
      factors and pick the most" — it is M, and the critic will rate it so. Give each H part one real trigger:
      an unfamiliar situation the lesson never shows, a reverse step (given the result, find the input), a
      decision after the arithmetic, or a "why / why not" justification. Write the trigger into the plan line
      (`H: reverse`, `H: decide`, `H: justify`, `H: new context`).
+### Plan-stage critic
+
+3b. **Plan critic (one fresh `qgen-critic` session, Normal mode, `Mode: plan`).** Pass it only paths: `plan-items.yaml`, `similar-plan.json`, `dedup-sheet.md` and the cards. It answers per plan line `OK` or `REPLACE — <reason>`. Replace every REPLACE line, then re-run `similar` and the dedup sheet. A second plan round is allowed only for the lines that changed; after that the stop rule applies. Create the session only once every line is OK. This catches copies while a fix costs one line, before the build, ship and SQL.
 4. **Author `content.yaml`** (the 2026-09-29 shape — `id_seed`, `lessons:` key map, `figures:` key map, `questions:`
    with `n`, `lessons`, `stem`, `figure`, `parts[label, text, figure, approach, final]`; `build-staged.py` docstring):
    - **Stem** — [`author-question-text`](../author-question-text/SKILL.md) §1a + §3: `$…$`/`$$…$$`, never Sinhala
@@ -305,7 +303,7 @@ same two checkout paths in the critic's spawn prompt.
    python3 tools/check-layout.py --fields $A/fields.json              # stems, parts, approaches, finals; 0 FAIL (T-QG-14)
    node tools/visual-check.mjs $A/staged.json --claims-dir $A/figures --out wt/<topic>/vc   # mode 1, incl. contact sheet
    python3 tools/precritic-lint.py $A --card <key>=<NN> --grade <g>                          # when --card was passed
-                     [--rubric medium-hard] [--existing $A/existing*.json]                   # auto-added by run-gates
+                     [--rubric easy|medium|medium-hard] [--existing $A/existing*.json]        # auto-added by run-gates
    ```
    A failing gate is fixed in the spec or the builder input, never by hand-editing an emitted file (T-QG-2).
 6. **visual-check mode 1** (inside `run-gates build`; standalone:
@@ -415,7 +413,7 @@ same two checkout paths in the critic's spawn prompt.
     laptop. Then `python3 tools/critic-read.py hashes <sid>` prints `Q<n> <sha256>` per question — diff it against
     the previous round's hashes and re-spawn a **fresh** critic, with `Previous report: <path>`, only for chunks
     holding ≥1 changed question; a chunk with no changes carries its verdict (record that in the ledger — profile
-    §6: CARRIED / FIXED / OPEN / REGRESSED by hash). Never ask the same critic twice.
+    §6: CARRIED / FIXED / OPEN / REGRESSED by hash). Never ask the same critic twice. **Sinhala-fluency MINORs are must-fix: apply the critic's rewrite.**
 15. **Logbook line** — one dated entry in the plan logbook (private Docs repo): session id, N questions / parts /
     figures, the publish and Q2/Q3 lines, the coverage before → after diff (§5 item 5), critic rounds and verdicts, owner questions, effort. Add a line under "Runs so
     far" above — without ids.
@@ -448,11 +446,32 @@ The critic grades every part against this table (profile §3) — keep it and th
 | Check | Fails when |
 |---|---|
 | In lesson | it needs a concept the lesson does not teach, or a later grade's notation |
-| Not a copy | it is a textbook exercise or an existing row with only the numbers changed |
+| Not a copy | it is a textbook exercise or an existing row with only the numbers changed; apply [Copy check](#copy-check) |
 | Self-contained | a student cannot answer it from the stem and figure alone (no "see the table on page 87") |
 | Answer right | the second method disagrees, or the figure's measured values contradict the stem |
 | Figure honest | the drawing *looks* like the claim but measures differently (S6b §5) |
 | Language | a missing `*_si` side, a copied side, or it does not use the lesson's own vocabulary as printed |
+
+### Copy check
+
+*What counts as a copy (one definition, used by the writer AND the critic).*
+
+A planned or written question is a **copy** when its task chain (what the student is asked to do, step by step) matches any one of the following. Changing the numbers, names or story does not stop it being a copy.
+1. any live row tagged with the same lesson (every row, read in full — not only the `similar` top 5),
+2. any of the card's `worked_examples`, `exercises` or `activities`,
+3. any `similar` neighbour, whatever its score (the score only ranks the neighbours).
+Read all three with `tools/dedup-sheet.py` before planning. Write one line per planned question in `notes.md`: closest item · how the **task** differs.
+A match on one part only, where the other parts are new, is a scaffold echo (MINOR). A match on the whole question, or on every part, is a copy (MAJOR).
+
+### Difficulty bands
+
+| Band | Leaf levels | Shape |
+|---|---|---|
+| Easy | every leaf `R` | 1–3 leaves; each leaf is one idea of the lesson in at most 2 computation steps; friendly numbers |
+| Medium | at least one `M`, no `H` | 2–4 leaves; part (a) may be `R` |
+| Hard | the existing medium-hard rubric | unchanged |
+
+For an Easy question, "new" means one of these: a context the lesson does not use; an R-level idea from the lesson combined with a different R idea from the same lesson; or a reverse question (given the answer, find the data). A textbook exercise or activity with new numbers is still a copy (see Copy check). If a lesson has no new Easy task left, skip the lesson.
 
 ## 4. Traps — stories with the catch
 

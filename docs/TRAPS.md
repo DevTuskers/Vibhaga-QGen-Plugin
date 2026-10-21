@@ -679,6 +679,54 @@ Audit A from a parser into a geometry check (62–97 assertions per figure on th
 
 ---
 
+## T143 — A familiar word is not the lesson's word
+
+A Sinhala answer used a near-synonym for a named object. It was grammatical, but the lesson and its exercises used a different term, so the student's vocabulary did not match the source. Grep the lesson Markdown for the term before writing it (`grep -o '<root>[^ ]*' <lesson>.md | sort | uniq -c`); a close word is still wrong (a fold line was written `නැවුම් රේඛාව` for the lesson's `නැමුම් රේඛාව`; a floor tile `උළු කැටය` — a roof tile — for `ටයිල්`).
+
+## T144 — The stem gave away the part
+
+A part asked the student to name a region, while the stem had already named it. Calling ∠AOB's region "the smaller sector" answered (a) "what is this region called?". Give the data (`$\angle AOB = 75^\circ$`), not the vocabulary.
+
+## T145 — New numbers do not make a worked example new
+
+Do not lift the lesson's own worked example or activity as a part, and vary the part pattern across questions of one lesson — the critic flags both, and neither is a one-line fix after publish.
+
+## T146 — The answer check did not use the question
+
+`check:` must compute from the question's numbers. A constant-only comparison (`12 > 11`, `60 != 120`) is refused; a classification or "which one" leaf gets `check: none — <reason>`.
+
+## T147 — A point name was swallowed by maths markup
+
+Keep names outside the maths span: `OP $= 4.5$` cm, not `$OP = 4.5$ cm` (the markdown gate blocks the latter as swallowed prose).
+
+## T148 — Shared maths is not a Sinhala translation defect
+
+A maths-only `final_si` identical to English is stored once, in `_english` (the Sinhala column is NULL by design, 0024). If a Sinhala reader should see a Sinhala word, write one around the maths (`කෝණවල එකතුව: $…$`).
+
+## T149 — The yes/no answer and its reason need separate paragraphs
+
+A yes/no final gets its own paragraph. `No.` / `නැත.` first, the reason after a blank line. The Sinhala side splits into more sentences than the English and trips check-layout's 3-sentences-in-one-paragraph FAIL first.
+
+## T150 — A unit outside maths is prose
+
+A unit outside the maths span is English prose. `final_si: "$22$ cm"` is refused as a copy of English; write `$22\ \text{cm}$` (shared maths-only) or put a Sinhala word around it.
+
+## T151 — Sinhala inside a math span is not rendered as prose
+
+No Sinhala words inside `$…$` (markdown gate M2). Name the quantity with a letter (`$w$`) and keep the words outside the span.
+
+## T152 — Default figure descriptions can reveal answers
+
+Give every template spec its own `title` + `description` in the question's medium. The default a11y text is English and states counts ("15 equal squares … 6 fully shaded", even "0 cut by a diagonal") that answer part (a) (T125); a Sinhala-medium run needs Sinhala a11y (rule 6).
+
+## T153 — The requested figure change did not fit
+
+A "how many more" part must fit the cells actually drawn. "Cut more squares in half" needed 4 empty squares on a grid with 3 left — count the free cells on the spec before fixing the target fraction.
+
+## T154 — Similarity score is not a copy verdict
+
+A high `similar` score on the finished batch usually means the same task chain. A tank question (capacity → water used → height of what is left) scored 0.83 against an existing row with the same three steps; new numbers would not fix it, so the question became "compare two containers → repeated pours, when does it overflow" (0.74, different steps).
+
 ## T-QG-1 — The skill that never loaded: frontmatter that is not valid YAML is dropped silently
 
 **Looked true:** `skills/draw-and-verify-question-vdd/SKILL.md` was committed alongside the other seven
