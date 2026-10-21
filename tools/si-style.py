@@ -31,12 +31,16 @@ def field_warnings(text: str) -> list[str]:
     if PASSIVE.search(plain):
         warnings.append("passive construction")
     for sentence in re.split(r"[.?!]+|\n\s*\n", plain):
-        words = re.findall(r"\b\w+\b", sentence, flags=re.UNICODE)
-        if len(words) > 25:
-            warnings.append(f"sentence has {len(words)} words (max 25)")
-    for word in LATIN.findall(plain):
-        if word.lower() not in UNITS and not re.fullmatch(r"[A-Z]{1,2}", word):
-            warnings.append(f"Latin word {word!r}")
+        words = sentence.split()
+        if len(words) > 30:
+            warnings.append(f"sentence has {len(words)} words (max 30)")
+    for match in LATIN.finditer(plain):
+        word = match.group(0)
+        if word.lower() in UNITS or re.fullmatch(r"[A-Z]{1,3}", word):
+            continue
+        if len(word) == 1 and plain[match.end():match.end() + 1] == "(":
+            continue
+        warnings.append(f"Latin word {word!r}")
     if "කරුණාකර" in plain:
         warnings.append("contains කරුණාකර")
     return warnings

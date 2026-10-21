@@ -18,10 +18,6 @@ a skill or corpus file already read; allow one `build` + one `ship` per fix roun
 2. `python3 $T coverage --grade <g> --subject Mathematics --pairs --out $A/coverage-before.json` → pick the lessons
    the request needs (default 2–3) — None/Thin with room left; prefer a strong scope card
    (`python3 tools/scope-cards.py brief …`). Apply the [Room left and stop rule](#room-left-and-stop-rule).
-### Room left and stop rule
-
-- **Room left, not just row count.** Before you keep a thin lesson, read its dedup sheet. If its live rows already use every card section task and every `difficulty_hooks` entry at the target band, the lesson is **full**. Skip it and take the next thin lesson.
-- **Stop rule.** If one slot draws two copy MAJORs (from the plan critic or the batch critic), stop rewriting it. Move the slot to a different lesson (`playground-publish.py session update <sid> --lessons …` adds the lesson to the session), or drop the question and tell the owner.
 3. Read each chosen lesson's full [Copy check](#copy-check) sheet with `python3 tools/dedup-sheet.py --grade <g>
    --card <key>=<NN> --out $A/dedup-sheet.md`. Plan 10 one-liners → `$A/plan-items.yaml` → `python3 $T similar
    --grade <g> --items $A/plan-items.yaml --out $A/similar-plan.json`; each line names its closest item and why
@@ -47,33 +43,14 @@ a skill or corpus file already read; allow one `build` + one `ship` per fix roun
 
 Authoring lessons from earlier runs (see [T143–T154](../../docs/TRAPS.md)):
 - Sinhala key terms come from the lesson (T143); a stem must not give away what a part asks (T144).
-- Do not lift worked examples or activities; vary part patterns (T145). `check:` must compute from the question (T146).
+- Vary part patterns (T145); `check:` must compute from the question (T146).
 - Keep names outside maths spans (T147); shared maths-only Sinhala is stored once (T148).
 - Keep yes/no answers in their own paragraph (T149); keep units in Sinhala prose or shared maths (T150).
 - Keep Sinhala words outside maths spans (T151); provide medium-appropriate figure descriptions that do not give answers (T152).
-- Count available figure cells before asking for more (T153); treat a similar task chain as a copy even at low scores (T154).
+- Count available figure cells before asking for more (T153).
 
-> Moved from Vibhaga-Docs `.devin/skills/generate-lesson-questions` @08c09a9 (see docs/MIGRATION.md);
-> rewritten as the orchestrator in W7 (2026-10-02). The S4–S8 skills hold the *rules* of each step;
-> this file holds the *order*, who does each step, and the per-run checklist.
->
-> Runs so far (ids are kept in the private plan logbook, never here): 2026-09-27 and 2026-09-29 through the
-> source skill; 2026-10-02 the W6 red-team batch (4 questions, planted errors — the critic caught both);
-> 2026-10-02 W8 dogfood (G6, 10 questions, 8 template figures, 2 critic rounds → SATISFIED);
-> 2026-10-03 first run on the W9 tools (G6, 10 questions, 8 figures — 7 hand-drawn through finish(), 1 template; 2 critic rounds → SATISFIED);
-> 2026-10-03 first run on the W10 tools (G6, 10 questions, 8 template figures, 0 hand-drawn; `check:` on all 31 leaves; 2 critic rounds → SATISFIED; 0 tool repairs, 1 FRICTION line).
-> 2026-10-04 first G7 run on the W11 templates (10 questions, 33 leaves, 10 template figures — 6 from coordinate_plane/parallel_lines/bar_chart — 0 hand-drawn; 2 critic rounds → SATISFIED; 0 tool repairs, 3 FRICTION lines).
-> 2026-10-05 G7 run on the three least-covered lessons (Solids, Construction, Likelihood — picked by a SQL count of every tagged question; 10 questions, 40 leaves, 6 template figures, 0 hand-drawn; critic chunk 1 SATISFIED in r1, chunk 2 closed after r3 with one finding rejected under ADR 0021 and one MINOR left as an owner question; 0 tool repairs, 2 FRICTION lines).
-> 2026-10-07 first run executed by a Devin session (previous runs ran on the owner's laptop) — G6, three least-covered lessons (Algebraic Symbols + Data Collection + Data Interpretation; 10 questions, 30 leaves, 3 pictograph template figures, 0 hand-drawn; critic: chunk 1 SATISFIED in r2 after 6 MINOR fixes, chunk 2 SATISFIED in r3 after a MAJOR re-skin-of-worked-example rewrite + 6 MINOR fixes; 0 tool repairs, 8 FRICTION lines — all first-run environment gaps, not tool defects).
-> 2026-10-19 first coverage-driven run (G8; lessons picked from `GET /v1/admin/coverage` — the one 0-question lesson plus two thin ones, one two-lesson row filling an empty pair cell; 10 questions, 31 leaves, 1 template figure; critic: chunk 1 SATISFIED in r1, chunk 2 SATISFIED in r2 after a MAJOR same-task-as-a-published-row rewrite; 0 tool repairs, 4 FRICTION lines → the `coverage` subcommand).
-> 2026-10-13 first generated G8 batch — one lesson per question across ten least-covered, figure-free lessons (10 questions, 31 leaves, 0 figures; first run under the readable-layout gate, 0 fail / 0 warn; critic: r1 2 MAJOR re-skins/duplicates → 9 questions redesigned, r2 SATISFIED, r3 1 MAJOR ("multiples of 4 below 20" admits 0) fixed, r4 0 MAJOR with 3 scaffold-level MINORs left as owner notes; 0 tool repairs, 2 FRICTION lines).
-> Distilled lessons are folded into the steps below: a lesson that teaches angle types *without degrees*
-> demands comparison-with-a-right-angle reasoning; measure label↔canvas-edge clearance, not only
-> label↔stroke; a constructed claim set takes its ratios from the **stem** (T-QG-2); the critic is
-> image-blind, so the PNG look is the lead's.
-
-Plan: [`plans/2026-09-29-question-generation-plugin.md`](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/plans/2026-09-29-question-generation-plugin.md)
-(W7; the appendix R/M/H rubric). Cross-cutting traps: [`docs/TRAPS.md`](../../docs/TRAPS.md).
+Generation history: [docs/MIGRATION.md](../../docs/MIGRATION.md#generate-skill-history-2026-10-21). Cross-cutting traps:
+[`docs/TRAPS.md`](../../docs/TRAPS.md).
 
 > **Decision:** [`0018`](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/decisions/0018-agent-question-generation-playground.md) (paperless playground), on top of
 > [`0008`](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/decisions/0008-agent-driven-question-onboarding.md) PD-3, [`0009`](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/decisions/0009-review-flag-write-controls.md),
@@ -87,28 +64,7 @@ Plan: [`plans/2026-09-29-question-generation-plugin.md`](https://github.com/DevT
 > clicks **Go live** on the Admin `/generate` page. Nothing in this skill, and nothing the tools can do, lowers that
 > flag.
 
-**Tools (all existing, none forked):** `tools/run-gates.py` (the build and ship chains) · `tools/scope-cards.py`
-(`brief`, `draft`, `check`) · `tools/build-staged.py` · `tools/vdd_templates.py` · `tools/audit-claim-set.py` ·
-`tools/vdd-check.mjs` · `tools/visual-check.mjs` · `tools/precritic-lint.py` · `tools/playground-publish.py` ·
-`tools/sql-proof.py` (Q2/Q3) · `tools/critic-read.py` (the critic runs it). **Rule skills:** [`scope-cards`](../scope-cards/SKILL.md) ·
-[`author-question-text`](../author-question-text/SKILL.md) (S4) · [`structure-question-parts`](../structure-question-parts/SKILL.md) (S5) ·
-[`figure-templates`](../figure-templates/SKILL.md) · [`read-figure-claim-set`](../read-figure-claim-set/SKILL.md) (S6a) ·
-[`draw-and-verify-question-vdd`](../draw-and-verify-question-vdd/SKILL.md) (S6b) · [`visual-check`](../visual-check/SKILL.md) ·
-[`author-question-answers`](../author-question-answers/SKILL.md) (S8) · the `qgen-critic` agent
-([`agents/qgen-critic.md`](../../agents/qgen-critic.md)).
-
-> **Why a checklist and not a `generate-run.py` driver (W7 decision, 2026-10-02).** Every mechanical stage already is
-> one command with its own refusals and exit code (`build-staged` refuses ambiguous specs; `playground-publish` owns six
-> guard-rails — scope echo, ledger-before-publish, signatures, flag, logout, read-backs). The lead-only steps (plan, spec,
-> PNG look, critic judgment) sit *between* them at five points, so a driver could only chain two- or three-command runs
-> while re-threading the session id, scope, ledger and ids that `playground-publish` already owns — the fork the plan
-> forbids. The two steps with no tool were the ones done by hand and got wrong: Q2/Q3 typed into `psql` (W4's critic
-> found a DB URL on psql's argv) and the publish ids file. Those got `tools/sql-proof.py` and `build-staged --ids-out`.
->
-> **W9 (2026-10-02):** `tools/run-gates.py` now drives the two segments that have no lead step inside them —
-> `build` covers steps 5–6 (and the pre-critic lint when `--card` is given), `ship` covers 8–11. Every lead-only step
-> still sits between them — the plan, the spec, the PNG look, the critic judgment — so the W7 decision stands: a chain
-> of existing commands, never a forked driver.
+**Tools:** use the existing commands; never fork them. Each authoring step links to its rule skill.
 
 ---
 
@@ -123,11 +79,10 @@ Plan: [`plans/2026-09-29-question-generation-plugin.md`](https://github.com/DevT
 2. **Every question stays inside the lesson, the grade and the syllabus** — nothing on the card's `not_taught`, no
    later-grade notation. Two or more lessons tagged ⇒ each is used by at least one part's solution (AGENTS rule 3).
    Tag with the `lesson_id` from the live taxonomy (`lessons` subcommand), never a guessed uuid.
-3. **Dedup before you author, against everything.** `questions list --lesson-id <id> --all` returns **every** row,
-   drafts included, flagged or not, papered or paperless (0018 PD-4). The same exercise with the numbers changed is a
-   duplicate. Change the *task*, not only the numbers. Then ask the similarity finder (decision 0026) — it also
-   searches **untagged** rows and other lessons, which a lesson list cannot: `similar` before authoring, the critic's
-   Q4e after publish. Its score only ranks; there is no threshold — the verdict is yours and the critic's.
+3. **Dedup before you author, against everything.** Apply [Copy check](#copy-check). `questions list --lesson-id <id>
+   --all` returns every tagged row, including drafts, flagged, papered or paperless (0018 PD-4). `similar` also
+   searches untagged rows and other lessons. Run it before authoring and critic Q4e after publish; scores only rank,
+   so the verdict is yours and the critic's.
 4. **Every staged question carries `ingestion_metadata.needs_human_review: true`, and no `exam` key.** `build-staged`
    writes the flag; `playground-publish` refuses both before a save (0014 PD-1 guard-rail 4; 0018 PD-6).
 5. **Record ids before they matter (T9).** The session id goes into the ledger the moment `session create` returns; the
@@ -156,8 +111,6 @@ Plan: [`plans/2026-09-29-question-generation-plugin.md`](https://github.com/DevT
 | `PUT …/questions` is a whole-doc replace. A save may **raise** the flag but never lower it. A client `exam` is stripped. | `openapi.admin.yaml` PUT description; `Vibhaga-API/api/src/shared/staged-question.ts` |
 | `validate` errors: shape, duplicate `question_number`/ids, `is_multipart` agreement, the 2-level cap, invalid VDD, refused paints, a missing `a11y.title`, nonexistent or out-of-scope lessons. A missing `a11y.description` is only a **warning**. | `openapi.admin.yaml` `/playground/validate`, `ValidateReport` |
 | Publish forces the flag on every row and re-validates the chosen questions (`400 validation_failed`). `dry_run` returns `signatures_at_risk`. Omitting `question_ids` publishes **all**, so the tool always sends them. | `openapi.admin.yaml` `/sessions/{id}/publish` |
-| ⚠️ **The publish response does NOT write the raised flag back into the staged doc**; only the flag verbs mirror (`staged_doc_updated`). The tool re-PUTs the doc after each publish and reads it back (**T142**). | T142 |
-| Student read path: `SERVABLE` excludes flagged, draft **and** non-solvable rows (no verified answer), so a flagged question is absent from `/v1/questions`. Absence alone does not prove the flag; Q2 does. | 0013 PD-3; `Vibhaga-API/api/openapi.yaml` `/v1/questions` |
 | `questions list` returns summaries: `stem_excerpt` is the first 240 characters of `question_text`. | `openapi.admin.yaml` `PlaygroundQuestionSummary` |
 | `build-staged` ids are uuid5 of `id_seed` + `n` + the label path. Renumbering or relabelling after a publish mints NEW rows and orphans the published ones (no rename). | `tools/build-staged.py` docstring |
 
@@ -211,9 +164,8 @@ same two checkout paths in the critic's spawn prompt.
    ask wants None/Thin lessons, re-run with `--thin <lowest count present>` (e.g. `--thin 3`) and say in the logbook
    line which threshold picked the lessons. **When the ask names a grade but no lesson, the
    coverage picks:** the lessons the request needs (default 2–3), preferring `None`/`Thin` with room left and a
-   strong scope card; skip a lesson whose card cannot carry the batch and say why in `notes.md`. Before keeping a thin
-   lesson, read its dedup sheet. If its live rows already use every card section task and every `difficulty_hooks`
-   entry at the target band, the lesson is full. Skip it and take the next thin lesson. A deliberate two-lesson
+   strong scope card; skip a lesson whose card cannot carry the batch and say why in `notes.md`. Apply
+   [Room left and stop rule](#room-left-and-stop-rule). A deliberate two-lesson
    question may fill a missing natural pair cell (both lessons used in
    the working — AGENTS rule 3); the API lists only the cells that exist, so a missing one is your judgment, named in
    the plan line. Coverage reads the API (Hyperdrive, ~75 s stale — T5): it chooses lessons; it never proves rows.
@@ -230,11 +182,11 @@ same two checkout paths in the critic's spawn prompt.
    `WARN` if any pool row has no vector yet (run `embeddings-refresh` for the pool, then re-run). Read each
    neighbour's stem and parts (`questions show <id>` for the full row) and fill `closest:` with the top one; when a
    neighbour asks for the **same sequence of tasks** (e.g. "find the bearing · reverse it · walk back") with a new
-   story or new numbers, change the plan, not the wording. Calibration (0026): the known 2026-10-19 copy ranked #1
-   at only 0.64 — a low score is **not** a pass. Re-run `similar --items $A/content.yaml` once the spec is written.
+   story or new numbers, change the plan, not the wording. A low similarity score is **not** a pass. Re-run
+   `similar --items $A/content.yaml` once the spec is written.
    (a coverage-picked lesson may cite its before-count, e.g. `L26 Triangle Constructions (0 before)`).
-   Check the set against [Difficulty bands](#difficulty-bands) (the existing medium-hard rubric is unchanged) and
-   against AGENTS rule 3 for every multi-lesson tag. A figure that has nothing
+   Check the set against [Difficulty bands](#difficulty-bands) and against AGENTS rule 3 for every multi-lesson tag.
+   A figure that has nothing
    derivable (a pure shape to name) is dropped or put to the owner, never given an invented claim.
    Re-run `tools/dedup-sheet.py --grade <g> --card <key>=<NN> --plan $A/plan-items.yaml
    --similar $A/similar-plan.json --out $A/dedup-sheet.md` so each plan line and its neighbours are on the
@@ -248,7 +200,7 @@ same two checkout paths in the critic's spawn prompt.
 ### Plan-stage critic
 
 3b. **Plan critic (one fresh `qgen-critic` session, Normal mode, `Mode: plan`).** Pass it only paths: `plan-items.yaml`, `similar-plan.json`, `dedup-sheet.md` and the cards. It answers per plan line `OK` or `REPLACE — <reason>`. Replace every REPLACE line, then re-run `similar` and the dedup sheet. A second plan round is allowed only for the lines that changed; after that the stop rule applies. Create the session only once every line is OK. This catches copies while a fix costs one line, before the build, ship and SQL.
-4. **Author `content.yaml`** (the 2026-09-29 shape — `id_seed`, `lessons:` key map, `figures:` key map, `questions:`
+4. **Author `content.yaml`** (`id_seed`, `lessons:` key map, `figures:` key map, `questions:`
    with `n`, `lessons`, `stem`, `figure`, `parts[label, text, figure, approach, final]`; `build-staged.py` docstring):
    - **Stem** — [`author-question-text`](../author-question-text/SKILL.md) §1a + §3: `$…$`/`$$…$$`, never Sinhala
      inside KaTeX `\text{}`; lay out stems and part texts per §5. Since 0024 every stem, part text,
@@ -359,29 +311,8 @@ same two checkout paths in the critic's spawn prompt.
     `function qgen.q3 does not exist` or a `permission denied` means the one-time setup below was
     not run. Leave the questions published and flagged.
 
-    **One-time qgen.q3 setup on the merged project** (run once as `postgres`): Q3 reads through
-    `qgen.q3`, a counts-only SECURITY DEFINER function — RLS on `auth.*` has no policies, so a plain
-    reader role would see zero rows, and the reader must not be BYPASSRLS. The 4th column needs
-    admins to carry `raw_app_meta_data->>'vibhaga_role' = 'admin'` in `auth.users` (they do — set at
-    merge); without the flag an admin uid reads `actor_is_admin = 0` → NOT ok. The MCP fallback
-    still works: postgres can execute the function.
-
-    ```sql
-    create schema if not exists qgen;
-    create or replace function qgen.q3(actor uuid)
-    returns table(actor_exists bigint, sessions bigint, active_refresh_tokens bigint, actor_is_admin bigint)
-    language sql stable security definer set search_path = '' as $$
-      select (select count(*) from auth.users where id = actor),
-             (select count(*) from auth.sessions where user_id = actor),
-             (select count(*) from auth.refresh_tokens where user_id = actor::text and revoked is not true),
-             (select count(*) from auth.users where id = actor
-                and raw_app_meta_data->>'vibhaga_role' = 'admin');
-    $$;
-    revoke all on function qgen.q3(uuid) from public, anon, authenticated, service_role;
-    create role qgen_auth_reader login password '<strong password>';   -- skip if it exists
-    grant usage on schema qgen to qgen_auth_reader;
-    grant execute on function qgen.q3(uuid) to qgen_auth_reader;
-    ```
+    **One-time Q3 setup:** run as `postgres` on the merged project; see
+    [docs/Q3-SETUP.md](../../docs/Q3-SETUP.md).
 12. **Pre-critic lint** — `run-gates build --card` already ran `tools/precritic-lint.py`; re-run it standalone
     (`python3 tools/precritic-lint.py $A --card <key>=<NN> --grade <g>`) after any `content.yaml` edit. Fix every
     FAIL (`not_taught` probe found in a stem/part/approach/final — per question by default: a question
@@ -415,8 +346,9 @@ same two checkout paths in the critic's spawn prompt.
     holding ≥1 changed question; a chunk with no changes carries its verdict (record that in the ledger — profile
     §6: CARRIED / FIXED / OPEN / REGRESSED by hash). Never ask the same critic twice. **Sinhala-fluency MINORs are must-fix: apply the critic's rewrite.**
 15. **Logbook line** — one dated entry in the plan logbook (private Docs repo): session id, N questions / parts /
-    figures, the publish and Q2/Q3 lines, the coverage before → after diff (§5 item 5), critic rounds and verdicts, owner questions, effort. Add a line under "Runs so
-    far" above — without ids.
+    figures, the publish and Q2/Q3 lines, the coverage before → after diff (§5 item 5), critic rounds and verdicts,
+    owner questions, effort. Add an ID-free line to
+    [MIGRATION.md](../../docs/MIGRATION.md#generate-skill-history-2026-10-21).
 
 ### Per-run checklist — `$A/RUN.md`, ticked as you go
 
@@ -436,7 +368,7 @@ same two checkout paths in the critic's spawn prompt.
 - [ ] 13 critic r1 spawned with paths only · verdict ____
 - [ ] 14 rounds: r__ SATISFIED · critic-read hashes diffed · unchanged chunks CARRIED in ledger · every finding FIXED
       or an owner question · Q2 + Q3 ok after the last republish
-- [ ] 15 logbook line written · "Runs so far" line added
+- [ ] 15 logbook line written · ID-free line added to MIGRATION.md
 ```
 
 ## 3. What makes a generated question fit
@@ -446,7 +378,7 @@ The critic grades every part against this table (profile §3) — keep it and th
 | Check | Fails when |
 |---|---|
 | In lesson | it needs a concept the lesson does not teach, or a later grade's notation |
-| Not a copy | it is a textbook exercise or an existing row with only the numbers changed; apply [Copy check](#copy-check) |
+| Not a copy | it matches any item in [Copy check](#copy-check) |
 | Self-contained | a student cannot answer it from the stem and figure alone (no "see the table on page 87") |
 | Answer right | the second method disagrees, or the figure's measured values contradict the stem |
 | Figure honest | the drawing *looks* like the claim but measures differently (S6b §5) |
@@ -471,26 +403,22 @@ A match on one part only, where the other parts are new, is a scaffold echo (MIN
 | Medium | at least one `M`, no `H` | 2–4 leaves; part (a) may be `R` |
 | Hard | the existing medium-hard rubric | unchanged |
 
-For an Easy question, "new" means one of these: a context the lesson does not use; an R-level idea from the lesson combined with a different R idea from the same lesson; or a reverse question (given the answer, find the data). A textbook exercise or activity with new numbers is still a copy (see Copy check). If a lesson has no new Easy task left, skip the lesson.
+For an Easy question, "new" means one of these: a context the lesson does not use; an R-level idea from the lesson combined with a different R idea from the same lesson; or a reverse question (given the answer, find the data). If a lesson has no new Easy task left, apply the [Room left and stop rule](#room-left-and-stop-rule).
 
-## 4. Traps — stories with the catch
+### Room left and stop rule
 
-- **T142: published, flagged, and the doc says otherwise.** The Phase 5 page showed a flagged question as green
-  "Published" after a reload, because the publish response never wrote the OD-2 flag into the staged doc. A hand-rolled
-  curl publish repeats this silently. Use the tool, which re-PUTs the doc and reads it back.
-- **T5: the API list said it was there.** A questions list read within ~75 s of a write can be stale. Proof is SQL.
-- **T9: the ids are the undo.** Without the ledger, an unpublish needs someone to find the rows by `source_batch_id`
-  first. With it, one command does the job.
-- **T77: staged and live disagree.** Publish reads the **server** doc, not your file. The tool refuses a publish while
-  your file differs from the server doc (run `doc put` first), and T77 compares staged against live afterwards.
-  **T-QG-4:** T77 once false-failed a clean publish because its read side knew only `answers[]`; fixed — a T77 failure
-  is real until shown otherwise.
-- **T-QG-2: the claim set agreed with itself.** A hand-drawn 1.5:1 cuboid passed for a 5:2 stem. Templates take the
-  stem's numbers; never retype a drawn number into a spec.
-- **T25: the hinted critic.** A critic told what to look for is not independent. Paths only, actor dir out of reach.
-- **T-QG-8: two variants of one blueprint in a batch read as one question to a student** — same stem, same
-  figure kind, only the numbers differ. `build-staged` refuses a second question carrying a batch-mate's
-  `blueprint_id`; roll the next variant in a later session.
+- **Room left, not just row count.** Before you keep a thin lesson, read its dedup sheet. If its live rows already use every card section task and every `difficulty_hooks` entry at the target band, the lesson is **full**. Skip it and take the next thin lesson.
+- **Stop rule.** If one slot draws two copy MAJORs (from the plan critic or the batch critic), stop rewriting it. Move the slot to a different lesson (`playground-publish.py session update <sid> --lessons …` adds the lesson to the session), or drop the question and tell the owner.
+
+## 4. Traps
+
+- **T142:** Publish through `playground-publish.py`; it re-PUTs and reads back the flagged doc. ([TRAPS.md](../../docs/TRAPS.md), T142)
+- **T5:** API lists may be stale; prove writes by SQL. ([TRAPS.md](../../docs/TRAPS.md), T5)
+- **T9:** Record session and question ids before writes; recovery without them needs `source_batch_id`. ([TRAPS.md](../../docs/TRAPS.md), T9)
+- **T77 / T-QG-4:** PUT before publish; verify staged/live agreement after it. ([TRAPS.md](../../docs/TRAPS.md), T77, T-QG-4)
+- **T-QG-2:** Build claims from stem numbers; never self-validate a drawn ratio. ([TRAPS.md](../../docs/TRAPS.md), T-QG-2)
+- **T25:** Give the critic paths only, never hints or actor files. ([TRAPS.md](../../docs/TRAPS.md), T25)
+- **T-QG-8:** One blueprint variant per batch; roll another in a later session. ([TRAPS.md](../../docs/TRAPS.md), T-QG-8)
 
 ## 5. Verify (definition of done, per run)
 
@@ -514,8 +442,7 @@ For an Easy question, "new" means one of these: a context the lesson does not us
 
 ## 6. Keep this skill alive
 
-The route table in §1 was diffed against `openapi.admin.yaml` on 2026-09-27. When the playground contract changes (new
-verb, delete, or a publish that mirrors the flag itself), update §1, §2 and the tool together, and retire T142 if the
-server starts writing the flag. When a tool's flags change, update the step that calls it. When §3 changes, change
-`agents/qgen-critic.md` §3 in the same PR. Add each run's line under "Runs so far" — without session ids in this public
-repo.
+When the playground contract changes (new verb, delete, or a publish that mirrors the flag itself), update §1, §2 and
+the tool together, and retire T142 if the server starts writing the flag. When a tool's flags change, update the step
+that calls it. When §3 changes, change `agents/qgen-critic.md` §3 in the same PR. Keep dated run history in
+[MIGRATION.md](../../docs/MIGRATION.md#generate-skill-history-2026-10-21); session ids stay in the private plan logbook.

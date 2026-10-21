@@ -122,3 +122,44 @@ git grep -nIE '\b[0-9a-f]{8}\b' -- skills agents docs
 | Sinhala | kept only as **generic vocabulary/grammar fixtures**, never question stems: `markdown-gate.mjs` self-test inputs (the gate's Sinhala rules need Sinhala inputs — generic instruction phrases like *"complete the table"*), `run-gate.sh` + `author-question-answers` limb-A drawing-verb **regex**, one-word fixture labels (`භාග` *fractions*, `අක්ෂ` *axis*, `සෙ.මී.` *cm* abbrev), `vdd-layout.mjs` font-load probe `සිංහල`, T128's two vocabulary word-pairs in TRAPS.md |
 | 8-hex id fragments in `skills/ agents/ docs/` | **0 hits** |
 | hard-coded hosts in `playground-publish.py`/`publish.py`/`_admin_auth.py` | checked — hosts come from `.env.local`/`VIBHAGA_ADMIN_ENV` at runtime only |
+
+## generate skill history 2026-10-21
+
+> Moved from Vibhaga-Docs `.devin/skills/generate-lesson-questions` @08c09a9 (see docs/MIGRATION.md);
+> rewritten as the orchestrator in W7 (2026-10-02). The S4–S8 skills hold the *rules* of each step;
+> this file holds the *order*, who does each step, and the per-run checklist.
+>
+> Runs so far (ids are kept in the private plan logbook, never here): 2026-09-27 and 2026-09-29 through the
+> source skill; 2026-10-02 the W6 red-team batch (4 questions, planted errors — the critic caught both);
+> 2026-10-02 W8 dogfood (G6, 10 questions, 8 template figures, 2 critic rounds → SATISFIED);
+> 2026-10-03 first run on the W9 tools (G6, 10 questions, 8 figures — 7 hand-drawn through finish(), 1 template; 2 critic rounds → SATISFIED);
+> 2026-10-03 first run on the W10 tools (G6, 10 questions, 8 template figures, 0 hand-drawn; `check:` on all 31 leaves; 2 critic rounds → SATISFIED; 0 tool repairs, 1 FRICTION line).
+> 2026-10-04 first G7 run on the W11 templates (10 questions, 33 leaves, 10 template figures — 6 from coordinate_plane/parallel_lines/bar_chart — 0 hand-drawn; 2 critic rounds → SATISFIED; 0 tool repairs, 3 FRICTION lines).
+> 2026-10-05 G7 run on the three least-covered lessons (Solids, Construction, Likelihood — picked by a SQL count of every tagged question; 10 questions, 40 leaves, 6 template figures, 0 hand-drawn; critic chunk 1 SATISFIED in r1, chunk 2 closed after r3 with one finding rejected under ADR 0021 and one MINOR left as an owner question; 0 tool repairs, 2 FRICTION lines).
+> 2026-10-07 first run executed by a Devin session (previous runs ran on the owner's laptop) — G6, three least-covered lessons (Algebraic Symbols + Data Collection + Data Interpretation; 10 questions, 30 leaves, 3 pictograph template figures, 0 hand-drawn; critic: chunk 1 SATISFIED in r2 after 6 MINOR fixes, chunk 2 SATISFIED in r3 after a MAJOR re-skin-of-worked-example rewrite + 6 MINOR fixes; 0 tool repairs, 8 FRICTION lines — all first-run environment gaps, not tool defects).
+> 2026-10-19 first coverage-driven run (G8; lessons picked from `GET /v1/admin/coverage` — the one 0-question lesson plus two thin ones, one two-lesson row filling an empty pair cell; 10 questions, 31 leaves, 1 template figure; critic: chunk 1 SATISFIED in r1, chunk 2 SATISFIED in r2 after a MAJOR same-task-as-a-published-row rewrite; 0 tool repairs, 4 FRICTION lines → the `coverage` subcommand).
+> 2026-10-13 first generated G8 batch — one lesson per question across ten least-covered, figure-free lessons (10 questions, 31 leaves, 0 figures; first run under the readable-layout gate, 0 fail / 0 warn; critic: r1 2 MAJOR re-skins/duplicates → 9 questions redesigned, r2 SATISFIED, r3 1 MAJOR ("multiples of 4 below 20" admits 0) fixed, r4 0 MAJOR with 3 scaffold-level MINORs left as owner notes; 0 tool repairs, 2 FRICTION lines).
+> Distilled lessons are folded into the steps below: a lesson that teaches angle types *without degrees*
+> demands comparison-with-a-right-angle reasoning; measure label↔canvas-edge clearance, not only
+> label↔stroke; a constructed claim set takes its ratios from the **stem** (T-QG-2); the critic is
+> image-blind, so the PNG look is the lead's.
+
+Plan: [`plans/2026-09-29-question-generation-plugin.md`](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/plans/2026-09-29-question-generation-plugin.md)
+(W7; the appendix R/M/H rubric). Cross-cutting traps: [`TRAPS.md`](TRAPS.md).
+
+> **Why a checklist and not a `generate-run.py` driver (W7 decision, 2026-10-02).** Every mechanical stage already is
+> one command with its own refusals and exit code (`build-staged` refuses ambiguous specs; `playground-publish` owns six
+> guard-rails — scope echo, ledger-before-publish, signatures, flag, logout, read-backs). The lead-only steps (plan, spec,
+> PNG look, critic judgment) sit *between* them at five points, so a driver could only chain two- or three-command runs
+> while re-threading the session id, scope, ledger and ids that `playground-publish` already owns — the fork the plan
+> forbids. The two steps with no tool were the ones done by hand and got wrong: Q2/Q3 typed into `psql` (W4's critic
+> found a DB URL on psql's argv) and the publish ids file. Those got `tools/sql-proof.py` and `build-staged --ids-out`.
+>
+> **W9 (2026-10-02):** `tools/run-gates.py` now drives the two segments that have no lead step inside them —
+> `build` covers steps 5–6 (and the pre-critic lint when `--card` is given), `ship` covers 8–11. Every lead-only step
+> still sits between them — the plan, the spec, the PNG look, the critic judgment — so the W7 decision stands: a chain
+> of existing commands, never a forked driver.
+
+Calibration (0026): the known 2026-10-19 copy ranked #1 at only 0.64 — a low score is **not** a pass.
+
+The route table in §1 was diffed against `openapi.admin.yaml` on 2026-09-27.
