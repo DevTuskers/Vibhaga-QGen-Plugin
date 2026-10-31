@@ -102,11 +102,15 @@ The canonical spec is
 | A symbol, variable or number inside prose | `$…$` | `Find the value of $x$.` |
 | A formula that deserves its own line | `$$…$$` ⚠️ **with the fences on their OWN lines, at column 0, after a blank line** | rare in a stem; common in an `approach`. ⚠️ **`$$\frac{3}{4}$$` on ONE line is now INLINE**, and `$$\frac{3}{4}` ⏎ `$$` (content on the opener line) **DELETES the formula** — everything after `$$` on that line is eaten as the fence's info-string. Inside a list item it detonates the item and the **raw LaTeX reaches the student** |
 | English words inside Sinhala prose that Singlish must not transliterate | `` `…` `` | **0 live rows used it when last measured.** You are likely the first — test the render |
-| A unit | inside the maths: `$10\text{ cm}$` | |
+| A number and unit | English symbol after the number in both languages: `$4$ cm` (or `$10\text{ cm}$` inside maths); never a Sinhala unit word or abbreviation immediately before or after it | `mm`, `cm`, `m`, `km`, `mg`, `g`, `kg`, `ml`, `l` |
 | Sinhala | **plain text, outside every marker** | |
 
 ⚠️ **`\text{}` is for Latin only.** `$30\text{ kg } 350\text{ g}$` is fine; a Sinhala word inside
 `\text{}` is forbidden and will render as tofu or garbage.
+
+Units stay in English symbols beside numbers in Sinhala text as well as English text. The blocking
+`unit-notation.py` gate refuses Sinhala unit words/abbreviations immediately before or after a number
+and Singlish transliterations of unit symbols.
 
 ### 3.2 The exact predicate
 
