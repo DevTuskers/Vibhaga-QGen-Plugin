@@ -13,19 +13,27 @@ except ImportError:
     yaml = None
 
 UNIT_WORDS = (
-    "මිලිමීටර", "සෙන්ටිමීටර", "කිලෝමීටර", "මීටර", "මිලිග්‍රෑම්",
-    "කිලෝග්‍රෑම්", "ග්‍රෑම්", "මිලිලීටර", "ලීටර",
+    "මිලිමීටර්", "මිලිමීටර", "සෙන්ටිමීටර්", "සෙන්ටිමීටර",
+    "කිලෝමීටර්", "කිලෝමීටර", "මීටර්", "මීටර", "මිලිග්‍රෑම්",
+    "කිලෝග්‍රෑම්", "ග්‍රෑම්", "මිලිලීටර්", "මිලිලීටර", "ලීටර්", "ලීටර",
 )
 WORD_UNIT = "(?:" + "|".join(UNIT_WORDS) + ")[\\u0D80-\\u0DFF]*"
 UNIT_ABBREVIATION = (
     r"(?:සෙ\.\s*මී\.?|මි\.\s*මී\.?|කි\.\s*මී\.?|"
     r"කි\.\s*ග්‍රෑ\.?|මි\.\s*ග්‍රෑ\.?|ග්‍රෑ\.?|මි\.\s*ලී\.?|ලී\.?)"
 )
+UNIT_WITH_PREFIX = rf"(?:(?:ඝන|වර්ග)\s+)?{WORD_UNIT}"
 UNIT_AFTER_DIGIT = re.compile(
     rf"(?<!\d)\d+(?:[.,]\d+)?\s*(?P<unit>{WORD_UNIT}|{UNIT_ABBREVIATION})(?!\w)"
 )
+UNIT_BEFORE_DIGIT = re.compile(
+    rf"(?<!\w)(?P<unit>{UNIT_WITH_PREFIX})\s+\d+(?:[.,]\d+)?"
+)
+UNIT_BEFORE_MATH = re.compile(
+    rf"(?<!\w)(?P<unit>{UNIT_WITH_PREFIX})\s+$"
+)
 UNIT_AFTER_MATH = re.compile(
-    rf"\$[^$]*\$\s*(?P<unit>{WORD_UNIT}|{UNIT_ABBREVIATION})(?!\w)"
+    rf"^\s*(?P<unit>{WORD_UNIT}|{UNIT_ABBREVIATION})(?!\w)"
 )
 TRANSLITERATED_UNIT = re.compile(r"(?<!\w)(?P<unit>ක්ම්|ක්මී|ම්ම්|ක්ග්|ම්ග්|ම්ල්)(?!\w)")
 
@@ -55,8 +63,19 @@ def sinhala_fields(content: dict):
 
 def field_hits(text: str) -> list[str]:
     matches = []
-    for pattern in (UNIT_AFTER_DIGIT, UNIT_AFTER_MATH, TRANSLITERATED_UNIT):
-        matches.extend(match.group(0) for match in pattern.finditer(text))
+    segments = re.split(r"(\$[^$]*\$)", text)
+    for index, segment in enumerate(segments):
+        for pattern in (UNIT_AFTER_DIGIT, UNIT_BEFORE_DIGIT, TRANSLITERATED_UNIT):
+            matches.extend(match.group(0) for match in pattern.finditer(segment))
+        if index % 2:
+            if index:
+                before = UNIT_BEFORE_MATH.search(segments[index - 1])
+                if before:
+                    matches.append(f"{before.group('unit')} {segment}")
+            if index + 1 < len(segments):
+                after = UNIT_AFTER_MATH.match(segments[index + 1])
+                if after:
+                    matches.append(f"{segment}{after.group(0)}")
     return matches
 
 
@@ -85,7 +104,10 @@ def main(argv=None) -> int:
             question_part, separator, field_name = field.rpartition(".")
             if not separator:
                 question_part, field_name = "content", field
-            print(f"FAIL {question_part} {field_name}: {hit} — write the unit as the English symbol, e.g. $4$ cm")
+            print(
+                f"FAIL {question_part} {field_name}: {hit} — write the unit as the English symbol "
+                "after the number, e.g. $4$ cm; not සෙන්ටිමීටර් $4$"
+            )
     print(f"unit-notation: {failures} fail(s)")
     return 1 if failures else 0
 

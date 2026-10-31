@@ -711,6 +711,8 @@ A yes/no final gets its own paragraph. `No.` / `නැත.` first, the reason af
 
 A unit outside the maths span is English prose. `final_si: "$22$ cm"` is refused as a copy of English; write `$22\ \text{cm}$` (shared maths-only) or put a Sinhala word around it.
 
+The blocking unit-notation gate also refuses a Sinhala unit word immediately before a number or maths span (for example, `සෙන්ටිමීටර් $4$`), as well as after one. Keep the unit as an English symbol after the number: `$4$ cm`.
+
 ## T151 — Sinhala inside a math span is not rendered as prose
 
 No Sinhala words inside `$…$` (markdown gate M2). Name the quantity with a letter (`$w$`) and keep the words outside the span.
@@ -1018,8 +1020,8 @@ Roman-numeral list markers are not sentence ends for the gate. The authoring rul
 Singlish mode is enabled.
 **Actually:** Admin Singlish mode used to transliterate `cm` as `ක්ම්` and the point label `AB` as
 `ඇඹ්`, changing standard notation into Sinhala text.
-**The check:** keep units after numbers in English symbols in both languages (`$4$ cm`), and keep
+**The check:** keep units beside numbers in English symbols in both languages (`$4$ cm`), and keep
 point labels in English. The blocking `unit-notation.py` gate refuses Sinhala unit words or
-abbreviations after numbers.
+abbreviations immediately before or after numbers.
 
 *Source: this plugin — unit-notation gate and blind-planning work.*
