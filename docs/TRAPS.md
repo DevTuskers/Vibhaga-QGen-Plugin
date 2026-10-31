@@ -1011,3 +1011,15 @@ Roman-numeral list markers are not sentence ends for the gate. The authoring rul
 `author-question-answers` §4.1c and `generate` step 4.
 
 *Source: this plugin — owner ruling, 2026-10-13.*
+
+## T-QG-15 — Singlish can corrupt unit symbols and point labels
+
+**Looked true:** a Sinhala-field sentence can keep unit symbols and point labels in English while
+Singlish mode is enabled.
+**Actually:** Admin Singlish mode used to transliterate `cm` as `ක්ම්` and the point label `AB` as
+`ඇඹ්`, changing standard notation into Sinhala text.
+**The check:** keep units after numbers in English symbols in both languages (`$4$ cm`), and keep
+point labels in English. The blocking `unit-notation.py` gate refuses Sinhala unit words or
+abbreviations after numbers.
+
+*Source: this plugin — unit-notation gate and blind-planning work.*

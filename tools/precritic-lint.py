@@ -46,10 +46,10 @@ Checks:
       both fractions are set-wide. A leaf with no `level` is a WARN and counts in no
       denominator, so it can never drive a FAIL.
 
-  (e) `--existing FILE …` — duplicate fingerprint: digits masked (`42`→`##`), whitespace
-      tokens, Jaccard of each question's stem+part texts against every existing row's
-      `stem_excerpt`. ≥0.6 → WARN naming the row — the same task with new numbers is a
-      duplicate even when the digits differ (decision 0001: no embeddings).
+  (e) duplicate fingerprint: digits masked (`42`→`##`), whitespace tokens, Jaccard of each
+      question's stem+part texts against every existing row's `stem_excerpt` and the bound
+      cards' worked-example excerpts and exercise items. ≥0.6 → WARN naming the row or card item,
+      never its text — the same task with new numbers is a duplicate (decision 0001: no embeddings).
 
 Output: one FAIL/WARN line each, then `precritic-lint: F fail(s) · W warn(s)`.
 Exit 1 on any FAIL, else 0 — warns never block, same contract as validate.
@@ -500,7 +500,7 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
                 fails += 1
                 log(f"  FAIL {where}: {problem}")
 
-    # (e) duplicate fingerprint — digits masked, Jaccard vs each existing row's stem_excerpt
+    # (e) duplicate fingerprint — digits masked, Jaccard vs existing rows and bound card items
     for path in getattr(args, "existing", []) or []:
         p = Path(path)
         if not p.is_file():
@@ -516,6 +516,32 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
                     rid = row.get("question_id") or row.get("id") or "?"
                     log(f"  WARN Q{q.get('n')} ≈ {p.name}:{rid} (Jaccard {j:.2f}, digits "
                         f"masked) — the same task with new numbers is still a duplicate")
+    for q in questions:
+        qt = mask_tokens(question_surface(q))
+        for key in (q.get("lessons") or []):
+            if key not in cards:
+                continue
+            gen = cards[key]["doc"].get("generated") or {}
+            card_name = cards[key]["name"]
+            for index, example in enumerate(gen.get("worked_examples") or [], 1):
+                tokens = mask_tokens(example.get("excerpt") or "")
+                score = jaccard(qt, tokens)
+                if score >= 0.6:
+                    heading = example.get("heading") or f"worked example {index}"
+                    warns += 1
+                    log(f"  WARN Q{q.get('n')} ≈ {card_name} worked example {index} "
+                        f"({heading}) (Jaccard {score:.2f}, digits masked) — duplicate "
+                        "lesson-item fingerprint")
+            for exercise in gen.get("exercises") or []:
+                heading = exercise.get("heading") or "exercise"
+                for index, item in enumerate(exercise.get("items") or [], 1):
+                    tokens = mask_tokens(item)
+                    score = jaccard(qt, tokens)
+                    if score >= 0.6:
+                        warns += 1
+                        log(f"  WARN Q{q.get('n')} ≈ {card_name} exercise {heading} item "
+                            f"{index} (Jaccard {score:.2f}, digits masked) — duplicate "
+                            "lesson-item fingerprint")
     return fails, warns
 
 

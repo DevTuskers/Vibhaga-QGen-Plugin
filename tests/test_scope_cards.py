@@ -668,6 +668,21 @@ class BriefTest(unittest.TestCase):
             # aim: ~80 lines per card
             self.assertLessEqual(len(out.strip().splitlines()), 100, out)
 
+    def test_brief_writer_withholds_examples_exercises_and_activities(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.corpus_with_cards(tmp)
+            r = run_tool(["brief", "1", "--grade", "6", "--corpus", str(corpus), "--writer"])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn(
+                "examples/exercises/activities: 1 worked example(s) · "
+                "1 exercise set(s) (2 items) · 1 activit(y/ies) — withheld from the writer "
+                "(blind planning); the plan critic and similar check them",
+                r.stdout,
+            )
+            self.assertNotIn("zebra", r.stdout)
+            self.assertNotIn("Do the first drill.", r.stdout)
+            self.assertNotIn("Fold the paper strip", r.stdout)
+
     def test_brief_by_path_and_multiple_cards(self):
         with tempfile.TemporaryDirectory() as tmp:
             corpus = self.corpus_with_cards(tmp)
@@ -715,6 +730,97 @@ class BriefTest(unittest.TestCase):
             r = run_tool(["brief", "9", "--grade", "6", "--corpus", str(corpus)])
             self.assertEqual(r.returncode, 2)
             self.assertIn("0 card(s) match", r.stderr)
+
+
+class LessonRenderTest(unittest.TestCase):
+    """`lesson`: synthetic Markdown with example, exercise and activity spans."""
+
+    LESSON = f"""\
+---
+lesson_number: 1
+title_en: Synthetic lesson
+---
+# Synthetic lesson
+
+Opening teaching prose remains visible.
+
+### 1.1 First section
+
+First-section teaching prose remains visible.
+
+#### Figure — A synthetic figure
+
+**Description:** A synthetic figure description outside every withheld span.
+**Concepts:** shape
+
+#### {sc.KW_EXAMPLE} 1
+
+Synthetic example-only sentence.
+
+### 1.2 Second section
+
+Second-section teaching prose remains visible.
+
+#### 1.2 {sc.KW_EXERCISE}
+
+Synthetic exercise-only sentence.
+
+#### {sc.KW_ACTIVITY} 1
+
+Synthetic activity-only sentence.
+
+### {sc.KW_EXAMPLE} 2
+
+Synthetic level-three example-only sentence.
+
+### 1.3 Final section
+
+Final teaching prose remains visible.
+"""
+
+    def make_corpus(self, tmp) -> Path:
+        corpus = Path(tmp) / "corpus"
+        shutil.copytree(FIXTURE, corpus)
+        lesson = corpus / "maths" / "grade-06" / "lessons" / "01-Alpha.md"
+        lesson.write_text(self.LESSON, encoding="utf-8")
+        return corpus
+
+    def lesson(self, corpus, *extra):
+        return run_tool(
+            ["lesson", "1", "--grade", "6", "--corpus", str(corpus), *extra]
+        )
+
+    def test_lesson_redacts_spans_drops_frontmatter_and_keeps_prose_and_figure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            r = self.lesson(corpus)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertFalse(r.stdout.lstrip().startswith("---"))
+            self.assertIn("Opening teaching prose remains visible.", r.stdout)
+            self.assertIn("First-section teaching prose remains visible.", r.stdout)
+            self.assertIn("Second-section teaching prose remains visible.", r.stdout)
+            self.assertIn("Final teaching prose remains visible.", r.stdout)
+            self.assertIn("A synthetic figure description outside every withheld span.", r.stdout)
+            self.assertIn(f"[{sc.KW_EXAMPLE} 1 — withheld from the writer]", r.stdout)
+            self.assertIn(f"[{sc.KW_EXAMPLE} 2 — withheld from the writer]", r.stdout)
+            self.assertIn(f"[1.2 {sc.KW_EXERCISE} — withheld from the writer]", r.stdout)
+            self.assertIn(f"[{sc.KW_ACTIVITY} 1 — withheld from the writer]", r.stdout)
+            self.assertNotIn("Synthetic example-only sentence.", r.stdout)
+            self.assertNotIn("Synthetic level-three example-only sentence.", r.stdout)
+            self.assertNotIn("Synthetic exercise-only sentence.", r.stdout)
+            self.assertNotIn("Synthetic activity-only sentence.", r.stdout)
+
+    def test_lesson_section_filter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = self.make_corpus(tmp)
+            r = self.lesson(corpus, "--section", "1.2")
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("### 1.2 Second section", r.stdout)
+            self.assertIn("Second-section teaching prose remains visible.", r.stdout)
+            self.assertNotIn("### 1.1 First section", r.stdout)
+            self.assertNotIn("synthetic figure description", r.stdout.lower())
+            self.assertNotIn("Synthetic example-only sentence.", r.stdout)
+            self.assertIn(f"[1.2 {sc.KW_EXERCISE} — withheld from the writer]", r.stdout)
 
 
 if __name__ == "__main__":

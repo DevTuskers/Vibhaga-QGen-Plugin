@@ -13,6 +13,7 @@ This tool ONLY chains the existing tools as subprocesses with their own flags �
 forked or re-implemented and no gate is lowered:
 
   build:  0. si-style.py content.yaml — warning-only, never blocks the build
+          0a. unit-notation.py content.yaml — blocking Sinhala unit-notation check
           1. vdd_templates.py build specs/figures.json → figures/ (skipped when the file is
              absent or [] — every figure is then hand-drawn)
           2. per figure id — ids from specs/figures.json ∪ the basenames of every file in
@@ -264,6 +265,12 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
         log(style_out.rstrip())
     if rc:
         log(f"si-style: non-blocking stage exited {rc}")
+    rc, unit_out = runner([sys.executable, str(TOOLS / "unit-notation.py"), str(content)])
+    gates["unit-notation"] = rc
+    if unit_out.strip():
+        log(unit_out.rstrip())
+    if rc:
+        return fail(gates, run, "unit-notation", rc, unit_out)
     hand_by_id = {fid: (fig, claims) for fid, fig, claims in hand}
     per_fig: dict[str, dict] = {f: {} for f in fig_ids}
 

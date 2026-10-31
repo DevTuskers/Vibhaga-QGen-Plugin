@@ -176,7 +176,29 @@ class BuildTest(unittest.TestCase):
             self.assertFalse(any("build-staged" in c for c in joined))
             self.assertFalse(any("visual-check" in c for c in joined))
             gates = json.loads((run / "gates.json").read_text())
-            self.assertEqual(gates, {"si-style": 0, "templates": 0, "audit:Q1": 1})
+            self.assertEqual(gates, {
+                "si-style": 0, "unit-notation": 0, "templates": 0, "audit:Q1": 1,
+            })
+
+    def test_unit_notation_failure_stops_build_and_records_gate(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            stub = StubRunner()
+            stub.canned.append((lambda j: "unit-notation.py" in j, 1,
+                                "FAIL Q1 stem_si: $4$ unit-word — write the unit as cm\n"
+                                "unit-notation: 1 fail(s)\n"))
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run), runner=stub)
+            self.assertEqual(rc, 1)
+            self.assertIn("stage unit-notation: exit 1 — stopping", out.getvalue())
+            commands = [" ".join(call) for call in stub.calls]
+            self.assertLess(next(i for i, c in enumerate(commands) if "si-style.py" in c),
+                            next(i for i, c in enumerate(commands) if "unit-notation.py" in c))
+            self.assertFalse(any("vdd_templates.py" in c for c in commands))
+            self.assertFalse(any("build-staged.py" in c for c in commands))
+            self.assertEqual(json.loads((run / "gates.json").read_text()),
+                             {"si-style": 0, "unit-notation": 1})
 
     def test_precritic_skipped_without_cards(self):
         with tempfile.TemporaryDirectory() as td:

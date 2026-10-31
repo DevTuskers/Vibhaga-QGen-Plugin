@@ -25,7 +25,8 @@ Usage:
 
     scope-cards.py draft --grade 6 [--lessons 1,7] [--corpus PATH]
     scope-cards.py check --grade 6 [--corpus PATH]
-    scope-cards.py brief <card> [<card>…] [--grade 6] [--corpus PATH]
+    scope-cards.py brief <card> [<card>…] [--grade 6] [--corpus PATH] [--writer]
+    scope-cards.py lesson <NN> --grade 6 [--section N.M …] [--corpus PATH]
     scope-cards.py draft|check --exam ol      # refused — O/L composition is plan OD-3
     scope-cards.py --self-test
 
@@ -36,6 +37,9 @@ exercise item lists (≤6 items at 70 chars, `… +k more` beyond), activities, 
 whole `curated:` block.
 A card argument is a path, or a lesson number NN resolved with `--grade` as
 `maths/grade-NN/scope-cards/NN-*.yaml` under the corpus. `brief` is a pure read — it never writes.
+`brief --writer` withholds card example, exercise and activity text. `lesson` prints Markdown
+without frontmatter, replacing every worked-example, exercise and activity span with a withholding
+marker; `--section` may be repeated to select sections.
 
 Corpus resolution: `--corpus` → `VIBHAGA_CORPUS` → sibling `<plugin>/../Vibhaga-Maths-Corpus`.
 
@@ -228,18 +232,26 @@ def consume_block(lines: list[str], i: int) -> tuple[list[str], list[str], int]:
     return concepts, source_text, j
 
 
-def parse_elements(body: str) -> list[dict]:
+def parse_elements(body: str, with_lines: bool = False) -> list[dict]:
     """Reduce the lesson body to an element stream: anchor / heading / figure / table / body."""
     elems: list[dict] = []
     last_anchor = None
     lines = body.split("\n")
     i = 0
+
+    def append(element: dict, start: int, end: int) -> None:
+        if with_lines:
+            element["line_start"] = start
+            element["line_end"] = end
+        elems.append(element)
+
     while i < len(lines):
+        start = i
         line = lines[i]
         m = ANCHOR_RE.match(line)
         if m:
             last_anchor = m.group(1)
-            elems.append({"kind": "anchor", "id": m.group(1)})
+            append({"kind": "anchor", "id": m.group(1)}, start, start + 1)
             i += 1
             continue
         if not line.strip() or COMMENT_RE.match(line):
@@ -251,14 +263,14 @@ def parse_elements(body: str) -> list[dict]:
             fm = FIGTBL_RE.match(text)
             if fm:
                 concepts, source_text, i = consume_block(lines, i)
-                elems.append({"kind": fm.group(1).lower(), "anchor": last_anchor,
-                              "concepts": concepts, "source_text": source_text})
+                append({"kind": fm.group(1).lower(), "anchor": last_anchor,
+                        "concepts": concepts, "source_text": source_text}, start, i)
                 continue
-            elems.append({"kind": "heading", "level": level, "text": text,
-                          "anchor": last_anchor})
+            append({"kind": "heading", "level": level, "text": text,
+                    "anchor": last_anchor}, start, start + 1)
             i += 1
             continue
-        elems.append({"kind": "body", "text": line})
+        append({"kind": "body", "text": line}, start, start + 1)
         i += 1
     return elems
 
@@ -1035,7 +1047,7 @@ def resolve_card_arg(spec: str, args) -> Path:
     return cands[0]
 
 
-def brief_card(cpath: Path) -> list[str]:
+def brief_card(cpath: Path, writer: bool = False) -> list[str]:
     """One card → the printed brief lines (a pure read; the corpus is never written)."""
     yaml = import_yaml()
     try:
@@ -1071,20 +1083,32 @@ def brief_card(cpath: Path) -> list[str]:
                         if len(phr) > BRIEF_PHRASES_MAX else ""))
     else:
         lines.append("phrases (0): (none — re-draft the card)")
-    lines.append("worked examples:")
-    for w in gen.get("worked_examples") or []:
-        lines.append(f"  {w.get('heading')} — {clip(clean(w.get('excerpt') or ''), 80)}")
-    lines.append("exercises:")
-    for e in gen.get("exercises") or []:
-        items = e.get("items") or []
-        lines.append(f"  {e.get('heading')} — {len(items)} item(s)")
-        for it in items[:BRIEF_ITEMS_MAX]:
-            lines.append(f"    · {clip(clean(it), 70)}")
-        if len(items) > BRIEF_ITEMS_MAX:
-            lines.append(f"    · … +{len(items) - BRIEF_ITEMS_MAX} more")
-    lines.append("activities:")
-    for a in gen.get("activities") or []:
-        lines.append(f"  {a.get('heading')} — {clip(clean(a.get('excerpt') or ''), 70)}")
+    worked_examples = gen.get("worked_examples") or []
+    exercises = gen.get("exercises") or []
+    activities = gen.get("activities") or []
+    if writer:
+        item_count = sum(len(e.get("items") or []) for e in exercises)
+        lines.append(
+            f"examples/exercises/activities: {len(worked_examples)} worked example(s) · "
+            f"{len(exercises)} exercise set(s) ({item_count} items) · "
+            f"{len(activities)} activit(y/ies) — withheld from the writer (blind planning); "
+            "the plan critic and similar check them"
+        )
+    else:
+        lines.append("worked examples:")
+        for w in worked_examples:
+            lines.append(f"  {w.get('heading')} — {clip(clean(w.get('excerpt') or ''), 80)}")
+        lines.append("exercises:")
+        for e in exercises:
+            items = e.get("items") or []
+            lines.append(f"  {e.get('heading')} — {len(items)} item(s)")
+            for it in items[:BRIEF_ITEMS_MAX]:
+                lines.append(f"    · {clip(clean(it), 70)}")
+            if len(items) > BRIEF_ITEMS_MAX:
+                lines.append(f"    · … +{len(items) - BRIEF_ITEMS_MAX} more")
+        lines.append("activities:")
+        for a in activities:
+            lines.append(f"  {a.get('heading')} — {clip(clean(a.get('excerpt') or ''), 70)}")
     fk = ", ".join(f"{f.get('concept')} ×{f.get('count')}" for f in gen.get("figure_kinds") or [])
     lines.append(f"figure_kinds: {fk or '(none)'}")
     lines.append(f"curated (status: {cur.get('status', '?')}):")
@@ -1106,8 +1130,115 @@ def cmd_brief(args) -> int:
     if not args.cards:
         die("brief needs at least one card: a path, or a lesson number NN with --grade N")
     for spec in args.cards:
-        for line in brief_card(resolve_card_arg(spec, args)):
+        for line in brief_card(resolve_card_arg(spec, args), writer=args.writer):
             print(line)
+    return 0
+
+
+def resolve_lesson_arg(spec: str, args) -> Path:
+    if not re.fullmatch(r"\d+", spec):
+        die(f"lesson: {spec!r} is not a lesson number")
+    if args.grade is None:
+        die("lesson needs --grade N")
+    corpus = resolve_corpus(args)
+    _, included, files = require_grade(corpus, args.grade)
+    number = int(spec)
+    if number not in included or number not in files:
+        die(f"lesson: {number:02d} is not published in grade {args.grade}")
+    return files[number]
+
+
+def redact_lesson(body: str, selected_sections: list[str] | None = None) -> str:
+    lines = body.split("\n")
+    elems = parse_elements(body, with_lines=True)
+    selected = set(selected_sections or [])
+
+    def range_end_line(start: int, end: int) -> int:
+        if end <= start:
+            return elems[start]["line_end"]
+        last_index = end - 1
+        if (
+            elems[last_index]["kind"] == "anchor"
+            and end < len(elems)
+            and elems[end]["kind"] == "heading"
+        ):
+            last_index = max(start, last_index - 1)
+        return elems[last_index]["line_end"]
+
+    def section_end(start: int) -> int:
+        level = elems[start]["level"]
+        for index in range(start + 1, len(elems)):
+            element = elems[index]
+            if element["kind"] != "heading":
+                continue
+            if element["level"] < level:
+                return index
+            if (
+                element["level"] == level
+                and classify_heading(element["text"]) is None
+            ):
+                return index
+        return len(elems)
+
+    section_ranges: list[tuple[int, int, int, int]] = []
+    if selected:
+        found = set()
+        for index, element in enumerate(elems):
+            if element["kind"] != "heading":
+                continue
+            number = section_number(element["text"])
+            if number not in selected:
+                continue
+            found.add(number)
+            end = section_end(index)
+            start_line = element["line_start"]
+            if index and elems[index - 1]["kind"] == "anchor":
+                start_line = elems[index - 1]["line_start"]
+            section_ranges.append(
+                (index, end, start_line, range_end_line(index, end))
+            )
+        missing = sorted(selected - found)
+        if missing:
+            die("lesson: section(s) not found: " + ", ".join(missing))
+    else:
+        section_ranges.append((0, len(elems), 0, len(lines)))
+
+    rendered_ranges = []
+    for first, last, line_start, line_end in section_ranges:
+        output = []
+        cursor = line_start
+        for index in range(first, last):
+            element = elems[index]
+            if element["kind"] != "heading":
+                continue
+            kind = classify_heading(element["text"])
+            if kind is None or element["line_start"] < cursor:
+                continue
+            span_end_index = (
+                exercise_span_end(elems, index)
+                if kind == "exercise"
+                else span_end(elems, index, element["level"])
+            )
+            start_line = element["line_start"]
+            if index and elems[index - 1]["kind"] == "anchor":
+                start_line = elems[index - 1]["line_start"]
+            end_line = min(range_end_line(index, span_end_index), line_end)
+            if start_line < cursor or end_line <= start_line:
+                continue
+            output.extend(lines[cursor:start_line])
+            output.append(f"[{element['text']} — withheld from the writer]")
+            cursor = end_line
+        output.extend(lines[cursor:line_end])
+        rendered_ranges.append("\n".join(output))
+    return "\n\n".join(rendered_ranges)
+
+
+def cmd_lesson(args) -> int:
+    if len(args.cards) != 1:
+        die("lesson needs one lesson number NN")
+    lesson = resolve_lesson_arg(args.cards[0], args)
+    _, body = split_frontmatter(lesson.read_text(encoding="utf-8"))
+    print(redact_lesson(body, args.section))
     return 0
 
 
@@ -1157,12 +1288,16 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         prog="scope-cards.py",
         description="lesson scope cards: draft from corpus lessons, then check curated cards")
-    ap.add_argument("command", nargs="?", choices=["draft", "check", "brief"])
-    ap.add_argument("cards", nargs="*", help="brief: card paths, or lesson numbers with --grade")
+    ap.add_argument("command", nargs="?", choices=["draft", "check", "brief", "lesson"])
+    ap.add_argument("cards", nargs="*", help="brief: card paths; brief/lesson: lesson numbers")
     ap.add_argument("--grade", type=int, help="grade number (e.g. 6 → maths/grade-06)")
     ap.add_argument("--exam", choices=["ol"], help="exam scope — only 'ol' is defined, and it is refused until plan OD-3")
     ap.add_argument("--lessons", help="draft only these lesson numbers, e.g. 1,7")
     ap.add_argument("--corpus", help="corpus checkout (else VIBHAGA_CORPUS, else sibling Vibhaga-Maths-Corpus)")
+    ap.add_argument("--writer", action="store_true",
+                    help="brief only: withhold worked examples, exercises and activities")
+    ap.add_argument("--section", action="append", default=[],
+                    help="lesson only: print this numbered section (repeatable, e.g. 13.5)")
     ap.add_argument("--self-test", action="store_true", help="offline smoke run over tests/fixtures/scope-corpus")
     args = ap.parse_args(argv)
     if args.self_test:
@@ -1173,6 +1308,8 @@ def main(argv=None) -> int:
         die("a command is required: draft | check | brief")
     if args.command == "brief":
         return cmd_brief(args)          # --grade needed only by the bare-NN card form
+    if args.command == "lesson":
+        return cmd_lesson(args)
     if args.cards:
         die(f"{args.command} takes no card arguments — stray positional(s) "
             f"{', '.join(args.cards)} (did you mean `brief`?)")

@@ -587,6 +587,34 @@ class PrecriticLintTest(unittest.TestCase):
             r = lint_plain(run, "--existing", str(ex))
             self.assertNotIn("≈", r.stdout)
 
+    def test_card_example_and_exercise_fingerprints_warn_without_item_text(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run(tmp, stem="Shade 3 of 5 cells in the strip.")
+            import yaml
+            card_path = tmp / "cards" / "07-Fractions.yaml"
+            card = yaml.safe_load(card_path.read_text(encoding="utf-8"))
+            card["generated"]["worked_examples"] = [{
+                "heading": "Synthetic example heading",
+                "excerpt": "Shade 3 of 5 cells in the strip.",
+            }]
+            card["generated"]["exercises"] = [{
+                "heading": "Synthetic exercise heading",
+                "items": ["Shade 8 of 9 cells in the strip."],
+            }]
+            card_path.write_text(
+                yaml.safe_dump(card, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+
+            r = lint(run, tmp)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("worked example 1 (Synthetic example heading)", r.stdout)
+            self.assertIn("exercise Synthetic exercise heading item 1", r.stdout)
+            self.assertIn("Jaccard 1.00, digits masked", r.stdout)
+            self.assertNotIn("Shade 8 of 9 cells", r.stdout)
+            self.assertNotIn("Shade 3 of 5 cells", r.stdout)
+
     # ---- usage ---------------------------------------------------------------
     def test_bad_card_spec_and_missing_card_die(self):
         with tempfile.TemporaryDirectory() as td:
