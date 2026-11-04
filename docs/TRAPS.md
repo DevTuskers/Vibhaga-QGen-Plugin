@@ -729,6 +729,10 @@ A "how many more" part must fit the cells actually drawn. "Cut more squares in h
 
 A high `similar` score on the finished batch usually means the same task chain. A tank question (capacity → water used → height of what is left) scored 0.83 against an existing row with the same three steps; new numbers would not fix it, so the question became "compare two containers → repeated pours, when does it overflow" (0.74, different steps).
 
+## T155 — A real-world number in a stem must be true, or framed as "suppose"
+
+A signal-anchored stem (creative-signals) reads as fact to a student and a teacher. A rounded or invented figure stated as a real statistic ("Sri Lanka exported 500 kg of tea last year") is a false claim even when the arithmetic is right. Use the sourced value or "about" + a clearly rounded one; when the maths needs other numbers, change the framing ("Suppose a factory …"), never the fact.
+
 ## T-QG-1 — The skill that never loaded: frontmatter that is not valid YAML is dropped silently
 
 **Looked true:** `skills/draw-and-verify-question-vdd/SKILL.md` was committed alongside the other seven

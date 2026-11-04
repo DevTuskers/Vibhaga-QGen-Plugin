@@ -234,6 +234,23 @@ class PrecriticLintTest(unittest.TestCase):
             r2 = lint(run2, Path(td))
             self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
 
+    def test_card_key_must_be_a_content_lessons_key(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run(tmp, stem="Shade the strip.")
+            for extra in ((), ("--all-probes",)):
+                unknown = subprocess.run(
+                    [sys.executable, str(TOOL), str(run), "--card", "bs=7",
+                     "--grade", "6", "--cards-dir", str(tmp / "cards"), *extra],
+                    capture_output=True, text=True)
+                self.assertEqual(unknown.returncode, 2, unknown.stdout + unknown.stderr)
+                self.assertIn(
+                    "--card bs=7: 'bs' is not a content.yaml lessons key (have: L07)",
+                    unknown.stderr)
+
+            correct = lint(run, tmp)
+            self.assertEqual(correct.returncode, 0, correct.stdout + correct.stderr)
+
     # ---- (a) W12: probes are per-question, keyed off the question's lessons: ----
     def test_probe_of_an_untagged_card_is_not_checked(self):
         """Card 07's probe 'improper' in a question tagging only L08 → clean."""

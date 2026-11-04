@@ -1,6 +1,6 @@
 ---
 name: generate
-description: The orchestrator for generating new practice questions FROM A LESSON (no source paper) through the Agent Question Playground, as ONE ordered flow — scope cards (and, for a grade with no named lesson, a coverage snapshot that picks the thinnest lessons) → a one-line-per-question plan → the lead-authored `content.yaml` → figure templates → visual-check → validate → `doc put` → visual-check `--session` → publish FLAGGED with `tools/playground-publish.py` → SQL proof (queries.sql Q2 + Q3 via `tools/sql-proof.py`) → a fresh `qgen-critic` until SATISFIED → logbook line. Every row lands flagged and hidden from students until a human marks it reviewed. Use when asked to generate, write, create or author questions for a lesson, topic or grade, to "fill a lesson with practice questions", to fill the least-covered lessons of a grade, or to run or resume a playground session. Not for onboarding an existing PDF paper — this plugin only generates.
+description: The orchestrator for generating new practice questions FROM A LESSON (no source paper) through the Agent Question Playground, as ONE ordered flow — scope cards (and, for a grade with no named lesson, a coverage snapshot that picks the thinnest lessons) → creative signals gathered by web search → a signal-anchored one-line-per-question plan → the lead-authored `content.yaml` → figure templates → visual-check → validate → `doc put` → visual-check `--session` → publish FLAGGED with `tools/playground-publish.py` → SQL proof (queries.sql Q2 + Q3 via `tools/sql-proof.py`) → a fresh `qgen-critic` until SATISFIED → logbook line. Every row lands flagged and hidden from students until a human marks it reviewed. Use when asked to generate, write, create or author questions for a lesson, topic or grade, to "fill a lesson with practice questions", to fill the least-covered lessons of a grade, or to run or resume a playground session. Not for onboarding an existing PDF paper — this plugin only generates.
 argument-hint: "[grade] [lesson number or name] [how many questions]"
 ---
 
@@ -21,7 +21,13 @@ a skill or corpus file already read; allow one `build` + one `ship` per fix roun
    to use via `python3 tools/scope-cards.py lesson <NN> --grade <g> --section <N.M>`. The writer never opens a lesson
    file directly and never reads card `worked_examples`, `exercises` or `activities`. Apply the [Room left and stop
    rule](#room-left-and-stop-rule).
-3. Sketch 10 one-liners → `$A/plan-items.yaml`, then run `python3 $T similar --grade <g> --items
+2b. **Creative signals** — follow [`creative-signals`](../creative-signals/SKILL.md): about 6 web searches across
+   its categories (news, anniversaries, sports, science and space, Sri Lankan geography and culture, everyday-life
+   data), keep only signals that fit the lesson's maths, the grade and a school audience, and write
+   `$A/signals.md` (fact · source · fit) before any plan line.
+3. Sketch 10 one-liners, each anchored to one signal — the data's own shape picks the task, not only the story —
+   with `signal: S<k>` and the creativity rubric (`students: … · teachers: …`, creative-signals §6) →
+   `$A/plan-items.yaml`, then run `python3 $T similar --grade <g> --items
    $A/plan-items.yaml --out $A/similar-plan.json`; the writer may read its neighbour rows after sketching. Build
    `$A/dedup-sheet.md` with `python3 tools/dedup-sheet.py --grade <g> --card <key>=<NN> --plan $A/plan-items.yaml
    --similar $A/similar-plan.json --out $A/dedup-sheet.md`; this full-text sheet is input for the sighted plan
@@ -31,7 +37,8 @@ a skill or corpus file already read; allow one `build` + one `ship` per fix roun
    the stem — write `$0, 1, 2, \ldots, 8$`; a maths-only `approach_si` identical to English fails Q2b
    (`part_approach_no_sinhala`) — always add a Sinhala sentence to the approach. Easy pictograph parts are ONE read (one row, or a given count → its row); reading two rows and adding is M. A "Is X correct? Show your working" part is H — in a Medium batch ask the computation instead ("how many more …", "find the wrong entry").
 3b. **Plan critic** — follow [Plan-stage critic](#plan-stage-critic): one fresh `qgen-critic` session, Normal
-   mode, `Mode: plan`; paths only. The sighted critic compares each plan line's task chain (sequence of operations,
+   mode, `Mode: plan`; paths only (`plan-items.yaml`, `similar-plan.json`, `dedup-sheet.md`, `signals.md`, the
+   cards). It also checks each line's signal (cited, honest, school-appropriate, in scope). The sighted critic compares each plan line's task chain (sequence of operations,
    not numbers or story) with every card worked example, exercise and activity and every live row. Replace a line
    when its chain matches; its reason states the chain abstractly without quoting source text, and the writer replaces
    it from that reason. Then rerun `similar` and the dedup sheet. A second plan round is only for changed lines; then
@@ -91,7 +98,8 @@ Generation history: [docs/MIGRATION.md](../../docs/MIGRATION.md#generate-skill-h
 3. **Dedup before you author, against everything.** Apply [Copy check](#copy-check). `questions list --lesson-id <id>
    --all` returns every tagged row, including drafts, flagged, papered or paperless (0018 PD-4). `similar` also
    searches untagged rows and other lessons. Run it before authoring and critic Q4e after publish; scores only rank,
-   so the verdict is yours and the critic's.
+   so the verdict is yours and the critic's. Plans are anchored to creative signals first (§2 step 2b), which
+   makes a collision rare; the dedup check still runs on every line.
 4. **Every staged question carries `ingestion_metadata.needs_human_review: true`, and no `exam` key.** `build-staged`
    writes the flag; `playground-publish` refuses both before a save (0014 PD-1 guard-rail 4; 0018 PD-6).
 5. **Record ids before they matter (T9).** The session id goes into the ledger the moment `session create` returns; the
@@ -180,8 +188,16 @@ same two checkout paths in the critic's spawn prompt.
    the plan line. Coverage reads the API (Hyperdrive, ~75 s stale — T5): it chooses lessons; it never proves rows.
    `python3 $T lessons --grade 6 --subject Mathematics` → the `lesson_id`.
    Apply [Room left and stop rule (T3)](#room-left-and-stop-rule).
-3. **Plan — one line per question** in `notes.md`, before any authoring:
-   `Q<n> · <skill / section> · <R/M/H per part> · closest: <question_id> (<score>) — differs because <task, not numbers> · figure: <template | hand-draw | none>`
+2b. **Creative signals, before the plan** — [`creative-signals`](../creative-signals/SKILL.md). Search the web
+   (lean budget: about 6 searches, 4 page reads) across its six categories — Sri Lankan and international news,
+   history and anniversaries, sports statistics, science and space, Sri Lankan geography/environment/culture,
+   technology and everyday life. Keep a signal only when its data contains the lesson's maths, fits the grade
+   without anything on `not_taught`, is school-appropriate and has a source you read. Write `$A/signals.md`
+   (creative-signals §5). A batch spans ≥ 3 categories and ≥ 3 Sri Lankan signals.
+3. **Plan — one line per question** in `notes.md`, before any authoring, each anchored to one kept signal:
+   `Q<n> · <skill / section> · <R/M/H per part> · signal: S<k> · students: <why it is interesting> · teachers: <what it adds> · closest: <question_id> (<score>) — differs because <task, not numbers> · figure: <template | hand-draw | none>`
+   The signal's data picks the task chain (creative-signals §6); a lesson task retold in a new story is still a
+   copy. Each `plan-items.yaml` item carries `signal: S<k>` too.
    **Similarity check (decision 0026), before step 4.** Sketch each planned question as `{key, stem, parts}` in
    `$A/plan-items.yaml` (a list; one-sentence stem + one line per part is enough) and run
    `python3 $T similar --grade <g> --subject Mathematics --items $A/plan-items.yaml --out $A/similar-plan.json`
@@ -207,7 +223,7 @@ same two checkout paths in the critic's spawn prompt.
 ### Plan-stage critic
 
 3b. **Plan critic (one fresh `qgen-critic` session, Normal mode, `Mode: plan`).** Pass it only paths: `plan-items.yaml`,
-   `similar-plan.json`, `dedup-sheet.md` and the cards. The sighted critic compares each plan line's task chain
+   `similar-plan.json`, `dedup-sheet.md`, `signals.md` and the cards. It also checks each line's signal. The sighted critic compares each plan line's task chain
    (sequence of operations, not numbers or story) with every card worked example, exercise and activity and every
    live row. It answers per line `OK` or `REPLACE — <abstract task-chain reason>`; a matching chain must be replaced.
    The reason states the chain without quoting source text, and the writer replaces from that reason. Then re-run
@@ -370,7 +386,8 @@ same two checkout paths in the critic's spawn prompt.
 - [ ] env: VIBHAGA_ADMIN / VIBHAGA_WEB / VIBHAGA_CORPUS / VIBHAGA_ADMIN_ENV set (worktree) or siblings confirmed
 - [ ] 1 scope statement in notes.md (card file + lesson file + sha256)
 - [ ] 2 coverage-before.json saved · lessons picked (None/Thin + card) __ ; dedup: existing.json rows = __ ; stems compared: __
-- [ ] 3 plan: N lines, rubric checked, rule 3 checked · similar-plan.json saved, every line names its closest row
+- [ ] 2b signals.md: __ kept of __ · __ searches · __ categories · __ Sri Lankan
+- [ ] 3 plan: N lines, each with signal + students/teachers rubric, rubric checked, rule 3 checked · similar-plan.json saved, every line names its closest row
 - [ ] 4 content.yaml + second-method results per leaf in notes.md
 - [ ] 5 run-gates build exit 0 — gates.json: audit + vdd-check per figure (hand-drawn too), staged.json, ids.json = N ids, check-answers, markdown-gate 0 BLOCKED, layout 0 FAIL, mode 1, lint
 - [ ] FRICTION.md lines: __
@@ -410,6 +427,8 @@ The sighted plan critic reads `tools/dedup-sheet.py` before planning. The writer
 example/exercise/activity text; it may read `similar-plan.json` neighbour rows after sketching and receives only an
 abstract task-chain reason for any replacement. Write one line per planned question in `notes.md`: closest item · how
 the **task** differs.
+A new real-world context from [`creative-signals`](../creative-signals/SKILL.md) does not by itself make a question new;
+the task chain does.
 A match on one part only, where the other parts are new, is a scaffold echo (MINOR). A match on the whole question, or on every part, is a copy (MAJOR).
 
 ### Difficulty bands
@@ -439,7 +458,8 @@ For an Easy question, "new" means one of these: a context the lesson does not us
 
 ## 5. Verify (definition of done, per run)
 
-1. `RUN.md` is fully ticked; `notes.md` holds the scope statement, the dedup evidence, one plan line per question and
+1. `RUN.md` is fully ticked; `signals.md` exists; `notes.md` holds the scope statement, the dedup evidence, one
+   signal-anchored plan line per question and
    one look line per figure.
 2. `validate` exits 0 on the final staged doc; every warning is fixed or explained.
 3. Every figure: `channel: constructed` claim set with a `stem:` header, `audit-claim-set.py` exit 0, `vdd-check.mjs`

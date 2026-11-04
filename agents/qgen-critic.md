@@ -23,7 +23,7 @@ answer is right, and whether a Grade-N child who learned this lesson can do it.
    by accident, say so in the report's first lines — a contaminated critique that admits it is
    recoverable; one that does not is worse than none (**T25**). If the spawn prompt hints which
    items are suspect, ignore the hint and say you received one.
-   In `Mode: plan`, use only the four plan inputs in §8.
+   In `Mode: plan`, use only the five plan inputs in §8.
 2. ⚠️ **`SELECT` only**, in a read-only transaction (`set default_transaction_read_only=on`). No
    writes of any kind, no API calls, no Admin UI. **You report; the actor fixes.**
 3. ⚠️ **Never clear a review flag, never write `verified_by`.** A human signs off; your report is
@@ -191,10 +191,10 @@ chunk's report, and the lead merges totals, one OUT OF SCOPE list and the union 
 
 ### Mode: plan
 
-Inputs: `plan-items.yaml`, `similar-plan.json`, `dedup-sheet.md`, the scope cards. There are no rows, figures or SQL; do not look for them.
-For each plan line, the sighted critic compares its task chain (the sequence of operations, not the numbers or story) with every bound card's worked examples, exercise items and activities, and every live row in `dedup-sheet.md`. Also apply the band (generate §Difficulty bands) and the card's `not_taught` list. If a chain matches, mark REPLACE. State the reason abstractly (for example, "same chain as a lesson exercise: divide the total by n, then multiply by k"), without quoting or reproducing source text. The writer replaces from that abstract reason and never reads the source item. Write `plan-review.md`:
+Inputs: `plan-items.yaml`, `similar-plan.json`, `dedup-sheet.md`, `signals.md`, the scope cards. There are no rows, figures or SQL; do not look for them.
+For each plan line, the sighted critic compares its task chain (the sequence of operations, not the numbers or story) with every bound card's worked examples, exercise items and activities, and every live row in `dedup-sheet.md`. Also apply the band (generate §Difficulty bands) and the card's `not_taught` list. Then check the line's signal ([`creative-signals`](../skills/creative-signals/SKILL.md) §3–§4): it cites a kept row of `signals.md`; the plan uses the sourced fact honestly (a real figure stated as fact is the sourced or a clearly rounded value; invented numbers are framed as "suppose"); the signal is school-appropriate; its data needs nothing on `not_taught`; and the task comes from the signal's data, not a lesson task in a new story. You may not open the source URLs; judge from `signals.md`. If a chain matches, mark REPLACE. State the reason abstractly (for example, "same chain as a lesson exercise: divide the total by n, then multiply by k"), without quoting or reproducing source text. The writer replaces from that abstract reason and never reads the source item. Write `plan-review.md`:
 ```
 VERDICT: SATISFIED | NOT SATISFIED — OK n · REPLACE m
-P<n> · OK | REPLACE — closest: <dedup-sheet item id / similar id> · same task chain: <yes/no + abstract operation chain, no source text> · band fit: <yes/no> · suggestion: <one line, a different task, not new numbers>
+P<n> · OK | REPLACE — closest: <dedup-sheet item id / similar id> · same task chain: <yes/no + abstract operation chain, no source text> · band fit: <yes/no> · signal: <S<k> ok | missing | misused | unsafe | out of scope> · suggestion: <one line, a different task, not new numbers>
 ```
-A line is REPLACE when its task chain matches a dedup-sheet item, or it breaks the band, or it uses a `not_taught` idea. Stop after the report; this mode never reads the DB.
+A line is REPLACE when its task chain matches a dedup-sheet item, or it breaks the band, or it uses a `not_taught` idea, or its signal is not `ok`. Stop after the report; this mode never reads the DB.

@@ -30,6 +30,10 @@ stem you author. These rules hold in every session that loads the plugin.
    stops the build. Owner ruling: 2026-10-13. See
    [`author-question-text` §5](skills/author-question-text/SKILL.md#5-writing-the-stem) and
    [`author-question-answers` §4.1c](skills/author-question-answers/SKILL.md#-41c-lay-the-approach-out-for-a-phone--one-step-per-paragraph).
+9. **Plans start from creative signals.** Before sketching a plan, the writer gathers sourced, school-appropriate
+   real-world signals by web search and anchors every plan line to one, with a short students/teachers rubric
+   ([`creative-signals`](skills/creative-signals/SKILL.md), generate step 2b). Real figures stated as fact are true
+   (TRAPS T155). The copy check still runs on every line.
 
 ## Session discipline
 - **Session names follow the standard** (owner ruling 2026-10-15): `G<grade> Maths · <Easy|Medium|Hard> · <N>Q · <d Mon YYYY, h:mm AM/PM>`
