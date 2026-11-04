@@ -9,6 +9,7 @@
 `maths/grade-<grade>/scope-cards/<NN>-*.yaml` under the corpus (`VIBHAGA_CORPUS` → the sibling
 `Vibhaga-Maths-Corpus` — scope-cards' own resolution, imported not copied), or as
 `<cards-dir>/<NN>-*.yaml` when `--cards-dir` is given (exam pools lay their cards elsewhere).
+An unknown key from the top-level `content.yaml` `lessons:` mapping is refused.
 
 Checks:
 
@@ -383,6 +384,13 @@ def readable_values(claims_text: str) -> set[str]:
 def lint(run: Path, args, log=print) -> tuple[int, int]:
     content = load_content(run)
     cards = load_cards(args) if args.card else {}
+    lesson_map = content.get("lessons")
+    lesson_keys = list(lesson_map) if isinstance(lesson_map, dict) else []
+    for spec in args.card:
+        key = spec.partition("=")[0]
+        if key not in lesson_keys:
+            have = ", ".join(map(str, lesson_keys)) or "(none)"
+            die(f"--card {spec}: {key!r} is not a content.yaml lessons key (have: {have})")
     questions = content["questions"]
     fails = warns = 0
 

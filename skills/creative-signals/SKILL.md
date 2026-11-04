@@ -28,6 +28,7 @@ Never paste card examples, exercises or live rows into a search.
 - About **6 web searches and 4 page reads** for a 10-question batch, one pass, no re-searching later rounds.
 - Collect **12–15 candidates**, keep **at least one per planned question** (a signal may feed two questions
   only if their task chains differ).
+- **No two lines in a batch share a task chain.** Reusing one signal for two lines is the commonest way to repeat a chain ("halve the span, then mirror a distance" told in two stories). Before running `similar`, write each line's abstract operation chain beside it and compare the lines pairwise.
 - Spread a batch across **at least 3 categories** and use **at least 3 Sri Lankan signals** in ten.
 
 ## 2. Signal categories
