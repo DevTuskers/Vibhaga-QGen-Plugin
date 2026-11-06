@@ -43,8 +43,12 @@ a skill or corpus file already read; allow one `build` + one `ship` per fix roun
    when its chain matches; its reason states the chain abstractly without quoting source text, and the writer replaces
    it from that reason. Then rerun `similar` and the dedup sheet. A second plan round is only for changed lines; then
    the stop rule applies. Create the session only when every line is OK.
-4. Write `$A/content.yaml` (bilingual, readable layout, required `difficulty: easy|medium|hard`; questions may override it; `check:` on every leaf). **No figures by default**; only
-   add one when the question cannot be asked without it, and use a template (`figure-templates`).
+4. Write `$A/content.yaml` (bilingual, readable layout, required `difficulty: easy|medium|hard`; questions may override it; `check:` on every leaf).
+   **Assess Cognitive Decoding & Spatial Imagery (CDS Index)** via [`assess-spatial-imagination`](../assess-spatial-imagination/SKILL.md):
+   if a question's description requires visualizing multi-point coordinate grids, 2D composite shapes, folding, or
+   spatial transformations exceeding the grade benchmark (e.g. CDS > 4 for Grades 7–8), **you must provide a visual
+   VDD diagram** (`figure-templates`, `draw-and-verify-question-vdd`) or simplify/chunk the text into single-relation steps.
+   Never force students to mentally decode spatial coordinate layouts purely from prose.
 5. `python3 tools/run-gates.py build $A --medium <medium> --grade <g> --card <key>=<NN>`
    → exit 0. Rubric defaults from content difficulty (easy→easy, medium→medium, hard→medium-hard); a mixed batch (`difficulty: medium` + per-question `difficulty: hard`) defaults to `--rubric by-band`, which checks each question against its own band (Hard: R only as (a), last leaf H); `--rubric` overrides. Build also runs warning-only `si-style.py` followed by blocking `unit-notation.py`; a figureless run skips figure stages.
 6. `session create --name "<standard name>" --scope "grade=<g>,subject=Mathematics,medium=<medium>" --lessons <ids> --difficulty <content band>

@@ -54,6 +54,13 @@ or a copied side — §0.6).
    a per-question `exam` is accepted by the save schema and then **ignored**
    (`validation.ts:73-78` → `publish.ts:356` takes the batch's). `build-staged.py` emits no `exam` key.
    Don't try to smuggle scope into a stem.
+8. **Respect student cognitive load and spatial imagination limits (CDS Index).** Before staging,
+   evaluate the stem's Cognitive Decoding & Spatial Imagery score ([`assess-spatial-imagination`](../assess-spatial-imagination/SKILL.md)). If
+   the stem requires visualizing multi-point coordinate grids, complex 2D shapes, folding, or
+   spatial transformations exceeding the grade benchmark (e.g. CDS > 4 for Grades 7–8), **you MUST NOT
+   rely on pure text**. You must either provide a visual VDD diagram ([`figure-templates`](../figure-templates/SKILL.md),
+   [`draw-and-verify-question-vdd`](../draw-and-verify-question-vdd/SKILL.md)) or chunk the description into clear, simple single-relation steps
+   so that students are tested on the underlying mathematics rather than spatial working-memory overload.
 
 ---
 
