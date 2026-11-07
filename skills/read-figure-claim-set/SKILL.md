@@ -87,7 +87,8 @@ apply with the variant notes below.
 7. **Language-neutral labels only, verbatim.** The labels you intend to draw, exactly (`A`, `35°`, `x`,
    and `"7 cm"` — ⚠️ **a label containing a space is double-quoted**, in `labels` and in its claim;
    §3.1). There is one `diagram_dsl` per node and no `value_sinhala`, so a figure cannot hold two
-   languages.
+   languages. Prefer single uppercase letters or symbolic tokens over English prose words/sentences
+   so the single diagram serves both English and Sinhala mediums cleanly.
 8. **No PNG, ever.** `decisions/0001` PD3: a raster image is never a student's diagram.
 
 ---

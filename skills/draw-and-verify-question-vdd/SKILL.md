@@ -23,8 +23,12 @@ Emits `diagram_dsl` on the question, a sub-question, an answer or a sub-answer.
   both ENGLISH (OD-12).
 - **Legal is not rendered.** `safeParse` passing does not mean the figure shows what you meant —
   render it (§4.2, run it yourself).
-- **Language-neutral labels** (§4.4, OD-11): no `$`, no backtick, no Sinhala in any `text`/`math`
-  label; numbers, expressions and point names only.
+- **Language-neutral labels and symbolic diagrams** (§4.4, OD-11): no `$`, no backtick, no Sinhala in
+  any `text`/`math` label; numbers, expressions, and point/landmark tokens only ($A, B, C, P, Q, H, F, x, y$).
+  **Recommended practice:** Because the single `diagram_dsl` renders identically for both English and
+  Sinhala student views, avoid embedding English prose words, phrases, or sentences in diagram text
+  (e.g. prefer point letters over words like `"Home"`, `"Finish"`, `"School"`). Let the bilingual stem
+  explain the letters ($H$ = home / නිවස, $F$ = finish / අවසන් ස්ථානය).
 - **A genuinely NOT-to-scale figure says so** in a `text` element or `a11y.title` (§3.5, §4.4).
 - **Element budget: ≤ 32 is the outer edge** — a denser figure is a routing signal, not a drawing
   challenge (§3.4).
@@ -120,7 +124,7 @@ Claims are semantic; elements are geometric. The map most of them take:
 | `len AB = l` | `side_label` / `dimension` (cookbook) | the number sits mid-segment, OUTSIDE the figure's ink (T98's family: a label is bound by proximity) |
 | `point P`, `P on segment QR` | `point` | `r: 0` still renders a `<circle>` in the DOM — coverage by shape count lies (§4.2) |
 | `circle centre O radius r`, `sector`, `segment` | `circle` / `arc`; a FILLED sector or segment is a ≤ 2°-sampled `polygon` under an `arc` rim | **never a `path`** for a fill unless nothing else can draw it — the normalizer's `path` branch is the trap T-S6b-9 shipped |
-| free text / "not to scale" | `text` | no `$`, no backtick, language-neutral (§4.4) |
+| free text / "not to scale" | `text` | no `$`, no backtick, language-neutral (§4.4); prefer single-letter tokens over English prose words for bilingual reuse |
 | maths | `math` with `latex` | Sinhala inside `latex` is forbidden — the `\text{}` rule |
 
 The cookbook (`tools/vdd_cookbook.py`, `--self-test`, `--demo <dir>`) already knows most of these:
@@ -410,7 +414,14 @@ the eye still owns the rest.
   exists in the same half as the verification;
 - ⚠️ **a drawn number the stem never stated** ⇒ the stem-ratio check in `audit-claim-set.py` (§5.3a)
   is the backstop — every `ratio`/`angle` claim's value must be derivable from the stem's own numbers
-  or a cited `derive`, so a copied-anchor mistake is caught before the render ever runs.
+  or a cited `derive`, so a copied-anchor mistake is caught before the render ever runs;
+- **English words or sentences inside VDD diagrams (recommended guideline):** `diagram_dsl` is
+  common to both English and Sinhala question views (there is no `_sinhala` variant). Having English
+  prose labels (e.g. `"Home"`, `"Finish"`, `"Water garden"`, `"Pillar"`) directly rendered inside the
+  diagram introduces language friction for Sinhala-medium students. Prefer single English letters or
+  standard mathematical tokens ($H, F, W, P$), and let the bilingual question stem describe what they
+  represent ($H$ = home / නිවස, $F$ = finish / ගමන් අවසන් කළ ස්ථානය). *(General guideline / best practice,
+  not a hard validator refusal).*
 
 ---
 
@@ -502,7 +513,7 @@ neutralised, and the two surfaces disagreed about it). This skill's own:
       `a11y.description` is present, English (OD-12), and **every comparative word corresponds to a
       claim** (§3.3).
 - [ ] Every label is language-neutral; no `$`, no backtick, no Sinhala in any `text.value` or
-      `math.latex`:
+      `math.latex`; prefer symbolic point/landmark letters over English words/sentences for bilingual reuse:
       `jq '[.elements[] | select(.type=="text" or .type=="math") | (.value // .latex)]' figure.json`
 - [ ] Element count is within budget (§3.4); if > 32 you have justified it or declined the figure.
 - [ ] ⚠️ **The figure was RENDERED and the SVG read** (§4.2): `texts` matches the claim set's

@@ -50,6 +50,13 @@ or a copied side — §0.6).
    English-prose copy in the `_si` side (identical maths-only text like `$x = 4$` is allowed — the same
    string serves both media). The reviewer's `English | සිංහල` preview toggle in Admin reads both
    sides, so a copied or machine-stiff translation is visible in review.
+   - **Bilingual diagram-stem coordination (language-neutral diagrams):** VDD diagrams (`diagram_dsl`)
+     are shared bilingually between English and Sinhala student views. When a question features real-world
+     scenarios or geometric figures, keep the diagram language-neutral with single English letters or
+     mathematical tokens ($A, B, C, P, Q, H, F, T, S$), and introduce the entity mapping in both English
+     and Sinhala stems (e.g. *"In the diagram, $H$ represents her home and $F$ represents her finish point..."*
+     and *"රූපයේ, $H$ මඟින් ඇයගේ නිවසද $F$ මඟින් ඇය ගමන් අවසන් කළ ස්ථානයද දැක්වේ..."*). This avoids
+     embedding English words/phrases inside the diagram which would appear unlocalized on the Sinhala side.
 7. **You do not decide the batch's scope.** `grade` XOR `exam`, subject and medium are session-level;
    a per-question `exam` is accepted by the save schema and then **ignored**
    (`validation.ts:73-78` → `publish.ts:356` takes the batch's). `build-staged.py` emits no `exam` key.

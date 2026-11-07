@@ -416,7 +416,7 @@ The critic grades every part against this table (profile §3) — keep it and th
 | Not a copy | it matches any item in [Copy check](#copy-check) |
 | Self-contained | a student cannot answer it from the stem and figure alone (no "see the table on page 87") |
 | Answer right | the second method disagrees, or the figure's measured values contradict the stem |
-| Figure honest | the drawing *looks* like the claim but measures differently (S6b §5) |
+| Figure honest | the drawing *looks* like the claim but measures differently (S6b §5); or unnecessarily embeds English prose words where symbolic letters in a bilingual stem would serve both media cleanly (advisory) |
 | Language | a missing `*_si` side, a copied side, or it does not use the lesson's own vocabulary as printed |
 
 ### Copy check
