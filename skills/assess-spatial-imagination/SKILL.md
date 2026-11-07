@@ -104,6 +104,7 @@ Provide a clean VDD diagram in `diagram_dsl`. The diagram must clearly show:
 1. The reference boundaries or geometric outline (e.g. lantern frame, pitch layout, octagon).
 2. The axis of symmetry as a distinct dashed line or highlighted centerline.
 3. Relevant labeled points, landmarks, or dimensions.
+4. **Language-neutral landmarks (bilingual reuse):** Use single uppercase letters or standard mathematical tokens ($A, B, P, Q, H, F, W$) for points, objects, or landmarks instead of English prose words (e.g. avoid `"School"`, `"Home"`, `"Finish"`). In the question stem (`question_text` and `question_text_sinhala`), describe what each letter represents in the student's chosen language. This ensures the single shared diagram serves both English and Sinhala mediums naturally.
 
 ### Step 2: Chunk and Linearize the Text
 Transform dense, nested paragraphs into structured, readable chunks:

@@ -17,11 +17,18 @@ stem you author. These rules hold in every session that loads the plugin.
 5. **Prove by SQL, not by the API.** Use `queries.sql` (Q2 post-publish proof, Q3 Auth revocation —
    same merged project, actor asserted to exist AND to be an admin first). Never select token
    values.
-6. **Drawn diagram text is simple English on every medium** (ADR 0021 —
+6. **Language-neutral and symbolic diagrams; drawn text is simple English on every medium** (ADR 0021 —
    `Vibhaga-Docs/decisions/0021-english-only-diagram-text.md`). Point letters, labels, text
    elements, math latex, axis/category/series/value titles, units — never Sinhala, whatever the
    question's `medium` (the old T-S6b-6 medium condition is superseded; TRAPS T-QG-12). The a11y
    `title`/`description` are not drawn and keep the question's medium.
+   **General guideline / best practice:** Because the single `diagram_dsl` is shared across both
+   English and Sinhala question views, avoid embedding English prose words, phrases, or sentences
+   inside the diagram (e.g. avoid `"Home"`, `"Finish"`, `"School"`, `"Water tank"`). Instead, use
+   single English letters or standard mathematical tokens ($A, B, C, P, Q, H, F, T, S$) to mark
+   landmarks or positions, and describe what each token represents in the bilingual question stems/parts
+   (`question_text` and `question_text_sinhala`). *(Note: this is a strongly recommended authoring
+   practice for clean bilingual parity, not an absolute prohibition).*
 7. **Bilingual.** Every stem, part text, approach and final is written in English AND Sinhala
    (`*_si` keys); build-staged refuses a missing or copied side; queries.sql Q2b proves both landed.
 8. **Student text is laid out for reading.** Stems, part texts, approaches and finals use one
