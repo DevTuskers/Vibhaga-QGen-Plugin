@@ -68,6 +68,12 @@ or a copied side — §0.6).
    rely on pure text**. You must either provide a visual VDD diagram ([`figure-templates`](../figure-templates/SKILL.md),
    [`draw-and-verify-question-vdd`](../draw-and-verify-question-vdd/SKILL.md)) or chunk the description into clear, simple single-relation steps
    so that students are tested on the underlying mathematics rather than spatial working-memory overload.
+9. **IT & technical terms in Sinhala:** When authoring questions related to Information Technology (IT/ICT),
+   computing hardware/peripherals, or calculator/device interfaces, use standard English technical terms (either
+   in English or natural transliteration, e.g. "mouse" / "මවුසය", "keyboard", "monitor", "RAM", "CPU",
+   "software") even within the Sinhala version. Do NOT use awkward, artificial, or antiquated direct Sinhala
+   translations (e.g. for mouse, never use "මූසිකය"; for software, hardware, cursor, RAM, CPU, file, folder,
+   button, key, etc., use the English terms that students actually learn and use in IT practice and standard exam convention).
 
 ---
 

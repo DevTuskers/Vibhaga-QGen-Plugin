@@ -43,6 +43,16 @@ class SinhalaStyleTests(unittest.TestCase):
             "$$English XYZ කරුණාකර$$ `Latin` $cm$ A."),
             ["Latin word 'Latin'"])
 
+    def test_it_technical_terms_and_archaic_translations(self):
+        # "මූසිකය" should trigger archaic IT term warning
+        findings = si_style.field_warnings("පරිගණකයේ මූසිකය භාවිතයෙන්")
+        self.assertTrue(any("archaic/unnatural IT term 'මූසිකය'" in f for f in findings))
+
+        # Standard English IT terms like mouse, CPU, RAM should not be flagged as unexpected Latin words
+        findings_clean = si_style.field_warnings("computer mouse සහ CPU මඟින්")
+        self.assertNotIn("Latin word 'mouse'", findings_clean)
+        self.assertNotIn("Latin word 'CPU'", findings_clean)
+
     def test_main_names_question_and_part_and_never_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = Path(tmp)
