@@ -13,6 +13,16 @@ except ImportError:
     yaml = None
 
 UNITS = {"cm", "mm", "m", "km", "g", "kg", "l", "ml", "rs"}
+ARCHAIC_IT_TERMS = {
+    "මූසිකය": "use 'mouse' / 'මවුසය'",
+}
+COMMON_IT_TERMS = {
+    "mouse", "keyboard", "monitor", "cpu", "ram", "rom",
+    "software", "hardware", "bit", "byte", "file", "folder",
+    "menu", "cursor", "icon", "input", "output", "storage",
+    "memory", "calculator", "screen", "display", "key", "keys",
+    "button", "buttons", "usb", "wifi", "internet", "web",
+}
 LATIN = re.compile(r"\b[A-Za-z]+\b")
 PASSIVE = re.compile(r"(?:කරනු|දෙනු|ලබනු|දක්වනු)\s+ලැබේ")
 
@@ -36,13 +46,16 @@ def field_warnings(text: str) -> list[str]:
             warnings.append(f"sentence has {len(words)} words (max 30)")
     for match in LATIN.finditer(plain):
         word = match.group(0)
-        if word.lower() in UNITS or re.fullmatch(r"[A-Z]{1,3}", word):
+        if word.lower() in UNITS or word.lower() in COMMON_IT_TERMS or re.fullmatch(r"[A-Z]{1,3}", word):
             continue
         if len(word) == 1 and plain[match.end():match.end() + 1] == "(":
             continue
         warnings.append(f"Latin word {word!r}")
     if "කරුණාකර" in plain:
         warnings.append("contains කරුණාකර")
+    for term, suggestion in ARCHAIC_IT_TERMS.items():
+        if term in plain:
+            warnings.append(f"archaic/unnatural IT term {term!r} (recommended: {suggestion})")
     return warnings
 
 

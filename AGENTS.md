@@ -41,6 +41,12 @@ stem you author. These rules hold in every session that loads the plugin.
    real-world signals by web search and anchors every plan line to one, with a short students/teachers rubric
    ([`creative-signals`](skills/creative-signals/SKILL.md), generate step 2b). Real figures stated as fact are true
    (TRAPS T155). The copy check still runs on every line.
+10. **IT & technical vocabulary — use English terms in Sinhala.** For questions involving Information
+   Technology (IT/ICT), computing hardware/peripherals, or calculator/device interfaces, always use
+   standard English technical terms (either in English or natural transliteration, e.g. "mouse" / "මවුසය",
+   "keyboard", "monitor", "RAM", "CPU", "software") even within the Sinhala version. Do NOT use outdated,
+   unnatural, or overly literal Sinhala translations (e.g. for mouse, never use "මූසිකය"). Technical
+   computing terms must match real-world, natural Sri Lankan IT usage and exam convention.
 
 ## Session discipline
 - **Session names follow the standard** (owner ruling 2026-10-15): `G<grade> Maths · <Easy|Medium|Hard> · <N>Q · <d Mon YYYY, h:mm AM/PM>`
