@@ -6389,7 +6389,8 @@ def build_circle_angles(*, figure_id, stem, ask=None, title=None, description=No
                         medium="english", points, centre="O", cyclic=None, chords=None,
                         radii=None, radii_dashed=None, tangents=None, external=None,
                         extend=None, angles=None, ticks=None, segment=None, r_px=None,
-                        values="stem"):
+                        midpoints=None, feet=None, intersections=None, joins=None,
+                        lengths=None, labels=None, unit="cm", values="stem"):
     """A circle with named points on it (by angle, 0° = east, 90° = DOWN — the cookbook
     polar convention) and theorem features:
       `cyclic="ABCD"` — the four named points joined in order (a cyclic quadrilateral)
@@ -6403,8 +6404,20 @@ def build_circle_angles(*, figure_id, stem, ask=None, title=None, description=No
       `angles=[{"at": X, "arms": ("P","Q"), "label": "x"|"70°"|None, "arcs": n,
         "reflex": bool}]` — a mark between two DRAWN rays from `at`; a numeric label
         must equal the drawn angle (±0.75°) and be a stem number
-      `ticks={"AB": n}` (1–3) on any drawn segment; `segment=("A","B")` shades the
+      `ticks={"AB": n}` (1–3) on any drawn segment (a sub-segment like "AM" counts
+        when M lies on the drawn AB); `segment=("A","B")` shades the
         minor segment of that chord ({"chord": …, "major": True} for the major one).
+    Chord-theorem additions (every named point is COMPUTED — callers name, never place):
+      `midpoints={"M": "AB"}` — the midpoint of chord AB (a dot; AM = MB claimed);
+      `feet={"F": "AB"}` — the foot of the perpendicular from the centre to chord AB
+        (draws OF, the right mark, and claims AF = FB; needs `centre`);
+      `intersections={"X": ("AB","CD")}` — where two chords' LINES meet (four distinct
+        endpoints; inside the disc it sits on both chords, outside it the chords are
+        drawn produced to X);
+      `joins=[("M","C")]` — an extra drawn join between any two known points;
+      `lengths={"AB": 8}` — declares chord AB's true length (stem-checked) so numeric
+        `labels={"AM": "4 cm"}` may only restate the proportional share (±0.5%);
+        a letter label ("x") needs no declared length.
     Crowded figures retry at drawn radii 90 → 150.
     `values="figure"` is the read-the-figure mode: printed angle sizes are figure
     content (stem checks skipped, claims inferred)."""
@@ -6412,7 +6425,9 @@ def build_circle_angles(*, figure_id, stem, ask=None, title=None, description=No
               description=description, medium=medium, points=points, centre=centre,
               cyclic=cyclic, chords=chords, radii=radii, radii_dashed=radii_dashed,
               tangents=tangents, external=external, extend=extend, angles=angles,
-              ticks=ticks, segment=segment, values=values)
+              ticks=ticks, segment=segment, midpoints=midpoints, feet=feet,
+              intersections=intersections, joins=joins, lengths=lengths,
+              labels=labels, unit=unit, values=values)
     tries = [(float(r_px), 0.0)] if r_px is not None else \
         [(rp, x) for rp in (90.0, 120.0, 150.0) for x in (0.0, 6.0)]
     for k_, (rp, ex) in enumerate(tries):
@@ -6426,7 +6441,8 @@ def build_circle_angles(*, figure_id, stem, ask=None, title=None, description=No
 
 def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, points,
                         centre, cyclic, chords, radii, radii_dashed, tangents, external,
-                        extend, angles, ticks, segment, r_px, extra, values):
+                        extend, angles, ticks, segment, midpoints, feet, intersections,
+                        joins, lengths, labels, unit, r_px, extra, values):
     kind = "circle_angles"
     vc.reset_ids()
     if values not in ("stem", "figure"):
@@ -6543,6 +6559,63 @@ def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, poi
             raise TemplateError(f"{kind}: extend {side!r} — that segment is not drawn")
         to = fresh(to, "extension point")
         exts.append((side[0], side[1], to))
+    mid_specs: list[tuple[str, str, str]] = []
+    for nm, ab_ in (midpoints or {}).items():
+        if not (isinstance(ab_, str) and len(ab_) == 2 and ab_[0] != ab_[1]
+                and ab_[0] in deg and ab_[1] in deg):
+            raise TemplateError(f"{kind}: midpoint {nm!r}'s chord must be two "
+                                "on-circle point letters like 'AB'")
+        mid_specs.append((fresh(nm, "midpoint"), ab_[0], ab_[1]))
+    foot_specs: list[tuple[str, str, str]] = []
+    for nm, ab_ in (feet or {}).items():
+        if not centre:
+            raise TemplateError(f"{kind}: foot {nm!r} needs the centre drawn — "
+                                "it is the perpendicular from the centre to the chord")
+        if not (isinstance(ab_, str) and len(ab_) == 2 and ab_[0] != ab_[1]
+                and ab_[0] in deg and ab_[1] in deg):
+            raise TemplateError(f"{kind}: foot {nm!r}'s chord must be two on-circle "
+                                "point letters like 'AB'")
+        foot_specs.append((fresh(nm, "foot"), ab_[0], ab_[1]))
+    int_specs: list[tuple[str, str, str, str, str]] = []
+    for nm, pr in (intersections or {}).items():
+        ok = isinstance(pr, (list, tuple)) and len(pr) == 2 and all(
+            isinstance(s, str) and len(s) == 2 and s[0] != s[1]
+            and s[0] in deg and s[1] in deg for s in pr)
+        if not ok:
+            raise TemplateError(f"{kind}: intersection {nm!r} is ('AB','CD') — two "
+                                "chords of on-circle points")
+        if len(set(pr[0] + pr[1])) != 4:
+            raise TemplateError(f"{kind}: intersection {nm!r} — the two chords must "
+                                "have four distinct endpoints; chords that share an "
+                                "endpoint already meet at that named point")
+        int_specs.append((fresh(nm, "intersection"), pr[0][0], pr[0][1],
+                          pr[1][0], pr[1][1]))
+    join_specs: list[tuple[str, str]] = []
+    for pr in (joins or []):
+        if not (isinstance(pr, (list, tuple)) and len(pr) == 2 and pr[0] != pr[1]):
+            raise TemplateError(f"{kind}: a join is a pair of point names")
+        join_specs.append((pr[0], pr[1]))
+    length_map: dict[frozenset, float] = {}
+    for s_, v_ in (lengths or {}).items():
+        if not (isinstance(s_, str) and len(s_) == 2 and s_[0] != s_[1]
+                and s_[0] in deg and s_[1] in deg):
+            raise TemplateError(f"{kind}: lengths key {s_!r} must be two on-circle "
+                                "point letters like 'AB'")
+        if not isinstance(v_, (int, float)) or isinstance(v_, bool) or \
+                not math.isfinite(v_) or v_ <= 0:
+            raise TemplateError(f"{kind}: lengths[{s_}] must be a positive number")
+        if frozenset(s_) in length_map:
+            raise TemplateError(f"{kind}: lengths[{s_}] given twice")
+        if not fig_mode:
+            require_stem(stem, **{f"length of {s_}": float(v_)})
+        length_map[frozenset(s_)] = float(v_)
+    lab_specs: list[tuple[str, str]] = []
+    for s_, g_ in (labels or {}).items():
+        if not (isinstance(s_, str) and len(s_) == 2 and s_[0] != s_[1]):
+            raise TemplateError(f"{kind}: label key {s_!r} must be two letters like 'AM'")
+        if not (isinstance(g_, str) and g_.strip()):
+            raise TemplateError(f"{kind}: label on {s_} must be a non-empty glyph")
+        lab_specs.append((s_, g_.strip()))
     seg_shade = None
     if segment is not None:
         if isinstance(segment, (list, tuple)) and len(segment) == 2:
@@ -6612,6 +6685,85 @@ def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, poi
         ux, uy = vc.unit(P[a_], P[b_])
         P[to] = (P[b_][0] + ux * (r_px * 0.8), P[b_][1] + uy * (r_px * 0.8))
         join(b_, to)
+
+    def _clash(nm, xy):
+        for oname, op in P.items():
+            if vc.dist(xy, op) < 0.5:
+                raise TemplateError(
+                    f"{kind}: {nm} lands on existing point {oname} — name the "
+                    "existing point instead of deriving a second one there")
+
+    mid_pos: dict[str, tuple[str, str]] = {}
+    for nm, a_, b_ in mid_specs:
+        m_ = vc.lerp(P[a_], P[b_], 0.5)
+        _clash(nm, m_)
+        P[nm] = m_
+        mid_pos[nm] = (a_, b_)
+        want_seg(a_, b_)
+        join(a_, nm); join(nm, b_)
+    foot_pos: dict[str, tuple[str, str]] = {}
+    for nm, a_, b_ in foot_specs:
+        f_ = vc.foot_of_perpendicular(Oxy, P[a_], P[b_])
+        if vc.dist(f_, Oxy) < 0.5:
+            raise TemplateError(f"{kind}: the perpendicular from {O} to {a_}{b_} "
+                                f"lands on the centre — {a_}{b_} is a diameter and "
+                                "has no distinct foot")
+        _clash(nm, f_)
+        P[nm] = f_
+        foot_pos[nm] = (a_, b_)
+        want_seg(a_, b_)
+        want_seg(O, nm)
+        join(a_, nm); join(nm, b_)
+    int_pos: dict[str, tuple] = {}
+    prod_lines: list[tuple[str, str]] = []
+    for nm, a_, b_, c_, d_ in int_specs:
+        try:
+            x_ = vc.intersect(P[a_], P[b_], P[c_], P[d_])
+        except Exception:
+            raise TemplateError(f"{kind}: chords {a_}{b_} and {c_}{d_} are parallel "
+                                "— no intersection point exists")
+        if not (math.isfinite(x_[0]) and math.isfinite(x_[1])) or \
+                vc.dist(x_, Oxy) > 2.4 * r_px:
+            raise TemplateError(f"{kind}: chords {a_}{b_} and {c_}{d_} meet too far "
+                                "off the circle to draw honestly — spread the "
+                                "endpoints so the crossing is nearer")
+        _clash(nm, x_)
+        P[nm] = x_
+        in1 = _mg_on_segment(P[a_], P[b_], x_)
+        in2 = _mg_on_segment(P[c_], P[d_], x_)
+        want_seg(a_, b_)
+        want_seg(c_, d_)
+        join(a_, nm); join(nm, b_); join(c_, nm); join(nm, d_)
+        for (u_, v_, flag) in ((a_, b_, in1), (c_, d_, in2)):
+            if not flag:
+                den = (P[v_][0] - P[u_][0]) ** 2 + (P[v_][1] - P[u_][1]) ** 2
+                t_ = ((x_[0] - P[u_][0]) * (P[v_][0] - P[u_][0]) +
+                      (x_[1] - P[u_][1]) * (P[v_][1] - P[u_][1])) / den
+                prod_lines.append((v_ if t_ > 0.5 else u_, nm))
+        int_pos[nm] = (a_, b_, c_, d_, in1, in2)
+    for a_, b_ in join_specs:
+        need_pt(a_, "join")
+        need_pt(b_, "join")
+        want_seg(a_, b_)
+
+    def _seg_or_sub(fs_):
+        ab_ = seg_defs.get(fs_)
+        if ab_ is not None:
+            return ab_
+        l_ = sorted(fs_)
+        if len(l_) == 2 and all(x in P for x in l_):
+            for s1, s2 in seg_defs.values():
+                if _mg_collinear(P[s1], P[s2], P[l_[0]]) and \
+                        _mg_collinear(P[s1], P[s2], P[l_[1]]) and \
+                        _mg_on_segment(P[s1], P[s2], P[l_[0]]) and \
+                        _mg_on_segment(P[s1], P[s2], P[l_[1]]):
+                    return (l_[0], l_[1])
+        return None
+
+    for fs_ in length_map:
+        if _seg_or_sub(fs_) is None:
+            raise TemplateError(f"{kind}: lengths declares {''.join(fs_)} — its "
+                                "endpoints are not on one drawn segment")
     for nm, dashed in rad.items():
         want_seg(O, nm)
     elements: list[dict] = []
@@ -6628,6 +6780,8 @@ def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, poi
     elements.append(vc.circle(Oxy, r_px, id="circ"))
     for a_, b_, to in exts:
         elements.append(vc.line(P[b_], P[to], id=f"ex{b_}{to}"))
+    for u_, v_ in prod_lines:
+        elements.append(vc.line(P[u_], P[v_], id=f"pd{u_}{v_}"))
     for nm, dashed in rad.items():
         elements.append(vc.line(Oxy, P[nm], id=f"r{nm}", dashed=dashed))
     for tg in tan_defs:
@@ -6638,15 +6792,18 @@ def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, poi
         elements.append(vc.line(P[a_], P[b_], id=f"s{a_}{b_}"))
     tick_lengths = {}
     for fs_, c_ in tk.items():
-        a_, b_ = seg_defs.get(fs_) or (None, None)
+        a_, b_ = _seg_or_sub(fs_) or (None, None)
         if a_ is not None:
             length = vc.dist(P[a_], P[b_])
             if c_ in tick_lengths and abs(length - tick_lengths[c_]) > 0.005 * max(length, tick_lengths[c_]):
                 raise TemplateError(f"{kind}: equal tick marks require equal segment lengths")
             tick_lengths[c_] = length
         if a_ is None:
-            raise TemplateError(f"{kind}: ticks on {''.join(fs_)} — that segment is not drawn")
+            raise TemplateError(f"{kind}: ticks on {''.join(fs_)} — those points are "
+                                "not on one drawn segment")
         elements += vc.tick_marks(P[a_], P[b_], c_, size=10)
+    for nm, (a_, b_) in foot_pos.items():
+        elements += vc.right_angle_mark(P[nm], Oxy, P[a_], r=12)
     if centre:
         elements.append({"id": "ptO", "type": "point", "at": vc.P(Oxy), "r": 3.5})
     for nm in names:
@@ -6705,6 +6862,61 @@ def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, poi
             anch = f"{at}{i + 1}"
             P[anch] = a["at_txt"]
             a["anchor"] = anch
+    lab_targets: dict[str, tuple[str, str]] = {}
+    if lab_specs:
+        boxes_ = [b[1:] for b in label_boxes(elements, FS)]
+        for s_, g_ in lab_specs:
+            l1, l2 = s_[0], s_[1]
+            if l1 not in P or l2 not in P:
+                raise TemplateError(f"{kind}: label on {s_} — a point in it is not "
+                                    "known to the figure")
+            host = _seg_or_sub(frozenset(s_))
+            if host is None:
+                raise TemplateError(f"{kind}: label on {s_} — those points do not lie "
+                                    "on one drawn segment")
+            carrier = next(
+                (ab_ for ab_ in seg_defs.values()
+                 if _mg_collinear(P[ab_[0]], P[ab_[1]], P[l1])
+                 and _mg_collinear(P[ab_[0]], P[ab_[1]], P[l2])
+                 and _mg_on_segment(P[ab_[0]], P[ab_[1]], P[l1])
+                 and _mg_on_segment(P[ab_[0]], P[ab_[1]], P[l2])), None)
+            mnum = re.match(r"^(\d+(?:\.\d+)?)\s*(.*)$", g_)
+            if mnum:
+                num = float(mnum[1])
+                rest = mnum[2].strip()
+                if rest and rest != unit:
+                    raise TemplateError(f"{kind}: label {g_!r} — the unit {rest!r} is "
+                                        f"not the figure's declared unit {unit!r}")
+                if frozenset(s_) in length_map:
+                    true_len = length_map[frozenset(s_)]
+                elif carrier is not None and frozenset(carrier) in length_map:
+                    true_len = length_map[frozenset(carrier)] * \
+                        vc.dist(P[l1], P[l2]) / vc.dist(P[carrier[0]], P[carrier[1]])
+                else:
+                    raise TemplateError(
+                        f"{kind}: numeric label {g_!r} on {s_} needs lengths= "
+                        f"declaring the true length of {s_} or its drawn segment "
+                        f"{''.join(carrier) if carrier else s_}")
+                if abs(num - true_len) > 0.005 * max(true_len, 1e-9):
+                    raise TemplateError(
+                        f"{kind}: label {g_!r} on {s_} prints {num:g} but the drawn "
+                        f"share is {true_len:g} {unit} — a label may only restate "
+                        "the geometry")
+                if not fig_mode:
+                    require_stem(stem, **{f"label {g_!r} on {s_}": num})
+            elif not re.fullmatch(r"[a-zθαβγφ]", g_):
+                raise TemplateError(f"{kind}: segment label {g_!r} must be "
+                                    f"'<number> {unit}' or one lowercase/Greek letter")
+            mid_ = vc.lerp(P[l1], P[l2], 0.5)
+            away = (2 * mid_[0] - Oxy[0], 2 * mid_[1] - Oxy[1])
+            if vc.dist(mid_, Oxy) < 1.0:
+                nx_, ny_ = vc.normal(P[l1], P[l2])
+                away = (mid_[0] + nx_ * 10.0, mid_[1] + ny_ * 10.0)
+            el_ = _seat_side_label(kind, elements, boxes_, P[l1], P[l2], g_, away,
+                                   clr, f"fl{l1}{l2}")
+            elements.append(el_)
+            boxes_.append(_text_box(g_, el_["at"]))
+            lab_targets[s_] = (l1, l2, g_, bool(mnum))
     for nm in names:
         u = (math.cos(math.radians(deg[nm])), math.sin(math.radians(deg[nm])))
         if any(b_ == nm for a_, b_, to in exts):
@@ -6729,6 +6941,10 @@ def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, poi
         elements.append(_float_label(f"lb{ext[0]}", ext[0], P[ext[0]]))
     for _, _, to in exts:
         elements.append(_float_label(f"lb{to}", to, P[to]))
+    for nm in [s[0] for s in mid_specs] + [s[0] for s in foot_specs] + \
+            [s[0] for s in int_specs]:
+        elements.append({"id": f"pt{nm}", "type": "point", "at": vc.P(P[nm]), "r": 3.5})
+        elements.append(_float_label(f"lb{nm}", nm, P[nm]))
 
     claims: list[tuple[str, str, str]] = []
 
@@ -6780,6 +6996,45 @@ def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, poi
         add(f'describe "side {a_}{b_} is produced to {to} — the exterior angle at '
             f'{b_}"', "inferred", "the extended side")
         add(f'label "{to}" names {to}', "inferred", "the extension's letter")
+    for nm, (a_, b_) in mid_pos.items():
+        add(f"on {nm} {a_}{b_}", "inferred", f"{nm} lies on chord {a_}{b_}")
+        add(f"equal {a_}{nm} {nm}{b_}", "inferred",
+            f"{nm} is the midpoint of chord {a_}{b_}")
+        add(f'describe "{nm} is the midpoint of chord {a_}{b_}"', "inferred",
+            "the computed midpoint")
+        add(f'label "{nm}" names {nm}', "inferred", "the midpoint's letter")
+    for nm, (a_, b_) in foot_pos.items():
+        add(f"on {nm} {a_}{b_}", "inferred", f"{nm} lies on chord {a_}{b_}")
+        add(f"right {O} {nm} {a_}", "inferred",
+            "the perpendicular mark where the radius-line meets the chord")
+        add(f"equal {a_}{nm} {nm}{b_}", "inferred",
+            "the perpendicular from the centre bisects the chord")
+        add(f'describe "{O}{nm} is drawn perpendicular to chord {a_}{b_} — the '
+            f'perpendicular from the centre meets the chord at its midpoint {nm}"',
+            "inferred", "the centre-to-chord perpendicular")
+        add(f'label "{nm}" names {nm}', "inferred", "the foot's letter")
+    for nm, (a_, b_, c_, d_, in1, in2) in int_pos.items():
+        add(f"collinear {a_} {nm} {b_}", "inferred", f"{nm} is on line {a_}{b_}")
+        add(f"collinear {c_} {nm} {d_}", "inferred", f"{nm} is on line {c_}{d_}")
+        if in1:
+            add(f"on {nm} {a_}{b_}", "inferred", "the crossing is on the chord")
+        else:
+            add(f'describe "chord {a_}{b_} is produced to {nm}"', "inferred",
+                "the crossing is beyond the chord's endpoints")
+        if in2:
+            add(f"on {nm} {c_}{d_}", "inferred", "the crossing is on the chord")
+        else:
+            add(f'describe "chord {c_}{d_} is produced to {nm}"', "inferred",
+                "the crossing is beyond the chord's endpoints")
+        add(f'describe "chords {a_}{b_} and {c_}{d_} meet at {nm}'
+            f'{" inside the circle" if in1 and in2 else ""}"', "inferred",
+            "the chords' crossing point")
+        add(f'label "{nm}" names {nm}', "inferred", "the intersection's letter")
+    for a_, b_ in join_specs:
+        add(f'describe "{a_}{b_} is joined"', "inferred", "an auxiliary join")
+    for s_, (l1, l2, g_, isnum) in lab_targets.items():
+        add(f'label "{g_}" names {l1}{l2}', "stem" if (isnum and not fig_mode)
+            else "inferred", f"the length label on {l1}{l2}")
     if seg_shade:
         a_, b_, maj = seg_shade
         add(f"arc centre {O} from {a_} to {b_}", "inferred", "the segment's arc")
@@ -6787,7 +7042,7 @@ def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, poi
             f'{a_}{b_} and its arc is shaded"', "inferred", "the shaded segment")
     tk_groups: dict[int, list[str]] = {}
     for fs_, c_ in tk.items():
-        a_, b_ = seg_defs[fs_]
+        a_, b_ = _seg_or_sub(fs_)
         tk_groups.setdefault(c_, []).append(f"{a_}{b_}")
     for c_, segs_ in tk_groups.items():
         for i in range(len(segs_)):
@@ -6822,7 +7077,7 @@ def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, poi
         absent.remove("shaded")
     if tk:
         absent.remove("tickMark")
-    if ang_specs:
+    if ang_specs or foot_pos:
         absent.remove("angleMark")
     if any(rad.values()):
         absent.remove("dashed")
@@ -6833,6 +7088,9 @@ def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, poi
     add("none " + " ".join(absent), "inferred",
         "only the parts claimed above are drawn")
     segs = [f"{a}{b}" for a, b in drawn_segs]
+    for s_, (l1, l2, g_, isnum) in lab_targets.items():
+        if isnum and f"{l1}{l2}" not in segs and f"{l2}{l1}" not in segs:
+            segs.append(f"{l1}{l2}")
     parts = []
     if cyc:
         parts.append("a cyclic quadrilateral")
@@ -6842,6 +7100,12 @@ def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, poi
         parts.append("a tangent")
     if ext:
         parts.append("external tangents")
+    if mid_pos:
+        parts.append("chord midpoints")
+    if foot_pos:
+        parts.append("a perpendicular from the centre to a chord")
+    if int_pos:
+        parts.append("intersecting chords")
     return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
                   anchors=dict(P), points=list(P), segments=segs, claims=claims,
                   ask=ask, title=title or "A circle theorem figure",
@@ -9946,6 +10210,8 @@ _VR_LAYOUTS = ("overlap", "chain", "nested", "disjoint")
 
 def _vr_circles(sets, layout, r):
     n = len(sets)
+    if n == 1:
+        return {sets[0]: ((0.0, 0.0), r)}
     if layout == "overlap":
         if n == 2:
             return {sets[0]: ((0.0, 0.0), r), sets[1]: ((1.1 * r, 0.0), r)}
@@ -10029,10 +10295,13 @@ def build_venn_regions(*, figure_id, stem, ask=None, title=None, description=Non
     companion to `venn_sets` (whose trefoil output is unchanged). `layout` =
     overlap (the standard lens/trefoil) | chain (three circles, only neighbours
     overlap — no A-only-C region) | nested (each set drawn inside the previous)
-    | disjoint (no overlaps). `regions` follows `venn_sets` (items lists OR
+    | disjoint (no overlaps). ONE set draws a single disc — the layout choice is
+    inert there — and region "" is its complement inside the universal frame.
+    `regions` follows `venn_sets` (items lists OR
     counts; counts need every region that EXISTS in the layout). `shade` = a
     list of region keys to fill: a connected region draws a stitched shade
-    polygon; a nested annulus fills the outer disc and whites out the inner."""
+    polygon; a nested annulus fills the outer disc and whites out the inner;
+    "" shades the frame and whites out every set's disc — the complement."""
     kind = "venn_regions"
     if values not in ("stem", "figure"):
         raise TemplateError(f"{kind}: values must be 'stem' or 'figure'")
@@ -10054,10 +10323,10 @@ def build_venn_regions(*, figure_id, stem, ask=None, title=None, description=Non
     if layout not in _VR_LAYOUTS:
         raise TemplateError(f"{kind}: layout must be one of {_VR_LAYOUTS}")
     sets = list(sets) if isinstance(sets, (list, tuple)) else sets
-    if not isinstance(sets, list) or not 2 <= len(sets) <= 3 or \
+    if not isinstance(sets, list) or not 1 <= len(sets) <= 3 or \
             len(set(sets)) != len(sets) or \
             not all(isinstance(s, str) and re.fullmatch(r"[A-Z]", s) for s in sets):
-        raise TemplateError(f"{kind}: sets must be 2 or 3 distinct single capitals")
+        raise TemplateError(f"{kind}: sets must be 1 to 3 distinct single capitals")
     if layout == "chain" and len(sets) != 3:
         raise TemplateError(f"{kind}: layout 'chain' is the three-set chain — "
                             "two sets are just 'overlap' or 'disjoint'")
@@ -10276,6 +10545,15 @@ def build_venn_regions(*, figure_id, stem, ask=None, title=None, description=Non
                          "height": vc.r2(rect[3] - rect[1])})
     shade_desc = []
     for sk in shade_keys:
+        if sk == "":
+            elements.append(vc.polygon([(rect[0], rect[1]), (rect[2], rect[1]),
+                                        (rect[2], rect[3]), (rect[0], rect[3])],
+                                       fill=vc.SHADE, stroke_width=0, id="shout"))
+            for s_ in sets:
+                elements.append(vc.circle(circ[s_][0], circ[s_][1], fill="#ffffff",
+                                          id=f"shw{s_}"))
+            shade_desc.append("the outside")
+            continue
         loops = _vr_shade_loops(circ, sk)
         inside_ = [s for s in sets if s in sk]
         outside_ = [s for s in sets if s not in sk]
@@ -10346,6 +10624,10 @@ def build_venn_regions(*, figure_id, stem, ask=None, title=None, description=Non
         add(f'label "{universal}" names univ', "inferred", "the universal set's label")
     for s in sets:
         add(f'label "{s}" names set_{s.lower()}', "inferred", f"set {s}'s name")
+    if len(sets) == 1:
+        add(f'describe "the disc is the whole of set {sets[0]} — everything in the '
+            f'rectangle outside it is the complement {sets[0]}′"', "inferred",
+            "a one-set diagram: members inside, the complement outside")
     for k in keys_all:
         for j, tok in enumerate(content.get(k, [])):
             tid = f"region_{tag(k)}_{j + 1}" if mode == "items" else f"region_{tag(k)}"
@@ -10370,6 +10652,9 @@ def build_venn_regions(*, figure_id, stem, ask=None, title=None, description=Non
     derive([k for k in keys_all if k], f"n({' ∪ '.join(sets)})")
     if universal is not None:
         derive(keys_all, f"n({universal})")
+    if len(sets) == 1:
+        add(f'describe "the part of the rectangle outside circle {sets[0]} is the '
+            f'complement {sets[0]}′"', "inferred", "a one-set diagram has a complement")
     if not n_derives:
         if known:
             k0 = next(k for k in keys_all if k in known)
@@ -10386,7 +10671,8 @@ def build_venn_regions(*, figure_id, stem, ask=None, title=None, description=Non
                   segments=[], claims=claims, ask=ask,
                   title=title or f"A Venn diagram of sets {', '.join(sets)}",
                   description=description or (
-                      f"A {layout} Venn diagram of {len(sets)} sets"
+                      f"A {'single-set' if len(sets) == 1 else layout} Venn diagram "
+                      f"of {len(sets)} set{'s' if len(sets) > 1 else ''}"
                       + (f" inside a rectangle labelled {universal}" if universal else "")
                       + (", with shaded regions" if shade_keys else "") + "."),
                   scale="circle sizes are a canvas choice — only region membership "
@@ -11524,12 +11810,1220 @@ def _mg_on_segment(a, b, p):
     return -0.001 <= t_ <= 1.001
 
 
+_PIE_FILLS = ("#e5e7eb", "#d1d5db", "#f3f4f6", "#9ca3af")
+
+
+def build_pie_chart(*, figure_id, stem, ask=None, title=None, description=None,
+                    medium="english", sectors, start=-90.0, arrow=None,
+                    angle_labels=False, r_px=130.0, values="stem"):
+    """A pie chart / probability spinner. `sectors` = [{"label": "<glyph>",
+    "count": n}…] or [{"label": "<glyph>", "angle": deg}…] — every sector the
+    same key; counts partition by count/total × 360, explicit angles must sum
+    to 360. In "stem" mode every count (or angle) is a stem number; in "figure"
+    mode they are figure content the student reads. A label is a symbolic token
+    of 1–8 Latin letters (never a number; O/T are reserved for the centre and
+    needle) and may repeat across sectors (a spinner's duplicated outcome) —
+    one `label` claim binds it, a `describe` says how often it prints.
+    `angle_labels=True` prints each sector's central angle inside it and needs
+    whole-degree sectors. `arrow={"deg": d}` draws a spinner needle from the
+    centre — explicitly not data, independent of the boundaries and never
+    coincident with one. A sector under 8° refuses rather than distort."""
+    kind = "pie_chart"
+    vc.reset_ids()
+    if values not in ("stem", "figure"):
+        raise TemplateError(f"{kind}: values must be 'stem' or 'figure'")
+    if not (isinstance(sectors, (list, tuple)) and 2 <= len(sectors) <= 10):
+        raise TemplateError(f"{kind}: 2–10 sectors")
+    if not isinstance(r_px, (int, float)) or isinstance(r_px, bool) or \
+            not 60.0 <= r_px <= 200.0:
+        raise TemplateError(f"{kind}: r_px must be 60–200 units")
+    if not isinstance(start, (int, float)) or isinstance(start, bool) or \
+            not math.isfinite(start):
+        raise TemplateError(f"{kind}: start must be a number of degrees")
+    if arrow is not None and not (isinstance(arrow, dict) and
+                                  isinstance(arrow.get("deg"), (int, float)) and
+                                  not isinstance(arrow.get("deg"), bool) and
+                                  math.isfinite(arrow["deg"])):
+        raise TemplateError(f"{kind}: arrow needs a numeric 'deg' — the needle's bearing")
+    if not isinstance(angle_labels, bool):
+        raise TemplateError(f"{kind}: angle_labels is a bool")
+    keys = set()
+    labels_of: list[str] = []
+    raw: list[tuple[str, float]] = []
+    for i, s_ in enumerate(sectors):
+        if not isinstance(s_, dict):
+            raise TemplateError(f"{kind}: sector {i} must be a dict")
+        ks = [k for k in s_ if k in ("count", "angle")]
+        bad = [k for k in s_ if k not in ("label", "count", "angle")]
+        if len(ks) != 1 or bad:
+            raise TemplateError(f"{kind}: sector {i} needs exactly one of 'count'/'angle' "
+                                f"plus 'label' — got {sorted(s_)}")
+        keys.add(ks[0])
+        lab = s_.get("label")
+        if not (isinstance(lab, str) and
+                re.fullmatch(r"[A-Za-z]{1,8}", lab.strip())):
+            raise TemplateError(f"{kind}: sector {i}'s label must be a symbolic "
+                                "token of 1–8 Latin letters, not a number or angle")
+        lab = lab.strip()
+        if lab.upper() in {"O", "T"}:
+            raise TemplateError(f"{kind}: sector {i}'s label {lab!r} is reserved "
+                                "for the centre or spinner needle")
+        v = s_[ks[0]]
+        if not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v) \
+                or v <= 0:
+            raise TemplateError(f"{kind}: sector {i}'s {ks[0]} must be a positive number")
+        labels_of.append(lab)
+        raw.append((lab, float(v)))
+    if len(keys) != 1:
+        raise TemplateError(f"{kind}: every sector uses the same key — all 'count' "
+                            "or all 'angle'")
+    mode = next(iter(keys))
+    if values == "stem":
+        require_stem(stem, **{f"sector {i} {mode}": v for i, (_l, v) in enumerate(raw)})
+    total = sum(v for _l, v in raw)
+    if mode == "angle" and abs(total - 360.0) > 0.01:
+        raise TemplateError(f"{kind}: the sector angles sum to {total:g}°, not 360°")
+    degs = ([360.0 * v / total for _l, v in raw] if mode == "count" else
+            [v for _l, v in raw])
+    if angle_labels and any(abs(d - round(d)) > 1e-9 for d in degs):
+        raise TemplateError(f"{kind}: angle_labels requires whole-degree sectors "
+                            "— omit angle_labels rather than round the geometry")
+    thin = [f"{d:g}°" for d in degs if d < 8.0]
+    if thin:
+        raise TemplateError(f"{kind}: sector(s) of {', '.join(thin)} are too thin to "
+                            "label honestly — merge small categories or drop the figure")
+    _check_label_texts([], list(labels_of) + ([f"{d:g}°" for d in degs]
+                                              if angle_labels else []), medium)
+    Oxy = (0.0, 0.0)
+    bounds = []
+    a = float(start)
+    for d_ in degs:
+        bounds.append(a)
+        a += d_
+    if arrow is not None:
+        bearing = float(arrow["deg"])
+        if any(abs((bearing - b + 180.0) % 360.0 - 180.0) <= 1e-7
+               for b in bounds):
+            raise TemplateError(f"{kind}: spinner needle coincides with a radial "
+                                "boundary — choose an independent bearing")
+    Q = {f"Q{i}": on_circle_point(Oxy, r_px, bounds[i]) for i in range(len(degs))}
+    span = 2.0 * (r_px + 60.0)
+    clr = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, span) + 2.0
+    gap_l = _clearance_units(4.0 + 1.0, span)
+    elements: list[dict] = []
+    for i, d_ in enumerate(degs):
+        elements.append(vc.polygon([Oxy] + vc.sampled_arc(Oxy, r_px, bounds[i],
+                                                          bounds[i] + d_),
+                                   fill=_PIE_FILLS[i % len(_PIE_FILLS)],
+                                   stroke_width=0, id=f"sec{i}"))
+    elements.append(vc.circle(Oxy, r_px, id="rim"))
+    for i in range(len(degs)):
+        elements.append(vc.line(Oxy, Q[f"Q{i}"], id=f"cut{i}"))
+    elements.append({"id": "ptO", "type": "point", "at": vc.P(Oxy), "r": 3.5})
+    anchors = {"O": Oxy, **Q}
+    segments: list[str] = []
+    points = ["O"] + [f"Q{i}" for i in range(len(degs))]
+    if arrow is not None:
+        T = on_circle_point(Oxy, r_px * 1.14, float(arrow["deg"]))
+        elements.append(vc.arrow(Oxy, T, head="end", id="spin"))
+        anchors["T"] = T
+        points.append("T")
+        segments.append("OT")
+    strokes = stroke_segments(elements)
+    boxes = [b[1:] for b in label_boxes(elements, FS)]
+
+    def ang_in(p, s, e):
+        return (_angle_of(p, Oxy) - s) % 360.0 <= e - s + 1e-9
+
+    def seat(text, s, e, rhos):
+        for rho in rhos:
+            for f_ in (0.5, 0.42, 0.58, 0.35, 0.65, 0.27, 0.73):
+                at = on_circle_point(Oxy, rho * r_px, s + (e - s) * f_)
+                box = _text_box(text, at)
+                if not _box_vs_circle(box, Oxy, r_px, True, clr):
+                    continue
+                if not all(ang_in((x, y), s, e)
+                           for x in (box[0], box[2]) for y in (box[1], box[3])):
+                    continue
+                if all(_seg_rect_dist(p, q, box) - w / 2 >= clr for p, q, w in strokes) \
+                        and all(_rect_gap(box, o) >= gap_l for o in boxes):
+                    return at
+        return None
+
+    label_targets: dict[str, str] = {}
+    if angle_labels:
+        for i, d_ in enumerate(degs):
+            g_ = f"{d_:g}°"
+            at = seat(g_, bounds[i], bounds[i] + d_,
+                      (0.5, 0.56, 0.44, 0.62, 0.38, 0.3, 0.68))
+            if at is None:
+                raise TemplateError(f"{kind}: the angle numeral {g_!r} has no clear "
+                                    "seat in its sector — drop angle_labels or widen "
+                                    "the sectors")
+            elements.append(vc.text(at, g_, id=f"pa{i}"))
+            boxes.append(_text_box(g_, at))
+            label_targets.setdefault(g_, f"angle_sec{i}")
+    for i, (lab, d_) in enumerate(zip(labels_of, degs)):
+        at = seat(lab, bounds[i], bounds[i] + d_,
+                  (0.82, 0.75, 0.68, 0.88, 0.6) if angle_labels else
+                  (0.6, 0.68, 0.52, 0.76, 0.44))
+        if at is None:
+            raise TemplateError(f"{kind}: the label {lab!r} has no clear seat in its "
+                                f"{d_:g}° sector — merge small categories or shorten the "
+                                "glyphs")
+        elements.append(vc.text(at, lab, id=f"pl{i}"))
+        boxes.append(_text_box(lab, at))
+        label_targets.setdefault(lab, f"region_sec{i}")
+    elements.append(_float_label("lbO", "O", Oxy))
+
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    evv = "stem" if values == "stem" else "inferred"
+    if values == "figure":
+        add('describe "the sector sizes are figure content — the question asks the '
+            'student to read them"', "inferred", "read-the-figure mode")
+    add(f"circle centre O radius {vc.r2(r_px):g}", "inferred", "the pie's rim")
+    add(f'label "O" names O', "inferred", "the centre")
+    add('describe "the sectors partition the full circle — one sector per labelled '
+        'category"', "inferred", "a pie chart")
+    if mode == "count":
+        k_sum = add(f"derive {' + '.join(f'{v:g}' for _l, v in raw)} = "
+                    f"{_num_exact(total)}", evv, "the counts sum to the total")
+        for i, (lab, v) in enumerate(raw):
+            add(f"derive {v:g} * 360 / {total:g} = {_num_exact(degs[i])}", evv,
+                f"sector {i + 1} ({lab!r}) — count/total × 360, citing {k_sum}")
+    else:
+        add(f"derive {' + '.join(f'{d:g}' for d in degs)} = 360", evv,
+            "the given angles sum to a full turn")
+    for i, (lab, d_) in enumerate(zip(labels_of, degs)):
+        add(f'describe "sector {i + 1} is {lab} and spans {d_:g}° of the circle"',
+            evv, f"sector {i + 1} runs from {bounds[i] % 360:g}° to "
+                 f"{(bounds[i] + d_) % 360:g}°")
+    for g_, t_ in label_targets.items():
+        add(f'label "{g_}" names {t_}', "inferred", "printed inside the sector")
+    counts_ = {g_: labels_of.count(g_) for g_ in set(labels_of)}
+    for g_, n_ in counts_.items():
+        if n_ > 1:
+            add(f'describe "the outcome {g_} is printed on {n_} sectors — the spinner '
+                'can land on either"', "inferred", "a repeated outcome label")
+    if angle_labels:
+        add('describe "each sector prints its central angle in degrees"', "inferred",
+            "the angle numerals")
+    if arrow is not None:
+        add("arrow O -> T", "inferred",
+            "the spinner needle from the centre — independent of the sector boundaries")
+        add('describe "the arrow is the spinner needle — it is not a sector boundary '
+            'and carries no data"', "inferred", "the needle")
+    add('describe "the sectors fill in alternating greys for contrast — the shading '
+        'carries no data"', "inferred", "cosmetic fills")
+    absent = "tickMark parallelMark angleMark dashed"
+    add(f"none {absent}{'' if arrow is not None else ' arrow'}", "inferred",
+        "rim, radial boundaries, fills and labels only")
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=anchors, points=points, segments=segments, claims=claims,
+                  ask=ask, title=title or
+                  ("A spinner" if arrow is not None else "A pie chart"),
+                  description=description or (
+                      f"A circle divided into {len(degs)} labelled sectors" +
+                      (" with a spinner arrow." if arrow is not None else ".")),
+                  scale="the sectors' angles are true — equal areas mean equal angles",
+                  medium=medium)
+
+
+def build_sector(*, figure_id, stem, ask=None, title=None, description=None,
+                 medium="english", angle, radius, inner=None, unit="cm",
+                 labels=None, start=None, shaded=False, r_px=110.0,
+                 values="stem"):
+    """A standalone sector — two radii and their arc — or, with `inner`, an
+    annular sector sharing the centre (the ring between radii `inner` and
+    `radius`). `angle` is the centre angle in degrees, 0 < angle < 360 (180 =
+    semicircle, 90 = quadrant). `labels` = {"radius"|"radius_b"|"arc"|"angle":
+    glyph} for a sector, {"radial"|"radial_b"|"arc"|"inner_arc"|"angle"} for an
+    annular sector — a glyph is a number+unit that restates its own boundary
+    (radius, arc length, centre angle, or the radial piece outer − inner within
+    0.5%) or a letter (the unknown); every numeric label is a stem number in
+    "stem" mode and figure content in "figure" mode. Composite circular
+    figures (rectangle ± semicircle, mixed Boolean joins) are an explicit
+    exception — hand-draw them through finish() instead. `start` is the first
+    boundary's polar direction (canvas degrees, 0° = east, 90° = down); default
+    puts the bisector straight up."""
+    kind = "sector"
+    vc.reset_ids()
+    if values not in ("stem", "figure"):
+        raise TemplateError(f"{kind}: values must be 'stem' or 'figure'")
+    if not isinstance(angle, (int, float)) or isinstance(angle, bool) or \
+            not math.isfinite(angle):
+        raise TemplateError(f"{kind}: angle must be a number of degrees")
+    if not 0.0 < angle < 360.0:
+        raise TemplateError(f"{kind}: angle must be between 0 and 360 degrees — a "
+                            "zero or full-turn sector is no sector")
+    if not isinstance(radius, (int, float)) or isinstance(radius, bool) or radius <= 0:
+        raise TemplateError(f"{kind}: radius must be a positive number")
+    if inner is not None and (not isinstance(inner, (int, float)) or
+                              isinstance(inner, bool) or inner <= 0):
+        raise TemplateError(f"{kind}: inner must be a positive number")
+    if inner is not None and inner >= radius:
+        raise TemplateError(f"{kind}: inner ({inner:g}) must be smaller than radius "
+                            f"({radius:g}) — an annular sector needs a real ring")
+    if not isinstance(r_px, (int, float)) or isinstance(r_px, bool) or \
+            not 60.0 <= r_px <= 160.0:
+        raise TemplateError(f"{kind}: r_px must be 60–160 units")
+    if start is not None and (not isinstance(start, (int, float)) or
+                              isinstance(start, bool) or not math.isfinite(start)):
+        raise TemplateError(f"{kind}: start must be a number of degrees")
+    if not isinstance(unit, str) or not re.fullmatch(r"[A-Za-z]{1,3}", unit):
+        raise TemplateError(f"{kind}: unit is a short Latin unit like cm or m")
+    if not isinstance(shaded, bool):
+        raise TemplateError(f"{kind}: shaded is a bool")
+    annular = inner is not None
+    allowed = ({"radial", "radial_b", "arc", "inner_arc", "angle"} if annular else
+               {"radius", "radius_b", "arc", "angle"})
+    if labels is not None and not isinstance(labels, dict):
+        raise TemplateError(f"{kind}: labels must be a dict or None")
+    labs: dict[str, str] = {}
+    for k_, v_ in (labels or {}).items():
+        if k_ not in allowed:
+            raise TemplateError(f"{kind}: label key {k_!r} is not one of "
+                                f"{sorted(allowed)}" +
+                                (" — a whole radius is not a drawn piece of an annular "
+                                 "sector; label its arc, radial piece or angle"
+                                 if annular else ""))
+        if not (isinstance(v_, str) and v_.strip()):
+            raise TemplateError(f"{kind}: label {k_!r} is a non-empty glyph")
+        labs[k_] = v_.strip()
+    R, th = float(radius), float(angle)
+    r_i = float(inner) if annular else None
+    arc_len = math.pi * R * th / 180.0
+    inner_arc = math.pi * r_i * th / 180.0 if annular else None
+    radial_w = R - r_i if annular else None
+
+    def true_of(k_):
+        return {"radius": R, "radius_b": R, "arc": arc_len, "angle": th,
+                "radial": radial_w, "radial_b": radial_w,
+                "inner_arc": inner_arc}[k_]
+
+    numeric: dict[str, float] = {}
+    for k_, g_ in labs.items():
+        m_ = (_ANGLE_NUM.fullmatch(g_) if k_ == "angle" else _LEN_LABEL.fullmatch(g_))
+        if not m_:
+            if k_ != "angle" and not re.fullmatch(r"[A-Za-z]{1,8}", g_):
+                raise TemplateError(f"{kind}: {k_} label {g_!r} is a number+unit or a "
+                                    "short token")
+            if k_ == "angle" and not re.fullmatch(r"[a-zθαβγφ]", g_):
+                raise TemplateError(f"{kind}: angle label {g_!r} is the size ('60°') "
+                                    "or a single lowercase/Greek letter")
+            continue
+        v_ = float(m_[1])
+        if k_ != "angle" and m_[2] and m_[2] != unit:
+            raise TemplateError(f"{kind}: label {g_!r} uses unit {m_[2]!r} — the "
+                                f"figure's unit is {unit!r}")
+        t_ = true_of(k_)
+        tol = 0.5 if k_ == "angle" else 0.005 * t_
+        if abs(v_ - t_) > tol:
+            raise TemplateError(f"{kind}: {k_} label {g_!r} prints {v_:g} but the "
+                                f"boundary is {t_:.6g} — a label may only restate its "
+                                "own value")
+        numeric[k_] = v_
+    if values == "stem":
+        chk = {"radius": R, "angle": th}
+        if annular:
+            chk["inner"] = r_i
+        for k_, v_ in numeric.items():
+            chk[f"{k_} label {labs[k_]!r}"] = v_
+        require_stem(stem, **chk)
+    glyphs = ["O", "A", "B"] + (["C", "D"] if annular else []) + list(labs.values())
+    _check_label_texts([], glyphs, medium)
+    _distinct_glyphs(kind, glyphs)
+    Oxy = (0.0, 0.0)
+    s0 = (-90.0 - th / 2.0) if start is None else float(start)
+    s1 = s0 + th
+    r_i_px = r_px * r_i / R if annular else 0.0
+    A = on_circle_point(Oxy, r_px, s0)
+    B = on_circle_point(Oxy, r_px, s1)
+    C = on_circle_point(Oxy, r_i_px, s0) if annular else None
+    D = on_circle_point(Oxy, r_i_px, s1) if annular else None
+    span = 2.0 * (r_px + 60.0)
+    clr = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, span) + 2.0
+    gap_l = _clearance_units(4.0 + 1.0, span)
+    pts = ([Oxy] + vc.sampled_arc(Oxy, r_px, s0, s1) if not annular else
+           vc.sampled_arc(Oxy, r_px, s0, s1) +
+           vc.sampled_arc(Oxy, r_i_px, s0, s1)[::-1])
+    elements = [vc.polygon(pts, fill=(vc.SHADE if shaded else None), id="sec")]
+    elements.append({"id": "ptO", "type": "point", "at": vc.P(Oxy), "r": 3.5})
+    strokes = stroke_segments(elements)
+    boxes = [b[1:] for b in label_boxes(elements, FS)]
+
+    def ang_in(p):
+        return (_angle_of(p, Oxy) - s0) % 360.0 <= th + 1e-9
+
+    def clear(box):
+        return all(_seg_rect_dist(p, q, box) - w / 2 >= clr for p, q, w in strokes) and \
+            all(_rect_gap(box, o) >= 2 * gap_l for o in boxes)
+
+    def wedge_ok(box):
+        return all(ang_in((x, y)) for x in (box[0], box[2]) for y in (box[1], box[3]))
+
+    def in_band(box):
+        if not annular:
+            return _box_vs_circle(box, Oxy, r_px, True, clr)
+        near = min(math.hypot(x, y) for x in (box[0], box[2]) for y in (box[1], box[3]))
+        far = max(math.hypot(x, y) for x in (box[0], box[2]) for y in (box[1], box[3]))
+        return near >= r_i_px + clr and far <= r_px - clr
+
+    def seat_rim(text, deg_):
+        u = (math.cos(math.radians(deg_)), math.sin(math.radians(deg_)))
+        for k_ in range(10):
+            d_ = r_px + clr + _label_half_along(text, FS, u[0], u[1]) + 2.0 + 4.0 * k_
+            at = (u[0] * d_, u[1] * d_)
+            box = _text_box(text, at)
+            if _box_vs_circle(box, Oxy, r_px, False, clr) and clear(box):
+                return at
+        return None
+
+    def seat_inner(text, deg_):
+        into = 1.0 if deg_ == s0 else -1.0
+        own = on_circle_point(Oxy, r_i_px, deg_)
+        for f_ in (0.05, 0.08, 0.12, 0.0, 0.16, 0.22, 0.3):
+            a_ = deg_ + into * f_ * th
+            for rho in (0.55, 0.5, 0.45, 0.62, 0.4, 0.68):
+                at = on_circle_point(Oxy, rho * r_i_px, a_)
+                box = _text_box(text, at)
+                ctr = (at[0], at[1])
+                if math.hypot(ctr[0] - own[0], ctr[1] - own[1]) >= \
+                        math.hypot(*ctr) - OWN_FIXED_PX / max(
+                            1e-9, min(1.0, PLATE_INNER / span)):
+                    continue
+                if _box_vs_circle(box, Oxy, r_i_px, True, clr) and clear(box):
+                    return at
+        return None
+
+    def seat_in(text, rhos, band, das=None):
+        bis = s0 + th / 2.0
+        for rho in rhos:
+            for da in (das if das is not None else
+                       (0.0, -0.1, 0.1, -0.2, 0.2, -0.32, 0.32)):
+                a_ = bis + da * th
+                if not s0 < a_ < s1:
+                    continue
+                at = on_circle_point(Oxy, rho, a_)
+                box = _text_box(text, at)
+                if wedge_ok(box) and band(box) and clear(box):
+                    return at
+        return None
+
+    def seat_arc_out(text):
+        for f_ in (0.5, 0.4, 0.6, 0.3, 0.7):
+            a_ = s0 + f_ * th
+            u = (math.cos(math.radians(a_)), math.sin(math.radians(a_)))
+            half = _label_half_along(text, FS, u[0], u[1])
+            for k_ in range(8):
+                d_ = r_px + clr + half + 2.0 + 5.0 * k_
+                at = on_circle_point(Oxy, d_, a_)
+                box = _text_box(text, at)
+                if _box_vs_circle(box, Oxy, r_px, False, clr) and clear(box):
+                    return at
+        return None
+
+    def seat_hole(g_):
+        bis = s0 + th / 2.0
+        u = (math.cos(math.radians(bis)), math.sin(math.radians(bis)))
+        half = _label_half_along(g_, FS, u[0], u[1])
+        for da in (0.0, -0.2, 0.2, -0.34, 0.34):
+            a_ = bis + da * th
+            if not s0 < a_ < s1:
+                continue
+            for d_ in (r_i_px - clr - half - 2.0 - 5.0 * kk for kk in range(6)):
+                if d_ <= 4.0:
+                    break
+                cand = on_circle_point(Oxy, d_, a_)
+                box = _text_box(g_, cand)
+                if _box_vs_circle(box, Oxy, r_i_px, True, clr) and clear(box):
+                    return cand
+        return None
+
+    def seat_inner_arc(g_):
+        at = seat_hole(g_)
+        if at is not None:
+            return at
+        mid = (r_i_px + r_px) / 2.0
+        return seat_in(g_, [mid + off for off in
+                            (0.0, -2.0, 2.0, -4.0, 4.0, -6.0, 6.0, 8.0, -8.0)],
+                       lambda b: True,
+                       das=(0.3, 0.38, 0.22, 0.42, 0.14)
+                       if "angle" in labs else None)
+
+    if annular and "inner_arc" in labs:
+        g_ = labs["inner_arc"]
+        at = seat_inner_arc(g_)
+        if at is None:
+            raise TemplateError(f"{kind}: the inner-arc label {g_!r} has no "
+                                "clear seat in the hole or the ring — widen the "
+                                "ring or drop the label")
+        elements.append(vc.text(at, g_, id="flinner_arc"))
+        boxes.append(_text_box(g_, at))
+
+    for nm, pt in (("A", A), ("B", B)):
+        at = seat_rim(nm, s0 if nm == "A" else s1)
+        if at is None:
+            raise TemplateError(f"{kind}: the letter {nm} has no clear seat off the "
+                                "rim — rotate `start` or widen r_px")
+        elements.append(vc.text(at, nm, id=f"lb{nm}"))
+        boxes.append(_text_box(nm, at))
+    inner_letters: list[str] = []
+    if annular:
+        for nm, deg_ in (("C", s0), ("D", s1)):
+            at = seat_inner(nm, deg_)
+            if at is not None:
+                elements.append(vc.text(at, nm, id=f"lb{nm}"))
+                boxes.append(_text_box(nm, at))
+                inner_letters.append(nm)
+    o_seat = seat_in("O", ([r_i_px * 0.55] if annular else [0.22 * r_px, 0.3 * r_px]),
+                     (lambda b: _box_vs_circle(b, Oxy, r_i_px, True, clr)) if annular
+                     else in_band)
+    if o_seat is not None:
+        elements.append(vc.text(o_seat, "O", id="lbO"))
+        boxes.append(_text_box("O", o_seat))
+    else:
+        elements.append(_float_label("lbO", "O", Oxy))
+    targets: dict[str, str] = {}
+    for k_, g_ in labs.items():
+        if k_ in ("radius", "radius_b"):
+            a_, b_ = (Oxy, A) if k_ == "radius" else (Oxy, B)
+            away = on_circle_point(Oxy, r_px * 0.6, (s0 - 45.0) if k_ == "radius"
+                                   else (s1 + 45.0))
+            el_ = _seat_side_label(kind, elements, boxes, a_, b_, g_, away, clr,
+                                   f"fl{k_}")
+            targets[k_] = "OA" if k_ == "radius" else "OB"
+        elif k_ in ("radial", "radial_b"):
+            a_, b_ = (A, C) if k_ == "radial" else (B, D)
+            away = on_circle_point(Oxy, (r_i_px + r_px) / 2,
+                                   (s0 - 45.0) if k_ == "radial" else (s1 + 45.0))
+            el_ = _seat_side_label(kind, elements, boxes, a_, b_, g_, away, clr,
+                                   f"fl{k_}")
+            targets[k_] = "AC" if k_ == "radial" else "BD"
+        elif k_ == "arc":
+            at = seat_arc_out(g_)
+            if at is None:
+                raise TemplateError(f"{kind}: the arc label {g_!r} has no clear seat "
+                                    "outside the arc — shorten it or drop it")
+            el_ = vc.text(at, g_, id=f"fl{k_}")
+            targets[k_] = "arc_ab"
+        elif k_ == "inner_arc":
+            targets[k_] = "arc_cd"
+            continue
+        else:
+            rhos = ([(r_i_px + r_px) / 2 + f_ * (r_px - r_i_px) * 0.18
+                     for f_ in (0.0, -1.0, 1.0, -2.0, 2.0)] if annular else
+                    [f_ * r_px for f_ in (0.38, 0.3, 0.46, 0.55, 0.62, 0.7,
+                                        0.78, 0.24)])
+            at = seat_in(g_, rhos, in_band if not annular else lambda b: True,
+                         das=(-0.3, -0.38, -0.22, -0.42, -0.14, 0.0)
+                         if annular and "inner_arc" in labs else None)
+            if at is None and annular:
+                at = seat_hole(g_)
+            if at is None:
+                raise TemplateError(f"{kind}: the angle label {g_!r} has no clear "
+                                    "seat inside the wedge or the hole — widen the "
+                                    "angle or r_px")
+            el_ = vc.text(at, g_, id=f"fl{k_}")
+            targets[k_] = "AOB"
+        elements.append(el_)
+        boxes.append(_text_box(g_, el_["at"]))
+    anchors = {"O": Oxy, "A": A, "B": B}
+    if annular:
+        anchors.update({"C": C, "D": D})
+
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    evv = "stem" if values == "stem" else "inferred"
+    if values == "figure":
+        add('describe "the printed givens are figure content — the question asks the '
+            'student to read them"', "inferred", "read-the-figure mode")
+    if values == "stem":
+        add(f"angle A O B = {th:g}", "stem", "the sector's centre angle")
+    else:
+        add(f'describe "the sector\'s centre angle is {th:g}° — figure content"',
+            "inferred", "the marked angle")
+    add(f"arc centre O from A to B", "inferred", "the sector's outer arc")
+    if annular:
+        add(f"arc centre O from C to D", "inferred", "the sector's inner arc")
+        add("collinear O C A", "inferred", "O, the inner end and the outer end of one "
+            "straight side lie on one radius")
+        add("collinear O D B", "inferred", "the other straight side is also a radius")
+        add('describe "an annular sector — the ring between two arcs of radii '
+            f'{r_i:g} and {R:g} sharing the centre O"', "inferred", "the figure's shape")
+    else:
+        add("equal OA OB", "inferred", "two radii of the same sector")
+        add('describe "the sector OAB is bounded by the radii OA, OB and the arc AB"',
+            "inferred", "the figure's shape")
+    if abs(th - 180.0) <= 1e-9:
+        add("on O AB", "inferred", "the radii lie on one straight line — a diameter")
+        add('describe "the sector is a semicircle"', "inferred", "180° at the centre")
+    elif abs(th - 90.0) <= 1e-9:
+        add('describe "the sector is a quadrant — a quarter of the circle"',
+            "inferred", "90° at the centre")
+    if shaded:
+        add('describe "the sector is shaded"', "inferred", "the filled region")
+    add(f'label "O" names O', "inferred", "the centre")
+    for nm in ("A", "B") + tuple(inner_letters):
+        add(f'label "{nm}" names {nm}', "inferred",
+            "an arc end" if nm in "AB" else "an inner arc end")
+    for nm in (("C", "D") if annular else ()):
+        if nm not in inner_letters:
+            add(f'describe "the inner arc end nearer {nm}\'s side of the ring is '
+                f'anchor {nm} — it is not lettered"', "inferred",
+                "a tight hole leaves no clear letter seat")
+    for k_, g_ in labs.items():
+        add(f'label "{g_}" names {targets[k_]}', evv, f"the {k_.replace('_', ' ')}'s glyph")
+    add(f"derive {th:g} / 360 = {_num_exact(th / 360.0)}", evv,
+        "the sector's fraction of the circle")
+    if annular and "radial" in numeric:
+        add(f"derive {R:g} - {r_i:g} = {_num_exact(radial_w)}", evv,
+            "the radial boundary is outer minus inner radius")
+    if "arc" in numeric and not annular:
+        add(f"derive {numeric['arc']:g} + 2 * {R:g} = "
+            f"{_num_exact(numeric['arc'] + 2 * R)}", evv, "the sector's perimeter")
+    if annular and {"arc", "inner_arc", "radial"} <= set(numeric):
+        add(f"derive {numeric['arc']:g} + {numeric['inner_arc']:g} + 2 * "
+            f"{_num_exact(radial_w)} = "
+            f"{_num_exact(numeric['arc'] + numeric['inner_arc'] + 2 * radial_w)}",
+            evv, "the annular sector's perimeter — outer arc, inner arc, two radial "
+                 "pieces")
+    absent = "tickMark parallelMark angleMark arrow dashed"
+    add(f"none {absent}{'' if shaded else ' shaded'}", "inferred",
+        "the outline and labels only")
+    shape = ("a semicircle" if abs(th - 180.0) <= 1e-9 else
+             "a quadrant" if abs(th - 90.0) <= 1e-9 else
+             "an annular sector" if annular else "a sector")
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=anchors, points=list(anchors),
+                  segments=(["OA", "OB"] if not annular else ["AC", "BD"]),
+                  claims=claims, ask=ask,
+                  title=title or f"A{'n annular' if annular else ''} sector",
+                  description=description or (
+                      f"{shape.capitalize()} bounded by two straight sides and "
+                      f"{'two arcs' if annular else 'an arc'}, with labelled "
+                      "givens."),
+                  scale=(f"drawn to scale: {vc.r2(r_px):g} units = {R:g} {unit}"),
+                  medium=medium)
+
+
+def build_cartesian_plot(*, figure_id, stem, ask=None, title=None, description=None,
+                         medium="english", x_range, y_range, x_step=None, y_step=None,
+                         x_name="x", y_name="y", regions=None, segments=None,
+                         points=None, guides=None, span_px=320.0, values="stem"):
+    """A signed Cartesian plane at any physical scale — the substrate for half-plane
+    inequality regions and large-axis piecewise graphs (distance–time, reading
+    graphs). The axes always cross at the origin (both ranges must contain 0);
+    each axis is its own linear map, so 0–40 hours can sit next to 0–300 km.
+
+      `x_range`/`y_range` = (lo, hi) finite bounds containing 0; `x_step`/`y_step`
+        are the tick-numeral steps (positive, must divide the range exactly —
+        else a step is chosen from 1·2·5 ×10ᵏ so numerals stay readable at any
+        physical span without one tick per unit).
+      `regions` = [{"boundary": {"x":k}|{"y":k}|{"m","c"}, "side": "left"|"right"
+        (x=k) or "below"|"above" (y=k / y=mx+c), "include": bool}] — each boundary
+        is drawn clipped to the plane, SOLID when included (points on it satisfy
+        the inequality) or DASHED when excluded; the shaded ink is the
+        INTERSECTION of all the given half-planes clipped to the drawn ranges.
+        An empty intersection refuses rather than shade nothing.
+      `segments` = [{"points": [(x,y)…≥2], "dashed"?: bool}] piecewise polylines
+        (a distance–time journey is one; a rest interval is just a flat piece).
+      `points` = {"P": (x,y)} — free signed dots, not required on any ink.
+      `guides` = [[(x,y),(x,y)…]] — dashed axis-aligned reading/projection and
+        gradient-step guides.
+    Every range, step, boundary coefficient, vertex and point coordinate is a
+    stem number unless `values="figure"` (read-the-graph mode)."""
+    kind = "cartesian_plot"
+    vc.reset_ids()
+    if values not in ("stem", "figure"):
+        raise TemplateError(f"{kind}: values must be 'stem' or 'figure'")
+    fig_mode = values == "figure"
+
+    def _rng(v, name):
+        if not (isinstance(v, (list, tuple)) and len(v) == 2 and all(
+                isinstance(t, (int, float)) and not isinstance(t, bool)
+                and math.isfinite(t) for t in v)):
+            raise TemplateError(f"{kind}: {name} is (lo, hi) finite numbers")
+        lo, hi = float(v[0]), float(v[1])
+        if not hi > lo:
+            raise TemplateError(f"{kind}: {name} needs lo < hi")
+        if not lo <= 0 <= hi:
+            raise TemplateError(f"{kind}: {name} must contain 0 — the axes cross "
+                                "at the origin")
+        return lo, hi
+
+    x0, x1 = _rng(x_range, "x_range")
+    y0, y1 = _rng(y_range, "y_range")
+    if not fig_mode:
+        require_stem_signed(stem, x0=x_range[0], x1=x_range[1],
+                            y0=y_range[0], y1=y_range[1])
+    if not isinstance(span_px, (int, float)) or isinstance(span_px, bool) or \
+            not 160 <= span_px <= 560:
+        raise TemplateError(f"{kind}: span_px must be 160–560")
+    for nm, v in (("x_name", x_name), ("y_name", y_name)):
+        if not (isinstance(v, str) and re.fullmatch(r"[a-zA-Z]{1,6}", v)):
+            raise TemplateError(f"{kind}: {nm} is a short letter token — got {v!r}")
+    upx = min(90.0, float(span_px) / (x1 - x0))
+    upy = min(90.0, float(span_px) / (y1 - y0))
+    ox = -x0 * upx
+    oy = y1 * upy
+    X = lambda v: ox + v * upx
+    Y = lambda v: oy - v * upy
+
+    def _step_for(span, step, name, upx_):
+        """The tick step: the caller's (validating it) or the smallest 1·2·5 ×10ᵏ
+        whose numerals seat readably."""
+        def fmt(v):
+            return f"{v:g}"
+        vals = []
+        if step is not None:
+            if not isinstance(step, (int, float)) or isinstance(step, bool) or \
+                    not math.isfinite(step) or step <= 0:
+                raise TemplateError(f"{kind}: {name} must be a positive number")
+            n = span / step
+            if abs(n - round(n)) > 1e-9 or n < 2 or n > 40:
+                raise TemplateError(f"{kind}: {name}={step:g} must divide the range "
+                                    f"into 2–40 whole ticks ({span:g}/{step:g} = {n:g})")
+            lo_, hi_ = (x0, x1) if name == "x_step" else (y0, y1)
+            first = math.ceil(lo_ / step - 1e-9) * step
+            last = math.floor(hi_ / step + 1e-9) * step
+            v_ = first
+            while v_ <= last + 1e-9:
+                vals.append(round(v_, 9))
+                v_ += step
+            widest = max(_label_width(fmt(v_), 15) for v_ in vals if v_ != 0) \
+                if any(v_ != 0 for v_ in vals) else 0.0
+            if step * upx_ < widest + 8.0:
+                raise TemplateError(f"{kind}: {name}={step:g} crowds its numerals at "
+                                    f"{step * upx_:.0f} px apart (need "
+                                    f"{widest + 8.0:.0f}) — raise {name}")
+            if not fig_mode:
+                require_stem_signed(stem, **{name: step})
+            return step, vals
+        for e in range(-4, 8):
+            for m_ in (1.0, 2.0, 5.0):
+                s = m_ * 10.0 ** e
+                n = span / s
+                if abs(n - round(n)) > 1e-9 or not (2 <= round(n) <= 10):
+                    continue
+                lo_, hi_ = (x0, x1) if name == "x_step" else (y0, y1)
+                first = math.ceil(lo_ / s - 1e-9) * s
+                last = math.floor(hi_ / s + 1e-9) * s
+                vals = []
+                v_ = first
+                while v_ <= last + 1e-9:
+                    vals.append(round(v_, 9))
+                    v_ += s
+                widest = max((_label_width(fmt(v_), 15) for v_ in vals if v_ != 0),
+                             default=0.0)
+                if s * upx_ >= widest + 8.0:
+                    return s, vals
+        raise TemplateError(f"{kind}: no readable tick step fits a {span:g}-unit "
+                            f"{name[:-5]} range — pass {name} explicitly or narrow "
+                            "the range")
+
+    sx, x_ticks = _step_for(x1 - x0, x_step, "x_step", upx)
+    sy, y_ticks = _step_for(y1 - y0, y_step, "y_step", upy)
+
+    reg_specs: list[tuple[str, tuple, str, bool]] = []
+    for i, rg in enumerate(regions or []):
+        if not isinstance(rg, dict) or not set(rg) <= {"boundary", "side", "include"} \
+                or "boundary" not in rg or "side" not in rg:
+            raise TemplateError(f"{kind}: region {i} is {{'boundary':…,'side':…,"
+                                "'include'?:bool}}")
+        bd, side = rg["boundary"], rg["side"]
+        inc = rg.get("include", True)
+        if not isinstance(inc, bool):
+            raise TemplateError(f"{kind}: region {i}'s include is a bool")
+        if not isinstance(bd, dict):
+            raise TemplateError(f"{kind}: region {i}'s boundary must be a dict")
+        if set(bd) == {"x"}:
+            k_ = bd["x"]
+            if not isinstance(k_, (int, float)) or isinstance(k_, bool) or \
+                    not math.isfinite(k_):
+                raise TemplateError(f"{kind}: boundary x must be a number")
+            if not x0 < k_ < x1:
+                raise TemplateError(f"{kind}: boundary x={k_:g} lies on or outside "
+                                    "the drawn x range — invisible or edge-ink")
+            if side not in ("left", "right"):
+                raise TemplateError(f"{kind}: a vertical boundary x=k shades "
+                                    "'left' or 'right', not {side!r}")
+            if not fig_mode:
+                require_stem_signed(stem, **{f"boundary x of region {i}": k_})
+            reg_specs.append(("x", (float(k_),), side, inc))
+        elif set(bd) == {"y"}:
+            k_ = bd["y"]
+            if not isinstance(k_, (int, float)) or isinstance(k_, bool) or \
+                    not math.isfinite(k_):
+                raise TemplateError(f"{kind}: boundary y must be a number")
+            if not y0 < k_ < y1:
+                raise TemplateError(f"{kind}: boundary y={k_:g} lies on or outside "
+                                    "the drawn y range")
+            if side not in ("below", "above"):
+                raise TemplateError(f"{kind}: a horizontal boundary y=k shades "
+                                    "'below' or 'above', not {side!r}")
+            if not fig_mode:
+                require_stem_signed(stem, **{f"boundary y of region {i}": k_})
+            reg_specs.append(("y", (float(k_),), side, inc))
+        elif set(bd) == {"m", "c"}:
+            m_, c_ = bd["m"], bd["c"]
+            if not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                       and math.isfinite(v) for v in (m_, c_)):
+                raise TemplateError(f"{kind}: boundary m and c must be numbers")
+            if side not in ("below", "above"):
+                raise TemplateError(f"{kind}: a diagonal boundary y=mx+c shades "
+                                    "'below' or 'above', not {side!r}")
+            if not fig_mode:
+                require_stem_signed(stem, **{f"boundary m of region {i}": m_,
+                                             f"boundary c of region {i}": c_})
+            reg_specs.append(("l", (float(m_), float(c_)), side, inc))
+        else:
+            raise TemplateError(f"{kind}: region {i}'s boundary is {{'x':k}}, "
+                                "{'y':k} or {'m','c'} — curved or other boundaries "
+                                "are not supported")
+
+    def _f(p, spec):
+        bk, pr, side, _i = spec
+        if bk == "x":
+            v = p[0] - pr[0]
+            return v if side == "left" else -v
+        if bk == "y":
+            v = p[1] - pr[0]
+            return v if side == "below" else -v
+        v = p[1] - pr[0] * p[0] - pr[1]
+        return v if side == "below" else -v
+
+    def _edge_pts(spec):
+        bk, pr, _s, _i = spec
+        if bk == "x":
+            return [(pr[0], y0), (pr[0], y1)]
+        if bk == "y":
+            return [(x0, pr[0]), (x1, pr[0])]
+        m_, c_ = pr
+        pts = []
+        for xx in (x0, x1):
+            yy = m_ * xx + c_
+            if y0 - 1e-9 <= yy <= y1 + 1e-9:
+                pts.append((xx, min(max(yy, y0), y1)))
+        if abs(m_) > 1e-12:
+            for yy in (y0, y1):
+                xx = (yy - c_) / m_
+                if x0 - 1e-9 <= xx <= x1 + 1e-9:
+                    pts.append((min(max(xx, x0), x1), yy))
+        out = []
+        for p in pts:
+            if all(math.hypot(p[0] - q[0], p[1] - q[1]) > 1e-6 for q in out):
+                out.append(p)
+        return out[:2]
+
+    shade_poly: list[XY] = []
+    bd_lines: list[tuple[XY, XY, bool, int]] = []
+    if reg_specs:
+        shade_poly = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        for spec in reg_specs:
+            clipped: list[XY] = []
+            for i in range(len(shade_poly)):
+                a_, b_ = shade_poly[i], shade_poly[(i + 1) % len(shade_poly)]
+                fa, fb = _f(a_, spec), _f(b_, spec)
+                if fa <= 1e-9:
+                    clipped.append(a_)
+                if (fa <= 1e-9) != (fb <= 1e-9):
+                    t_ = fa / (fa - fb)
+                    clipped.append((a_[0] + t_ * (b_[0] - a_[0]),
+                                    a_[1] + t_ * (b_[1] - a_[1])))
+            shade_poly = clipped
+            if not shade_poly:
+                break
+        if len(shade_poly) < 3:
+            raise TemplateError(f"{kind}: the {len(reg_specs)} half-planes do not "
+                                "overlap inside the drawn ranges — nothing honest "
+                                "to shade")
+        area = abs(sum(shade_poly[i][0] * shade_poly[(i + 1) % len(shade_poly)][1]
+                       - shade_poly[(i + 1) % len(shade_poly)][0] * shade_poly[i][1]
+                       for i in range(len(shade_poly)))) / 2
+        if area < 0.002 * (x1 - x0) * (y1 - y0):
+            raise TemplateError(f"{kind}: the shaded region is a sliver "
+                                f"({area:g} sq units) — illegible; re-pick the "
+                                "boundaries")
+        for i, spec in enumerate(reg_specs):
+            pts = _edge_pts(spec)
+            if len(pts) < 2:
+                raise TemplateError(f"{kind}: boundary {i} never enters the drawn "
+                                    "ranges — it would draw an invisible line")
+            if vc.dist(pts[0], pts[1]) < 6.0 / min(upx, upy):
+                raise TemplateError(f"{kind}: boundary {i} only nicks a corner of "
+                                    "the plane — it would read as a tick, not a line")
+            bd_lines.append((pts[0], pts[1], spec[3], i))
+
+    seg_specs: list[tuple[list[XY], bool]] = []
+    for i, sg in enumerate(segments or []):
+        if isinstance(sg, dict):
+            pts_ = sg.get("points")
+            dsh = bool(sg.get("dashed", False))
+            extra_ = set(sg) - {"points", "dashed"}
+        else:
+            pts_, dsh, extra_ = sg, False, set()
+        if extra_:
+            raise TemplateError(f"{kind}: segment {i} has unknown keys {sorted(extra_)}")
+        if not (isinstance(pts_, (list, tuple)) and 2 <= len(pts_) <= 24):
+            raise TemplateError(f"{kind}: segment {i} needs 2–24 ordered points")
+        pts2 = []
+        for j, p_ in enumerate(pts_):
+            if not (isinstance(p_, (list, tuple)) and len(p_) == 2 and all(
+                    isinstance(t, (int, float)) and not isinstance(t, bool)
+                    and math.isfinite(t) for t in p_)):
+                raise TemplateError(f"{kind}: segment {i} point {j} must be (x, y)")
+            xv, yv = float(p_[0]), float(p_[1])
+            if not (x0 <= xv <= x1 and y0 <= yv <= y1):
+                raise TemplateError(f"{kind}: segment {i} point ({xv:g},{yv:g}) is "
+                                    "outside the drawn ranges")
+            pts2.append((xv, yv))
+            if not fig_mode:
+                require_stem_signed(stem, **{f"segment {i} point {j} x": xv,
+                                             f"segment {i} point {j} y": yv})
+        if any(vc.dist(pts2[j], pts2[j + 1]) < 1e-9 for j in range(len(pts2) - 1)):
+            raise TemplateError(f"{kind}: segment {i} has a zero-length piece — "
+                                "drop the duplicated vertex")
+        seg_specs.append((pts2, dsh))
+    if len(seg_specs) > 6:
+        raise TemplateError(f"{kind}: at most 6 polylines on one plane")
+
+    marks: dict[str, tuple[float, float]] = {}
+    for nm, xy in (points or {}).items():
+        if not (isinstance(nm, str) and re.fullmatch(r"[A-Z]", nm)):
+            raise TemplateError(f"{kind}: point {nm!r} is not a single capital")
+        if not (isinstance(xy, (list, tuple)) and len(xy) == 2 and all(
+                isinstance(t, (int, float)) and not isinstance(t, bool)
+                and math.isfinite(t) for t in xy)):
+            raise TemplateError(f"{kind}: {nm} needs (x, y)")
+        xv, yv = float(xy[0]), float(xy[1])
+        if not (x0 <= xv <= x1 and y0 <= yv <= y1):
+            raise TemplateError(f"{kind}: {nm} ({xv:g},{yv:g}) is outside the "
+                                "drawn ranges")
+        if not fig_mode:
+            require_stem_signed(stem, **{f"{nm} x": xv, f"{nm} y": yv})
+        marks[nm] = (xv, yv)
+    if len(marks) > 10:
+        raise TemplateError(f"{kind}: at most 10 marked points")
+
+    guide_specs: list[list[XY]] = []
+    for i, gd in enumerate(guides or []):
+        pts_ = gd.get("points") if isinstance(gd, dict) else gd
+        if not (isinstance(pts_, (list, tuple)) and len(pts_) >= 2):
+            raise TemplateError(f"{kind}: guide {i} needs ≥2 points")
+        pts2 = []
+        for j, p_ in enumerate(pts_):
+            if not (isinstance(p_, (list, tuple)) and len(p_) == 2 and all(
+                    isinstance(t, (int, float)) and not isinstance(t, bool)
+                    and math.isfinite(t) for t in p_)):
+                raise TemplateError(f"{kind}: guide {i} point {j} must be (x, y)")
+            xv, yv = float(p_[0]), float(p_[1])
+            if not (x0 <= xv <= x1 and y0 <= yv <= y1):
+                raise TemplateError(f"{kind}: guide {i} point ({xv:g},{yv:g}) is "
+                                    "outside the drawn ranges")
+            pts2.append((xv, yv))
+            if not fig_mode:
+                require_stem_signed(stem, **{f"guide {i} point {j} x": xv,
+                                             f"guide {i} point {j} y": yv})
+        for j in range(len(pts2) - 1):
+            if abs(pts2[j][0] - pts2[j + 1][0]) > 1e-9 and \
+                    abs(pts2[j][1] - pts2[j + 1][1]) > 1e-9:
+                raise TemplateError(f"{kind}: guide {i} piece {j} is diagonal — "
+                                    "guides are axis-aligned projections/steps")
+            if vc.dist(pts2[j], pts2[j + 1]) < 1e-9:
+                raise TemplateError(f"{kind}: guide {i} has a zero-length piece")
+        guide_specs.append(pts2)
+    if len(guide_specs) > 8:
+        raise TemplateError(f"{kind}: at most 8 guides")
+
+    numeral_texts = ([f"{v:g}" for v in x_ticks] + [f"{v:g}" for v in y_ticks] +
+                     ["0", x_name, y_name] + list(marks))
+    _check_label_texts([], numeral_texts, medium)
+
+    elements: list[dict] = []
+    if shade_poly:
+        elements.append(vc.polygon([(X(p[0]), Y(p[1])) for p in shade_poly],
+                                   fill=vc.SHADE, stroke_width=0, id="shade"))
+    elements.append({"id": "axX", "type": "arrow", "head": "end",
+                     "points": [[X(x0) - 18, Y(0)], [X(x1) + 26, Y(0)]]})
+    elements.append({"id": "axY", "type": "arrow", "head": "end",
+                     "points": [[X(0), Y(y0) + 18], [X(0), Y(y1) - 26]]})
+    for v_ in x_ticks:
+        if v_ == 0:
+            continue
+        elements.append(vc.line((X(v_), Y(0) - 5), (X(v_), Y(0) + 5),
+                                id=f"tx{len(elements)}", width=1.2))
+    for v_ in y_ticks:
+        if v_ == 0:
+            continue
+        elements.append(vc.line((X(0) - 5, Y(v_)), (X(0) + 5, Y(v_)),
+                                id=f"ty{len(elements)}", width=1.2))
+    dashed_els: list[str] = []
+    for a_, b_, inc, i in bd_lines:
+        elements.append(vc.line((X(a_[0]), Y(a_[1])), (X(b_[0]), Y(b_[1])),
+                                id=f"bd{i}", dashed=not inc))
+        if not inc:
+            dashed_els.append(f"bd{i}")
+    for i, (pts2, dsh) in enumerate(seg_specs):
+        elements.append(vc.polyline([(X(p[0]), Y(p[1])) for p in pts2],
+                                    id=f"seg{i}", dashed=dsh))
+        if dsh:
+            dashed_els.append(f"seg{i}")
+    for i, pts2 in enumerate(guide_specs):
+        elements.append(vc.polyline([(X(p[0]), Y(p[1])) for p in pts2],
+                                    id=f"gd{i}", dashed=True))
+        dashed_els.append(f"gd{i}")
+    P: dict[str, XY] = {"L": (X(x0), Y(0)), "R": (X(x1), Y(0)),
+                        "B": (X(0), Y(y0)), "U": (X(0), Y(y1))}
+    for nm, (xv, yv) in marks.items():
+        P[nm] = (X(xv), Y(yv))
+        elements.append({"id": f"pt{nm}", "type": "point", "at": vc.P(P[nm]),
+                         "r": 3.5})
+    num_boxes: list[tuple] = []
+    n_dy = 28.0 if y1 > 0 else -28.0
+    n_end = "end" if x1 > 0 else "start"
+    n_dx = -18.0 if x1 > 0 else 18.0
+    zstrokes = stroke_segments([e for e in elements
+                                if e["type"] not in ("text", "point")])
+    z_need = _clearance_units(STROKE_PX + SLACK_STROKE + 0.5, span_px + 120.0)
+
+    def _seat_num(glyph, cands):
+        for cx_, cy_, al_ in cands:
+            el = vc.text((cx_, cy_), glyph, size=15, align=al_)
+            box = label_boxes([el], 15)[0][1:]
+            if min((_seg_rect_dist(a, b, box) - w / 2 for a, b, w in zstrokes),
+                   default=99) < z_need:
+                continue
+            if any(_rect_gap(box, nb) < 6.5 for nb in num_boxes):
+                continue
+            return el, box
+        return None
+
+    z_at = None
+    for dx_, dy_ in ((-26.0, n_dy), (26.0, n_dy), (-26.0, -n_dy), (26.0, -n_dy),
+                     (-26.0, 1.4 * n_dy), (26.0, -1.4 * n_dy), (0.0, 1.8 * n_dy)):
+        at_ = (X(0) + dx_, Y(0) + dy_)
+        box = _text_box("0", at_, 15)
+        if min((_seg_rect_dist(a, b, box) - w / 2 for a, b, w in zstrokes),
+               default=99) >= z_need:
+            z_at = at_
+            break
+    if z_at is None:
+        raise TemplateError(f"{kind}: the origin numeral has no clear seat — "
+                            "widen the step or the ranges")
+    el = vc.text(z_at, "0", size=15, id="lbo")
+    elements.append(el)
+    num_boxes.append(_text_box("0", z_at, 15))
+
+    for v_ in x_ticks:
+        if v_ == 0:
+            continue
+        g_ = f"{v_:g}"
+        cands = [(X(v_) + dx_, Y(0) + dy_, "middle")
+                 for dy_ in (n_dy, 1.3 * n_dy, 1.6 * n_dy, -n_dy, -1.3 * n_dy)
+                 for dx_ in (0.0, -8.0, 8.0, -16.0, 16.0, -24.0, 24.0)]
+        got = _seat_num(g_, cands)
+        if got is None:
+            raise TemplateError(f"{kind}: the numeral {g_} has no clear seat — "
+                                "a boundary or line crosses every numeral row; "
+                                "widen the step or the ranges")
+        el, box = got
+        el["id"] = f"nx{len(elements)}"
+        elements.append(el)
+        num_boxes.append(box)
+    for v_ in y_ticks:
+        if v_ == 0:
+            continue
+        g_ = f"{v_:g}"
+        cands = [(X(0) + dx_, Y(v_) + dy_, n_end)
+                 for dx_ in (n_dx, 1.7 * n_dx, 2.4 * n_dx, -n_dx, -1.7 * n_dx)
+                 for dy_ in (0.0, 9.0, -9.0, 27.0, -27.0, 36.0, -36.0)]
+        got = _seat_num(g_, cands)
+        if got is None:
+            raise TemplateError(f"{kind}: the numeral {g_} has no clear seat — "
+                                "widen the step or the ranges")
+        el, box = got
+        el["id"] = f"ny{len(elements)}"
+        elements.append(el)
+        num_boxes.append(box)
+    for nm_, eid, cands_ in ((x_name, "lbx",
+                              [(X(x1) + 47, Y(0) + 2), (X(x1) + 47, Y(0) - 4),
+                               (X(x1) + 50, Y(0) + 8), (X(x1) + 44, Y(0) + 18),
+                               (X(x1) + 58, Y(0) - 10), (X(x1) + 44, Y(0) + 24)]),
+                             (y_name, "lby",
+                              [(X(0) + 22, Y(y1) - 26), (X(0) - 24, Y(y1) - 26),
+                               (X(0) + 21, Y(y1) - 34), (X(0) - 21, Y(y1) - 34),
+                               (X(0) + 16, Y(y1) - 40), (X(0) + 36, Y(y1) - 40)])):
+        el = None
+        for at_ in cands_:
+            e = vc.text(at_, nm_, size=15)
+            box = label_boxes([e], 15)[0][1:]
+            if min((_seg_rect_dist(a, b, box) - w / 2 for a, b, w in zstrokes),
+                   default=99) >= z_need:
+                el = e
+                break
+        if el is None:
+            raise TemplateError(f"{kind}: the axis name {nm_!r} has no clear "
+                                "seat — shorten the ranges")
+        el["id"] = eid
+        elements.append(el)
+    for nm in marks:
+        elements.append(_float_label(f"lb{nm}", nm, P[nm]))
+
+    def _eq_words(spec):
+        bk, pr, side, inc = spec
+        if bk == "x":
+            rel = ("≤" if inc else "<") if side == "left" else \
+                ("≥" if inc else ">")
+            return f"x {rel} {pr[0]:g}", f"the vertical line x = {pr[0]:g}"
+        if bk == "y":
+            rel = ("≤" if inc else "<") if side == "below" else \
+                ("≥" if inc else ">")
+            return f"y {rel} {pr[0]:g}", f"the horizontal line y = {pr[0]:g}"
+        m_, c_ = pr
+        coeff = "" if m_ == 1 else "−" if m_ == -1 else f"{m_:g}"
+        eq = f"{coeff}x" + (f" {'+' if c_ > 0 else '−'} {abs(c_):g}" if c_ else "")
+        rel = "≤" if inc else "<"
+        if side == "above":
+            rel = "≥" if inc else ">"
+        return f"y {rel} {eq}", f"the line y = {eq}"
+
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    evv = "inferred" if fig_mode else "stem"
+    add(f"axis LR from {x0:g} to {x1:g}", evv, "the x axis range")
+    add(f"axis BU from {y0:g} to {y1:g}", evv, "the y axis range")
+    add(f"tick LR step {sx:g}",
+        "stem" if (x_step is not None and not fig_mode) else "inferred",
+        f"numerals every {sx:g} x-units")
+    add(f"tick BU step {sy:g}",
+        "stem" if (y_step is not None and not fig_mode) else "inferred",
+        f"numerals every {sy:g} y-units")
+    if fig_mode:
+        add('describe "the axis numerals and drawn geometry are figure content — '
+            'the student reads the graph"', "inferred",
+            "the read-the-figure mode (values=figure)")
+    for i, spec in enumerate(reg_specs):
+        ineq, eqw = _eq_words(spec)
+        inc = spec[3]
+        edge = ("solid — points on it satisfy the inequality" if inc else
+                "dashed — points on it do NOT satisfy the inequality")
+        add(f'describe "the boundary {eqw} is drawn {edge}"', evv,
+            f"the boundary of {ineq}")
+        add(f'describe "the half-plane {ineq} is on the {spec[2]} side of its '
+            'boundary"', evv, "the inequality's shaded side")
+        if not inc:
+            add(f"paint bd{i} dashed", "inferred",
+                "an excluded (strict) boundary is drawn dashed")
+    if reg_specs:
+        words = " and ".join(_eq_words(s)[0] for s in reg_specs)
+        add(f'describe "the shaded region is where {words} all hold"', "inferred",
+            "the intersection of the half-planes, clipped to the plane")
+    for i, (pts2, dsh) in enumerate(seg_specs):
+        thr = ", ".join(f"({p[0]:g}, {p[1]:g})" for p in pts2)
+        add(f'describe "a piecewise line passes through {thr}"', evv,
+            f"polyline {i} ({len(pts2)} vertices)" + (" — drawn dashed" if dsh else ""))
+        if dsh:
+            add(f"paint seg{i} dashed", "inferred", "a dashed polyline")
+    for i, pts2 in enumerate(guide_specs):
+        thr = ", ".join(f"({p[0]:g}, {p[1]:g})" for p in pts2)
+        add(f'describe "a dashed guide line runs through {thr}"', "inferred",
+            "a reading/projection guide — annotation, not data")
+        add(f"paint gd{i} dashed", "inferred", "a dashed guide")
+    for nm, (xv, yv) in marks.items():
+        for val_, ax_ in ((xv, "LR"), (yv, "BU")):
+            if fig_mode or val_ >= 0:
+                add(f"reads {nm} {val_:g} on {ax_}", evv,
+                    f"{nm}'s {'x' if ax_ == 'LR' else 'y'} coordinate")
+            else:
+                add(f'describe "{nm} is marked at '
+                    f'{"x" if ax_ == "LR" else "y"} = {val_:g}"', evv,
+                    "a signed coordinate — the audit's stem-number set is "
+                    "unsigned, so a negative reads value is described, not read")
+        add(f'label "{nm}" names {nm}', "inferred", "a marked point")
+        extra = ""
+        if reg_specs:
+            fvs = [_f((xv, yv), s) for s in reg_specs]
+            if any(abs(fv) <= 1e-9 for fv in fvs):
+                idx = next(i for i, fv in enumerate(fvs) if abs(fv) <= 1e-9)
+                inc = reg_specs[idx][3]
+                extra = (" — it lies ON boundary " +
+                         _eq_words(reg_specs[idx])[1] +
+                         (" (included)" if inc else " (EXCLUDED — the boundary "
+                          "is dashed)"))
+            elif all(fv <= 0 for fv in fvs):
+                extra = " — it lies inside the shaded region"
+            else:
+                extra = " — it lies outside the shaded region"
+        add(f'describe "{nm} is marked at ({xv:g}, {yv:g}){extra}"', "inferred",
+            "the drawn dot")
+    num_claims: set[str] = set()
+    add('label "0" names 0', "inferred", "the origin numeral")
+    num_claims.add("0")
+    for v_ in x_ticks:
+        g_ = f"{v_:g}"
+        if v_ != 0 and g_ not in num_claims:
+            num_claims.add(g_)
+            add(f'label "{g_}" names {g_}', "inferred", "an x-axis numeral")
+    for v_ in y_ticks:
+        g_ = f"{v_:g}"
+        if v_ != 0 and g_ not in num_claims:
+            num_claims.add(g_)
+            add(f'label "{g_}" names {g_}', "inferred", "a y-axis numeral")
+    add(f"derive {x1:g} - ({x0:g}) = {_num_exact(x1 - x0)}", "inferred",
+        "the x-range span")
+    add(f"derive {y1:g} - ({y0:g}) = {_num_exact(y1 - y0)}", "inferred",
+        "the y-range span")
+    add(f'label "{x_name}" names LR', "inferred", "the x axis letter")
+    add(f'label "{y_name}" names BU', "inferred", "the y axis letter")
+    absent = ["tickMark", "parallelMark", "angleMark"]
+    if not dashed_els:
+        absent.append("dashed")
+    if not reg_specs:
+        absent.append("shaded")
+    add("none " + " ".join(absent), "inferred",
+        "axes, ticks, boundaries, lines, guides, shading and marked points only")
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=dict(P), points=list(P), segments=["LR", "BU"],
+                  claims=claims, ask=ask,
+                  title=title or ("An inequality region" if reg_specs else
+                                  "A graph on signed axes"),
+                  budget=len(elements) if len(elements) > 32 else None,
+                  departures=([f"{len(elements)} elements — tick numerals and "
+                               "guides at the physical scale are the honest "
+                               "drawing (S6b §3.4)"] if len(elements) > 32
+                              else None),
+                  description=description or (
+                      "Numbered signed axes" +
+                      (f" with the region "
+                       f"{' and '.join(_eq_words(s)[0] for s in reg_specs)} shaded."
+                       if reg_specs else "") +
+                      (f" {len(seg_specs)} piecewise line"
+                       f"{'s' if len(seg_specs) > 1 else ''}." if seg_specs else "") +
+                      (f" {', '.join(marks)} marked." if marks else "")),
+                  scale="to scale — each axis is a true linear map with its own unit",
+                  medium=medium)
+
+
 def _validate_numeric_inputs(fn):
     from functools import wraps
     import inspect
     signature = inspect.signature(fn)
     numeric = set("angles points bounds freqs cum_freqs curve curves x_range y_range dots upper lower ticks arcs legs_px leg_px angle at_deg extra_base".split())
-    positive = set("scale_px unit_px base_px r_px cell_px gap step v_max r radius base tri_height length height cell r1 r2 d op".split())
+    positive = set("scale_px unit_px base_px r_px cell_px gap step v_max r radius base tri_height length height cell r1 r2 d op inner".split())
     symbolic = set("dims sides legs radius base tri_height".split())
 
     def check(value, allow_letters=False):
@@ -11592,7 +13086,7 @@ for _builder_name in (
         "solid", "function_graph", "inequality_line", "histogram", "tree_diagram",
         "pythagoras_squares", "ogive", "outcome_grid", "two_circle_tangents",
         "construction", "inscribed_circle", "venn_regions", "solid_composite",
-        "net", "marked_geometry"):
+        "net", "marked_geometry", "pie_chart", "sector", "cartesian_plot"):
     _name = "build_" + _builder_name
     globals()[_name] = _validate_numeric_inputs(globals()[_name])
 
@@ -11610,7 +13104,8 @@ BUILDERS = {fn.__name__[6:]: fn for fn in
              build_histogram, build_tree_diagram, build_pythagoras_squares,
              build_ogive, build_outcome_grid, build_two_circle_tangents,
              build_construction, build_inscribed_circle, build_venn_regions,
-             build_solid_composite, build_net, build_marked_geometry)}
+             build_solid_composite, build_net, build_marked_geometry,
+             build_pie_chart, build_sector, build_cartesian_plot)}
 
 CATALOGUE = """
 template            stem-checked numbers                          inputs
@@ -11652,7 +13147,7 @@ outcome_grid        none — the marked cells are figure content                
 two_circle_tangents r1, r2, d                                                r1, r2, d (centre distance), mode="direct" (d>|r1−r2|)|"transverse" (d>r1+r2) — contacts, radii and right marks computed
 construction        length | angle | angles (per step)                       step=perp_bisector|angle_bisector|perp_at|perp_from|circumcircle|incircle|excircle|tangent_at|tangents_from, length, angle, angles={A,B,C}, base_px?, r_px?, at_deg?, op?, stage="completed"|"setup" — dashed compass arcs drawn (setup draws the givens only)
 inscribed_circle    angles + numeric tangent labels unless values="figure"    angles={A,B,C}, labels={"AF":"4 cm"|"x"…}, base_px?, values="stem"|"figure" — figure-mode angles are layout choices; only printed tangent lengths are read
-venn_regions        numeric region tokens unless values="figure"                   sets 2–3, layout="overlap"|"chain"|"nested"|"disjoint", regions like venn_sets, universal="U"|None, shade=[region keys], r — non-standard layouts and region shading (venn_sets stays the standard builder)
+venn_regions        numeric region tokens unless values="figure"                   sets 1–3 (1 set = a disc + complement in the frame), layout="overlap"|"chain"|"nested"|"disjoint", regions like venn_sets, universal="U"|None, shade=[region keys incl. ""], r — non-standard layouts and region shading (venn_sets stays the standard builder)
 solid_composite     numeric dims unless values="figure"                      shape=sphere_in_cylinder|cone_vessel, dims per shape, unit, scale_px?, values="stem"|"figure" — hidden edges dashed
 net                 numeric dims unless values="figure"                      shape="square_pyramid", base, tri_height?, unit, cell_px?, values="stem"|"figure" — square with four folded-out triangles
 marked_geometry     every numeric side/angle/length label (skipped when values="figure")
@@ -11664,6 +13159,21 @@ marked_geometry     every numeric side/angle/length label (skipped when values="
                     arcs/angle_labels or marks=[{at,arms,arcs,label,reflex?}],
                     labels={seg:"6 cm"|"x"}, values="stem"|"figure", unit, base_px?
                     — all marks re-validated against the computed geometry
+pie_chart           every count/angle when values="stem"              sectors=[{"label","count"}|{"label","angle"}] 2–10 (angles sum 360; label = 1–8 Latin letters, O/T reserved), start?, angle_labels (whole degrees only), arrow={"deg"} (spinner needle, not data, never on a cut), r_px? — a glyph may repeat across sectors (one claim binds it); sectors <8° refuse
+sector              radius, angle, inner; every numeric label when values="stem"
+                    angle (0–360 excl: 180=semicircle, 90=quadrant), radius, inner? (annular sector),
+                    labels={"radius"|"radius_b"|"arc"|"angle"} or {"radial"|"radial_b"|"arc"|"inner_arc"|"angle"},
+                    unit, start?, shaded, r_px?, values="stem"|"figure" — a numeric label restates its own
+                    boundary within 0.5%; composites with other shapes are a hand-draw exception
+cartesian_plot      ranges + explicit steps + every boundary/vertex/point coord when values="stem"
+                    x_range, y_range (both contain 0), x_step?, y_step? (must divide the range; else
+                    a 1·2·5×10ᵏ step is auto-picked for readability), x_name?, y_name?,
+                    regions=[{"boundary":{"x":k}|{"y":k}|{"m","c"}, "side","include"}] — solid/dashed
+                    half-plane boundaries, shade = the clipped intersection; segments=[{"points":[…],
+                    "dashed"?}] piecewise lines (distance–time); points={P:(x,y)}; guides=[[…]]
+                    dashed axis-aligned — empty region, off-plane boundary, sliver and curved
+                    boundaries all refuse; span_px?, values="stem"|"figure"
+venn_regions        (addition) 1 set allowed — one disc in the universal frame, region "" = the complement, shade=[""] works
 """.strip()
 
 SELF_TEST = [
@@ -12089,6 +13599,87 @@ SELF_TEST = [
      "ask": [["a", "the intersection"]],
      "curves": [{"m": 1, "c": 0}, {"m": -1, "c": 4}], "x_range": [-2, 4],
      "points": {"P": [2, 2]}, "grid": False, "unit_px": 40},
+    {"template": "pie_chart", "figure_id": "selftest-pie",
+     "stem": "The pie chart shows how 40 pupils travel: 10 walk, 20 cycle and "
+             "10 come by bus. (a) Which group is largest?",
+     "ask": [["a", "the largest group"]],
+     "sectors": [{"label": "W", "count": 10}, {"label": "C", "count": 20},
+                 {"label": "B", "count": 10}]},
+    {"template": "pie_chart", "figure_id": "selftest-spin",
+     "stem": "A spinner is divided into three sectors of 90, 120 and 150 degrees. "
+             "(a) Which outcome is most likely?",
+     "ask": [["a", "the likeliest outcome"]],
+     "sectors": [{"label": "A", "angle": 90}, {"label": "B", "angle": 120},
+                 {"label": "A", "angle": 150}],
+     "angle_labels": True, "arrow": {"deg": 30}},
+    {"template": "sector", "figure_id": "selftest-sec",
+     "stem": "A sector of a circle has radius 7 cm and an angle of 60 degrees "
+             "at the centre; its arc is marked l. (a) Find the arc length.",
+     "ask": [["a", "the arc length"]],
+     "angle": 60, "radius": 7,
+     "labels": {"radius": "7 cm", "angle": "60°", "arc": "l"}},
+    {"template": "sector", "figure_id": "selftest-semi",
+     "stem": "A semicircle — a sector of 180 degrees — has radius 7 cm and its "
+             "arc is 22 cm. (a) Find the perimeter.",
+     "ask": [["a", "the perimeter"]],
+     "angle": 180, "radius": 7,
+     "labels": {"radius": "7 cm", "arc": "22 cm"}},
+    {"template": "sector", "figure_id": "selftest-annu",
+     "stem": "An annular sector has outer radius 14 cm, inner radius 9 cm and "
+             "an angle of 60 degrees; its radial sides are 5 cm. "
+             "(a) Find its perimeter.",
+     "ask": [["a", "the perimeter"]],
+     "angle": 60, "radius": 14, "inner": 9,
+     "labels": {"radial": "5 cm", "arc": "x", "inner_arc": "y"}},
+    {"template": "circle_angles", "figure_id": "selftest-cafoot",
+     "stem": "O is the centre of a circle through A and B. The foot of the "
+             "perpendicular from O to chord AB is F, and AF = 4 cm and AB = 8 cm. "
+             "(a) Find OF.",
+     "ask": [["a", "the centre-to-chord distance"]],
+     "points": {"A": 160, "B": 20}, "chords": [["A", "B"]],
+     "feet": {"F": "AB"}, "lengths": {"AB": 8},
+     "labels": {"AF": "4 cm"}, "ticks": {"AF": 1, "FB": 1}},
+    {"template": "circle_angles", "figure_id": "selftest-cax",
+     "stem": "Chords AD and BC of a circle meet at X inside it. "
+             "(a) Name the equal-angle pairs.",
+     "ask": [["a", "the equal angles"]],
+     "points": {"A": 150, "B": 30, "C": 200, "D": 320},
+     "intersections": {"X": ("AD", "BC")}, "joins": [("X", "O")]},
+    {"template": "venn_regions", "figure_id": "selftest-vcomp",
+     "stem": "In a universal set U, set A has 12 members and 8 elements lie "
+             "outside A. (a) How many elements are in U?",
+     "ask": [["a", "n(U)"]],
+     "sets": ["A"], "regions": {"A": 12, "": 8}, "universal": "U"},
+    {"template": "venn_regions", "figure_id": "selftest-vcsh",
+     "stem": "Shade the complement of set A inside the universal set U. "
+             "(a) Describe the shaded region.",
+     "ask": [["a", "the shaded region"]],
+     "sets": ["A"], "shade": [""], "universal": "U"},
+    {"template": "cartesian_plot", "figure_id": "selftest-cineq",
+     "stem": "Show the region where y <= 2x + 2 and y >= -1, for x from -6 to 6 "
+             "and y from -6 to 6. (a) Is the boundary included?",
+     "ask": [["a", "the inclusion"]],
+     "x_range": [-6, 6], "y_range": [-6, 6],
+     "regions": [{"boundary": {"m": 2, "c": 2}, "side": "below", "include": True},
+                 {"boundary": {"y": -1}, "side": "above", "include": False}]},
+    {"template": "cartesian_plot", "figure_id": "selftest-cdt",
+     "stem": "A journey: 0 km at 0 h, 80 km at 2 h, rests at 80 km until 4 h, "
+             "then 120 km at 6 h. Time runs 0 to 6 h and distance 0 to 150 km. "
+             "(a) Find the fastest leg.",
+     "ask": [["a", "the fastest leg"]],
+     "x_name": "t", "y_name": "d",
+     "x_range": [0, 6], "y_range": [0, 150],
+     "segments": [{"points": [[0, 0], [2, 80], [4, 80], [6, 120]]}],
+     "points": {"P": [2, 80]},
+     "guides": [[[4, 0], [4, 80]]]},
+    {"template": "cartesian_plot", "figure_id": "selftest-cx3",
+     "stem": "Shade the region x >= 3 with the boundary x = 3 excluded, for "
+             "x from -4 to 8 and y from -4 to 8, and mark P at (-2, 4). "
+             "(a) Is P in the region?",
+     "ask": [["a", "P's membership"]],
+     "x_range": [-4, 8], "y_range": [-4, 8],
+     "regions": [{"boundary": {"x": 3}, "side": "right", "include": False}],
+     "points": {"P": [-2, 4]}},
 ]
 
 
@@ -12116,7 +13707,8 @@ READING_SELF_TEST = [dict(next(s for s in SELF_TEST if s["template"] == kind),
                      for kind in ("right_triangle", "circle_angles", "triangle_parallel",
                                   "parallel_area", "solid", "function_graph", "inequality_line",
                                   "histogram", "tree_diagram", "pythagoras_squares", "ogive",
-                                  "outcome_grid", "marked_geometry")]
+                                  "outcome_grid", "marked_geometry", "pie_chart", "sector",
+                                  "cartesian_plot")]
 
 
 def _self_test() -> int:

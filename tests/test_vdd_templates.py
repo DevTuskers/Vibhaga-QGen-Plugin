@@ -3332,6 +3332,20 @@ class ByteIdentity(unittest.TestCase):
         "selftest-hist--5-stem": "136ee5a2bb10a0143e98d8543a8bb3d98724c92a17783182ee014a9a190fa54d",
         "selftest-hist--5-figure": "8731b5b8d556444b1dbf6bd4fed29e1d86c26c74f04daeb729027d07773b91ea",
         "selftest-prism-height": "122a1a81b93462417c84fa88c02dcb08d28b7456ec4bd368b25b19c791cc48b2",
+        # G10 gaps 1-2 — generated when pie_chart (incl. the spinner mode) and the
+        # standalone sector / annular-sector templates landed
+        "selftest-pie": "b59c4975513f626234b9dbe8cab5c56c6e8f3eb504468dc4548eefbd9ce1375c",
+        "selftest-spin": "0bb6817a0080a7f4e1edd909e52e6c7ceef578eefea769ac42a98ccd818a088f",
+        "selftest-sec": "06785c0d8bd89093b4e18b9d57578fdc3720c1c7c473ad1f46facdd23e0dc7d4",
+        "selftest-semi": "494b7ee495b133e9bd432c72ac2a3d9339a76897176bf69e31752ca13995bd7b",
+        "selftest-annu": "3ee6167d59da66858a25ebdf64e94403700e49aecc69a5c1523fc2f6a9a0fe07",
+        "selftest-cafoot": "2be66b934f230d3331d47c61b9fd41d68b91a75fc91fccc0c52ebf276df66c14",
+        "selftest-cax": "1c72bd9ecf8b07fa65275e9bb896c5cfd9505319a105a26d7217ca3e49516ec9",
+        "selftest-vcomp": "cd596042f266b98ac93e2bcac4db2c648bb72ade19e03bc8660d9b4bf76bbbf6",
+        "selftest-vcsh": "1dd9fb115595d103831b0c3174b0806621499982e6de559e329346b700535114",
+        "selftest-cineq": "2345148a369d6fb6b6abee8d23f401f2256157ffa4480366c0573e06d51ba8f8",
+        "selftest-cdt": "a551da11d3685c8b04598c68165873f84b33857517cd17ddc9eb21239db418c9",
+        "selftest-cx3": "a31c29c147963f62d1ec5827dcc570cc25cb97a3706bc1a7c681930a10c8a3f9",
     }
 
     def test_self_test_outputs_unchanged(self):
@@ -3454,6 +3468,360 @@ class G11ContractTests(unittest.TestCase):
             sides={"AB": 8}, angles={"A": 60, "B": 60, "C": 60},
             ticks={"AB": 1, "BC": 1}, labels={"AB": "8 cm"})
         self.assertIn("ABC", b.claims)
+
+
+class G10ContractTests(unittest.TestCase):
+    """Regressions for the bounded G10 gap-1/2 families — pie_chart (incl. the
+    spinner mode) and the standalone sector / annular-sector."""
+
+    PIE_STEM = ("The pie chart shows how 40 pupils travel: 10 walk, 20 cycle "
+                "and 10 come by bus. (a) Which group is largest?")
+
+    def test_pie_counts_drive_angles(self):
+        b = vt.build_pie_chart(figure_id="g10-pie", stem=self.PIE_STEM,
+                               ask=[["a", "the largest group"]],
+                               sectors=[{"label": "W", "count": 10},
+                                        {"label": "C", "count": 20},
+                                        {"label": "B", "count": 10}])
+        self.assertIn("derive 10 + 20 + 10 = 40", b.claims)
+        self.assertIn("20 * 360 / 40 = 180", b.claims)
+
+    def test_pie_count_not_in_stem_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_pie_chart(figure_id="g10-piebad", stem=self.PIE_STEM,
+                               sectors=[{"label": "W", "count": 12},
+                                        {"label": "C", "count": 20},
+                                        {"label": "B", "count": 8}])
+
+    def test_pie_mixed_keys_refuse(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_pie_chart(figure_id="g10-piemix", stem=self.PIE_STEM,
+                               sectors=[{"label": "W", "count": 10},
+                                        {"label": "C", "angle": 180},
+                                        {"label": "B", "count": 10}])
+
+    def test_pie_angle_sum_not_360_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_pie_chart(
+                figure_id="g10-piesum",
+                stem="Sectors of 90, 120 and 100 degrees.",
+                sectors=[{"label": "A", "angle": 90}, {"label": "B", "angle": 120},
+                         {"label": "C", "angle": 100}])
+
+    def test_pie_thin_sector_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_pie_chart(
+                figure_id="g10-piethin",
+                stem="Sectors of 5, 175 and 180 degrees.",
+                sectors=[{"label": "A", "angle": 5}, {"label": "B", "angle": 175},
+                         {"label": "C", "angle": 180}])
+
+    def test_pie_spinner_repeated_label_and_arrow(self):
+        b = vt.build_pie_chart(
+            figure_id="g10-spin",
+            stem="A spinner has sectors of 90, 120 and 150 degrees. "
+                 "(a) Which outcome is most likely?",
+            ask=[["a", "the likeliest outcome"]],
+            sectors=[{"label": "A", "angle": 90}, {"label": "B", "angle": 120},
+                     {"label": "A", "angle": 150}],
+            angle_labels=True, arrow={"deg": 30})
+        self.assertEqual(b.claims.count('label "A" names'), 1)
+        self.assertIn("the arrow is the spinner needle — it is not a sector "
+                      "boundary", b.claims)
+        self.assertIn("arrow O -> T", b.claims)
+
+    def test_pie_figure_mode_reads_off_the_figure(self):
+        b = vt.build_pie_chart(
+            figure_id="g10-piefig", stem="Read the marked figure.",
+            values="figure",
+            sectors=[{"label": "W", "count": 10}, {"label": "C", "count": 20},
+                     {"label": "B", "count": 10}])
+        self.assertIn("read-the-figure mode", b.claims)
+
+    def test_sector_numeric_label_must_restate_its_boundary(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_sector(
+                figure_id="g10-secbad",
+                stem="A sector has radius 7 cm and angle 60 degrees.",
+                angle=60, radius=7, labels={"radius": "8 cm"})
+        with self.assertRaises(vt.TemplateError):
+            vt.build_sector(
+                figure_id="g10-secbad2",
+                stem="A sector has radius 7 cm and angle 60 degrees.",
+                angle=60, radius=7, labels={"angle": "61°"})
+
+    def test_sector_arc_label_checked_against_geometry(self):
+        import math
+        b = vt.build_sector(
+            figure_id="g10-secarc",
+            stem="A sector has radius 7 cm and angle 60 degrees; the arc is "
+                 "7.3 cm.",
+            angle=60, radius=7,
+            labels={"radius": "7 cm", "arc": "7.3 cm"})
+        self.assertIn("arc centre O from A to B", b.claims)
+        # π·7·60/180 ≈ 7.33 — the printed label must match within 0.5%
+        with self.assertRaises(vt.TemplateError):
+            vt.build_sector(
+                figure_id="g10-secarc2",
+                stem="A sector has radius 7 cm and angle 60 degrees; the arc "
+                     "is 8 cm.",
+                angle=60, radius=7, labels={"arc": "8 cm"})
+
+    def test_sector_semicircle_and_quadrant(self):
+        for th in (180, 90):
+            with self.subTest(th=th):
+                b = vt.build_sector(
+                    figure_id=f"g10-sec{th}",
+                    stem=f"A sector of {th} degrees has radius 7 cm.",
+                    angle=th, radius=7, labels={"radius": "7 cm"})
+                self.assertIn("A", b.anchors)
+
+    def test_sector_annular_ring(self):
+        b = vt.build_sector(
+            figure_id="g10-annu",
+            stem="An annular sector has outer radius 14 cm, inner radius 9 cm "
+                 "and angle 60 degrees; the radial sides are 5 cm.",
+            angle=60, radius=14, inner=9,
+            labels={"radial": "5 cm", "arc": "x", "inner_arc": "y"})
+        self.assertIn("C", b.anchors)
+        self.assertIn("D", b.anchors)
+        self.assertIn("derive 14 - 9 = 5", b.claims)
+
+    def test_sector_annular_inner_must_be_smaller(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_sector(
+                figure_id="g10-annubad",
+                stem="An annular sector has outer radius 14 cm, inner radius "
+                     "15 cm and angle 60 degrees.",
+                angle=60, radius=14, inner=15)
+
+    def test_sector_whole_radius_is_not_an_annular_piece(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_sector(
+                figure_id="g10-annurad",
+                stem="An annular sector has outer radius 14 cm, inner radius "
+                     "7 cm and angle 60 degrees.",
+                angle=60, radius=14, inner=7, labels={"radius": "14 cm"})
+
+    def test_sector_label_not_in_stem_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_sector(
+                figure_id="g10-secstem",
+                stem="A sector has radius 7 cm and angle 60 degrees.",
+                angle=60, radius=7, labels={"radius": "9 cm"})
+
+    def test_sector_figure_mode(self):
+        b = vt.build_sector(
+            figure_id="g10-secfig", stem="Read the marked figure.",
+            values="figure", angle=60, radius=7,
+            labels={"radius": "7 cm"})
+        self.assertIn("inferred", b.claims)
+
+    def test_sector_labels_type_guard(self):
+        for labels in ([], ["radius"], "radius", "", 0, False):
+            with self.subTest(labels=labels):
+                with self.assertRaisesRegex(vt.TemplateError,
+                                            "labels must be a dict or None"):
+                    vt.build_sector(
+                        figure_id="g10-labeltype", ask=[["a", "the arc"]],
+                        stem="A sector has radius 7 cm and angle 60 degrees.",
+                        angle=60, radius=7, labels=labels)
+
+    def test_pie_symbolic_category_contract(self):
+        for mode in ("stem", "figure"):
+            for glyph in ("O", "T", "o", "t", "90°", "99", "1.5", "A1", 'A"'):
+                with self.subTest(mode=mode, glyph=glyph):
+                    with self.assertRaisesRegex(vt.TemplateError,
+                                                "symbolic token|reserved"):
+                        vt.build_pie_chart(
+                            figure_id="g10-symbol", ask=[["a", "the outcome"]],
+                            stem="A spinner has sectors of 90, 120 and 150 degrees.",
+                            values=mode, angle_labels=True, arrow={"deg": 30},
+                            sectors=[{"label": glyph, "angle": 90},
+                                     {"label": "B", "angle": 120},
+                                     {"label": "A", "angle": 150}])
+
+    def test_pie_needle_cannot_be_a_cut(self):
+        for start, cuts in ((-90, (-90, 270, 630, 0, 360, 120)),
+                            (10, (10, 370, 100, 220))):
+            for bearing in cuts:
+                with self.subTest(start=start, bearing=bearing):
+                    with self.assertRaisesRegex(vt.TemplateError,
+                                                "coincides with a radial boundary"):
+                        vt.build_pie_chart(
+                            figure_id="g10-cut", ask=[["a", "the outcome"]],
+                            stem="Sectors of 90, 120 and 150 degrees.",
+                            start=start, arrow={"deg": bearing},
+                            sectors=[{"label": "A", "angle": 90},
+                                     {"label": "B", "angle": 120},
+                                     {"label": "A", "angle": 150}])
+
+    def test_pie_fractional_printed_angles_refuse_early(self):
+        for values in ("stem", "figure"):
+            with self.subTest(values=values):
+                with self.assertRaisesRegex(vt.TemplateError,
+                                            "requires whole-degree sectors"):
+                    vt.build_pie_chart(
+                        figure_id="g10-precision", ask=[["a", "the largest group"]],
+                        stem="The category counts are 1, 2 and 4.",
+                        values=values, angle_labels=True,
+                        sectors=[{"label": "A", "count": 1},
+                                 {"label": "B", "count": 2},
+                                 {"label": "C", "count": 4}])
+
+    def test_pie_fractional_unlabelled_sectors_remain_supported(self):
+        b = vt.build_pie_chart(
+            figure_id="g10-fracok", ask=[["a", "the largest group"]],
+            stem="The category counts are 1, 2 and 4.",
+            sectors=[{"label": "A", "count": 1},
+                     {"label": "B", "count": 2},
+                     {"label": "C", "count": 4}])
+        self.assertIn("derive 1 + 2 + 4 = 7", b.claims)
+
+    def test_pie_whole_degree_count_labels_remain_supported(self):
+        b = vt.build_pie_chart(
+            figure_id="g10-whole", ask=[["a", "the largest group"]],
+            stem="The category counts are 3, 4 and 5.", angle_labels=True,
+            sectors=[{"label": "A", "count": 3},
+                     {"label": "B", "count": 4},
+                     {"label": "C", "count": 5}])
+        self.assertIn('label "90°" names angle_sec0', b.claims)
+        self.assertIn('label "120°" names angle_sec1', b.claims)
+        self.assertIn('label "150°" names angle_sec2', b.claims)
+
+
+class G10ExtendedContractTests(unittest.TestCase):
+    """Regressions for the bounded G10 gaps 3/8/10-11 — circle_angles chord
+    features, the single-set venn_regions, and the cartesian_plot half-planes +
+    piecewise graphs."""
+
+    def test_circle_foot_bisects_chord(self):
+        b = vt.build_circle_angles(
+            figure_id="g10-cafoot",
+            stem="O is the centre of a circle through A and B. The foot of the "
+                 "perpendicular from O to chord AB is F, and AF = 4 cm and "
+                 "AB = 8 cm. (a) Find OF.",
+            ask=[["a", "the centre-to-chord distance"]],
+            points={"A": 160, "B": 20}, chords=[["A", "B"]],
+            feet={"F": "AB"}, lengths={"AB": 8},
+            labels={"AF": "4 cm"}, ticks={"AF": 1, "FB": 1})
+        self.assertIn("right O F A", b.claims)
+        self.assertIn("equal AF FB", b.claims)
+        self.assertIn("on F AB", b.claims)
+        self.assertIn('label "4 cm" names AF | stem', b.claims)
+
+    def test_circle_foot_draws_perpendicular_and_bisection(self):
+        b = vt.build_circle_angles(
+            figure_id="g10-cafoot2",
+            stem="O is the centre; F is the foot of the perpendicular from O "
+                 "to chord AB and AB = 8 cm.",
+            points={"A": 160, "B": 20}, chords=[["A", "B"]],
+            feet={"F": "AB"}, lengths={"AB": 8})
+        self.assertIn("perpendicular", b.claims)
+
+    def test_circle_intersection_inside(self):
+        b = vt.build_circle_angles(
+            figure_id="g10-cax",
+            stem="Chords AD and BC of a circle meet at X inside it. "
+                 "(a) Name the equal-angle pairs.",
+            ask=[["a", "the equal angles"]],
+            points={"A": 150, "B": 30, "C": 200, "D": 320},
+            intersections={"X": ("AD", "BC")}, joins=[("X", "O")])
+        self.assertIn("on X AD", b.claims)
+        self.assertIn("on X BC", b.claims)
+        self.assertIn('label "X" names X', b.claims)
+
+    def test_venn_single_set_complement(self):
+        b = vt.build_venn_regions(
+            figure_id="g10-vcomp",
+            stem="In a universal set U, set A has 12 members and 8 elements lie "
+                 "outside A. (a) How many elements are in U?",
+            ask=[["a", "n(U)"]],
+            sets=["A"], regions={"A": 12, "": 8}, universal="U")
+        self.assertTrue(any(e.get("id") == "univ" for e in b.doc["elements"]))
+        self.assertIn("derive 12 + 8 = 20", b.claims)
+
+    def test_venn_single_set_complement_shade(self):
+        b = vt.build_venn_regions(
+            figure_id="g10-vcsh",
+            stem="Shade the complement of set A inside the universal set U. "
+                 "(a) Describe the shaded region.",
+            ask=[["a", "the shaded region"]],
+            sets=["A"], shade=[""], universal="U")
+        polys = [e for e in b.doc["elements"] if e["type"] == "polygon"]
+        self.assertTrue(polys)
+
+    def test_cartesian_half_plane_intersection(self):
+        b = vt.build_cartesian_plot(
+            figure_id="g10-cineq",
+            stem="Show the region where y <= 2x + 2 and y >= -1, for x from "
+                 "-6 to 6 and y from -6 to 6. (a) Is the boundary included?",
+            ask=[["a", "the inclusion"]],
+            x_range=[-6, 6], y_range=[-6, 6],
+            regions=[{"boundary": {"m": 2, "c": 2}, "side": "below",
+                      "include": True},
+                     {"boundary": {"y": -1}, "side": "above", "include": False}])
+        self.assertIn("axis LR from -6 to 6", b.claims)
+        self.assertIn("paint bd1 dashed", b.claims)
+        self.assertIn("the shaded region is where", b.claims)
+        shade = next(e for e in b.doc["elements"] if e.get("id") == "shade")
+        self.assertEqual(len(shade["points"]), 4)
+
+    def test_cartesian_dashed_boundary_is_excluded(self):
+        b = vt.build_cartesian_plot(
+            figure_id="g10-cx3",
+            stem="Shade the region x >= 3 with the boundary x = 3 excluded, for "
+                 "x from -4 to 8 and y from -4 to 8, and mark P at (-2, 4). "
+                 "(a) Is P in the region?",
+            ask=[["a", "P's membership"]],
+            x_range=[-4, 8], y_range=[-4, 8],
+            regions=[{"boundary": {"x": 3}, "side": "right", "include": False}],
+            points={"P": [-2, 4]})
+        bd = next(e for e in b.doc["elements"] if e.get("id") == "bd0")
+        self.assertEqual((bd.get("stroke") or {}).get("style"), "dashed")
+        self.assertIn("do NOT satisfy the inequality", b.claims)
+        self.assertIn("paint bd0 dashed", b.claims)
+
+    def test_cartesian_empty_intersection_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_cartesian_plot(
+                figure_id="g10-cempty",
+                stem="y <= -1 and y >= 1 for x from -4 to 4 and y from -4 to 4.",
+                x_range=[-4, 4], y_range=[-4, 4],
+                regions=[{"boundary": {"y": -1}, "side": "below",
+                          "include": True},
+                         {"boundary": {"y": 1}, "side": "above",
+                          "include": True}])
+
+    def test_cartesian_range_without_origin_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_cartesian_plot(
+                figure_id="g10-cnozero",
+                stem="x from 2 to 8 and y from -4 to 4.",
+                x_range=[2, 8], y_range=[-4, 4], segments=[])
+
+    def test_cartesian_negative_coord_needs_signed_stem(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_cartesian_plot(
+                figure_id="g10-csign",
+                stem="Mark P on the plane, x from -4 to 4 and y from -4 to 4.",
+                x_range=[-4, 4], y_range=[-4, 4],
+                points={"P": [-2, 3]})
+
+    def test_cartesian_piecewise_journey(self):
+        b = vt.build_cartesian_plot(
+            figure_id="g10-cdt",
+            stem="A journey: 0 km at 0 h, 80 km at 2 h, rests at 80 km until "
+                 "4 h, then 120 km at 6 h. Time runs 0 to 6 h and distance 0 "
+                 "to 150 km. (a) Find the fastest leg.",
+            ask=[["a", "the fastest leg"]],
+            x_name="t", y_name="d",
+            x_range=[0, 6], y_range=[0, 150],
+            segments=[{"points": [[0, 0], [2, 80], [4, 80], [6, 120]]}],
+            points={"P": [2, 80]}, guides=[[[4, 0], [4, 80]]])
+        self.assertIn("piecewise line", b.claims)
+        self.assertIn("reads P 80 on BU", b.claims)
+        self.assertIn("paint gd0 dashed", b.claims)
 
 
 if __name__ == "__main__":
