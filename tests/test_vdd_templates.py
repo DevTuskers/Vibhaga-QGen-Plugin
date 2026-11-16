@@ -3339,13 +3339,13 @@ class ByteIdentity(unittest.TestCase):
         "selftest-sec": "06785c0d8bd89093b4e18b9d57578fdc3720c1c7c473ad1f46facdd23e0dc7d4",
         "selftest-semi": "494b7ee495b133e9bd432c72ac2a3d9339a76897176bf69e31752ca13995bd7b",
         "selftest-annu": "3ee6167d59da66858a25ebdf64e94403700e49aecc69a5c1523fc2f6a9a0fe07",
-        "selftest-cafoot": "2be66b934f230d3331d47c61b9fd41d68b91a75fc91fccc0c52ebf276df66c14",
+        "selftest-cafoot": "9c06dc3b3aab5b414e50cbebda8e26d70f633fab1df5f9f222c318e3bc8fe276",
         "selftest-cax": "1c72bd9ecf8b07fa65275e9bb896c5cfd9505319a105a26d7217ca3e49516ec9",
         "selftest-vcomp": "cd596042f266b98ac93e2bcac4db2c648bb72ade19e03bc8660d9b4bf76bbbf6",
         "selftest-vcsh": "1dd9fb115595d103831b0c3174b0806621499982e6de559e329346b700535114",
-        "selftest-cineq": "2345148a369d6fb6b6abee8d23f401f2256157ffa4480366c0573e06d51ba8f8",
-        "selftest-cdt": "a551da11d3685c8b04598c68165873f84b33857517cd17ddc9eb21239db418c9",
-        "selftest-cx3": "a31c29c147963f62d1ec5827dcc570cc25cb97a3706bc1a7c681930a10c8a3f9",
+        "selftest-cineq": "d01603d0bc30a983abd661159b65591a04df500fc7a7ddcb98163db9c8cf4646",
+        "selftest-cdt": "f214dacea5b23b152bbfb939ce0719aecce552550ae5fa54151a89c2b24d5bfe",
+        "selftest-cx3": "d95f59d8f75365ca01fe3938d6401848ba5a4c4daea5f9b5d36dbf671b5c2e98",
     }
 
     def test_self_test_outputs_unchanged(self):
@@ -3731,6 +3731,45 @@ class G10ExtendedContractTests(unittest.TestCase):
         self.assertIn("on X BC", b.claims)
         self.assertIn('label "X" names X', b.claims)
 
+    def test_circle_join_between_computed_points(self):
+        # F and M are computed (not rim) points — diameter detection must not
+        # touch `deg` for them (the KeyError regression).
+        b = vt.build_circle_angles(
+            figure_id="g10-cafm",
+            stem="A circle has chords AB and CD; F is the foot of the "
+                 "perpendicular from O to AB and M is the midpoint of CD.",
+            points={"A": 200, "B": 340, "C": 30, "D": 150},
+            chords=[["A", "B"], ["C", "D"]],
+            feet={"F": "AB"}, midpoints={"M": "CD"},
+            joins=[("F", "M")])
+        self.assertIn('describe "FM is joined"', b.claims)
+
+    def test_circle_join_computed_to_rim_and_extension(self):
+        # join F-A runs from a derived point to a rim point; a chord endpoint
+        # extension puts a derived point outside the rim arc set — neither
+        # may probe `deg`.
+        b = vt.build_circle_angles(
+            figure_id="g10-cafx",
+            stem="F is the foot of the perpendicular from O to chord AB and "
+                 "M is the midpoint of CD.",
+            points={"A": 200, "B": 340, "C": 30, "D": 150},
+            chords=[["A", "B"], ["C", "D"]],
+            feet={"F": "AB"}, midpoints={"M": "CD"},
+            joins=[("F", "A"), ("M", "C")])
+        self.assertIn('describe "FA is joined"', b.claims)
+        self.assertIn('describe "MC is joined"', b.claims)
+
+    def test_cartesian_bad_side_message_interpolates(self):
+        for boundary, side in (({"x": 1}, "near"), ({"y": 1}, "inside"),
+                               ({"m": 1, "c": 0}, "inside")):
+            with self.assertRaisesRegex(vt.TemplateError, "inside|near"):
+                vt.build_cartesian_plot(
+                    figure_id="g10-cside",
+                    stem="x from -4 to 4 and y from -4 to 4.",
+                    x_range=[-4, 4], y_range=[-4, 4],
+                    regions=[{"boundary": boundary, "side": side,
+                              "include": True}])
+
     def test_venn_single_set_complement(self):
         b = vt.build_venn_regions(
             figure_id="g10-vcomp",
@@ -3754,15 +3793,15 @@ class G10ExtendedContractTests(unittest.TestCase):
     def test_cartesian_half_plane_intersection(self):
         b = vt.build_cartesian_plot(
             figure_id="g10-cineq",
-            stem="Show the region where y <= 2x + 2 and y >= -1, for x from "
-                 "-6 to 6 and y from -6 to 6. (a) Is the boundary included?",
+            stem="Show the region where x is from 1 to 3 with x = 1 excluded, "
+                 "for x from -6 to 6 and y from -6 to 6 in steps of 3. "
+                 "(a) Is the boundary included?",
             ask=[["a", "the inclusion"]],
-            x_range=[-6, 6], y_range=[-6, 6],
-            regions=[{"boundary": {"m": 2, "c": 2}, "side": "below",
-                      "include": True},
-                     {"boundary": {"y": -1}, "side": "above", "include": False}])
+            x_range=[-6, 6], y_range=[-6, 6], y_step=3,
+            regions=[{"boundary": {"x": 1}, "side": "right", "include": False},
+                     {"boundary": {"x": 3}, "side": "left", "include": True}])
         self.assertIn("axis LR from -6 to 6", b.claims)
-        self.assertIn("paint bd1 dashed", b.claims)
+        self.assertIn("paint bd0 dashed", b.claims)
         self.assertIn("the shaded region is where", b.claims)
         shade = next(e for e in b.doc["elements"] if e.get("id") == "shade")
         self.assertEqual(len(shade["points"]), 4)
@@ -3770,17 +3809,90 @@ class G10ExtendedContractTests(unittest.TestCase):
     def test_cartesian_dashed_boundary_is_excluded(self):
         b = vt.build_cartesian_plot(
             figure_id="g10-cx3",
-            stem="Shade the region x >= 3 with the boundary x = 3 excluded, for "
-                 "x from -4 to 8 and y from -4 to 8, and mark P at (-2, 4). "
-                 "(a) Is P in the region?",
+            stem="Shade the region where -3 < x <= 1 and -1 <= y < 3, for "
+                 "x from -4 to 4 in steps of 2 and y from -4 to 6, and mark "
+                 "P at (-2, 4). (a) Is P in the region?",
             ask=[["a", "P's membership"]],
-            x_range=[-4, 8], y_range=[-4, 8],
-            regions=[{"boundary": {"x": 3}, "side": "right", "include": False}],
+            x_range=[-4, 4], x_step=2, y_range=[-4, 6], y_step=2,
+            regions=[{"boundary": {"x": -3}, "side": "right", "include": False},
+                     {"boundary": {"x": 1}, "side": "left", "include": True},
+                     {"boundary": {"y": -1}, "side": "above", "include": True},
+                     {"boundary": {"y": 3}, "side": "below", "include": False}],
             points={"P": [-2, 4]})
         bd = next(e for e in b.doc["elements"] if e.get("id") == "bd0")
         self.assertEqual((bd.get("stroke") or {}).get("style"), "dashed")
         self.assertIn("do NOT satisfy the inequality", b.claims)
         self.assertIn("paint bd0 dashed", b.claims)
+
+    def test_cartesian_numerals_align_their_ticks(self):
+        b = vt.build_cartesian_plot(
+            figure_id="g10-cdt2",
+            stem="A journey: 0 km at 0 h, 80 km at 2 h, rests at 80 km until "
+                 "4 h, then 120 km at 6 h. Time runs 0 to 6 h and distance 0 "
+                 "to 150 km. (a) Find the fastest leg.",
+            ask=[["a", "the fastest leg"]],
+            x_name="t", y_name="d",
+            x_range=[0, 6], y_range=[0, 150],
+            segments=[{"points": [[0, 0], [2, 80], [4, 80], [6, 120]]}],
+            points={"P": [2, 80]}, guides=[[[4, 0], [4, 80]]])
+        els = b.doc["elements"]
+        xaxis = next(e for e in els if e.get("id") == "axX")["points"]
+        yaxis = next(e for e in els if e.get("id") == "axY")["points"]
+        y0_ax, x0_ax = xaxis[0][1], yaxis[0][0]
+        ticks_x = {e["points"][0][0] for e in els
+                   if e.get("id", "").startswith("tx")}
+        ticks_y = {e["points"][0][1] for e in els
+                   if e.get("id", "").startswith("ty")}
+        for e in els:
+            if not e.get("id", "").startswith(("nx", "ny")):
+                continue
+            if e["id"].startswith("nx"):
+                self.assertIn(e["at"][0], ticks_x,
+                              f"x numeral {e['value']} off its tick column")
+                self.assertNotEqual(e["at"][1], y0_ax)
+            else:
+                self.assertIn(e["at"][1], ticks_y,
+                              f"y numeral {e['value']} off its tick row")
+                self.assertNotEqual(e["at"][0], x0_ax)
+
+    def test_cartesian_reserved_anchor_names_refuse(self):
+        for nm in ("L", "R", "B", "U"):
+            with self.assertRaises(vt.TemplateError, msg=nm):
+                vt.build_cartesian_plot(
+                    figure_id="g10-cres",
+                    stem="x from -4 to 4 and y from -4 to 4.",
+                    x_range=[-4, 4], y_range=[-4, 4],
+                    points={nm: [1, 1]})
+
+    def test_cartesian_axis_name_collisions_refuse(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_cartesian_plot(
+                figure_id="g10-cdup",
+                stem="x from -4 to 4 and y from -4 to 4.",
+                x_name="t", y_name="t",
+                x_range=[-4, 4], y_range=[-4, 4])
+        with self.assertRaises(vt.TemplateError):
+            vt.build_cartesian_plot(
+                figure_id="g10-cap",
+                stem="x from -4 to 4 and y from -4 to 4, point P at (1, 1).",
+                x_name="P", y_range=[-4, 4], x_range=[-4, 4],
+                points={"P": [1, 1]})
+        with self.assertRaises(vt.TemplateError):
+            vt.build_cartesian_plot(
+                figure_id="g10-cgnum",
+                stem="x from -4 to 4 and y from -4 to 4, point 2 at (1, 1).",
+                x_range=[-4, 4], y_range=[-4, 4],
+                points={"2": [1, 1]})
+
+    def test_cartesian_stranded_numeral_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_cartesian_plot(
+                figure_id="g10-cnoseat",
+                stem="Shade the region x >= 3 with the boundary x = 3 "
+                     "excluded, for x from -4 to 8 and y from -4 to 8.",
+                x_range=[-4, 8], y_range=[-4, 8],
+                regions=[{"boundary": {"x": 3}, "side": "right",
+                          "include": False}])
 
     def test_cartesian_empty_intersection_refuses(self):
         with self.assertRaises(vt.TemplateError):

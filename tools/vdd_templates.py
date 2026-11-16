@@ -785,7 +785,21 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
             refuse_label(i, "the edge rule",
                          f"{kind}: label {txt!r} is ~{edge:.1f} rendered px from the canvas "
                          f"edge (needs {EDGE_PX}px + slack) — move it inward")
-        worst = min(_seg_rect_dist(a, b, (x0, y0, x1, y1)) - w / 2 for a, b, w in clear_strokes) if clear_strokes else 99
+        # `_own_seg` carries a numeral's own tick segment as an `at`-relative
+        # offset — a tick mark never rejects the numeral it anchors (the
+        # critic's "exclude own tick from clearance" allowance); every other
+        # stroke still counts.
+        _ex = owners[i].get("_own_seg")
+        _eat = owners[i].get("at")
+        def _is_own(a, b):
+            if not _ex or _eat is None:
+                return False
+            return all(abs(p[i_] - _eat[i_] - o[i_]) < 0.25
+                       for p, o in ((a, _ex[0]), (b, _ex[1]))
+                       for i_ in (0, 1))
+        worst = min((_seg_rect_dist(a, b, (x0, y0, x1, y1)) - w / 2
+                     for a, b, w in clear_strokes if not _is_own(a, b)),
+                    default=99) if clear_strokes else 99
         if worst * scale_stroke < STROKE_PX + SLACK_STROKE:
             refuse_label(i, "the stroke-clearance rule",
                          f"{kind}: label {txt!r} is ~{worst * scale_stroke:.1f} rendered px "
@@ -6963,6 +6977,8 @@ def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, poi
             continue
         if a_ == O or b_ == O:
             continue
+        if a_ not in deg or b_ not in deg:
+            continue
         if diameter(a_, b_):
             add(f"on {O} {a_}{b_}", "inferred", "the chord passes through the centre")
             add(f'describe "{a_}{b_} is a diameter — a chord through the centre {O}"',
@@ -7006,7 +7022,8 @@ def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, poi
     for nm, (a_, b_) in foot_pos.items():
         add(f"on {nm} {a_}{b_}", "inferred", f"{nm} lies on chord {a_}{b_}")
         add(f"right {O} {nm} {a_}", "inferred",
-            "the perpendicular mark where the radius-line meets the chord")
+            "the perpendicular mark where the centre-to-chord line meets the "
+            "chord")
         add(f"equal {a_}{nm} {nm}{b_}", "inferred",
             "the perpendicular from the centre bisects the chord")
         add(f'describe "{O}{nm} is drawn perpendicular to chord {a_}{b_} — the '
@@ -12556,7 +12573,7 @@ def build_cartesian_plot(*, figure_id, stem, ask=None, title=None, description=N
                                     "the drawn x range — invisible or edge-ink")
             if side not in ("left", "right"):
                 raise TemplateError(f"{kind}: a vertical boundary x=k shades "
-                                    "'left' or 'right', not {side!r}")
+                                    f"'left' or 'right', not {side!r}")
             if not fig_mode:
                 require_stem_signed(stem, **{f"boundary x of region {i}": k_})
             reg_specs.append(("x", (float(k_),), side, inc))
@@ -12570,7 +12587,7 @@ def build_cartesian_plot(*, figure_id, stem, ask=None, title=None, description=N
                                     "the drawn y range")
             if side not in ("below", "above"):
                 raise TemplateError(f"{kind}: a horizontal boundary y=k shades "
-                                    "'below' or 'above', not {side!r}")
+                                    f"'below' or 'above', not {side!r}")
             if not fig_mode:
                 require_stem_signed(stem, **{f"boundary y of region {i}": k_})
             reg_specs.append(("y", (float(k_),), side, inc))
@@ -12581,7 +12598,7 @@ def build_cartesian_plot(*, figure_id, stem, ask=None, title=None, description=N
                 raise TemplateError(f"{kind}: boundary m and c must be numbers")
             if side not in ("below", "above"):
                 raise TemplateError(f"{kind}: a diagonal boundary y=mx+c shades "
-                                    "'below' or 'above', not {side!r}")
+                                    f"'below' or 'above', not {side!r}")
             if not fig_mode:
                 require_stem_signed(stem, **{f"boundary m of region {i}": m_,
                                              f"boundary c of region {i}": c_})
@@ -12714,6 +12731,20 @@ def build_cartesian_plot(*, figure_id, stem, ask=None, title=None, description=N
         marks[nm] = (xv, yv)
     if len(marks) > 10:
         raise TemplateError(f"{kind}: at most 10 marked points")
+    if x_name == y_name:
+        raise TemplateError(f"{kind}: x_name and y_name are both {x_name!r} — "
+                            "the axis glyphs must differ")
+    for nm in marks:
+        if nm in ("L", "R", "B", "U"):
+            raise TemplateError(f"{kind}: point {nm} collides with the axis "
+                                f"anchor {nm} — rename the point")
+        if nm in (x_name, y_name):
+            raise TemplateError(f"{kind}: point {nm} prints the same glyph as "
+                                "an axis name — rename one")
+    glyphs = [x_name, y_name] + list(marks)
+    if len(set(glyphs)) != len(glyphs):
+        raise TemplateError(f"{kind}: the axis names and point glyphs must all "
+                            "be distinct")
 
     guide_specs: list[list[XY]] = []
     for i, gd in enumerate(guides or []):
@@ -12795,26 +12826,49 @@ def build_cartesian_plot(*, figure_id, stem, ask=None, title=None, description=N
     zstrokes = stroke_segments([e for e in elements
                                 if e["type"] not in ("text", "point")])
     z_need = _clearance_units(STROKE_PX + SLACK_STROKE + 0.5, span_px + 120.0)
+    zfills = [e["points"] for e in elements
+              if e["type"] == "polygon" and (e.get("fill") or {}).get("color")]
 
-    def _seat_num(glyph, cands):
+    def _num_attached(box):
+        probes = [((box[0] + box[2]) / 2, (box[1] + box[3]) / 2),
+                  (box[0], box[1]), (box[2], box[1]),
+                  (box[0], box[3]), (box[2], box[3])]
+        if any(_pt_in_poly(pt, poly) for poly in zfills for pt in probes):
+            return True
+        return min((_seg_rect_dist(a, b, box) for a, b, _w in zstrokes),
+                   default=99.0) <= 22.0
+
+    def _seat_num(glyph, cands, own=None):
         for cx_, cy_, al_ in cands:
             el = vc.text((cx_, cy_), glyph, size=15, align=al_)
             box = label_boxes([el], 15)[0][1:]
-            if min((_seg_rect_dist(a, b, box) - w / 2 for a, b, w in zstrokes),
+            if min((_seg_rect_dist(a, b, box) - w / 2 for a, b, w in zstrokes
+                    if own is None or not (
+                        abs(a[0] - own[0][0]) < 0.1
+                        and abs(a[1] - own[0][1]) < 0.1
+                        and abs(b[0] - own[1][0]) < 0.1
+                        and abs(b[1] - own[1][1]) < 0.1)),
                    default=99) < z_need:
                 continue
             if any(_rect_gap(box, nb) < 6.5 for nb in num_boxes):
                 continue
+            if not _num_attached(box):
+                continue
+            if own is not None:
+                ax_, ay_ = el["at"]
+                el["_own_seg"] = [[own[0][0] - ax_, own[0][1] - ay_],
+                                  [own[1][0] - ax_, own[1][1] - ay_]]
             return el, box
         return None
 
     z_at = None
-    for dx_, dy_ in ((-26.0, n_dy), (26.0, n_dy), (-26.0, -n_dy), (26.0, -n_dy),
-                     (-26.0, 1.4 * n_dy), (26.0, -1.4 * n_dy), (0.0, 1.8 * n_dy)):
+    for dx_, dy_ in ((-26.0, -n_dy), (26.0, -n_dy), (-26.0, n_dy), (26.0, n_dy),
+                     (-44.0, -n_dy), (44.0, -n_dy), (-44.0, n_dy), (44.0, n_dy),
+                     (-26.0, -1.4 * n_dy), (26.0, -1.4 * n_dy), (0.0, 1.8 * n_dy)):
         at_ = (X(0) + dx_, Y(0) + dy_)
         box = _text_box("0", at_, 15)
         if min((_seg_rect_dist(a, b, box) - w / 2 for a, b, w in zstrokes),
-               default=99) >= z_need:
+               default=99) >= z_need and _num_attached(box):
             z_at = at_
             break
     if z_at is None:
@@ -12828,14 +12882,16 @@ def build_cartesian_plot(*, figure_id, stem, ask=None, title=None, description=N
         if v_ == 0:
             continue
         g_ = f"{v_:g}"
-        cands = [(X(v_) + dx_, Y(0) + dy_, "middle")
-                 for dy_ in (n_dy, 1.3 * n_dy, 1.6 * n_dy, -n_dy, -1.3 * n_dy)
-                 for dx_ in (0.0, -8.0, 8.0, -16.0, 16.0, -24.0, 24.0)]
-        got = _seat_num(g_, cands)
+        cands = [(X(v_), Y(0) + dy_, "middle")
+                 for dy_ in (1.3 * n_dy, 1.6 * n_dy, 2.0 * n_dy, 2.4 * n_dy,
+                             -1.3 * n_dy, -1.6 * n_dy, 1.0 * n_dy, -1.0 * n_dy)]
+        got = _seat_num(g_, cands,
+                        own=([X(v_), Y(0) - 5], [X(v_), Y(0) + 5]))
         if got is None:
-            raise TemplateError(f"{kind}: the numeral {g_} has no clear seat — "
-                                "a boundary or line crosses every numeral row; "
-                                "widen the step or the ranges")
+            raise TemplateError(f"{kind}: the numeral {g_} has no clear seat "
+                                "under its own tick — a boundary or line "
+                                "crosses every numeral row; widen the step or "
+                                "the ranges")
         el, box = got
         el["id"] = f"nx{len(elements)}"
         elements.append(el)
@@ -12844,13 +12900,16 @@ def build_cartesian_plot(*, figure_id, stem, ask=None, title=None, description=N
         if v_ == 0:
             continue
         g_ = f"{v_:g}"
-        cands = [(X(0) + dx_, Y(v_) + dy_, n_end)
-                 for dx_ in (n_dx, 1.7 * n_dx, 2.4 * n_dx, -n_dx, -1.7 * n_dx)
-                 for dy_ in (0.0, 9.0, -9.0, 27.0, -27.0, 36.0, -36.0)]
-        got = _seat_num(g_, cands)
+        cands = [(X(0) + dx_, Y(v_), n_end)
+                 for dx_ in (n_dx, 1.7 * n_dx, 2.4 * n_dx, 3.4 * n_dx,
+                             4.4 * n_dx, 5.4 * n_dx,
+                             -n_dx, -1.7 * n_dx, -2.4 * n_dx)]
+        got = _seat_num(g_, cands,
+                        own=([X(0) - 5, Y(v_)], [X(0) + 5, Y(v_)]))
         if got is None:
-            raise TemplateError(f"{kind}: the numeral {g_} has no clear seat — "
-                                "widen the step or the ranges")
+            raise TemplateError(f"{kind}: the numeral {g_} has no clear seat "
+                                "beside its own tick — widen the step or the "
+                                "ranges")
         el, box = got
         el["id"] = f"ny{len(elements)}"
         elements.append(el)
@@ -13656,12 +13715,13 @@ SELF_TEST = [
      "ask": [["a", "the shaded region"]],
      "sets": ["A"], "shade": [""], "universal": "U"},
     {"template": "cartesian_plot", "figure_id": "selftest-cineq",
-     "stem": "Show the region where y <= 2x + 2 and y >= -1, for x from -6 to 6 "
-             "and y from -6 to 6. (a) Is the boundary included?",
+     "stem": "Show the region where x is from 1 to 3 with x = 1 excluded, "
+             "for x from -6 to 6 and y from -6 to 6 in steps of 3. "
+             "(a) Is the boundary included?",
      "ask": [["a", "the inclusion"]],
-     "x_range": [-6, 6], "y_range": [-6, 6],
-     "regions": [{"boundary": {"m": 2, "c": 2}, "side": "below", "include": True},
-                 {"boundary": {"y": -1}, "side": "above", "include": False}]},
+     "x_range": [-6, 6], "y_range": [-6, 6], "y_step": 3,
+     "regions": [{"boundary": {"x": 1}, "side": "right", "include": False},
+                 {"boundary": {"x": 3}, "side": "left", "include": True}]},
     {"template": "cartesian_plot", "figure_id": "selftest-cdt",
      "stem": "A journey: 0 km at 0 h, 80 km at 2 h, rests at 80 km until 4 h, "
              "then 120 km at 6 h. Time runs 0 to 6 h and distance 0 to 150 km. "
@@ -13673,12 +13733,15 @@ SELF_TEST = [
      "points": {"P": [2, 80]},
      "guides": [[[4, 0], [4, 80]]]},
     {"template": "cartesian_plot", "figure_id": "selftest-cx3",
-     "stem": "Shade the region x >= 3 with the boundary x = 3 excluded, for "
-             "x from -4 to 8 and y from -4 to 8, and mark P at (-2, 4). "
-             "(a) Is P in the region?",
+     "stem": "Shade the region where -3 < x <= 1 and -1 <= y < 3, for "
+             "x from -4 to 4 in steps of 2 and y from -4 to 6, and mark "
+             "P at (-2, 4). (a) Is P in the region?",
      "ask": [["a", "P's membership"]],
-     "x_range": [-4, 8], "y_range": [-4, 8],
-     "regions": [{"boundary": {"x": 3}, "side": "right", "include": False}],
+     "x_range": [-4, 4], "x_step": 2, "y_range": [-4, 6], "y_step": 2,
+     "regions": [{"boundary": {"x": -3}, "side": "right", "include": False},
+                 {"boundary": {"x": 1}, "side": "left", "include": True},
+                 {"boundary": {"y": -1}, "side": "above", "include": True},
+                 {"boundary": {"y": 3}, "side": "below", "include": False}],
      "points": {"P": [-2, 4]}},
 ]
 
