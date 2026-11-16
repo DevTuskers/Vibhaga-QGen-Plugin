@@ -2784,6 +2784,288 @@ class CircleParts(unittest.TestCase):
         self._ok(b)
 
 
+class G11Templates(unittest.TestCase):
+    """W15 — the ten Grade-11 templates. All stems are synthetic English."""
+
+    def _ok(self, b):
+        r = audit(b.claims, tempfile.mkdtemp())
+        self.assertEqual(r.returncode, 0, r.stdout)
+        ids = [e["id"] for e in b.doc["elements"]]
+        self.assertEqual(len(ids), len(set(ids)), "duplicate element ids")
+        w, h = b.doc["canvas"]["width"], b.doc["canvas"]["height"]
+        for _nm, (x, y) in b.anchors.items():
+            self.assertTrue(0 <= x <= w and 0 <= y <= h, f"anchor {_nm} off-canvas")
+
+    RT_STEM = ("Triangle ABC is right-angled at B with AB = 3 cm, BC = 4 cm and "
+               "AC = 5 cm. The angle at C is marked x. (a) Find x.")
+
+    def test_rt_numeric(self):
+        b = vt.build_right_triangle(figure_id="r1", stem=self.RT_STEM,
+                                    ask=[["a", "x"]], sides={"AB": 3, "BC": 4, "CA": 5},
+                                    angles={"C": "x"})
+        self.assertIn("right A B C", b.claims)
+        self.assertIn('label "3 cm" names BA', b.claims)
+        self.assertIn("derive 9 + 16 = 25", b.claims)
+        self._ok(b)
+
+    def test_rt_unknown_side_and_numeric_angle(self):
+        stem = "In the figure CA = 10 m and the angle at A is 30°. The height is x m."
+        b = vt.build_right_triangle(figure_id="r2", stem=stem, ask=[["a", "x"]],
+                                    sides={"CA": 10, "BC": "x"}, unit="m",
+                                    legs_px=[208, 120], angles={"A": "30"})
+        self.assertIn('label "x" names BC', b.claims)
+        self._ok(b)
+
+    def test_rt_refuses_unstated_side(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.build_right_triangle(figure_id="r3", stem=self.RT_STEM, ask=[["a", "x"]],
+                                    sides={"AB": 6, "BC": 4, "CA": 5})
+        self.assertIn("not a number the stem", str(cm.exception))
+
+    def test_rt_refuses_bad_pythagoras(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.build_right_triangle(figure_id="r4",
+                                    stem=self.RT_STEM + " Sides 3, 4, 6.",
+                                    sides={"AB": 3, "BC": 4, "CA": 6})
+        self.assertIn("a²+b²=c²", str(cm.exception).replace("a**2", "a²"))
+
+    def test_rt_refuses_misstated_angle(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.build_right_triangle(figure_id="r5", stem=self.RT_STEM,
+                                    ask=[["a", "x"]],
+                                    sides={"AB": 3, "BC": 4, "CA": 5},
+                                    angles={"C": "30"})
+        self.assertIn("drawn angle", str(cm.exception))
+
+    def test_rt_keyword_only(self):
+        with self.assertRaises(TypeError):
+            vt.build_right_triangle("r6", self.RT_STEM)
+
+    def test_ca_cyclic_exterior(self):
+        stem = ("ABCD is a cyclic quadrilateral with centre O. Side BC is produced "
+                "to E; the exterior angle at C is 105°. (a) Find x.")
+        b = vt.build_circle_angles(figure_id="c1", stem=stem, ask=[["a", "x"]],
+                                   points={"A": 200, "B": 270, "C": 10, "D": 120},
+                                   cyclic="ABCD", extend=[{"side": "BC", "to": "E"}],
+                                   angles=[{"at": "C", "arms": ["D", "E"],
+                                            "label": "105°"},
+                                           {"at": "A", "arms": ["B", "D"],
+                                            "label": "x"}])
+        self.assertIn("105", b.claims)
+        self._ok(b)
+
+    def test_ca_two_tangents(self):
+        stem = ("The circle has centre O. From T, two tangents touch the circle at "
+                "P and Q. (a) Name the equal tangent segments.")
+        b = vt.build_circle_angles(figure_id="c2", stem=stem, ask=[["a", "them"]],
+                                   points={"P": 210, "Q": 330},
+                                   external={"T": ["P", "Q"]})
+        self._ok(b)
+
+    def test_ca_refuses_wrong_angle_label(self):
+        stem = "ABCD is a cyclic quadrilateral; the exterior angle at C is 40°."
+        with self.assertRaises(vt.TemplateError):
+            vt.build_circle_angles(figure_id="c3", stem=stem,
+                                   points={"A": 200, "B": 270, "C": 10, "D": 120},
+                                   cyclic="ABCD", extend=[{"side": "BC", "to": "E"}],
+                                   angles=[{"at": "C", "arms": ["D", "E"],
+                                            "label": "40°"}])
+
+    TP_STEM = ("In triangle ABC, AB = 12 cm and X, Y are the midpoints of AB and "
+               "AC with XY parallel to BC. AX = XB = 6 cm. (a) Find XY.")
+
+    def test_tp_midpoint(self):
+        b = vt.build_triangle_parallel(figure_id="t1", stem=self.TP_STEM,
+                                       ask=[["a", "XY"]], names=["A", "B", "C"],
+                                       angles={"A": 60, "B": 60, "C": 60},
+                                       div={"X": ["AB", 0.5], "Y": ["AC", 0.5]},
+                                       parallel=["XY", "BC"],
+                                       ticks={"AX": 1, "XB": 1, "AY": 1, "YC": 1},
+                                       labels={"AX": "6 cm", "XB": "x"},
+                                       sides={"AB": 12})
+        self.assertIn("parallel", b.claims)
+        self._ok(b)
+
+    def test_tp_refuses_unequal_fractions(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_triangle_parallel(figure_id="t2", stem=self.TP_STEM,
+                                       angles={"A": 60, "B": 60, "C": 60},
+                                       div={"X": ["AB", 0.5], "Y": ["AC", 0.4]},
+                                       parallel=["XY", "BC"])
+
+    def test_tp_refuses_duplicate_glyph(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.build_triangle_parallel(figure_id="t3", stem=self.TP_STEM,
+                                       angles={"A": 60, "B": 60, "C": 60},
+                                       div={"X": ["AB", 0.5], "Y": ["AC", 0.5]},
+                                       parallel=["XY", "BC"],
+                                       labels={"AX": "6 cm", "XB": "6 cm"},
+                                       sides={"AB": 12})
+        self.assertIn("printed twice", str(cm.exception))
+
+    def test_pa_shared_base(self):
+        stem = ("Triangles PQR and SQR share base QR between two parallel lines "
+                "3 cm apart. (a) Compare their areas.")
+        b = vt.build_parallel_area(figure_id="p1", stem=stem, ask=[["a", "them"]],
+                                   upper={"P": 40, "S": 160},
+                                   lower={"Q": 70, "R": 140},
+                                   draw=[["P", "Q", "R"], ["S", "Q", "R"]],
+                                   distance={"value": 3, "unit": "cm"})
+        self.assertIn('label "3 cm" names MN', b.claims)
+        self._ok(b)
+
+    def test_pa_refuses_unstated_distance(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_parallel_area(figure_id="p2",
+                                   stem="Two parallel lines hold a triangle.",
+                                   upper={"P": 40}, lower={"Q": 70, "R": 140},
+                                   draw=[["P", "Q", "R"]],
+                                   distance={"value": 9, "unit": "cm"})
+
+    def test_solid_cone(self):
+        stem = "A cone has base radius 7 cm and height 12 cm. (a) Find its volume."
+        b = vt.build_solid(figure_id="s1", stem=stem, ask=[["a", "the volume"]],
+                           shape="cone", dims={"radius": 7, "height": 12})
+        self.assertIn("derive 2 * 7 = 14", b.claims)
+        self._ok(b)
+
+    def test_solid_letter_dim(self):
+        b = vt.build_solid(figure_id="s2",
+                           stem="A cylinder has radius r and height 6 cm.",
+                           ask=[["a", "the area"]], shape="cylinder",
+                           dims={"radius": "r", "height": 6})
+        self.assertIn('label "r" names R1', b.claims)
+        self._ok(b)
+
+    def test_solid_refuses_unknown_shape_and_missing_dim(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_solid(figure_id="s3", stem="A cube.", shape="cube",
+                           dims={"side": 4})
+        with self.assertRaises(vt.TemplateError):
+            vt.build_solid(figure_id="s4", stem="A cone of height 5.",
+                           shape="cone", dims={"height": 5})
+
+    def test_fg_parabola_vertex(self):
+        stem = ("The parabola y = (x - 1)^2 - 4 is drawn for x from -2 to 4. "
+                "(a) Write the vertex V.")
+        b = vt.build_function_graph(figure_id="g1", stem=stem, ask=[["a", "V"]],
+                                    curve={"a": 1, "h": 1, "k": -4},
+                                    x_range=[-2, 4], vertex="V", symmetry=True,
+                                    grid=False, unit_px=30)
+        self.assertIn("reads V 1 on LR", b.claims)
+        self.assertIn("reads V -4 on BU", b.claims)
+        self.assertIn("figure content", b.claims)
+        self._ok(b)
+
+    def test_fg_line_point(self):
+        stem = "The line y = x - 3 is drawn for x from -1 to 4. Point P cuts the y axis."
+        b = vt.build_function_graph(figure_id="g2", stem=stem, ask=[["a", "P"]],
+                                    curve={"m": 1, "c": -3}, x_range=[-1, 4],
+                                    points={"P": [0, -3]}, grid=False, unit_px=36)
+        self._ok(b)
+
+    def test_fg_refuses_point_off_curve(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.build_function_graph(figure_id="g3",
+                                    stem="The line y = x - 3 is drawn for x from -1 to 4.",
+                                    curve={"m": 1, "c": -3}, x_range=[-1, 4],
+                                    points={"P": [0, -1]})
+        self.assertIn("not on the curve", str(cm.exception))
+
+    def test_fg_refuses_unsigned_negative(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.build_function_graph(figure_id="g4",
+                                    stem="The line y = x + 3 is drawn for x from 1 to 4.",
+                                    curve={"m": 1, "c": -3}, x_range=[1, 4])
+        self.assertIn("negative", str(cm.exception))
+
+    def test_il_interval(self):
+        stem = "The number line shows -2 <= x < 3 on the range -4 to 4."
+        b = vt.build_inequality_line(figure_id="i1", stem=stem, ask=[["a", "x"]],
+                                     v0=-4, v1=4,
+                                     interval={"a": -2, "b": 3, "open_a": False,
+                                               "open_b": True})
+        self._ok(b)
+
+    def test_il_dots(self):
+        stem = "The marked integers are -4, -3, -2 and -1 on the range -4 to 2."
+        b = vt.build_inequality_line(figure_id="i2", stem=stem, ask=[["a", "them"]],
+                                     v0=-4, v1=2, dots=[-4, -3, -2, -1])
+        self._ok(b)
+
+    def test_il_refuses_dot_off_axis(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_inequality_line(figure_id="i3",
+                                     stem="Dots on the range -4 to 2.",
+                                     v0=-4, v1=2, dots=[5])
+
+    def test_hist_basic(self):
+        stem = ("The histogram shows classes 0-10, 10-20, 20-30 with frequencies "
+                "4, 7 and 5 on a scale of 2 per step up to 10.")
+        b = vt.build_histogram(figure_id="h1", stem=stem, ask=[["a", "the mode"]],
+                               bounds=[0, 10, 20, 30], freqs=[4, 7, 5],
+                               step=2, v_max=10)
+        self.assertIn("reads T1 7 on OY", b.claims)
+        self.assertIn("derive 4 + 7 + 5 = 16", b.claims)
+        self._ok(b)
+
+    def test_hist_unequal_widths(self):
+        stem = ("Classes 0-10, 10-30 and 30-40 hold frequencies 4, 6 and 5; the "
+                "scale is 2 per step up to 10.")
+        b = vt.build_histogram(figure_id="h2", stem=stem, ask=[["a", "x"]],
+                               bounds=[0, 10, 30, 40], freqs=[4, 6, 5],
+                               step=2, v_max=10)
+        self.assertIn("unequal", b.claims)
+        self._ok(b)
+
+    def test_hist_refuses_length_mismatch(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_histogram(figure_id="h3", stem="Classes 0-10 and 10-20.",
+                               bounds=[0, 10, 20], freqs=[4], step=2, v_max=8)
+
+    def test_tree_two_level(self):
+        stem = ("A box has 3 white and 2 black balls. Two draws with replacement "
+                "give white with probability 3/5 and black with 2/5.")
+        b = vt.build_tree_diagram(figure_id="w1", stem=stem, ask=[["a", "P(WW)"]],
+                                  stages=[[["W", "3/5"], ["B", "2/5"]],
+                                          [["W", "3/5"], ["B", "2/5"]]])
+        self.assertIn('label "W 3/5" names br0', b.claims)
+        self.assertIn("derive 3/5 + 2/5 = 1", b.claims)
+        self._ok(b)
+
+    def test_tree_without_replacement_dict(self):
+        stem = ("Two draws without replacement: first white 3/5 or black 2/5, "
+                "then 2/4 or 2/4 after white, and 3/4 or 1/4 after black.")
+        b = vt.build_tree_diagram(figure_id="w2", stem=stem, ask=[["a", "x"]],
+                                  stages=[[["W", "3/5"], ["B", "2/5"]],
+                                          {"W": [["W", "2/4"], ["B", "2/4"]],
+                                           "B": [["W", "3/4"], ["B", "1/4"]]}])
+        self._ok(b)
+
+    def test_tree_refuses_bad_sum(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.build_tree_diagram(figure_id="w3", stem="Draws give 1/2 or 1/3.",
+                                  stages=[[["W", "1/2"], ["B", "1/3"]]])
+        self.assertIn("sum to 1", str(cm.exception))
+
+    def test_ps_numeric(self):
+        stem = ("A right triangle has legs 3 and 4 and hypotenuse 5. Squares are "
+                "drawn outward on each side. (a) Find the areas.")
+        b = vt.build_pythagoras_squares(figure_id="q1", stem=stem,
+                                        ask=[["a", "the areas"]],
+                                        legs={"AB": 3, "BC": 4, "CA": 5}, grid=True)
+        self.assertIn("derive 9 + 16 = 25", b.claims)
+        self._ok(b)
+
+    def test_ps_refuses_noninteger_grid(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.build_pythagoras_squares(figure_id="q2",
+                                        stem="Legs 3.5 and 4.",
+                                        legs={"AB": 3.5, "BC": 4, "CA": "x"},
+                                        grid=True)
+        self.assertIn("integer", str(cm.exception))
+
+
 class ByteIdentity(unittest.TestCase):
     """The floating-label machinery must not change any existing template's bytes —
     sha256 over each self-test spec's three emitted files, captured on origin/main."""
@@ -2823,6 +3105,21 @@ class ByteIdentity(unittest.TestCase):
         "selftest-venn": "fbc07d9f9f560504984241dafe4cf5c18a772b2faef551f8eedf139fa8e52568",
         "selftest-venn3": "b5baef12404e11361c716a35e0e4a9b22eaeeb5f13fce2e4b21ed281b5bca563",
         "selftest-circle": "bba42c4d35e57115bd23c50832770f8459ee13b3077a4e4b7eb64b272c601711",
+        "selftest-rtri": "6edac3fbab6774cebfef996cbbd2e8327b67dc72deb3c6afdb4b755dbce7315f",
+        "selftest-rtri2": "4bee604ae6ac55a4c6f31f9298898cfcd64c6f3148245f590d05c7df293fd39a",
+        "selftest-cyc": "9a3ed0fa2a7dcbfa020d46d5961e957b9a7b0647341cb47f6868d4ed1c52bca5",
+        "selftest-tan": "654d82cd00f56b4fe16014488bab99a9281569575a135a254aa81c03c97157ef",
+        "selftest-tpar": "cd4afcf42d89027b1ce485d449bd6e019437b62072fa0812ff5430b0f362a0c6",
+        "selftest-parea": "22bcbf0c54bf349926a1df9997de8c414050667aa736109543147670476ff559",
+        "selftest-cone": "2d4a5d0bd5026f57440be5a9d45b56e7e26e76080c137f0860a43c176c83bf1e",
+        "selftest-cyl": "0e5dd351f814c6ab8243af9781e5c626483290c353e188c8e6f9538a96a5b9b4",
+        "selftest-graph": "b6849e95c221623b7dfb88896b3b05f0be261dee257f42248a7c85e9524f971a",
+        "selftest-fline": "e7b64facdd9774b6f0a7ca5f3153470932d6f52f95995b25cb7890b404c08fa9",
+        "selftest-ineq": "a7775b1f45995f0bdf14bbfb488ee9c9bb25e982491b34c11b1467e0a9d05580",
+        "selftest-ineq2": "a2adf75eba4dd456df7b633c1106262768fc2f76bdf967fff9b0737b8113e427",
+        "selftest-hist": "7ec374395ef45228492e8180cc4f36647e6b04ba6a762913b4d1b623aeb659e9",
+        "selftest-tree": "8d03c981c4e77239a901c9db5f6e1545ec4030f643973d844555d0494468d2ce",
+        "selftest-psq": "3864080bf5557de7f53abdc3512858772effb845c92a3f5bfbd00c70f5cb4ce8",
     }
 
     def test_self_test_outputs_unchanged(self):

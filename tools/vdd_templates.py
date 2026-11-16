@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""vdd_templates.py — the twenty-three figure TEMPLATES of the vibhaga-qgen plugin.
+"""vdd_templates.py — the thirty-three figure TEMPLATES of the vibhaga-qgen plugin.
 
 A template turns a question's STEM NUMBERS into a finished figure — a VDD document, an
 anchors sidecar and a `channel: constructed` claim set — in one `Built` object:
@@ -161,6 +161,19 @@ def require_stem(stem: str, **values: float) -> None:
             f"{', '.join(missing)} {'is' if len(missing) == 1 else 'are'} not a number the stem "
             f"states (stem numbers {', '.join(f'{n:g}' for n in nums)}) — a template draws only "
             f"what the stem gives it")
+
+
+def require_stem_signed(stem: str, **values: float) -> None:
+    """require_stem on the magnitude — plus, for a negative value, the signed
+    literal must appear in the stem (the audit's number regex is unsigned, so the
+    builder checks the sign itself)."""
+    for k, v in values.items():
+        require_stem(stem, **{k: abs(float(v))})
+        if v < 0 and not re.search(rf"[-−–]\s*{re.escape(f'{abs(float(v)):g}')}\b",
+                                   stem):
+            raise TemplateError(
+                f"{k}={v:g} is negative but the stem never states "
+                f"'-{abs(float(v)):g}' — a template draws only what the stem gives it")
 
 
 def _ratio_justified(nums: list[float], v: float) -> bool:
@@ -5974,6 +5987,2297 @@ def _circle_parts_once(*, figure_id, stem, ask, title, description, medium, poin
                   medium=medium)
 
 
+_ANGLE_NUM = re.compile(r"(\d+(?:\.\d+)?)°?$")
+
+
+def _angle_text_kind(kind: str, t_, vertex: str):
+    """Classify an angle label: ("num", v) prints the size itself, ("letter", t) prints
+    one lowercase Latin/Greek letter (the unknown). A numeric glyph is checked against
+    the drawn angle by the caller; here only its FORM is validated."""
+    if not isinstance(t_, str) or not t_.strip():
+        raise TemplateError(f"{kind}: the angle label at {vertex} must be a non-empty string")
+    t_ = t_.strip()
+    m = _ANGLE_NUM.fullmatch(t_)
+    if m:
+        return ("num", float(m[1]), t_)
+    if not re.fullmatch(r"[a-zθαβγφ°]|[a-zθαβγφ]", t_):
+        raise TemplateError(f"{kind}: angle label {t_!r} at {vertex} must be its own size "
+                            "('60°') or a single lowercase/Greek letter ('x', 'θ')")
+    return ("letter", None, t_)
+
+
+def _seat_side_label(kind: str, elements: list[dict], boxes: list, a: XY, b: XY,
+                     text: str, away: XY, clr: float, id_: str) -> dict:
+    """Seat a label off the side a-b on the half-plane facing `away`, walked along the
+    side and pushed out until its box clears every stroke and seated label — the same
+    pocket search circle_parts uses for chord labels. Raises TemplateError."""
+    mid0 = vc.lerp(a, b, 0.5)
+    nx, ny = vc.normal(a, b)
+    if ((away[0] - mid0[0]) * nx + (away[1] - mid0[1]) * ny) < 0:
+        nx, ny = -nx, -ny
+    strokes = stroke_segments(elements)
+    for t in (0.5, 0.4, 0.6, 0.35, 0.65, 0.3, 0.7):
+        m = vc.lerp(a, b, t)
+        half = _label_half_along(text, FS, nx, ny)
+        for k in range(12):
+            d = clr + half + 3.0 * k
+            cx, cy = m[0] + nx * d, m[1] + ny * d
+            box = (cx - _label_width(text, FS) / 2, cy - MID_UP * FS,
+                   cx + _label_width(text, FS) / 2, cy + MID_DOWN * FS)
+            if strokes and min(_seg_rect_dist(p, q, box) - w / 2
+                               for p, q, w in strokes) < clr:
+                continue
+            if any(_rect_gap(box, pb) < 2.0 for pb in boxes):
+                continue
+            el = vc.text((cx, cy), text, id=id_)
+            return el
+    raise TemplateError(f"{kind}: the side label {text!r} has no clear seat off "
+                        f"{a}–{b} — spread the geometry or drop it")
+
+
+def _angle_arc_label(kind: str, elements: list[dict], v: XY, pa: XY, pb: XY,
+                     text: str | None, arcs: int, r0: float, clr: float,
+                     reflex: bool = False, max_d: float | None = None,
+                     arc_r: float | None = None) -> list[dict]:
+    """An angleMark at v between rays to pa and pb plus (optionally) a label walked out
+    along the drawn sweep's bisector until its box clears every stroke — the arc moves
+    out with the label so the two always read together (the triangle_marks pattern).
+    With `arc_r` the mark keeps a fixed radius and only the label walks."""
+    ua, ub = vc.unit(v, pa), vc.unit(v, pb)
+    bx, by = ua[0] + ub[0], ua[1] + ub[1]
+    if math.hypot(bx, by) < 1e-9:
+        raise TemplateError(f"{kind}: the arms at {v} are opposite — no bisector")
+    bx, by = bx / math.hypot(bx, by), by / math.hypot(bx, by)
+    if reflex:
+        bx, by = -bx, -by
+    marks_now = stroke_segments(elements)
+    if text is None:
+        arc_ = vc.angle_label(v, pa, pb, r=arc_r or r0, arcs=arcs, reflex=reflex)
+        return arc_
+    half = _label_half_along(text, FS, bx, by)
+    far = max_d or (0.85 * min(vc.dist(v, pa), vc.dist(v, pb)))
+    for d_ in _arange(30.0, far, 2.0):
+        r_ = arc_r or max(r0, d_ - half - clr - 3.0 * (arcs - 1) - 2.0)
+        arc_ = vc.angle_label(v, pa, pb, r=r_, arcs=arcs, reflex=reflex)
+        el_ = vc.text((v[0] + bx * d_, v[1] + by * d_), text)
+        box = label_boxes([el_], FS)[0][1:]
+        segs_ = marks_now + stroke_segments(arc_)
+        if min(_seg_rect_dist(p, q, box) - w / 2 for p, q, w in segs_) >= clr:
+            return arc_ + [el_]
+    raise TemplateError(f"{kind}: the angle label {text!r} cannot clear the arms at "
+                        f"{v} — widen the geometry or drop the label")
+
+
+def _ellipse_pts(c: XY, rx: float, ry: float, a0: float = 0.0, a1: float = 360.0,
+                 step: float = 6.0) -> list[XY]:
+    """Sampled ellipse outline — a polyline/polygon of these is measured by the
+    pre-flight, unlike an `ellipse` element (no stroke model for it)."""
+    n = max(4, math.ceil(abs(a1 - a0) / step))
+    return [(c[0] + rx * math.cos(math.radians(a0 + (a1 - a0) * i / n)),
+             c[1] + ry * math.sin(math.radians(a0 + (a1 - a0) * i / n)))
+            for i in range(n + 1)]
+
+
+def _ellipse_el(c: XY, rx: float, ry: float, *, id: str, a0: float = 0.0,
+                a1: float = 360.0, dashed: bool = False) -> dict:
+    pts = _ellipse_pts(c, rx, ry, a0, a1)
+    if abs((a1 - a0) % 360.0) < 1e-9:
+        el = vc.polygon(pts, id=id)
+        if dashed:
+            el["stroke"] = {"width": 2, "style": "dashed"}
+        return el
+    return vc.polyline(pts, id=id, dashed=dashed)
+
+
+_RT_SIDE_VAL = re.compile(r"[a-z]")
+
+
+def build_right_triangle(*, figure_id, stem, ask=None, title=None, description=None,
+                         medium="english", names=("A", "B", "C"), right="B", up=None,
+                         sides=None, unit="cm", legs_px=None, angles=None,
+                         altitude=None, extra_base=None, mirror=None):
+    """A right triangle with true side labels. `names` = three capitals; `right` names
+    the 90° vertex; `up` names the vertex at the far end of the VERTICAL leg (default
+    the first non-right name) — the third vertex closes the horizontal leg.
+    `sides` = {"AB": 5, "BC": 12, "CA": "x"} — every entry prints beside its side:
+    a number is the side's TRUE length (stem-checked, drawn to scale) and a lowercase
+    letter is the unknown. When both legs are numeric the drawn ratio is theirs and a
+    numeric hypotenuse must satisfy a²+b²=c² (0.5%); otherwise `legs_px` = (vertical,
+    horizontal) drawn lengths is required — a figure-content drawing ratio declared in
+    `scale:`. `angles` = {vertex: "30°"|"θ"} (never at `right`): a numeric glyph must
+    equal the drawn angle within 0.75° AND be a stem number. `altitude` = {"from": V,
+    "foot": "D"} drops a perpendicular from a vertex to the opposite side with a right
+    mark; `extra_base` = {"D": t} puts point D on the horizontal leg's ray at t× the
+    leg length and joins it to `up`. `mirror` = "x"|"y"|"xy" flips the layout."""
+    kind = "right_triangle"
+    vc.reset_ids()
+    names = list(names)
+    if len(names) != 3 or len(set(names)) != 3 or \
+            not all(isinstance(n, str) and re.fullmatch(r"[A-Z]", n) for n in names):
+        raise TemplateError(f"{kind}: names must be three distinct single capitals")
+    if right not in names:
+        raise TemplateError(f"{kind}: right {right!r} is not one of {names}")
+    others = [n for n in names if n != right]
+    up = up or others[0]
+    if up not in others:
+        raise TemplateError(f"{kind}: up {up!r} must be one of the non-right vertices {others}")
+    horiz = others[1] if others[0] == up else others[0]
+    side_names = {"".join(sorted((right, up))): None,
+                  "".join(sorted((right, horiz))): None,
+                  "".join(sorted((up, horiz))): None}
+    leg_v_key, leg_h_key, hyp_key = list(side_names)
+    val: dict[str, object] = {}
+    for s, v_ in (sides or {}).items():
+        if not (isinstance(s, str) and len(s) == 2 and "".join(sorted(s)) in side_names):
+            raise TemplateError(f"{kind}: {s!r} is not a side of triangle {''.join(names)}")
+        key = "".join(sorted(s))
+        if isinstance(v_, bool) or not isinstance(v_, (int, float, str)):
+            raise TemplateError(f"{kind}: side {s} value {v_!r} must be a number or a "
+                                "single lowercase letter")
+        if isinstance(v_, (int, float)) and not isinstance(v_, bool):
+            if v_ <= 0:
+                raise TemplateError(f"{kind}: side {s} must be positive")
+            require_stem(stem, **{f"side {key}": float(v_)})
+        elif not _RT_SIDE_VAL.fullmatch(str(v_)):
+            raise TemplateError(f"{kind}: side {s} letter value must be one lowercase "
+                                f"letter — got {v_!r}")
+        val[key] = v_
+    numeric = {s: float(v_) for s, v_ in val.items() if isinstance(v_, (int, float))}
+    legs_numeric = leg_v_key in numeric and leg_h_key in numeric
+    if legs_numeric and hyp_key in numeric:
+        lv, lh, hp = numeric[leg_v_key], numeric[leg_h_key], numeric[hyp_key]
+        if abs(lv * lv + lh * lh - hp * hp) > 0.005 * hp * hp:
+            raise TemplateError(
+                f"{kind}: sides {lv:g}, {lh:g}, {hp:g} fail a²+b²=c² by more than 0.5% — "
+                "a printed hypotenuse may only restate the true length")
+    if legs_px is not None:
+        if not (isinstance(legs_px, (list, tuple)) and len(legs_px) == 2 and
+                all(isinstance(x, (int, float)) and not isinstance(x, bool) and x > 0
+                    for x in legs_px)):
+            raise TemplateError(f"{kind}: legs_px must be (vertical, horizontal) positive "
+                                "drawn lengths")
+        lv_px, lh_px = float(legs_px[0]), float(legs_px[1])
+        if legs_numeric:
+            tr = numeric[leg_v_key] / numeric[leg_h_key]
+            if abs(lv_px / lh_px - tr) / tr > 0.005:
+                raise TemplateError(
+                    f"{kind}: legs_px ratio {lv_px / lh_px:.4g} is not the stated leg ratio "
+                    f"{tr:.4g} (0.5%) — a numeric leg pair owns the drawn ratio")
+    elif legs_numeric:
+        k = 260.0 / max(numeric[leg_v_key], numeric[leg_h_key])
+        lv_px, lh_px = numeric[leg_v_key] * k, numeric[leg_h_key] * k
+    else:
+        raise TemplateError(f"{kind}: without numeric leg sides pass legs_px=(vertical, "
+                            "horizontal) drawn lengths — the ratio is then a drawing choice "
+                            "declared in scale:")
+    if hyp_key in numeric and not legs_numeric:
+        worst = min(lv_px, lh_px)
+        if numeric[hyp_key] <= 0:
+            raise TemplateError(f"{kind}: hypotenuse value must be positive")
+        if hyp_key in numeric and leg_v_key in numeric and \
+                numeric[hyp_key] <= numeric[leg_v_key]:
+            raise TemplateError(f"{kind}: hypotenuse {numeric[hyp_key]:g} cannot be ≤ leg "
+                                f"{numeric[leg_v_key]:g}")
+        if hyp_key in numeric and leg_h_key in numeric and \
+                numeric[hyp_key] <= numeric[leg_h_key]:
+            raise TemplateError(f"{kind}: hypotenuse {numeric[hyp_key]:g} cannot be ≤ leg "
+                                f"{numeric[leg_h_key]:g}")
+    mir = mirror or ""
+    if mir not in ("", "x", "y", "xy"):
+        raise TemplateError(f"{kind}: mirror must be one of '', 'x', 'y', 'xy'")
+    sx = -1.0 if "x" in mir else 1.0
+    sy = -1.0 if "y" in mir else 1.0
+    B = (0.0, 0.0)
+    Uv = (0.0, -sy * lv_px)
+    H = (sx * lh_px, 0.0)
+    P = {right: B, up: Uv, horiz: H}
+    centroid = ((B[0] + Uv[0] + H[0]) / 3, (B[1] + Uv[1] + H[1]) / 3)
+    seg_of = {leg_v_key: (right, up), leg_h_key: (right, horiz), hyp_key: (up, horiz)}
+    extra: dict[str, float] = {}
+    for nm, t in (extra_base or {}).items():
+        if not (isinstance(nm, str) and re.fullmatch(r"[A-Z]", nm)) or nm in names:
+            raise TemplateError(f"{kind}: extra point {nm!r} must be a fresh single capital")
+        if not isinstance(t, (int, float)) or isinstance(t, bool) or not 0 < t <= 3:
+            raise TemplateError(f"{kind}: {nm}'s fraction on the {right}{horiz} ray must be "
+                                "in (0, 3]")
+        P[nm] = (H[0] * float(t), H[1] * float(t))
+        extra[nm] = float(t)
+    alt = None
+    if altitude is not None:
+        if not isinstance(altitude, dict) or altitude.get("from") not in names:
+            raise TemplateError(f"{kind}: altitude is {{'from': <vertex>, 'foot': 'D'?}}")
+        a_from = altitude["from"]
+        opp = [n for n in names if n != a_from]
+        foot = altitude.get("foot") or _unused_letters(set(names) | set(extra), 1)[0]
+        if not (isinstance(foot, str) and re.fullmatch(r"[A-Z]", foot)) or \
+                foot in P:
+            raise TemplateError(f"{kind}: altitude foot {foot!r} must be a fresh capital")
+        f = vc.foot_of_perpendicular(P[a_from], P[opp[0]], P[opp[1]])
+        L = vc.dist(P[opp[0]], P[opp[1]])
+        t_ = ((f[0] - P[opp[0]][0]) * (P[opp[1]][0] - P[opp[0]][0]) +
+              (f[1] - P[opp[0]][1]) * (P[opp[1]][1] - P[opp[0]][1])) / (L * L)
+        if not 0.02 < t_ < 0.98:
+            raise TemplateError(f"{kind}: the perpendicular from {a_from} misses the "
+                                f"interior of {''.join(opp)} — no altitude to draw")
+        P[foot] = f
+        alt = (a_from, foot, "".join(opp))
+    ang_specs: dict[str, tuple] = {}
+    all_vertices = names + list(extra)
+    for v_, t_ in (angles or {}).items():
+        if v_ == right:
+            raise TemplateError(f"{kind}: {right} carries the right-angle mark — no arc")
+        if v_ not in all_vertices:
+            raise TemplateError(f"{kind}: angle vertex {v_!r} is not a drawn point")
+        kk, num, txt = _angle_text_kind(kind, t_, v_)
+        arms = ([o for o in names if o != v_] if v_ in names else [right, up])
+        drawn_a = abs(_angle_of(P[arms[0]], P[v_]) - _angle_of(P[arms[1]], P[v_]))
+        drawn_a = min(drawn_a, 360.0 - drawn_a)
+        if kk == "num":
+            if abs(num - drawn_a) > 0.75:
+                raise TemplateError(f"{kind}: label {t_!r} at {v_} prints {num:g}° but the "
+                                    f"drawn angle is {drawn_a:.2f}° — a label may only "
+                                    "restate the geometry (fix the legs or the label)")
+            require_stem(stem, **{f"angle {v_} ({t_!r})": num})
+        ang_specs[v_] = (kk, num, txt, arms)
+
+    elements: list[dict] = [vc.line(P[a], P[b], id=f"s{''.join(sorted((a, b)))}")
+                            for a, b in ((right, up), (right, horiz), (up, horiz))]
+    elements += vc.right_angle_mark(P[right], P[up], P[horiz], r=14)
+    for nm in extra:
+        elements.append(vc.line(P[up], P[nm], id=f"s{''.join(sorted((up, nm)))}"))
+    if alt:
+        elements.append(vc.line(P[alt[0]], P[alt[1]], id=f"s{alt[0]}{alt[1]}"))
+        elements += vc.right_angle_mark(P[alt[1]], P[alt[0]], P[alt[2][0]], r=12)
+    span0 = max(lv_px, lh_px) + 2 * 60.0
+    clr = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, span0)
+    boxes: list = []
+    for s, (na, nb) in seg_of.items():
+        if s not in val:
+            continue
+        v_ = val[s]
+        glyph = f"{v_:g} {unit}" if isinstance(v_, (int, float)) else str(v_)
+        el = _seat_side_label(kind, elements, boxes, P[na], P[nb], glyph, centroid,
+                              clr, f"lbl{s}")
+        elements.append(el)
+        boxes.append(label_boxes([el], FS)[0][1:])
+    for v_, (kk, num, txt, arms) in ang_specs.items():
+        els_ = _angle_arc_label(kind, elements, P[v_], P[arms[0]], P[arms[1]],
+                                txt, arcs=1, r0=24.0, clr=clr)
+        elements += els_
+        P[f"{v_}1"] = tuple(els_[-1]["at"])
+    for nm in names:
+        ux, uy = vc.unit(centroid, P[nm])
+        d_ = clr + _label_half_along(nm, FS, ux, uy) + 2.0
+        elements.append(vc.text((P[nm][0] + ux * d_, P[nm][1] + uy * d_), nm,
+                                id=f"lbv{nm}"))
+    for nm in extra:
+        elements.append(_float_label(f"lbx{nm}", nm, P[nm]))
+    if alt:
+        elements.append(_float_label(f"lbf{alt[1]}", alt[1], P[alt[1]]))
+
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    a1, a2 = others
+    add(f"right {a1} {right} {a2}", "inferred", "the right-angle mark")
+    for s, v_ in val.items():
+        na, nb = seg_of[s]
+        glyph = f"{v_:g} {unit}" if isinstance(v_, (int, float)) else str(v_)
+        add(f'label "{glyph}" names {na}{nb}', "stem" if isinstance(v_, (int, float))
+            else "inferred",
+            f"the printed label on {na}{nb}" if isinstance(v_, (int, float)) else
+            f"the unknown on {na}{nb}")
+    if legs_numeric and hyp_key in numeric:
+        lv, lh, hp = numeric[leg_v_key], numeric[leg_h_key], numeric[hyp_key]
+        add(f"derive {lv:g} * {lv:g} = {_num_exact(lv * lv)}", "inferred",
+            f"{leg_v_key}² for Pythagoras")
+        add(f"derive {lh:g} * {lh:g} = {_num_exact(lh * lh)}", "inferred",
+            f"{leg_h_key}² for Pythagoras")
+        add(f"derive {_num_exact(lv * lv)} + {_num_exact(lh * lh)} = "
+            f"{_num_exact(lv * lv + lh * lh)}", "inferred", "the leg squares sum")
+        add(f"derive {hp:g} * {hp:g} = {_num_exact(hp * hp)}", "inferred",
+            f"{hyp_key}² = the leg squares sum")
+    elif legs_numeric:
+        lv, lh = numeric[leg_v_key], numeric[leg_h_key]
+        add(f"derive {lv:g} / {lh:g} = {_num_exact(lv / lh)}", "inferred",
+            "the drawn leg ratio restates the printed sides")
+    else:
+        add(f"derive 2 * {vc.r2(max(lv_px, lh_px)):g} = "
+            f"{_num_exact(2 * max(lv_px, lh_px))}", "inferred",
+            "the longer drawn leg doubled (canvas units)")
+    for v_, (kk, num, txt, arms) in ang_specs.items():
+        if kk == "num":
+            add(f"angle {arms[0]} {v_} {arms[1]} = {num:g}", "stem",
+                f"the printed {txt} at {v_}")
+        else:
+            add(f'describe "the angle at {v_} is marked {txt} — the unknown"',
+                "inferred", "a letter label")
+        add(f'label "{txt}" names {v_}1', "inferred",
+            f"the label on the arc at {v_} (anchor {v_}1)")
+    if alt:
+        add(f"right {alt[0]} {alt[1]} {alt[2][0]}", "inferred",
+            f"the altitude's right-angle mark at {alt[1]}")
+        add(f"on {alt[1]} {alt[2]}", "inferred", f"{alt[1]} is the foot on {alt[2]}")
+        add(f'label "{alt[1]}" names {alt[1]}', "inferred", "the foot's letter")
+        add(f'describe "{alt[0]}{alt[1]} is the perpendicular from {alt[0]} to '
+            f'{alt[2]}"', "inferred", "the drawn altitude")
+    for nm in extra:
+        add(f"collinear {right} {horiz} {nm}", "inferred",
+            f"{nm} sits on the {right}{horiz} ray")
+        add(f'label "{nm}" names {nm}', "inferred", "the letter at the base point")
+    for nm in names:
+        add(f'label "{nm}" names {nm}', "inferred", "a vertex letter")
+    absent = ["tickMark", "parallelMark", "arrow", "shaded", "dashed"]
+    add("none " + " ".join(absent), "inferred",
+        "sides, marks and labels only — nothing else is drawn")
+    segs = [f"{a}{b}" for a, b in ((right, up), (right, horiz), (up, horiz))]
+    segs += [f"{up}{nm}" for nm in extra]
+    if alt:
+        segs.append(f"{alt[0]}{alt[1]}")
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=dict(P), points=list(P), segments=segs, claims=claims,
+                  ask=ask,
+                  title=title or f"Right triangle {''.join(names)}",
+                  description=description or (
+                      f"Right-angled triangle {''.join(names)} with the right angle at "
+                      f"{right}" +
+                      (f" and an altitude from {alt[0]}." if alt else ".")),
+                  scale=("to scale — drawn legs are proportional to the printed sides"
+                         if legs_numeric else
+                         "leg ratio as drawn — printed lengths are to scale relative "
+                         "to each labelled side only where numeric"),
+                  medium=medium)
+
+
+def build_circle_angles(*, figure_id, stem, ask=None, title=None, description=None,
+                        medium="english", points, centre="O", cyclic=None, chords=None,
+                        radii=None, radii_dashed=None, tangents=None, external=None,
+                        extend=None, angles=None, ticks=None, segment=None, r_px=None):
+    """A circle with named points on it (by angle, 0° = east, 90° = DOWN — the cookbook
+    polar convention) and theorem features:
+      `cyclic="ABCD"` — the four named points joined in order (a cyclic quadrilateral)
+      `chords=[("A","B"),…]`, `radii=["A",…]` (auto-added to every tangent touch point),
+      `radii_dashed=["A",…]` (subset, drawn dashed)
+      `tangents=[{"at":"C","ends":("A","B")}]` — the tangent LINE at point C with fresh
+        end letters; the radius to C is drawn and the right mark claimed
+      `external={"T": ["A","B"]}` — the two tangents at A and B meet at external point T;
+        segments TA and TB are drawn (the tangents from one point are equal — claimed)
+      `extend=[{"side":"AB","to":"E"}]` — side AB produced past B to external point E
+      `angles=[{"at": X, "arms": ("P","Q"), "label": "x"|"70°"|None, "arcs": n,
+        "reflex": bool}]` — a mark between two DRAWN rays from `at`; a numeric label
+        must equal the drawn angle (±0.75°) and be a stem number
+      `ticks={"AB": n}` (1–3) on any drawn segment; `segment=("A","B")` shades the
+        minor segment of that chord ({"chord": …, "major": True} for the major one).
+    Crowded figures retry at drawn radii 90 → 150."""
+    kw = dict(figure_id=figure_id, stem=stem, ask=ask, title=title,
+              description=description, medium=medium, points=points, centre=centre,
+              cyclic=cyclic, chords=chords, radii=radii, radii_dashed=radii_dashed,
+              tangents=tangents, external=external, extend=extend, angles=angles,
+              ticks=ticks, segment=segment)
+    tries = [(float(r_px), 0.0)] if r_px is not None else \
+        [(rp, x) for rp in (90.0, 120.0, 150.0) for x in (0.0, 6.0)]
+    for k_, (rp, ex) in enumerate(tries):
+        try:
+            return _circle_angles_once(extra=ex, r_px=rp, **kw)
+        except TemplateError as e_:
+            if k_ == len(tries) - 1 or not re.search(r"rendered px|no clear spot|clear seat",
+                                                     str(e_)):
+                raise
+
+
+def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, points,
+                        centre, cyclic, chords, radii, radii_dashed, tangents, external,
+                        extend, angles, ticks, segment, r_px, extra):
+    kind = "circle_angles"
+    vc.reset_ids()
+    if centre is not None and not (isinstance(centre, str)
+                                   and re.fullmatch(r"[A-Z]", centre)):
+        raise TemplateError(f"{kind}: centre is one capital letter or None")
+    O = centre or "O"
+    if not isinstance(points, dict) or len(points) < 2:
+        raise TemplateError(f"{kind}: points needs ≥2 named on-circle points")
+    deg: dict[str, float] = {}
+    for nm, d in points.items():
+        if not (isinstance(nm, str) and re.fullmatch(r"[A-Z]", nm)) or nm == O:
+            raise TemplateError(f"{kind}: point names are single capitals other than "
+                                f"the centre {O} — got {nm!r}")
+        if not isinstance(d, (int, float)) or isinstance(d, bool) or not math.isfinite(d):
+            raise TemplateError(f"{kind}: {nm}'s angle must be degrees — got {d!r}")
+        deg[nm] = float(d) % 360.0
+    names = list(deg)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            if not _deg_clear(deg[a], [deg[b]], 20.0):
+                raise TemplateError(f"{kind}: {a} and {b} are under 20° apart — their "
+                                    "letters would collide; spread the angles")
+    if not (isinstance(r_px, (int, float)) and 60.0 <= r_px <= 170.0):
+        raise TemplateError(f"{kind}: r_px must be 60–170 units")
+    r_px = float(r_px)
+    Oxy = (0.0, 0.0)
+    P: dict[str, XY] = {nm: on_circle_point(Oxy, r_px, deg[nm]) for nm in names}
+    if centre:
+        P[O] = Oxy
+    used = set(names) | ({O} if centre else set())
+
+    def fresh(letter, what):
+        if not (isinstance(letter, str) and re.fullmatch(r"[A-Z]", letter)):
+            raise TemplateError(f"{kind}: {what} {letter!r} must be a single capital")
+        if letter in used:
+            raise TemplateError(f"{kind}: letter {letter} is already used — pick a fresh one")
+        used.add(letter)
+        return letter
+
+    def need_pt(nm, what):
+        if nm not in P:
+            raise TemplateError(f"{kind}: {what} names {nm!r} — not a known point "
+                                f"({sorted(P)})")
+        return nm
+
+    linked: dict[str, set[str]] = {n: set() for n in P}
+
+    def join(a, b):
+        linked.setdefault(a, set()).add(b)
+        linked.setdefault(b, set()).add(a)
+
+    seg_defs: dict[frozenset, tuple[str, str]] = {}
+
+    def want_seg(a, b):
+        need_pt(a, "segment"); need_pt(b, "segment")
+        if a == b:
+            raise TemplateError(f"{kind}: segment {a}{b} is a point")
+        seg_defs.setdefault(frozenset((a, b)), (a, b))
+        join(a, b)
+
+    cyc = None
+    if cyclic is not None:
+        if not (isinstance(cyclic, str) and len(cyclic) == 4
+                and len(set(cyclic)) == 4 and all(c in deg for c in cyclic)):
+            raise TemplateError(f"{kind}: cyclic must name 4 distinct on-circle points")
+        cyc = list(cyclic)
+        for i in range(4):
+            want_seg(cyc[i], cyc[(i + 1) % 4])
+    for ab in (chords or []):
+        if not (isinstance(ab, (list, tuple)) and len(ab) == 2):
+            raise TemplateError(f"{kind}: each chord is a pair of point names")
+        want_seg(*ab)
+    rad: dict[str, bool] = {}
+    for nm in (radii or []):
+        need_pt(nm, "radius")
+        rad[nm] = False
+    for nm in (radii_dashed or []):
+        need_pt(nm, "radius")
+        rad[nm] = True
+    tan_defs: list[dict] = []
+    for tg in (tangents or []):
+        if not isinstance(tg, dict):
+            raise TemplateError(f"{kind}: a tangent is {{'at': pt, 'ends': (A, B)}}")
+        at = tg.get("at")
+        need_pt(at, "tangent")
+        ends = tg.get("ends")
+        if not (isinstance(ends, (list, tuple)) and len(ends) == 2):
+            raise TemplateError(f"{kind}: tangent at {at} needs two end letters")
+        e1, e2 = (fresh(e, "tangent end") for e in ends)
+        tan_defs.append({"at": at, "ends": (e1, e2)})
+        rad.setdefault(at, False)
+    ext = None
+    if external is not None:
+        if not isinstance(external, dict) or len(external) != 1:
+            raise TemplateError(f"{kind}: external is {{'T': ['A','B']}}")
+        (tn, tp), = external.items()
+        if not (isinstance(tp, (list, tuple)) and len(tp) == 2 and tp[0] != tp[1]):
+            raise TemplateError(f"{kind}: external tangents need two distinct touch points")
+        for nm in tp:
+            need_pt(nm, "external tangent")
+        tn = fresh(tn, "external point")
+        ext = (tn, tp[0], tp[1])
+    exts: list[tuple] = []
+    for ex in (extend or []):
+        if not isinstance(ex, dict):
+            raise TemplateError(f"{kind}: an extension is {{'side': 'AB', 'to': 'E'}}")
+        side, to = ex.get("side"), ex.get("to")
+        if not (isinstance(side, str) and len(side) == 2):
+            raise TemplateError(f"{kind}: extend side must be two letters like 'AB'")
+        if frozenset(side) not in seg_defs:
+            raise TemplateError(f"{kind}: extend {side!r} — that segment is not drawn")
+        to = fresh(to, "extension point")
+        exts.append((side[0], side[1], to))
+    seg_shade = None
+    if segment is not None:
+        if isinstance(segment, (list, tuple)) and len(segment) == 2:
+            seg_shade = (segment[0], segment[1], False)
+        elif isinstance(segment, dict) and isinstance(segment.get("chord"), str):
+            seg_shade = (segment["chord"][0], segment["chord"][1],
+                         bool(segment.get("major")))
+        else:
+            raise TemplateError(f"{kind}: segment is ('A','B') or {{'chord':'AB','major':b}}")
+        for nm in seg_shade[:2]:
+            need_pt(nm, "shaded segment")
+        want_seg(*seg_shade[:2])
+    tk: dict[tuple, int] = {}
+    for s, c_ in (ticks or {}).items():
+        if not (isinstance(s, str) and len(s) == 2):
+            raise TemplateError(f"{kind}: tick key {s!r} must be two letters")
+        if c_ not in (1, 2, 3):
+            raise TemplateError(f"{kind}: tick count on {s} must be 1, 2 or 3")
+        tk[frozenset(s)] = c_
+    ang_specs: list[dict] = []
+    for i, a in enumerate(angles or []):
+        if not isinstance(a, dict):
+            raise TemplateError(f"{kind}: an angle is {{'at': X, 'arms': (P, Q), …}}")
+        at = a.get("at")
+        arms = a.get("arms")
+        if not (isinstance(arms, (list, tuple)) and len(arms) == 2 and arms[0] != arms[1]):
+            raise TemplateError(f"{kind}: angle {i} needs two distinct arm endpoints")
+        arcs = a.get("arcs", 1)
+        if arcs not in (1, 2, 3):
+            raise TemplateError(f"{kind}: arc count at {at} must be 1–3")
+        reflex = bool(a.get("reflex"))
+        lab = a.get("label")
+        if lab is not None:
+            kk, num, txt = _angle_text_kind(kind, lab, str(at))
+        else:
+            kk, num, txt = ("none", None, None)
+        ang_specs.append({"at": at, "arms": tuple(arms), "label": lab,
+                          "kk": kk, "num": num, "txt": txt, "arcs": arcs,
+                          "reflex": reflex})
+
+    for tg in tan_defs:
+        at = tg["at"]
+        ux, uy = vc.unit(Oxy, P[at])
+        tx, ty = -uy, ux
+        L = r_px * 0.95
+        e1, e2 = tg["ends"]
+        P[e1] = (P[at][0] - tx * L, P[at][1] - ty * L)
+        P[e2] = (P[at][0] + tx * L, P[at][1] + ty * L)
+        tg["line"] = (P[e1], P[e2])
+        join(at, e1); join(at, e2); join(e1, e2)
+    if ext:
+        tn, ta, tb = ext
+        d1 = vc.unit(Oxy, P[ta]); d2 = vc.unit(Oxy, P[tb])
+        t1 = (P[ta][0] - d1[1], P[ta][1] + d1[0])
+        t2 = (P[tb][0] - d2[1], P[tb][1] + d2[0])
+        try:
+            T = vc.intersect(P[ta], t1, P[tb], t2)
+        except Exception:
+            raise TemplateError(f"{kind}: the tangents at {ta} and {tb} are parallel "
+                                "(antipodal points) — no external point exists")
+        if vc.dist(T, Oxy) <= r_px + 12.0:
+            raise TemplateError(f"{kind}: the tangents at {ta} and {tb} meet inside or "
+                                "on the circle — move the touch points apart")
+        P[tn] = T
+        want_seg(ta, tn); want_seg(tb, tn)
+    for a_, b_, to in exts:
+        ux, uy = vc.unit(P[a_], P[b_])
+        P[to] = (P[b_][0] + ux * (r_px * 0.8), P[b_][1] + uy * (r_px * 0.8))
+        join(b_, to)
+    for nm, dashed in rad.items():
+        want_seg(O, nm)
+    elements: list[dict] = []
+    if seg_shade:
+        a_, b_, maj = seg_shade
+        s_, e_ = deg[a_], deg[b_]
+        d_ = (e_ - s_) % 360.0
+        if maj and d_ > 180.0 or (not maj and d_ > 180.0):
+            s_, e_ = e_, e_ + (360.0 - d_)
+        else:
+            e_ = s_ + d_
+        elements.append(vc.polygon(vc.sampled_arc(Oxy, r_px, s_, e_), fill=vc.SHADE,
+                                   stroke_width=0, id="segsh"))
+    elements.append(vc.circle(Oxy, r_px, id="circ"))
+    for nm, dashed in rad.items():
+        elements.append(vc.line(Oxy, P[nm], id=f"r{nm}", dashed=dashed))
+    for tg in tan_defs:
+        elements.append(vc.line(*tg["line"], id=f"tg{tg['at']}"))
+        elements += vc.right_angle_mark(P[tg["at"]], Oxy, tg["line"][0], r=12)
+    drawn_segs = [ab for ab in seg_defs.values()]
+    for a_, b_ in drawn_segs:
+        elements.append(vc.line(P[a_], P[b_], id=f"s{a_}{b_}"))
+    for fs_, c_ in tk.items():
+        a_, b_ = seg_defs.get(fs_) or (None, None)
+        if a_ is None:
+            raise TemplateError(f"{kind}: ticks on {''.join(fs_)} — that segment is not drawn")
+        elements += vc.tick_marks(P[a_], P[b_], c_, size=10)
+    if centre:
+        elements.append({"id": "ptO", "type": "point", "at": vc.P(Oxy), "r": 3.5})
+    for nm in names:
+        elements.append({"id": f"pt{nm}", "type": "point", "at": vc.P(P[nm]), "r": 3.5})
+    span = 2 * (r_px + 70.0)
+    clr = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, span) + extra
+    for i, a in enumerate(ang_specs):
+        at, arms = a["at"], a["arms"]
+        if at not in P:
+            raise TemplateError(f"{kind}: angle {i}'s vertex {at!r} is not a drawn point")
+        for arm in arms:
+            if arm not in P:
+                raise TemplateError(f"{kind}: angle {i}'s arm {arm!r} is not a point")
+            if arm not in linked.get(at, ()):
+                raise TemplateError(
+                    f"{kind}: no drawn line joins {at} to {arm} — an angle mark needs "
+                    "both arms drawn")
+        d1 = _angle_of(P[arms[0]], P[at]); d2 = _angle_of(P[arms[1]], P[at])
+        sweep = abs(_sweep_delta(d1, d2, "cw" if a["reflex"] else None))
+        drawn_a = (360.0 - sweep) if a["reflex"] else min(sweep, 360.0 - sweep)
+        if a["kk"] == "num":
+            if abs(a["num"] - drawn_a) > 0.75:
+                raise TemplateError(
+                    f"{kind}: angle label {a['txt']!r} at {at} prints {a['num']:g}° but "
+                    f"the drawn angle {arms[0]}{at}{arms[1]} is {drawn_a:.2f}° — a label "
+                    "may only restate the geometry (move a point or fix the label)")
+            require_stem(stem, **{f"angle {at} ({a['txt']!r})": a["num"]})
+        a["drawn"] = drawn_a
+        if a["txt"] is not None:
+            try:
+                els_ = _angle_arc_label(kind, elements, P[at], P[arms[0]], P[arms[1]],
+                                        a["txt"], arcs=a["arcs"], r0=24.0, clr=clr,
+                                        reflex=a["reflex"],
+                                        max_d=max(r_px * 1.4, 120.0))
+                a["at_txt"] = tuple(els_[-1]["at"])
+            except TemplateError:
+                els_ = None
+            if els_ is None:
+                els_ = vc.angle_label(P[at], P[arms[0]], P[arms[1]], r=24.0,
+                                      label=a["txt"], arcs=a["arcs"],
+                                      reflex=a["reflex"])
+                size = FS * 0.9
+                d_ = 24.0 + LABEL_GAP + 0.28 * size * len(a["txt"])
+                bis = _bisector_deg(_angle_of(P[arms[0]], P[at]),
+                                    _angle_of(P[arms[1]], P[at]), a["reflex"])
+                a["at_txt"] = (P[at][0] + d_ * math.cos(math.radians(bis)),
+                               P[at][1] + d_ * math.sin(math.radians(bis)))
+        else:
+            els_ = _angle_arc_label(kind, elements, P[at], P[arms[0]], P[arms[1]],
+                                    None, arcs=a["arcs"], r0=24.0, clr=clr,
+                                    reflex=a["reflex"],
+                                    max_d=max(r_px * 1.4, 120.0))
+        elements += els_
+        if a["txt"] is not None:
+            anch = f"{at}{i + 1}"
+            P[anch] = a["at_txt"]
+            a["anchor"] = anch
+    for nm in names:
+        u = (math.cos(math.radians(deg[nm])), math.sin(math.radians(deg[nm])))
+        d_ = clr + _label_half_along(nm, FS, u[0], u[1]) + 2.0
+        elements.append(vc.text((P[nm][0] + u[0] * d_, P[nm][1] + u[1] * d_), nm,
+                                id=f"lb{nm}"))
+    if centre:
+        elements.append(_float_label("lbO", O, Oxy))
+    for tg in tan_defs:
+        for e_ in tg["ends"]:
+            elements.append(_float_label(f"lb{e_}", e_, P[e_]))
+    if ext:
+        elements.append(_float_label(f"lb{ext[0]}", ext[0], P[ext[0]]))
+    for _, _, to in exts:
+        elements.append(_float_label(f"lb{to}", to, P[to]))
+
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    _circle_claim(add, O, r_px, names)
+    diameter = lambda a, b: abs((deg[a] - deg[b] + 180.0) % 360.0 - 180.0) > 179.999
+    if cyc:
+        add(f'describe "{"".join(cyc)} is a cyclic quadrilateral — the four vertices '
+            'lie on the circle"', "inferred", "the inscribed polygon")
+    for a_, b_ in drawn_segs:
+        if ext and frozenset((a_, b_)) in (frozenset((ext[0], ext[1])),
+                                         frozenset((ext[0], ext[2]))):
+            continue
+        if a_ == O or b_ == O:
+            continue
+        if diameter(a_, b_):
+            add(f"on {O} {a_}{b_}", "inferred", "the chord passes through the centre")
+            add(f'describe "{a_}{b_} is a diameter — a chord through the centre {O}"',
+                "inferred", "the drawn diameter")
+        else:
+            add(f'describe "{a_}{b_} is a chord of the circle"', "inferred",
+                "a drawn chord")
+    for nm, dashed in rad.items():
+        add(f'describe "{O}{nm} is a radius — from the centre {O} to the circle'
+            + (' (drawn dashed)' if dashed else '') + '"', "inferred", "a drawn radius")
+    for tg in tan_defs:
+        e1, e2 = tg["ends"]
+        add(f'describe "{e1}{e2} is the tangent at {tg["at"]} — it touches the circle '
+            f'there and is perpendicular to radius {O}{tg["at"]}"', "inferred",
+            "the drawn tangent")
+        add(f"right {e1} {tg['at']} {O}", "inferred", "the tangent ⟂ radius mark")
+        add(f'label "{e1}" names {e1}', "inferred", "a tangent end letter")
+        add(f'label "{e2}" names {e2}', "inferred", "a tangent end letter")
+    if ext:
+        tn, ta, tb = ext
+        add(f'describe "{tn}{ta} and {tn}{tb} are tangents from {tn} touching the '
+            f'circle at {ta} and {tb}"', "inferred", "the external tangent pair")
+        add(f"equal {tn}{ta} {tn}{tb}", "inferred",
+            "tangents from one external point are equal")
+        add(f'label "{tn}" names {tn}', "inferred", "the external point's letter")
+        for tp in (ta, tb):
+            if tp in rad:
+                add(f"right {tn} {tp} {O}", "inferred", "the tangent ⟂ radius mark")
+    for a_, b_, to in exts:
+        add(f"collinear {a_} {b_} {to}", "inferred", f"{a_}{b_} is produced to {to}")
+        add(f'describe "side {a_}{b_} is produced to {to} — the exterior angle at '
+            f'{b_}"', "inferred", "the extended side")
+        add(f'label "{to}" names {to}', "inferred", "the extension's letter")
+    if seg_shade:
+        a_, b_, maj = seg_shade
+        add(f"arc centre {O} from {a_} to {b_}", "inferred", "the segment's arc")
+        add(f'describe "the {"major" if maj else "minor"} segment between chord '
+            f'{a_}{b_} and its arc is shaded"', "inferred", "the shaded segment")
+    tk_groups: dict[int, list[str]] = {}
+    for fs_, c_ in tk.items():
+        a_, b_ = seg_defs[fs_]
+        tk_groups.setdefault(c_, []).append(f"{a_}{b_}")
+    for c_, segs_ in tk_groups.items():
+        for i in range(len(segs_)):
+            for j in range(i + 1, len(segs_)):
+                add(f"equal {segs_[i]} {segs_[j]}", "inferred",
+                    f"both carry {c_} tick mark{'s' if c_ > 1 else ''}")
+    for i, a in enumerate(ang_specs):
+        at, arms = a["at"], a["arms"]
+        if a["kk"] == "num" and a["reflex"]:
+            add(f'describe "the reflex angle {arms[0]}{at}{arms[1]} is marked '
+                f'{a["txt"]}"', "stem", f"the printed {a['txt']} at {at} — the "
+                "audit measures the smaller angle, so the reflex is described")
+        elif a["kk"] == "num":
+            add(f"angle {arms[0]} {at} {arms[1]} = {a['num']:g}", "stem",
+                f"the printed {a['txt']} at {at}")
+        elif a["txt"] is not None:
+            add(f'describe "the angle {arms[0]}{at}{arms[1]} is marked {a["txt"]} — '
+                'the unknown"', "inferred", "a letter label")
+        if a["txt"] is not None:
+            add(f'label "{a["txt"]}" names {a["anchor"]}', "inferred",
+                f"the angle label at {at} (anchor {a['anchor']})")
+    if centre:
+        add(f'label "{O}" names {O}', "inferred", "the centre's letter")
+    for nm in names:
+        add(f'label "{nm}" names {nm}', "inferred", "a point on the circle")
+    add(f"derive 2 * {vc.r2(r_px):g} = {_num_exact(2 * vc.r2(r_px))}", "inferred",
+        "the drawn diameter is twice the drawn radius (canvas units)")
+    absent = ["parallelMark", "arrow", "shaded", "dashed", "tickMark", "angleMark"]
+    if seg_shade:
+        absent.remove("shaded")
+    if tk:
+        absent.remove("tickMark")
+    if ang_specs:
+        absent.remove("angleMark")
+    if any(rad.values()):
+        absent.remove("dashed")
+    add("none " + " ".join(absent), "inferred",
+        "only the parts claimed above are drawn")
+    segs = [f"{a}{b}" for a, b in drawn_segs]
+    parts = []
+    if cyc:
+        parts.append("a cyclic quadrilateral")
+    if chords:
+        parts.append("chords")
+    if tan_defs:
+        parts.append("a tangent")
+    if ext:
+        parts.append("external tangents")
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=dict(P), points=list(P), segments=segs, claims=claims,
+                  ask=ask, title=title or "A circle theorem figure",
+                  description=description or (
+                      f"A circle" + (f" with centre {O}" if centre else "") +
+                      (f" showing {', '.join(parts)}." if parts else
+                       f", points {', '.join(names)} on it.")),
+                  scale="the circle's size is a canvas choice — angles and contacts "
+                        "are exact",
+                  medium=medium)
+
+
+def build_triangle_parallel(*, figure_id, stem, ask=None, title=None,
+                            description=None, medium="english",
+                            names=("A", "B", "C"), angles, div=None, parallel=None,
+                            ticks=None, labels=None, sides=None, unit="cm",
+                            angle_labels=None, arcs=None, base_px=None):
+    """A triangle drawn from its three angles (base = first two names, apex above) with
+    points dividing two sides and an interior segment. `angles` = {A:a,B:b,C:c}
+    (sum 180, each ≥15 — the drawing's shape). `div` = {"X": ("AB", t), "Y": ("AC", s)}
+    puts X on side AB at fraction t measured from the FIRST letter (0<t<1). `parallel`
+    = ("XY", "BC") asserts the divider segment parallel to the named third side — the
+    two fractions measured from their SHARED vertex must be equal (a drawn ∥ claim can
+    never lie). `ticks` = {"AX": 1, …} on any sub-segment or whole side (1–3, asserted
+    ⇔ drawn length equal). `sides` = {"AB": 12} gives a side's TRUE length (stem-checked)
+    so a printed `labels` number on a sub-segment may only restate fraction × that
+    length; a label without a stated side length must be one lowercase letter.
+    `angle_labels`/`arcs` work as in triangle_marks."""
+    kind = "triangle_parallel"
+    kw = dict(figure_id=figure_id, stem=stem, ask=ask, title=title,
+              description=description, medium=medium, names=names, angles=angles,
+              div=div, parallel=parallel, ticks=ticks, labels=labels, sides=sides,
+              unit=unit, angle_labels=angle_labels, arcs=arcs)
+    if base_px is not None:
+        return _triangle_parallel_once(base_px=float(base_px), **kw)
+    for k_, b_ in enumerate((200.0, 260.0, 340.0)):
+        try:
+            return _triangle_parallel_once(base_px=b_, **kw)
+        except TemplateError as e_:
+            if k_ == 2 or not re.search(r"rendered px|cannot clear|clear seat", str(e_)):
+                raise
+
+
+def _triangle_parallel_once(*, figure_id, stem, ask, title, description, medium,
+                            names, angles, div, parallel, ticks, labels, sides, unit,
+                            angle_labels, arcs, base_px):
+    kind = "triangle_parallel"
+    vc.reset_ids()
+    names = list(names)
+    if len(names) != 3 or len(set(names)) != 3 or \
+            not all(isinstance(n, str) and re.fullmatch(r"[A-Z]", n) for n in names):
+        raise TemplateError(f"{kind}: names must be three distinct single capitals")
+    A, B, Cn = names
+    if not isinstance(angles, dict) or set(angles) != set(names):
+        raise TemplateError(f"{kind}: angles must give all three of {names}")
+    ang = {}
+    for n, v_ in angles.items():
+        if not isinstance(v_, (int, float)) or isinstance(v_, bool) or not 15 <= v_ < 180:
+            raise TemplateError(f"{kind}: angle {n}={v_!r} must be in [15, 180)")
+        ang[n] = float(v_)
+    if abs(sum(ang.values()) - 180.0) > 1e-6:
+        raise TemplateError(f"{kind}: the angles sum to {sum(ang.values()):g}, not 180")
+    P = {A: (0.0, 0.0), B: (float(base_px), 0.0)}
+    P[Cn] = vc.triangle_from_angles(P[A], P[B], ang[A], ang[B])
+    sides_of = {"AB": (A, B), "BC": (B, Cn), "CA": (Cn, A),
+                "BA": (A, B), "CB": (B, Cn), "AC": (Cn, A)}
+
+    def side_pair(s):
+        if not (isinstance(s, str) and len(s) == 2 and s in sides_of):
+            raise TemplateError(f"{kind}: {s!r} is not a side of triangle {''.join(names)}")
+        return sides_of[s]
+
+    dv: dict[str, tuple] = {}
+    for nm, spec in (div or {}).items():
+        if not (isinstance(nm, str) and re.fullmatch(r"[A-Z]", nm)) or nm in names:
+            raise TemplateError(f"{kind}: divider {nm!r} must be a fresh capital")
+        if not (isinstance(spec, (list, tuple)) and len(spec) == 2):
+            raise TemplateError(f"{kind}: {nm} needs ('side', fraction)")
+        pa, pb = side_pair(spec[0])
+        t = spec[1]
+        if not isinstance(t, (int, float)) or isinstance(t, bool) or not 0.02 < t < 0.98:
+            raise TemplateError(f"{kind}: {nm}'s fraction must be in (0.02, 0.98)")
+        first, last = spec[0][0], spec[0][1]
+        dv[nm] = (first, last, float(t))
+        P[nm] = vc.lerp(P[first], P[last], float(t))
+    if len(dv) > 2:
+        raise TemplateError(f"{kind}: at most two dividers (one interior segment)")
+    par = None
+    if parallel is not None:
+        if not (isinstance(parallel, (list, tuple)) and len(parallel) == 2):
+            raise TemplateError(f"{kind}: parallel is ('XY', 'BC')")
+        seg1, seg2 = parallel
+        if not (isinstance(seg1, str) and len(seg1) == 2):
+            raise TemplateError(f"{kind}: the divider segment name must be two letters")
+        d1, d2 = seg1[0], seg1[1]
+        if d1 not in dv or d2 not in dv:
+            raise TemplateError(f"{kind}: {seg1} must join the two dividers {sorted(dv)}")
+        pa, pb = side_pair(seg2)
+        shared = set((dv[d1][0], dv[d1][1])) & set((dv[d2][0], dv[d2][1]))
+        if len(shared) != 1:
+            raise TemplateError(f"{kind}: dividers {d1},{d2} share no vertex — "
+                                f"{seg1} cannot run parallel to {seg2}")
+        sh = shared.pop()
+        t1 = dv[d1][2] if dv[d1][0] == sh else 1.0 - dv[d1][2]
+        t2 = dv[d2][2] if dv[d2][0] == sh else 1.0 - dv[d2][2]
+        if abs(t1 - t2) > 1e-6:
+            raise TemplateError(
+                f"{kind}: {d1} divides at {t1:g} and {d2} at {t2:g} from {sh} — "
+                f"{seg1} is NOT parallel to {seg2}; a parallel mark cannot be drawn "
+                "(fix the fractions or drop the mark)")
+        u1 = vc.unit(P[d1], P[d2]); u2 = vc.unit(P[pa], P[pb])
+        if abs(u1[0] * u2[1] - u1[1] * u2[0]) > 1e-6:
+            raise TemplateError(f"{kind}: the drawn {seg1} is not parallel to {seg2}")
+        par = (seg1, f"{pa}{pb}", sh)
+    true_len: dict[str, float] = {}
+    for s, v_ in (sides or {}).items():
+        if par and frozenset(s) == frozenset(par[0]):
+            key = s
+        else:
+            pa, pb = side_pair(s)
+            key = "".join(sorted((pa, pb)))
+        if not isinstance(v_, (int, float)) or isinstance(v_, bool) or v_ <= 0:
+            raise TemplateError(f"{kind}: side {s} must be a positive number")
+        require_stem(stem, **{f"side {s}": float(v_)})
+        true_len[key] = float(v_)
+    def subseg(s):
+        if not (isinstance(s, str) and len(s) == 2):
+            raise TemplateError(f"{kind}: {s!r} is not a two-letter segment name")
+        a_, b_ = s
+        if a_ not in P or b_ not in P or a_ == b_:
+            raise TemplateError(f"{kind}: {s!r} names unknown points")
+        if par and frozenset((a_, b_)) == frozenset(par[0]):
+            return (a_, b_, (par[0][0], par[0][1]))
+        for pa, pb in ((A, B), (B, Cn), (Cn, A)):
+            ends = {pa, pb}
+            on = [x for x in (a_, b_) if x in ends or
+                  (x in dv and ends == {dv[x][0], dv[x][1]})]
+            if len(on) == 2:
+                return (a_, b_, (pa, pb))
+        raise TemplateError(f"{kind}: {s!r} — its two points do not lie on one side")
+
+    tk = {}
+    for s, c_ in (ticks or {}).items():
+        if c_ not in (1, 2, 3):
+            raise TemplateError(f"{kind}: tick count on {s} must be 1–3")
+        a_, b_, _h = subseg(s)
+        tk[(a_, b_)] = c_
+    ar = {}
+    for v, c_ in (arcs or {}).items():
+        if v not in names:
+            raise TemplateError(f"{kind}: arc vertex {v!r} is not one of {names}")
+        if c_ not in (1, 2, 3):
+            raise TemplateError(f"{kind}: arc count at {v} must be 1–3")
+        ar[v] = c_
+    labs = {}
+    for v, t_ in (angle_labels or {}).items():
+        if v not in names:
+            raise TemplateError(f"{kind}: angle label vertex {v!r} is not in {names}")
+        if v not in ar:
+            raise TemplateError(f"{kind}: the label at {v} needs an arc — give it arcs")
+        kk, num, txt = _angle_text_kind(kind, t_, v)
+        if kk == "num":
+            if abs(num - ang[v]) > 1e-6:
+                raise TemplateError(f"{kind}: label {t_!r} at {v} prints {num:g} but the "
+                                    f"angle is {ang[v]:g}")
+            require_stem(stem, **{f"angle {v} ({txt!r})": num})
+        labs[v] = (kk, num, txt)
+    elements: list[dict] = [vc.line(P[a], P[b], id=f"s{a}{b}")
+                            for a, b in ((A, B), (B, Cn), (Cn, A))]
+    if par:
+        elements.append(vc.line(P[par[0][0]], P[par[0][1]], id=f"s{par[0]}"))
+        elements += vc.parallel_marks(P[par[0][0]], P[par[0][1]], 1, size=9)
+        elements += vc.parallel_marks(P[par[1][0]], P[par[1][1]], 1, size=9)
+    for (a_, b_), c_ in tk.items():
+        elements += vc.tick_marks(P[a_], P[b_], c_, size=10)
+    for nm in dv:
+        elements.append({"id": f"pt{nm}", "type": "point", "at": vc.P(P[nm]), "r": 3.2})
+    span0 = float(base_px) + 2 * 60.0
+    clr = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, span0)
+    base_r = {v: 24.0 if ang[v] >= 40 else 34.0 for v in ar}
+    for v, c_ in ar.items():
+        if v not in labs:
+            a_, b_ = [w for w in names if w != v]
+            elements += vc.angle_label(P[v], P[a_], P[b_], r=base_r[v], arcs=c_)
+    for v, (kk, num, txt) in labs.items():
+        a_, b_ = [w for w in names if w != v]
+        els_ = _angle_arc_label(kind, elements, P[v], P[a_], P[b_], txt, arcs=ar[v],
+                                r0=base_r[v], clr=clr)
+        elements += els_
+        P[f"{v}1"] = tuple(els_[-1]["at"])
+    cen = (sum(P[n][0] for n in names) / 3, sum(P[n][1] for n in names) / 3)
+    for v in names:
+        ux, uy = vc.unit(cen, P[v])
+        d_ = clr + _label_half_along(v, FS, ux, uy) + 2.0
+        elements.append(vc.text((P[v][0] + ux * d_, P[v][1] + uy * d_), v, id=f"lbv{v}"))
+    boxes: list = []
+    printed: dict[tuple, str] = {}
+    for s, glyph in (labels or {}).items():
+        a_, b_, host = subseg(s)
+        if not isinstance(glyph, str) or not glyph.strip():
+            raise TemplateError(f"{kind}: label on {s} must be a non-empty string")
+        glyph = glyph.strip()
+        m = _LEN_LABEL.fullmatch(glyph)
+        if m and m[1] and re.fullmatch(r"\d+(?:\.\d+)?", m[1]):
+            if host[0] + host[1] in true_len:
+                whole = true_len[host[0] + host[1]]
+            elif host[1] + host[0] in true_len:
+                whole = true_len[host[1] + host[0]]
+            else:
+                whole = true_len.get("".join(sorted(host)))
+            if whole is None:
+                raise TemplateError(
+                    f"{kind}: label {glyph!r} on {s} prints a number — pass the "
+                    f"segment's length in `sides` so it can only restate it")
+            v_ = float(m[1])
+            fr = vc.dist(P[a_], P[b_]) / vc.dist(P[host[0]], P[host[1]])
+            true_ = whole * fr
+            if abs(v_ - true_) > 0.005 * true_:
+                raise TemplateError(f"{kind}: label {glyph!r} on {s} prints {v_:g} but "
+                                    f"the segment is {true_:.4g} of the stated side — "
+                                    "a label may only restate its own length")
+            require_stem(stem, **{f"label {glyph!r}": v_})
+        elif not _RT_SIDE_VAL.fullmatch(glyph):
+            raise TemplateError(f"{kind}: label {glyph!r} on {s} must be a length like "
+                                "'6 cm' or one lowercase letter")
+        away = cen
+        el = _seat_side_label(kind, elements, boxes, P[a_], P[b_], glyph, away,
+                              clr, f"sl{a_}{b_}")
+        elements.append(el)
+        boxes.append(label_boxes([el], FS)[0][1:])
+        printed[(a_, b_)] = glyph
+    if len(set(printed.values())) != len(printed):
+        dup = next(g for g in printed.values() if list(printed.values()).count(g) > 1)
+        raise TemplateError(f"{kind}: {dup!r} is printed twice — each printed glyph "
+                            "binds ONE label claim (print one as a letter)")
+    for nm in dv:
+        elements.append(_float_label(f"lbd{nm}", nm, P[nm]))
+
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    if par:
+        add(f"parallel {par[0]} {par[1]}", "inferred",
+            f"the matching arrow marks — drawn parallel at equal fractions from {par[2]}")
+    for nm, (f_, l_, t_) in dv.items():
+        add(f"on {nm} {''.join(sorted((f_, l_)))}", "inferred",
+            f"{nm} divides {f_}{l_} at {t_:g} from {f_}")
+    tkg: dict[int, list[str]] = {}
+    for (a_, b_), c_ in tk.items():
+        tkg.setdefault(c_, []).append(f"{a_}{b_}")
+    for c_, ss in tkg.items():
+        for i in range(len(ss)):
+            for j in range(i + 1, len(ss)):
+                add(f"equal {ss[i]} {ss[j]}", "inferred",
+                    f"both carry {c_} tick mark{'s' if c_ > 1 else ''}")
+        if len(ss) == 1:
+            add(f'describe "{ss[0]} carries {c_} tick mark{"s" if c_ > 1 else ""}"',
+                "inferred", "the drawn tick")
+    for (a_, b_), glyph in printed.items():
+        num = bool(re.fullmatch(r"\d+(?:\.\d+)?", glyph.split()[0]))
+        add(f'label "{glyph}" names {a_}{b_}', "stem" if num else "inferred",
+            f"the printed label on {a_}{b_}")
+    for v, (kk, num, txt) in labs.items():
+        a_, b_ = [w for w in names if w != v]
+        if kk == "num":
+            add(f"angle {a_} {v} {b_} = {num:g}", "stem", f"the printed {txt} at {v}")
+        else:
+            add(f'describe "the angle at {v} is marked {txt} — the unknown"',
+                "inferred", "a letter label")
+        add(f'label "{txt}" names {v}1', "inferred", f"the arc label at {v}")
+    for v in names:
+        add(f'label "{v}" names {v}', "inferred", "a vertex letter")
+    for nm in dv:
+        add(f'label "{nm}" names {nm}', "inferred", "a divider's letter")
+    if true_len and dv:
+        s_, vlen = next(iter(true_len.items()))
+        nm, (f_, l_, t_) = next(iter(dv.items()))
+        if "".join(sorted((f_, l_))) == s_:
+            add(f"derive {vlen:g} * {t_:g} = {_num_exact(vlen * t_)}", "inferred",
+                f"the {f_}{nm} part of the stated {vlen:g} side")
+        else:
+            add(f"derive {vlen:g} * 1 = {_num_exact(vlen)}", "inferred",
+                "the stated side length")
+    else:
+        add(f"derive {' + '.join(f'{ang[v]:g}' for v in names)} = 180", "inferred",
+            "the interior angles as drawn — the angle sum of a triangle")
+    absent = ["arrow", "shaded", "dashed", "angleMark", "tickMark", "parallelMark"]
+    if ar or labs:
+        absent.remove("angleMark")
+    if tk:
+        absent.remove("tickMark")
+    if par:
+        absent.remove("parallelMark")
+        absent.remove("arrow")
+    add("none " + " ".join(absent), "inferred", "only the marks claimed above are drawn")
+    segs = ["AB", "BC", "CA"] + [f"{a_}{b_}" for (a_, b_) in printed]
+    if par:
+        segs.append(par[0])
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=dict(P), points=list(P), segments=segs, claims=claims,
+                  ask=ask, title=title or f"Triangle {''.join(names)} divided",
+                  description=description or (
+                      f"Triangle {''.join(names)}" +
+                      (f" with {par[0]} drawn parallel to {par[1]}." if par else ".")),
+                  scale="angles drawn to size; side lengths only where stated",
+                  medium=medium)
+
+
+def build_parallel_area(*, figure_id, stem, ask=None, title=None, description=None,
+                        medium="english", upper, lower, draw, gap=110.0,
+                        distance=None, unit="cm"):
+    """Two horizontal parallel lines with named points on each and figure outlines
+    drawn between them. `upper`/`lower` = {"P": x, "Q": x} — 1–4 points per line by
+    canvas x (≥28 apart). `draw` = [["P","Q","R"], …] — each row joins the named points
+    in order and closes (a triangle/quad between the lines). `distance` = {"value": v,
+    "unit": "cm"} draws the perpendicular MN with its right mark and prints v (stem-
+    checked, drawn at 18 px/unit as parallel_lines). Claims: the lines parallel,
+    same-base/between-parallels describes for each drawn figure, collinearity of each
+    line's points."""
+    kind = "parallel_area"
+    vc.reset_ids()
+    for nm_line, pts in (("upper", upper), ("lower", lower)):
+        if not isinstance(pts, dict) or not 1 <= len(pts) <= 4:
+            raise TemplateError(f"{kind}: {nm_line} needs 1–4 named points")
+        xs = sorted(float(v) for v in pts.values())
+        for nm, v_ in pts.items():
+            if not (isinstance(nm, str) and re.fullmatch(r"[A-Z]", nm)):
+                raise TemplateError(f"{kind}: {nm_line} point {nm!r} is not a capital")
+            if not isinstance(v_, (int, float)) or isinstance(v_, bool):
+                raise TemplateError(f"{kind}: {nm}'s x must be a number")
+        for i in range(len(xs) - 1):
+            if xs[i + 1] - xs[i] < 28.0:
+                raise TemplateError(f"{kind}: two {nm_line} points are under 28 units "
+                                    "apart — their letters would collide")
+    if set(upper) & set(lower):
+        raise TemplateError(f"{kind}: a name is used on both lines")
+    allpts = {**{n: (float(x), 0.0) for n, x in upper.items()},
+              **{n: (float(x), float(gap)) for n, x in lower.items()}}
+    if not isinstance(gap, (int, float)) or not 60 <= gap <= 300:
+        raise TemplateError(f"{kind}: gap must be 60–300 units")
+    dist_spec = None
+    if distance is not None:
+        if not isinstance(distance, dict):
+            raise TemplateError(f"{kind}: distance is {{'value': v, 'unit': 'cm'}}")
+        v_, u_ = distance.get("value"), distance.get("unit", unit)
+        if not isinstance(v_, (int, float)) or isinstance(v_, bool) or v_ <= 0:
+            raise TemplateError(f"{kind}: distance value must be positive")
+        require_stem(stem, distance_value=float(v_))
+        for ch in ("M", "N"):
+            if ch in allpts:
+                raise TemplateError(f"{kind}: M and N are reserved for the "
+                                    "perpendicular's feet")
+        dist_spec = (float(v_), str(u_))
+        gap = float(v_) * _PL_DIST_PPU
+        if gap > 300:
+            raise TemplateError(f"{kind}: distance {v_:g} draws the lines {gap:.0f} "
+                                "units apart — too tall")
+        allpts = {**{n: (float(x), 0.0) for n, x in upper.items()},
+                  **{n: (float(x), gap) for n, x in lower.items()}}
+    figures = []
+    for i, row in enumerate(draw or []):
+        if not (isinstance(row, (list, tuple)) and 3 <= len(row) <= 5):
+            raise TemplateError(f"{kind}: figure {i} needs 3–5 point names")
+        for nm in row:
+            if nm not in allpts:
+                raise TemplateError(f"{kind}: figure {i} names unknown point {nm!r}")
+        if len(set(row)) != len(row):
+            raise TemplateError(f"{kind}: figure {i} repeats a point")
+        lines_used = {("upper" if nm in upper else "lower") for nm in row}
+        if len(lines_used) < 2:
+            raise TemplateError(f"{kind}: figure {i} lies on one line — a figure "
+                                "between the parallels needs points on BOTH")
+        figures.append(list(row))
+    if not figures:
+        raise TemplateError(f"{kind}: `draw` needs at least one figure")
+    xs = [p[0] for p in allpts.values()]
+    x0, x1 = min(xs) - 90.0, max(xs) + 90.0
+    up_nm = "".join(sorted(upper, key=lambda n: upper[n]))
+    lo_nm = "".join(sorted(lower, key=lambda n: lower[n]))
+    up_ends = (min(upper, key=lambda n: upper[n]), max(upper, key=lambda n: upper[n]))
+    lo_ends = (min(lower, key=lambda n: lower[n]), max(lower, key=lambda n: lower[n]))
+    P = dict(allpts)
+    elements: list[dict] = [
+        vc.line((x0, 0.0), (x1, 0.0), id="lnU"),
+        vc.line((x0, gap), (x1, gap), id="lnL")]
+    ux_ = sorted(upper.values())[0], sorted(upper.values())[-1]
+    lx_ = sorted(lower.values())[0], sorted(lower.values())[-1]
+    elements += vc.parallel_marks(((ux_[0] + ux_[1]) / 2 - 40, 0.0),
+                                  ((ux_[0] + ux_[1]) / 2 + 40, 0.0), 1, size=9)
+    elements += vc.parallel_marks(((lx_[0] + lx_[1]) / 2 - 40, gap),
+                                  ((lx_[0] + lx_[1]) / 2 + 40, gap), 1, size=9)
+    for i, row in enumerate(figures):
+        elements.append(vc.polygon([P[n] for n in row], id=f"fig{i}"))
+    if dist_spec:
+        xr = max(allpts[n][0] for n in allpts)
+        xl = min(allpts[n][0] for n in allpts)
+        mx = xr + 44.0 if xr + 44.0 < x1 - 30.0 else xl - 44.0
+        if mx < x0 + 30.0:
+            raise TemplateError(f"{kind}: no room for the perpendicular beside the "
+                                "figures — spread the points")
+        P["M"], P["N"] = (mx, 0.0), (mx, gap)
+        elements.append(vc.line(P["M"], P["N"], id="sMN", dashed=True))
+        elements += vc.right_angle_mark(P["N"], P["M"], (P["N"][0] + 40, gap), r=12)
+    clr = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, x1 - x0 + 80)
+    boxes: list = []
+    for nm, p in P.items():
+        if nm in ("M", "N"):
+            continue
+        on_up = nm in upper
+        el = _float_label(f"lb{nm}", nm, (p[0], p[1] + (-clr if on_up else clr)))
+        el["_near"] = list(p)
+        elements.append(el)
+    if dist_spec:
+        v_, u_ = dist_spec
+        glyph = f"{v_:g} {u_}"
+        mid = vc.lerp(P["M"], P["N"], 0.5)
+        mid_mn = vc.lerp(P["M"], P["N"], 0.5)
+        away = 34.0 if xr + 44.0 < x1 - 30.0 else -34.0
+        elements.append(_float_label("lbMN", glyph,
+                                     (mid_mn[0] + away, mid_mn[1]), gap=8))
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    add(f"parallel {''.join(up_ends)} {''.join(lo_ends)}", "inferred",
+        "the two lines carry matching arrow marks")
+    ups = sorted(upper, key=lambda n: upper[n])
+    los = sorted(lower, key=lambda n: lower[n])
+    if len(ups) >= 3:
+        add(f"collinear {ups[0]} {ups[1]} {ups[-1]}", "inferred",
+            "points on the upper line")
+    if len(los) >= 3:
+        add(f"collinear {los[0]} {los[1]} {los[-1]}", "inferred",
+            "points on the lower line")
+    for i, row in enumerate(figures):
+        ups_f = [n for n in row if n in upper]
+        los_f = [n for n in row if n in lower]
+        base_line = "upper" if len(ups_f) >= 2 else "lower"
+        base = ups_f if base_line == "upper" else los_f
+        apex = los_f if base_line == "upper" else ups_f
+        shape = "triangle" if len(row) == 3 else "quadrilateral"
+        if len(base) >= 2:
+            add(f'describe "{shape} {"".join(row)} has base {"".join(sorted(base))} on '
+                f'the {base_line} line and {"vertices" if len(apex) > 1 else "vertex"} '
+                f'{"".join(sorted(apex))} on the other — it stands between the '
+                'parallels"', "inferred", "the drawn figure")
+        else:
+            add(f'describe "{shape} {"".join(row)} is drawn between the parallel '
+                'lines"', "inferred", "the drawn figure")
+    if dist_spec:
+        v_, u_ = dist_spec
+        add(f'describe "M is the foot of the perpendicular on the upper line, '
+            f'outside {up_ends[0]}{up_ends[1]}"', "inferred", "the foot")
+        add(f'describe "N is the foot of the perpendicular on the lower line, '
+            f'outside {lo_ends[0]}{lo_ends[1]}"', "inferred", "the foot")
+        add(f"right M N {los[0]}", "inferred", "the perpendicular's right mark")
+        add(f'label "{v_:g} {u_}" names MN', "stem",
+            "the perpendicular distance between the lines")
+        add(f'label "M" names M', "inferred", "the upper foot")
+        add(f'label "N" names N', "inferred", "the lower foot")
+        elements.append(_float_label("lbM", "M", P["M"]))
+        elements.append(_float_label("lbN", "N", P["N"]))
+        add(f"derive {v_:g} * 1 = {_num_exact(v_)}", "stem",
+            "the stated perpendicular distance")
+    for nm in P:
+        if nm in ("M", "N"):
+            continue
+        add(f'label "{nm}" names {nm}', "inferred", "a point on a parallel line")
+    if not dist_spec:
+        add(f"derive {len(upper)} + {len(lower)} = {len(upper) + len(lower)}",
+            "inferred", "points on the two lines")
+    absent = ["tickMark", "angleMark", "arrow", "shaded"]
+    if not dist_spec:
+        absent.append("dashed")
+    add("none " + " ".join(absent), "inferred", "only the marks claimed are drawn")
+    segs = ["".join(up_ends), "".join(lo_ends)] + \
+        [f"{r[i]}{r[(i + 1) % len(r)]}" for r in figures for i in range(len(r))]
+    if dist_spec:
+        segs.append("MN")
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=dict(P), points=list(P), segments=segs, claims=claims,
+                  ask=ask, title=title or "Figures between parallel lines",
+                  description=description or (
+                      "Two parallel lines with figures drawn between them" +
+                      (f"; the perpendicular distance is {dist_spec[0]:g} {dist_spec[1]}."
+                       if dist_spec else ".")),
+                  scale="drawn to scale between the lines" if dist_spec else
+                  "the line spacing is a canvas choice",
+                  medium=medium)
+
+
+_SOLID_DIMS = {"cylinder": ("radius", "height"), "cone": ("radius", "height"),
+               "sphere": ("radius",), "hemisphere": ("radius",),
+               "square_pyramid": ("base", "height"),
+               "triangular_prism": ("base", "length", "height")}
+
+
+def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
+                medium="english", shape, dims, unit="cm", scale_px=1.0):
+    """A solid with printed dimensions. `shape` = cylinder | cone | sphere |
+    hemisphere | square_pyramid | triangular_prism. `dims` = {"radius": 7, "height":
+    "h", …} — the named slots for the shape; a number is the true size (stem-checked,
+    printed "<v> unit") and a lowercase letter prints the unknown. Each dimension
+    draws a dashed leader line (radius to the rim, height along the axis, base/length
+    edges) with a floating label. Hidden edges draw dashed — declared in `none`/
+    `paint`-style claims."""
+    kind = "solid"
+    vc.reset_ids()
+    if shape not in _SOLID_DIMS:
+        raise TemplateError(f"{kind}: shape must be one of {sorted(_SOLID_DIMS)}")
+    if not isinstance(dims, dict):
+        raise TemplateError(f"{kind}: dims is a dict of the shape's dimension slots")
+    need = _SOLID_DIMS[shape]
+    if set(dims) - set(need):
+        raise TemplateError(f"{kind}: {shape} takes dims {need} — got {sorted(dims)}")
+    val: dict[str, object] = {}
+    for d in need:
+        if d not in dims:
+            raise TemplateError(f"{kind}: dims needs {d}")
+        v_ = dims[d]
+        if isinstance(v_, bool) or not isinstance(v_, (int, float, str)):
+            raise TemplateError(f"{kind}: {d} must be a number or a lowercase letter")
+        if isinstance(v_, (int, float)) and not isinstance(v_, bool):
+            if v_ <= 0:
+                raise TemplateError(f"{kind}: {d} must be positive")
+            require_stem(stem, **{d: float(v_)})
+        elif not _RT_SIDE_VAL.fullmatch(str(v_)):
+            raise TemplateError(f"{kind}: {d} letter value must be one lowercase letter")
+        val[d] = v_
+    if not isinstance(scale_px, (int, float)) or not 0.5 <= scale_px <= 3:
+        raise TemplateError(f"{kind}: scale_px must be 0.5–3")
+    k = float(scale_px)
+    num = {d: float(v_) for d, v_ in val.items() if isinstance(v_, (int, float))}
+    def px(d, default):
+        if d in num:
+            return num[d]
+        return {"radius": 3.0, "height": 5.0, "base": 4.0, "length": 7.0}[d]
+    if num:
+        big = max(px(d, 1) for d in val)
+        k *= 90.0 / big if big > 3 else 22.0
+    else:
+        k *= 22.0
+    rx_ = px("radius", 3) * k
+    h_ = px("height", 5) * k
+    b_ = px("base", 4) * k
+    l_ = px("length", 7) * k
+    ry_ = rx_ * 0.28
+
+    elements: list[dict] = []
+    leaders: list[tuple[XY, XY, str]] = []
+    P: dict[str, XY] = {}
+    hidden: list[str] = []
+    if shape == "sphere":
+        c = (0.0, 0.0)
+        elements.append(vc.circle(c, rx_, id="body"))
+        elements.append(_ellipse_el(c, rx_, rx_ * 0.3, id="eq", a0=0, a1=360,
+                                    dashed=True))
+        leaders.append((c, (rx_ * 0.72, -rx_ * 0.7), "radius"))
+        hidden.append("the equatorial ellipse's back half")
+    elif shape == "hemisphere":
+        c = (0.0, 0.0)
+        elements.append(_ellipse_el(c, rx_, rx_, id="dome", a0=180, a1=360))
+        elements.append(_ellipse_el(c, rx_, ry_, id="rim"))
+        leaders.append((c, (rx_ * 0.72, -ry_ * 0.7), "radius"))
+    elif shape == "cylinder":
+        cx, top, bot = 0.0, -h_ / 2, h_ / 2
+        elements.append(_ellipse_el((cx, top), rx_, ry_, id="rimT"))
+        elements.append(vc.line((cx - rx_, top), (cx - rx_, bot), id="wallL"))
+        elements.append(vc.line((cx + rx_, top), (cx + rx_, bot), id="wallR"))
+        elements.append(_ellipse_el((cx, bot), rx_, ry_, id="rimBf", a0=0, a1=180))
+        elements.append(_ellipse_el((cx, bot), rx_, ry_, id="rimBb", a0=180, a1=360,
+                                    dashed=True))
+        leaders.append(((cx, top), (cx + rx_ * 0.82, top - ry_ * 0.57), "radius"))
+        leaders.append(((cx + rx_ + 26, top), (cx + rx_ + 26, bot), "height"))
+        hidden.append("the bottom rim's back half")
+    elif shape == "cone":
+        cx, by_, apex = 0.0, h_ * 0.4, -h_ * 0.6
+        elements.append(_ellipse_el((cx, by_), rx_, ry_, id="rimF", a0=0, a1=180))
+        elements.append(_ellipse_el((cx, by_), rx_, ry_, id="rimBk", a0=180, a1=360,
+                                    dashed=True))
+        elements.append(vc.line((cx - rx_, by_), (cx, apex), id="slL"))
+        elements.append(vc.line((cx + rx_, by_), (cx, apex), id="slR"))
+        leaders.append(((cx, by_), (cx, apex), "height"))
+        leaders.append(((cx, by_), (cx + rx_, by_), "radius"))
+        hidden.append("the base rim's back half", )
+        hidden = ["the base rim's back half"]
+    elif shape == "square_pyramid":
+        hw, hw2 = b_ / 2, b_ * 0.18
+        base_y, apex_y = h_ * 0.35, -h_ * 0.6
+        F = [(-hw, base_y), (hw, base_y), (hw + hw2, base_y - hw2 * 2.4),
+             (-hw + hw2, base_y - hw2 * 2.4)]
+        elements.append(vc.polygon(F, id="baseF"))
+        apex = (0.0, apex_y)
+        for i, p in enumerate(F):
+            elements.append(vc.line(apex, p, id=f"sl{i}", dashed=(i >= 2)))
+        leaders.append(((0.0, base_y - hw2 * 1.2), apex, "height"))
+        leaders.append((F[0], F[1], "base"))
+        hidden.append("the back slant edges and base edges")
+    else:
+        tb = [(0.0, -b_ * 0.5), (-b_ / 2, b_ * 0.35), (b_ / 2, b_ * 0.35)]
+        off = (l_ * 0.8, -l_ * 0.28)
+        bk = [(x + off[0], y + off[1]) for x, y in tb]
+        elements.append(vc.polygon(tb, id="faceF"))
+        elements.append(vc.polygon(bk, id="faceB"))
+        for i in range(3):
+            elements.append(vc.line(tb[i], bk[i], id=f"ed{i}", dashed=(i == 0)))
+        leaders.append((tb[1], tb[2], "base"))
+        leaders.append((tb[2], bk[2], "length"))
+        leaders.append((tb[0], vc.lerp(tb[1], tb[2], 0.5), "height"))
+        hidden.append("the hidden length edge")
+    for a_, b2, dname in leaders:
+        elements.append(vc.line(a_, b2, id=f"ld{dname}", dashed=True))
+    for a_, b2, dname in leaders:
+        v_ = val[dname]
+        glyph = f"{v_:g} {unit}" if isinstance(v_, (int, float)) else str(v_)
+        if dname == "radius":
+            ux_, uy_ = vc.unit(a_, b2)
+            anchor_pt = (b2[0] + ux_ * 26.0, b2[1] + uy_ * 26.0)
+            P[f"{dname[0].upper()}1"] = b2
+        else:
+            anchor_pt = vc.lerp(a_, b2, 0.5)
+            P[f"{dname[0].upper()}1"] = anchor_pt
+        elements.append(_float_label(f"lb{dname}", glyph, anchor_pt))
+
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    add(f'describe "a {shape.replace("_", " ")} is drawn, with hidden edges shown '
+        'dashed"', "inferred", "the solid")
+    for d in need:
+        v_ = val[d]
+        glyph = f"{v_:g} {unit}" if isinstance(v_, (int, float)) else str(v_)
+        tgt = f"{d[0].upper()}1"
+        add(f'label "{glyph}" names {tgt}', "stem" if isinstance(v_, (int, float))
+            else "inferred", f"the {d} label on its dashed leader")
+    if "radius" in num:
+        add(f"derive 2 * {num['radius']:g} = {_num_exact(2 * num['radius'])}",
+            "inferred", "the diameter is twice the radius")
+    else:
+        d0 = need[0]
+        v0 = val[d0]
+        if isinstance(v0, (int, float)):
+            add(f"derive {v0:g} * 1 = {_num_exact(v0)}", "inferred",
+                f"the stated {d0}")
+        else:
+            add("derive 1 * 1 = 1", "inferred", "unit scale")
+    for h_ in hidden:
+        add(f'describe "{h_} is drawn dashed"', "inferred", "hidden outline")
+    absent = ["tickMark", "parallelMark", "angleMark", "arrow", "shaded"]
+    add("none " + " ".join(absent), "inferred", "outline and dashed leaders only")
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=dict(P), points=list(P), segments=[], claims=claims,
+                  ask=ask, title=title or f"A {shape.replace('_', ' ')}",
+                  description=description or (
+                      f"A {shape.replace('_', ' ')} with its "
+                      + ", ".join(need) + " marked."),
+                  scale="proportions to scale where numeric; letter dims are "
+                        "representative",
+                  medium=medium)
+
+
+def build_function_graph(*, figure_id, stem, ask=None, title=None, description=None,
+                         medium="english", curve, x_range, y_range=None, points=None,
+                         vertex=None, symmetry=False, grid=True, unit_px=42.0):
+    """Numbered axes (both directions) with a drawn curve. `curve` = {"m": m, "c": c}
+    for the line y = mx + c, or {"a": a, "h": h, "k": k} for the parabola
+    y = a(x−h)² + k — every coefficient is stem-checked. `x_range` = (x0, x1) integer
+    bounds (stem-checked); `y_range` optional integer bounds (else auto-fitted).
+    `points` = {"P": (x, y)} marks dots claimed by `reads` on the axes; `vertex` = "V"
+    marks the parabola's vertex. `symmetry=True` draws the dashed mirror x = h for a
+    parabola. Coordinates of marked points must satisfy the equation (±0.02)."""
+    kind = "function_graph"
+    vc.reset_ids()
+    if not isinstance(curve, dict):
+        raise TemplateError(f"{kind}: curve is a dict")
+    if set(curve) == {"m", "c"}:
+        kind_f = "line"
+        m_, c_ = float(curve["m"]), float(curve["c"])
+        require_stem_signed(stem, m=curve["m"], c=curve["c"])
+        f = lambda x: m_ * x + c_
+    elif set(curve) == {"a", "h", "k"}:
+        kind_f = "quadratic"
+        a_, h_, k_ = float(curve["a"]), float(curve["h"]), float(curve["k"])
+        if a_ == 0:
+            raise TemplateError(f"{kind}: a must be non-zero for a parabola")
+        require_stem_signed(stem, a=curve["a"], h=curve["h"], k=curve["k"])
+        f = lambda x: a_ * (x - h_) ** 2 + k_
+    else:
+        raise TemplateError(f"{kind}: curve is {{'m','c'}} (line) or "
+                            "{{'a','h','k'}} (parabola y = a(x−h)²+k)")
+    if not (isinstance(x_range, (list, tuple)) and len(x_range) == 2):
+        raise TemplateError(f"{kind}: x_range is (x0, x1)")
+    x0, x1 = float(x_range[0]), float(x_range[1])
+    if not (x0.is_integer() and x1.is_integer() and x1 > x0 and x1 - x0 <= 24):
+        raise TemplateError(f"{kind}: x_range needs integer bounds, span ≤ 24")
+    require_stem_signed(stem, x0=x_range[0], x1=x_range[1])
+    xs_ = [x0 + (x1 - x0) * i / 200 for i in range(201)]
+    ys_f = [f(x) for x in xs_]
+    y_lo, y_hi = min(ys_f), max(ys_f)
+    if y_range is not None:
+        if not (isinstance(y_range, (list, tuple)) and len(y_range) == 2):
+            raise TemplateError(f"{kind}: y_range is (y0, y1)")
+        y0, y1 = float(y_range[0]), float(y_range[1])
+        if not (y0.is_integer() and y1.is_integer() and y1 > y0 and y1 - y0 <= 24):
+            raise TemplateError(f"{kind}: y_range needs integer bounds, span ≤ 24")
+        require_stem_signed(stem, y0=y_range[0], y1=y_range[1])
+        if y0 > y_lo or y1 < y_hi:
+            raise TemplateError(f"{kind}: y_range [{y0:g},{y1:g}] cuts the curve "
+                                f"(it needs [{y_lo:.3g},{y_hi:.3g}])")
+    else:
+        y0, y1 = math.floor(y_lo - 0.5), math.ceil(y_hi + 0.5)
+        if y1 - y0 > 24:
+            raise TemplateError(f"{kind}: the curve spans {y1 - y0} y-units on this "
+                                "x_range — pass y_range or narrow x_range")
+    marks = {}
+    for nm, xy in (points or {}).items():
+        if not (isinstance(nm, str) and re.fullmatch(r"[A-Z]", nm)):
+            raise TemplateError(f"{kind}: point {nm!r} is not a single capital")
+        if not (isinstance(xy, (list, tuple)) and len(xy) == 2):
+            raise TemplateError(f"{kind}: {nm} needs (x, y)")
+        xv, yv = float(xy[0]), float(xy[1])
+        if abs(f(xv) - yv) > 0.02:
+            raise TemplateError(f"{kind}: {nm}=({xv:g},{yv:g}) is not on the curve "
+                                f"(f({xv:g}) = {f(xv):.4g})")
+        if not (x0 <= xv <= x1 and y0 <= yv <= y1):
+            raise TemplateError(f"{kind}: {nm} is outside the drawn ranges")
+        marks[nm] = (xv, yv)
+    if vertex is not None:
+        if kind_f != "quadratic":
+            raise TemplateError(f"{kind}: a vertex only exists on a parabola")
+        if not (isinstance(vertex, str) and re.fullmatch(r"[A-Z]", vertex)) \
+                or vertex in marks:
+            raise TemplateError(f"{kind}: vertex must be a fresh capital")
+        marks[vertex] = (h_, k_)
+    if symmetry and kind_f != "quadratic":
+        raise TemplateError(f"{kind}: symmetry=True only suits a parabola")
+    upx = float(unit_px)
+    if not 20 <= upx <= 90:
+        raise TemplateError(f"{kind}: unit_px must be 20–90")
+    ox = -x0 * upx
+    oy = y1 * upx
+    X = lambda v: ox + v * upx
+    Y = lambda v: oy - v * upx
+    elements: list[dict] = []
+    if grid:
+        for i in range(int(x0), int(x1) + 1):
+            elements.append(vc.line((X(i), Y(y1)), (X(i), Y(y0)), id=f"gv{i + 100}",
+                                    width=0.75))
+            elements[-1]["stroke"] = {"width": 0.75, "color": "#d1d5db"}
+        for j in range(int(y0), int(y1) + 1):
+            elements.append(vc.line((X(x0), Y(j)), (X(x1), Y(j)), id=f"gh{j + 100}",
+                                    width=0.75))
+            elements[-1]["stroke"] = {"width": 0.75, "color": "#d1d5db"}
+    elements.append({"id": "axX", "type": "arrow", "head": "end",
+                     "points": [[X(x0) - 18, Y(0)], [X(x1) + 26, Y(0)]]})
+    elements.append({"id": "axY", "type": "arrow", "head": "end",
+                     "points": [[X(0), Y(y0) + 18], [X(0), Y(y1) - 26]]})
+    span_est = (x1 - x0 + 4) * upx
+    num_gap = _clearance_units(4.0, span_est)
+    step_x = next((k for k in _NICE_STEPS if k * upx >= 16.0 + num_gap), int(x1 - x0))
+    step_y = next((k for k in _NICE_STEPS if k * upx >= 16.0 + num_gap), int(y1 - y0))
+    pts = [(X(x), Y(f(x))) for x in xs_]
+    nx_row = Y(0) + 32 if min(ys_f) >= -0.6 else Y(y0) + 40
+    num_boxes: list[tuple] = []
+    for i in range(int(x0), int(x1) + 1):
+        elements.append(vc.line((X(i), Y(0) - 5), (X(i), Y(0) + 5), id=f"tx{i + 100}",
+                                width=1.2))
+        if i % step_x == 0 and i != 0:
+            elements.append(vc.text((X(i), nx_row), f"{i:g}", id=f"nx{i + 100}",
+                                    size=15))
+            num_boxes.append(label_boxes([elements[-1]], 15)[0][1:])
+    for j in range(int(y0), int(y1) + 1):
+        elements.append(vc.line((X(0) - 5, Y(j)), (X(0) + 5, Y(j)), id=f"ty{j + 100}",
+                                width=1.2))
+        if j % step_y == 0 and j != 0:
+            picked = None
+            for off in (0, -14, -28, -44, -60, -80):
+                cand = vc.text((X(0) - 40 + off, Y(j)), f"{j:g}",
+                               id=f"ny{j + 100}", size=15)
+                _, bx0, by0, bx1, by1 = label_boxes([cand], 15)[0]
+                if not any(bx0 - 10 <= px <= bx1 + 10 and by0 - 10 <= py <= by1 + 10
+                           for px, py in pts):
+                    picked = cand
+                    break
+            if picked is None:
+                raise TemplateError(f"{kind}: the numeral {j:g} on OY can't clear "
+                                    "the curve — widen x_range or pass it a y title")
+            elements.append(picked)
+            num_boxes.append(label_boxes([picked], 15)[0][1:])
+    elements.append(vc.polyline(pts, id="curve"))
+    if symmetry:
+        elements.append(vc.line((X(h_), Y(y0) + 6), (X(h_), Y(y1) - 6), id="sym",
+                                dashed=True))
+    P = {"L": (X(x0), Y(0)), "R": (X(x1), Y(0)),
+         "B": (X(0), Y(y0)), "U": (X(0), Y(y1))}
+    for nm, (xv, yv) in marks.items():
+        P[nm] = (X(xv), Y(yv))
+        elements.append({"id": f"pt{nm}", "type": "point", "at": vc.P(P[nm]), "r": 3.5})
+        elements.append(_float_label(f"lb{nm}", nm, P[nm]))
+    elements.append(vc.text((X(x1) + 46, Y(0) + 10), "x", id="lbx"))
+    elements.append(vc.text((X(0) + 18, Y(y1) - 62), "y", id="lby"))
+    obst0 = pts + [(X(i) + dx, Y(0) + dy) for i in range(int(x0), int(x1) + 1)
+                   for dx in (-5, 5) for dy in (-5, 5)] +         [(X(0) + dx, Y(j) + dy) for j in range(int(y0), int(y1) + 1)
+         for dx in (-5, 5) for dy in (-5, 5)] +         [(X(x0) - 18 + t * (X(x1) - X(x0) + 44) / 30, Y(0)) for t in range(31)] +         [(X(0), Y(y0) + 18 + t * (Y(y1) - Y(y0) - 44) / 30) for t in range(31)] +         ([(X(h_), Y(y0) + 6 + t * (Y(y1) - Y(y0) - 12) / 30) for t in range(31)]
+         if symmetry else [])
+    picked = None
+    for cand_xy in ((X(0) - 22, Y(0) + 24), (X(0) + 22, Y(0) + 24),
+                    (X(0) - 22, Y(0) - 24), (X(0) + 22, Y(0) - 24),
+                    (X(0) - 34, Y(0) + 34), (X(0) + 34, Y(0) - 34),
+                    (X(0) - 48, Y(0) + 30), (X(0) - 30, Y(0) + 46),
+                    (X(0) + 30, Y(0) + 46), (X(0) - 48, Y(0) - 30),
+                    (X(0) + 48, Y(0) - 30), (X(0) - 64, Y(0) + 44),
+                    (X(0) + 64, Y(0) + 44), (X(0) - 70, Y(0) - 20),
+                    (X(0) + 70, Y(0) - 20)):
+        cand = vc.text(cand_xy, "0", id="lbo", size=15)
+        _, bx0, by0, bx1, by1 = label_boxes([cand], 15)[0]
+        if any(bx0 - 10 <= px <= bx1 + 10 and by0 - 10 <= py <= by1 + 10
+               for px, py in obst0):
+            continue
+        if any(_rect_gap((bx0, by0, bx1, by1), nb) < 8.0 for nb in num_boxes):
+            continue
+        picked = cand
+        break
+    if picked is None:
+        raise TemplateError(f"{kind}: the origin numeral can't clear the axes "
+                            "and the curve — narrow the ranges")
+    elements.append(picked)
+
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    add(f"axis LR from {x0:g} to {x1:g}", "stem", "the x axis range")
+    add(f"axis BU from {y0:g} to {y1:g}", "stem" if y_range is not None else "inferred",
+        "the y axis range")
+    add(f"tick LR step {step_x}", "stem",
+        "a numeral at every x unit" if step_x == 1 else f"numerals every {step_x}")
+    add(f"tick BU step {step_y}", "stem",
+        "a numeral at every y unit" if step_y == 1 else f"numerals every {step_y}")
+    add('describe "marked coordinates are figure content — read off the numbered '
+        'axes"', "inferred", "read-the-figure declaration for `reads`")
+    num_claims: set[str] = {"0"}
+    add('label "0" names 0', "stem", "the origin numeral")
+    for i in range(int(x0), int(x1) + 1):
+        if i % step_x == 0 and i != 0 and f"{i:g}" not in num_claims:
+            num_claims.add(f"{i:g}")
+            add(f'label "{i:g}" names {i:g}', "stem", "an x-axis numeral")
+    for j in range(int(y0), int(y1) + 1):
+        if j % step_y == 0 and j != 0 and f"{j:g}" not in num_claims:
+            num_claims.add(f"{j:g}")
+            add(f'label "{j:g}" names {j:g}', "stem", "a y-axis numeral")
+    if kind_f == "line":
+        add(f'describe "the straight line y = {m_:g}x {"+" if c_ >= 0 else "−"} '
+            f'{abs(c_):g} is drawn"', "stem", "the stem's equation")
+    else:
+        add(f'describe "the parabola y = {a_:g}(x − {h_:g})² {"+" if k_ >= 0 else "−"} '
+            f'{abs(k_):g} is drawn, opening {"up" if a_ > 0 else "down"}"', "stem",
+            "the stem's equation")
+    if symmetry:
+        add(f'describe "the dashed line x = {h_:g} is the axis of symmetry"',
+            "inferred", "the dashed mirror")
+        add("paint sym dashed", "inferred", "the symmetry line")
+    for nm, (xv, yv) in marks.items():
+        add(f"reads {nm} {xv:g} on LR", "inferred", f"{nm}'s x coordinate")
+        add(f"reads {nm} {yv:g} on BU", "inferred", f"{nm}'s y coordinate")
+        add(f'label "{nm}" names {nm}', "stem" if y_range else "inferred",
+            "a marked point on the curve")
+        add(f'describe "{nm} lies on the curve at ({xv:g}, {yv:g})"', "inferred",
+            "the drawn dot")
+    if vertex:
+        add(f'describe "{vertex} is the {"minimum" if a_ > 0 else "maximum"} point — '
+            f'the vertex at ({h_:g}, {k_:g})"', "stem", "the vertex from the equation")
+    add(f"derive {x1:g} - {x0:g} = {_num_exact(x1 - x0)}", "inferred",
+        "the x-range span")
+    add(f'label "x" names LR', "inferred", "the x axis letter")
+    add(f'label "y" names BU', "inferred", "the y axis letter")
+    add("none tickMark parallelMark angleMark shaded" + ("" if symmetry else " dashed"),
+        "inferred", "axes, the curve and marked points only")
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=dict(P), points=list(P), segments=["LR", "BU"], claims=claims,
+                  ask=ask, title=title or "A graph on numbered axes",
+                  budget=len(elements) if len(elements) > 32 else None,
+                  departures=([f"{len(elements)} elements — a numeral and tick per "
+                               "axis step plus gridlines is the honest drawing "
+                               "(S6b §3.4)"] if len(elements) > 32 else None),
+                  description=description or (
+                      ("A parabola" if kind_f == "quadratic" else "A straight line") +
+                      " drawn on numbered x and y axes" +
+                      (f", {', '.join(marks)} marked." if marks else ".")),
+                  scale="to scale — the axes are true linear maps",
+                  medium=medium)
+
+
+def build_inequality_line(*, figure_id, stem, ask=None, title=None,
+                          description=None, medium="english", v0, v1, dots=None,
+                          interval=None, unit_px=None):
+    """A number line showing a solution set. `v0`/`v1` = integer axis bounds
+    (stem-checked). `dots` = [values] draws a FILLED dot at each value (the integer
+    solution set); `interval` = {"a": x, "b": y|"right"|"left", "open_a": bool,
+    "open_b": bool} draws the thick solution line between a and b — "right"/"left"
+    draws the unbounded ray to the axis end. Endpoints draw filled (closed) or
+    hollow (open) circles; every endpoint value must be a stem number and a lattice
+    integer or half-integer."""
+    kind = "inequality_line"
+    vc.reset_ids()
+    require_stem_signed(stem, v0=v0, v1=v1)
+    if not (isinstance(v0, (int, float)) and isinstance(v1, (int, float))
+            and float(v0).is_integer() and float(v1).is_integer() and v1 > v0):
+        raise TemplateError(f"{kind}: v0, v1 must be integers with v1 > v0")
+    v0, v1 = float(v0), float(v1)
+    if v1 - v0 > 24:
+        raise TemplateError(f"{kind}: the axis spans {v1 - v0:g} units — too wide")
+    dot_vals = [float(x) for x in (dots or [])]
+    for v_ in dot_vals:
+        if not (v0 <= v_ <= v1):
+            raise TemplateError(f"{kind}: dot {v_:g} is outside [{v0:g},{v1:g}]")
+        if abs(v_ - round(v_)) > 1e-9:
+            raise TemplateError(f"{kind}: dot {v_:g} is not an integer — the dots "
+                                "mark the integer solution set")
+        require_stem_signed(stem, **{f"dot {v_:g}": v_})
+    iv = None
+    if interval is not None:
+        if not isinstance(interval, dict):
+            raise TemplateError(f"{kind}: interval is a dict")
+        a_, b_ = interval.get("a"), interval.get("b")
+        oa, ob = bool(interval.get("open_a")), bool(interval.get("open_b"))
+        if not isinstance(a_, (int, float)) or isinstance(a_, bool):
+            raise TemplateError(f"{kind}: interval['a'] must be a number")
+        a_ = float(a_)
+        if not (v0 <= a_ <= v1) or (abs(a_ * 2 - round(a_ * 2)) > 1e-9):
+            raise TemplateError(f"{kind}: endpoint {a_:g} must sit on the axis on an "
+                                "integer or half-integer")
+        require_stem_signed(stem, **{f"endpoint {a_:g}": a_})
+        if isinstance(b_, str) and b_ in ("left", "right"):
+            iv = (a_, b_, oa, False)
+        elif isinstance(b_, (int, float)) and not isinstance(b_, bool):
+            b_ = float(b_)
+            if not (a_ < b_ <= v1) or (abs(b_ * 2 - round(b_ * 2)) > 1e-9):
+                raise TemplateError(f"{kind}: endpoint {b_:g} must exceed {a_:g} on a "
+                                    "half-integer lattice")
+            require_stem_signed(stem, **{f"endpoint {b_:g}": b_})
+            iv = (a_, b_, oa, ob)
+        else:
+            raise TemplateError(f"{kind}: interval['b'] must be a number, 'left' or "
+                                "'right'")
+    if not dot_vals and iv is None:
+        raise TemplateError(f"{kind}: pass dots= or interval=")
+    unit_px = unit_px or min(90.0, 380.0 / (v1 - v0))
+    span_v = v1 - v0
+    axis_y = 0.0
+    x_of = lambda v: (v - v0) * unit_px
+    elements: list[dict] = []
+    elements.append({"id": "axis", "type": "arrow", "head": "both",
+                     "points": [[-28, axis_y], [span_v * unit_px + 28, axis_y]]})
+    est_span = span_v * unit_px + 68
+    num_gap = _clearance_units(4.0, est_span)
+    num_step = next((k for k in _NICE_STEPS if k * unit_px >= 16.0 + num_gap),
+                    int(span_v) or 1)
+    for i in range(int(round(span_v)) + 1):
+        v = v0 + i
+        x = x_of(v)
+        elements.append(vc.line((x, axis_y - 9), (x, axis_y + 9), id=f"tk{i}",
+                                width=1.6))
+        if i % num_step == 0:
+            elements.append(vc.text((x, axis_y + 44), f"{round(v):g}", id=f"num{i}",
+                                    size=15))
+    u, vv = _unused_letters(set(), 2)
+    anchors = {u: (x_of(v0), axis_y), vv: (x_of(v1), axis_y)}
+    for i, v_ in enumerate(dot_vals):
+        nm = f"P{i}"
+        anchors[nm] = (x_of(v_), axis_y)
+        elements.append({"id": f"dt{i}", "type": "point",
+                         "at": vc.P(anchors[nm]), "r": 4.5})
+    if iv:
+        a_, b_, oa, ob = iv
+        xa = x_of(a_)
+        if isinstance(b_, str):
+            xb = x_of(v1 if b_ == "right" else v0) + (24.0 if b_ == "right" else -24.0)
+            elements.append(vc.line((xa, axis_y), (xb, axis_y), id="ivl", width=5))
+            elements.append(vc.arrow((xb - (6 if b_ == "right" else -6), axis_y),
+                                     (xb, axis_y), id="ivh", width=5))
+        else:
+            xb = x_of(b_)
+            elements.append(vc.line((xa, axis_y), (xb, axis_y), id="ivl", width=5))
+            eb = (x_of(b_), axis_y)
+            anchors["E"] = eb
+            elements.append({"id": "epB", "type": "point", "at": vc.P(eb), "r": 5,
+                             "fill": {"color": "#ffffff"} if ob else {"color": "#1f2937"}})
+        ea = (xa, axis_y)
+        anchors["D"] = ea
+        elements.append({"id": "epA", "type": "point", "at": vc.P(ea), "r": 5,
+                         "fill": {"color": "#ffffff"} if oa else {"color": "#1f2937"}})
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    add(f"axis {u}{vv} from {v0:g} to {v1:g}", "stem", "the axis range")
+    add(f"tick {u}{vv} step {num_step}", "stem",
+        "a numeral at every integer" if num_step == 1 else
+        f"numerals every {num_step} integers")
+    for i, v_ in enumerate(dot_vals):
+        add(f"at {v_:g} @P{i}", "stem", f"the filled dot at {v_:g}")
+        add(f'describe "a filled dot marks {v_:g} — part of the solution set"',
+            "inferred", "the filled dot")
+    if iv:
+        a_, b_, oa, ob = iv
+        if isinstance(b_, str):
+            add(f'describe "the thick ray runs from {a_:g} {"rightward" if b_ == "right" else "leftward"} — '
+                f'{"all" if b_ == "right" else "all"} values {">" if b_ == "right" else "<"}'
+                f'{"=" if not oa else ""} {a_:g}"', "inferred", "the unbounded solution ray")
+            add(f"at {a_:g} @D", "stem", "the endpoint's value")
+        else:
+            kind_i = "closed" if not (oa or ob) else ("open" if (oa and ob) else
+                                                    ("closed" if oa is False else "open"))
+            kind_i = "open" if (oa and ob) else "closed"
+            add(f"interval {kind_i} {a_:g} to {b_:g} on {u}{vv}", "stem",
+                f"the solution interval — {a_:g} is "
+                f"{'excluded (open circle)' if oa else 'included (filled circle)'}, "
+                f"{b_:g} is {'excluded (open circle)' if ob else 'included (filled circle)'}")
+            add(f"at {a_:g} @D", "stem", "the lower endpoint")
+            add(f"at {b_:g} @E", "stem", "the upper endpoint")
+            add(f'describe "the circle at {a_:g} is '
+                f'{"open — the value is excluded" if oa else "filled — the value is included"}"',
+                "inferred", "the endpoint marker")
+            add(f'describe "the circle at {b_:g} is '
+                f'{"open — the value is excluded" if ob else "filled — the value is included"}"',
+                "inferred", "the endpoint marker")
+    add(f"derive {v1:g} - {v0:g} = {_num_exact(v1 - v0)}", "inferred", "the axis span")
+    for i in range(0, int(round(span_v)) + 1, num_step):
+        add(f'label "{v0 + i:g}" names {v0 + i:g}', "stem", "the numeral under a tick")
+    add("none tickMark parallelMark angleMark dashed", "inferred",
+        "the axis, endpoint circles and the thick interval only")
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=anchors, points=list(anchors),
+                  segments=[f"{u}{vv}"], claims=claims, ask=ask,
+                  title=title or "A number line solution set",
+                  description=description or (
+                      "A number line from " + f"{v0:g} to {v1:g}" +
+                      (" with the solution interval shown thick." if iv else
+                       " with filled dots on the solution values.") if iv or dot_vals
+                      else "."),
+                  scale="to scale — the axis is a true linear map",
+                  medium=medium)
+
+
+def build_histogram(*, figure_id, stem, ask=None, title=None, description=None,
+                    medium="english", bounds, freqs, step, v_max, values="stem",
+                    polygon=False, x_title=None, y_title=None):
+    """Adjoining bars over class intervals. `bounds` = [b0,…,bn] class edges
+    (increasing; every edge stem-checked when values="stem"); `freqs` = n values
+    (stem-checked in "stem" mode, `ev inferred` in "figure" mode — a read-the-graph
+    question). `step`/`v_max` set the y axis (stem-checked). Bar widths are
+    proportional to class widths — unequal classes draw unequal bars. `polygon=True`
+    joins the bar-top midpoints as a frequency polygon, closing to the axis at the
+    outer edges."""
+    kind = "histogram"
+    vc.reset_ids()
+    if not (isinstance(bounds, (list, tuple)) and len(bounds) >= 3):
+        raise TemplateError(f"{kind}: bounds needs ≥3 class edges")
+    bs = [float(b) for b in bounds]
+    for b_ in bs:
+        if isinstance(b_, bool) or not math.isfinite(b_):
+            raise TemplateError(f"{kind}: class edges must be numbers")
+    for i in range(len(bs) - 1):
+        if bs[i + 1] <= bs[i]:
+            raise TemplateError(f"{kind}: class edges must increase")
+    if values not in ("stem", "figure"):
+        raise TemplateError(f"{kind}: values must be 'stem' or 'figure'")
+    fs_ = [float(f_) for f_ in (freqs or [])]
+    if len(fs_) != len(bs) - 1:
+        raise TemplateError(f"{kind}: freqs needs exactly {len(bs) - 1} values")
+    for f_ in fs_:
+        if not 0 <= f_ <= float(v_max):
+            raise TemplateError(f"{kind}: a frequency must be in [0, {v_max}]")
+    if values == "stem":
+        require_stem(stem, **{f"edge{i}": bounds[i] for i in range(len(bounds))})
+        require_stem(stem, **{f"freq{i}": freqs[i] for i in range(len(fs_))},
+                     step=step, v_max=v_max)
+    else:
+        require_stem(stem, step=step, v_max=v_max)
+    for f_ in fs_:
+        if abs(f_ % (step / 2)) > 1e-9:
+            raise TemplateError(f"{kind}: every frequency must be a multiple of "
+                                f"step/2 ({step / 2:g}) for the reads claim")
+    upx_v = 46.0
+    xw = min(46.0, 380.0 / (bs[-1] - bs[0]))
+    upy = min(64.0, 360.0 / v_max)
+    W = (bs[-1] - bs[0]) * xw
+    X = lambda v: (v - bs[0]) * xw
+    Y = lambda v: -v * upy
+    elements: list[dict] = [
+        vc.line((-16, 0), (W + 40, 0), id="axX"),
+        vc.line((0, 14), (0, -v_max * upy - 30), id="axY")]
+    for j in _arange(0, v_max + step / 2, step):
+        y = Y(j)
+        elements.append(vc.line((0, y), (W, y), id=f"gh{int(j * 10)}", width=0.6))
+        elements[-1]["stroke"] = {"width": 0.6, "color": "#d1d5db"}
+        elements.append(vc.line((-4, y), (4, y), id=f"ty{int(j * 10)}", width=1.2))
+        elements.append(vc.text((-38, y), f"{j:g}", id=f"ny{int(j * 10)}", size=15))
+    P = {"O": (0.0, 0.0), "X": (W, 0.0), "Y": (0.0, Y(v_max))}
+    num_gap = _clearance_units(4.0, W + 80)
+    for i, b_ in enumerate(bs):
+        x = X(b_)
+        P[f"E{i}"] = (x, 0.0)
+        elements.append(vc.line((x - 4, 0), (x + 4, 12), id=f"tx{i}", width=1.0))
+        elements.append(vc.text((x, 48), f"{b_:g}", id=f"nx{i}", size=14))
+    for i, f_ in enumerate(fs_):
+        x0_, x1_ = X(bs[i]), X(bs[i + 1])
+        elements.append(vc.polygon([(x0_, 0), (x1_, 0), (x1_, Y(f_)), (x0_, Y(f_))],
+                                   fill="#e5e7eb", id=f"bar{i}"))
+        P[f"T{i}"] = ((x0_ + x1_) / 2, Y(f_))
+    if polygon:
+        mids = [P[f"T{i}"] for i in range(len(fs_))]
+        pts = [(X(bs[0]) - xw * (bs[1] - bs[0]) / 2 / xw * 0 + (x0_ - xw) if False else
+                (X(bs[0]) - (X(bs[1]) - X(bs[0])) / 2, 0.0))] + mids + \
+              [(X(bs[-1]) + (X(bs[-1]) - X(bs[-2])) / 2, 0.0)]
+        elements.append(vc.polyline(pts, id="fpoly"))
+    if x_title:
+        elements.append(vc.text((W / 2, 52), x_title, id="xt", size=15))
+    if y_title:
+        elements.append(vc.text((-34, -v_max * upy / 2), y_title, id="yt", size=15,
+                                ))
+        elements[-1].update({"at": [-34, -v_max * upy / 2]})
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    evv = "stem" if values == "stem" else "inferred"
+    add(f"axis OX from {bs[0]:g} to {bs[-1]:g}", evv, "the class range")
+    add(f"axis OY from 0 to {v_max:g}", "stem", "the frequency axis")
+    add(f"tick OY step {step:g}", "stem", "a numeral every step on the frequency axis")
+    for i, f_ in enumerate(fs_):
+        add(f"reads T{i} {f_:g} on OY", evv,
+            f"bar {i + 1}'s height over [{bs[i]:g}, {bs[i + 1]:g}]")
+    num_claims: set[str] = set()
+    for j in _arange(0, v_max + step / 2, step):
+        num_claims.add(f"{j:g}")
+        add(f'label "{j:g}" names {j:g}', "stem",
+            "a numeral on the frequency axis")
+    for i, b_ in enumerate(bs):
+        add(f"reads E{i} {b_:g} on OX", evv, f"class edge {b_:g}")
+        if f"{b_:g}" not in num_claims:
+            num_claims.add(f"{b_:g}")
+            add(f'label "{b_:g}" names e{i}', evv, "the class-edge numeral")
+    widths = {round(bs[i + 1] - bs[i], 6) for i in range(len(bs) - 1)}
+    add(f'describe "adjoining bars of {"equal" if len(widths) == 1 else "unequal"} '
+        'class widths — the bar width follows the class width"', "inferred",
+        "the histogram shape")
+    if polygon:
+        add(f'describe "the frequency polygon joins the bar-top midpoints and closes '
+            'on the axis"', "inferred", "the drawn polyline")
+
+    if x_title:
+        add(f'label "{x_title}" names OX', "stem", "the x axis title")
+    if y_title:
+        add(f'label "{y_title}" names OY', "stem", "the y axis title")
+    add(f"derive {' + '.join(f'{f_:g}' for f_ in fs_)} = {_num_exact(sum(fs_))}",
+        evv, "the frequencies sum to the total count")
+    add("none tickMark parallelMark angleMark shaded dashed", "inferred",
+        "bars, axes and numerals only")
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=dict(P), points=list(P), segments=["OX", "OY"], claims=claims,
+                  ask=ask, title=title or "A histogram",
+                  description=description or (
+                      "Adjoining bars show the frequencies of class intervals on "
+                      "numbered axes" +
+                      (", with the frequency polygon joined." if polygon else ".")),
+                  scale="to scale — both axes are true linear maps",
+                  medium=medium)
+
+
+def build_tree_diagram(*, figure_id, stem, ask=None, title=None, description=None,
+                       medium="english", stages, captions=None):
+    """A probability tree. `stages` = [stage1, stage2?] where stage1 is a list of
+    (outcome, "a/b") branch tuples and stage2 is either one shared list (the same
+    branch probabilities off every stage-1 node — with replacement) or a dict
+    {outcome: [(outcome2, "a/b")]} giving each node's own branches. Outcomes are 1–2
+    capital letters or a short token; fractions print on the branches — numerator
+    and denominator must both be stem numbers and each node's branches must sum to 1
+    exactly. Level captions ("First", "Second") are optional drawn text."""
+    kind = "tree_diagram"
+    vc.reset_ids()
+
+    def frac(s):
+        if not (isinstance(s, str) and re.fullmatch(r"\d+/\d+", s)):
+            raise TemplateError(f"{kind}: branch probability {s!r} must be 'a/b'")
+        a_, b_ = s.split("/")
+        a_, b_ = int(a_), int(b_)
+        if not 0 < a_ < b_:
+            raise TemplateError(f"{kind}: probability {s} must lie in (0, 1)")
+        require_stem(stem, **{f"numerator of {s}": a_, f"denominator of {s}": b_})
+        return a_ / b_
+
+    if not (isinstance(stages, (list, tuple)) and 1 <= len(stages) <= 2):
+        raise TemplateError(f"{kind}: stages is [stage1] or [stage1, stage2]")
+    st1 = stages[0]
+    if not (isinstance(st1, (list, tuple)) and 2 <= len(st1) <= 4):
+        raise TemplateError(f"{kind}: stage 1 needs 2–4 branches")
+    for o, p in st1:
+        if not (isinstance(o, str) and 1 <= len(o) <= 4 and not SINHALA.search(o)):
+            raise TemplateError(f"{kind}: outcome {o!r} must be a short English token")
+        frac(p)
+    if abs(sum(frac(p) for _, p in st1) - 1.0) > 1e-9:
+        raise TemplateError(f"{kind}: stage-1 branches must sum to 1")
+    st2 = None
+    if len(stages) == 2:
+        st2raw = stages[1]
+        if isinstance(st2raw, dict):
+            st2 = {}
+            for o, _ in st1:
+                brs = st2raw.get(o)
+                if not (isinstance(brs, (list, tuple)) and 2 <= len(brs) <= 4):
+                    raise TemplateError(f"{kind}: stage 2 needs a branch list under "
+                                        f"outcome {o!r} (2–4 branches)")
+                for o2, p2 in brs:
+                    if not (isinstance(o2, str) and 1 <= len(o2) <= 4
+                            and not SINHALA.search(o2)):
+                        raise TemplateError(f"{kind}: outcome {o2!r} must be short "
+                                            "English")
+                    frac(p2)
+                if abs(sum(frac(p) for _, p in brs) - 1.0) > 1e-9:
+                    raise TemplateError(f"{kind}: the branches off {o} must sum to 1")
+                st2[o] = list(brs)
+        elif isinstance(st2raw, (list, tuple)) and 2 <= len(st2raw) <= 4:
+            st2 = {o: list(st2raw) for o, _ in st1}
+            for o2, p2 in st2raw:
+                if not (isinstance(o2, str) and 1 <= len(o2) <= 4
+                        and not SINHALA.search(o2)):
+                    raise TemplateError(f"{kind}: outcome {o2!r} must be short English")
+                frac(p2)
+            if abs(sum(frac(p) for _, p in st2raw) - 1.0) > 1e-9:
+                raise TemplateError(f"{kind}: stage-2 branches must sum to 1")
+        else:
+            raise TemplateError(f"{kind}: stage 2 is a shared branch list or a dict "
+                                "{outcome: [(o2, p)]}")
+    caps = list(captions or [])
+    for c_ in caps:
+        if not (isinstance(c_, str) and not SINHALA.search(c_)):
+            raise TemplateError(f"{kind}: caption {c_!r} must be English text")
+    lvl_dx = 190.0
+    fan = 66.0
+    elements: list[dict] = []
+    P: dict[str, XY] = {}
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    root = (0.0, 0.0)
+    n1 = len(st1)
+    ys1 = [(i - (n1 - 1) / 2) * fan * (5 - n1) for i in range(n1)]
+    branch_i = 0
+    leaves = []
+    claimed_glyphs: set[str] = set()
+    for i, (o, p) in enumerate(st1):
+        node = (lvl_dx, ys1[i])
+        nm = f"T{i + 1}"
+        P[nm] = node
+        elements.append(vc.line(root, node, id=f"br{i}"))
+        mid = vc.lerp(root, node, 0.45)
+        gl = f"{o} {p}"
+        elements.append(_float_label(f"fp{i}", gl, mid, gap=8))
+        if gl not in claimed_glyphs:
+            claimed_glyphs.add(gl)
+            add(f'label "{gl}" names br{i}', "stem",
+                f"the {o} branch labelled {p}")
+        add(f'describe "the first stage branches to {o} with probability {p}"',
+            "stem", "the drawn branch")
+        branch_i += 1
+        leaves.append((nm, o, node))
+    if st2:
+        li = 0
+        for i, (nm1, o1, n1p) in enumerate(leaves):
+            brs = st2[o1]
+            nb = len(brs)
+            span2 = fan * 0.82
+            for j, (o2, p2) in enumerate(brs):
+                node = (2 * lvl_dx, n1p[1] + (j - (nb - 1) / 2) * span2)
+                nm = f"T{10 + li}"
+                P[nm] = node
+                elements.append(vc.line(n1p, node, id=f"br2_{li}"))
+                mid = vc.lerp(n1p, node, 0.45)
+                gl2 = f"{o2} {p2}"
+                elements.append(_float_label(f"fq{li}", gl2, mid, gap=8))
+                if gl2 not in claimed_glyphs:
+                    claimed_glyphs.add(gl2)
+                    add(f'label "{gl2}" names br2_{li}', "stem",
+                        f"the {o2} branch labelled {p2} after {o1}")
+                li += 1
+        add(f'describe "each second-stage node branches again '
+            f'{"with the same probabilities — with replacement" if not isinstance(stages[1], dict) else "with its own probabilities — without replacement"}"',
+            "inferred", "the second level")
+    for i, c_ in enumerate(caps[:2]):
+        x_ = lvl_dx * (i + 1)
+        elements.append(vc.text((x_, max(p[1] for p in P.values()) + 56), c_,
+                                id=f"cap{i}", size=15))
+        add(f'label "{c_}" names cap{i}', "inferred", "the stage caption")
+    add(f"derive {' + '.join(p for _, p in st1)} = 1", "stem",
+        "the first-stage probabilities sum to 1")
+    add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
+        "branches, fractions and outcome letters only")
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=dict(P), points=list(P), segments=[], claims=claims,
+                  ask=ask, title=title or "A probability tree",
+                  description=description or (
+                      f"A probability tree with {len(st1)} first-stage branches"
+                      + (" and a second draw on each." if st2 else ".")),
+                  scale="branch angles are a canvas choice — the fractions are the "
+                        "content",
+                  medium=medium)
+
+
+def build_pythagoras_squares(*, figure_id, stem, ask=None, title=None,
+                             description=None, medium="english",
+                             names=("A", "B", "C"), right="B", up=None,
+                             legs=None, unit="cm", labels=None, grid=False,
+                             mirror=None, leg_px=None):
+    """A right triangle (right angle at `right`, `up` on the vertical leg) with a
+    square erected outward on every side. `legs` = {"AB": 3, "BC": 4, "CA": 5} —
+    numeric true lengths, stem-checked; a²+b²=c² must hold within 0.5% and the drawn
+    legs are proportional to them. A lowercase letter value marks an unknown (drawn
+    from `leg_px`, required in that case). `labels` = {side: False} suppresses a
+    side's printed "v unit". `grid=True` divides each square into cells — only when
+    every `legs` value is a positive integer (the corpus figures count the cells).
+    """
+    kind = "pythagoras_squares"
+    vc.reset_ids()
+    names = list(names)
+    if len(names) != 3 or len(set(names)) != 3 or \
+            not all(isinstance(n, str) and re.fullmatch(r"[A-Z]", n) for n in names):
+        raise TemplateError(f"{kind}: names must be three distinct single capitals")
+    if right not in names:
+        raise TemplateError(f"{kind}: right {right!r} is not in {names}")
+    others = [n for n in names if n != right]
+    up = up or others[0]
+    if up not in others:
+        raise TemplateError(f"{kind}: up {up!r} must be a non-right vertex")
+    horiz = others[1] if others[0] == up else others[0]
+    sk = {"".join(sorted((right, up))), "".join(sorted((right, horiz))),
+          "".join(sorted((up, horiz)))}
+    val: dict[str, object] = {}
+    for s, v_ in (legs or {}).items():
+        key = "".join(sorted(s)) if isinstance(s, str) and len(s) == 2 else s
+        if key not in sk:
+            raise TemplateError(f"{kind}: {s!r} is not a side")
+        if isinstance(v_, bool) or not isinstance(v_, (int, float, str)):
+            raise TemplateError(f"{kind}: side {s} must be a number or a letter")
+        if isinstance(v_, (int, float)) and not isinstance(v_, bool):
+            if v_ <= 0:
+                raise TemplateError(f"{kind}: side {s} must be positive")
+            require_stem(stem, **{f"side {key}": float(v_)})
+        elif not _RT_SIDE_VAL.fullmatch(str(v_)):
+            raise TemplateError(f"{kind}: side {s} letter must be one lowercase letter")
+        val[key] = v_
+    leg_v_key = "".join(sorted((right, up)))
+    leg_h_key = "".join(sorted((right, horiz)))
+    hyp_key = "".join(sorted((up, horiz)))
+    num = {s: float(v_) for s, v_ in val.items() if isinstance(v_, (int, float))}
+    if leg_v_key in num and leg_h_key in num:
+        lv_px = num[leg_v_key] * (180.0 / max(num[leg_v_key], num[leg_h_key]))
+        lh_px = num[leg_h_key] * (180.0 / max(num[leg_v_key], num[leg_h_key]))
+        if hyp_key in num and abs(num[leg_v_key] ** 2 + num[leg_h_key] ** 2
+                                  - num[hyp_key] ** 2) > 0.005 * num[hyp_key] ** 2:
+            raise TemplateError(f"{kind}: sides {num[leg_v_key]:g}, {num[leg_h_key]:g}, "
+                                f"{num[hyp_key]:g} fail a²+b²=c² (0.5%)")
+    elif leg_px is not None:
+        if not (isinstance(leg_px, (list, tuple)) and len(leg_px) == 2 and
+                all(isinstance(x, (int, float)) and x > 0 for x in leg_px)):
+            raise TemplateError(f"{kind}: leg_px must be two positive lengths")
+        lv_px, lh_px = float(leg_px[0]), float(leg_px[1])
+    else:
+        raise TemplateError(f"{kind}: without numeric legs pass leg_px=(v, h)")
+    if grid and not all(isinstance(v_, (int, float)) and float(v_).is_integer()
+                        and v_ > 0 for v_ in val.values()):
+        raise TemplateError(f"{kind}: grid=True needs every `legs` value a positive "
+                            "integer (the cells count the square's area)")
+    mir = mirror or ""
+    if mir not in ("", "x", "y", "xy"):
+        raise TemplateError(f"{kind}: mirror must be '', 'x', 'y' or 'xy'")
+    sx = -1.0 if "x" in mir else 1.0
+    sy = -1.0 if "y" in mir else 1.0
+    B = (0.0, 0.0)
+    P = {right: B, up: (0.0, -sy * lv_px), horiz: (sx * lh_px, 0.0)}
+    cen = ((P[right][0] + P[up][0] + P[horiz][0]) / 3,
+           (P[right][1] + P[up][1] + P[horiz][1]) / 3)
+    sides_xy = {leg_v_key: (right, up), leg_h_key: (right, horiz),
+                hyp_key: (up, horiz)}
+    elements: list[dict] = [vc.line(P[a], P[b], id=f"t{s}")
+                            for s, (a, b) in sides_xy.items()]
+    elements += vc.right_angle_mark(P[right], P[up], P[horiz], r=14)
+    sq_ids = []
+    for s, (a, b) in sides_xy.items():
+        pa, pb = P[a], P[b]
+        ux, uy = vc.unit(pa, pb)
+        L = vc.dist(pa, pb)
+        nx, ny = -uy, ux
+        third = next(n for n in names if n not in (a, b))
+        if ((P[third][0] - pa[0]) * nx + (P[third][1] - pa[1]) * ny) > 0:
+            nx, ny = -nx, -ny
+        sq = [pa, pb, (pb[0] + nx * L, pb[1] + ny * L),
+              (pa[0] + nx * L, pa[1] + ny * L)]
+        elements.append(vc.polygon(sq, id=f"sq{s}"))
+        sq_ids.append(s)
+        if grid and s in num:
+            cells = int(round(num[s] * (180.0 / max(num.get(leg_v_key, 1),
+                                                    num.get(leg_h_key, 1))) / L)) \
+                if False else int(round(num[s]))
+            cells = int(round(num[s]))
+            cells = max(1, min(cells, 12))
+            for i in range(1, cells):
+                f_ = i / cells
+                p1 = vc.lerp(pa, pb, f_)
+                p2 = vc.lerp(sq[3], sq[2], f_)
+                elements.append(vc.line(p1, p2, id=f"gv{s}{i}", width=0.5))
+                q1 = (pa[0] + nx * L * f_, pa[1] + ny * L * f_)
+                q2 = (pb[0] + nx * L * f_, pb[1] + ny * L * f_)
+                elements.append(vc.line(q1, q2, id=f"gh{s}{i}", width=0.5))
+    clr = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0,
+                           lv_px + lh_px + max(lv_px, lh_px))
+    boxes: list = []
+    for s, (a, b) in sides_xy.items():
+        if s not in val or (labels or {}).get(s) is False:
+            continue
+        v_ = val[s]
+        glyph = f"{v_:g} {unit}" if isinstance(v_, (int, float)) else str(v_)
+        pa_, pb_ = P[a], P[b]
+        ux_, uy_ = vc.unit(pa_, pb_)
+        L_ = vc.dist(pa_, pb_)
+        nx_, ny_ = -uy_, ux_
+        third_ = next(n for n in names if n not in (a, b))
+        if ((P[third_][0] - pa_[0]) * nx_ + (P[third_][1] - pa_[1]) * ny_) > 0:
+            nx_, ny_ = -nx_, -ny_
+        mid_ = vc.lerp(pa_, pb_, 0.5)
+        anchor_sq = (mid_[0] + nx_ * (L_ + 16.0), mid_[1] + ny_ * (L_ + 16.0))
+        elements.append(_float_label(f"sl{s}", glyph, anchor_sq, gap=10))
+    for nm in names:
+        elements.append(_float_label(f"lbv{nm}", nm, P[nm]))
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    add(f"right {others[0]} {right} {others[1]}", "inferred", "the right-angle mark")
+    for s, (a, b) in sides_xy.items():
+        add(f'describe "a square is drawn outward on side {a}{b}"', "inferred",
+            "the erected square")
+    for s, v_ in val.items():
+        if (labels or {}).get(s) is False:
+            continue
+        a, b = sides_xy[s]
+        glyph = f"{v_:g} {unit}" if isinstance(v_, (int, float)) else str(v_)
+        add(f'label "{glyph}" names {a}{b}',
+            "stem" if isinstance(v_, (int, float)) else "inferred",
+            f"the label on {a}{b}")
+    for nm in names:
+        add(f'label "{nm}" names {nm}', "inferred", "a vertex letter")
+    if leg_v_key in num and leg_h_key in num:
+        lv, lh = num[leg_v_key], num[leg_h_key]
+        add(f"derive {lv:g} * {lv:g} = {_num_exact(lv * lv)}", "inferred",
+            "the square's area on one leg")
+        add(f"derive {lh:g} * {lh:g} = {_num_exact(lh * lh)}", "inferred",
+            "the square's area on the other leg")
+        if hyp_key in num:
+            hp = num[hyp_key]
+            add(f"derive {_num_exact(lv * lv)} + {_num_exact(lh * lh)} = "
+                f"{_num_exact(lv * lv + lh * lh)}", "inferred",
+                "the two leg-square areas sum to the hypotenuse square")
+            add(f"derive {hp:g} * {hp:g} = {_num_exact(hp * hp)}", "inferred",
+                "the hypotenuse square's area")
+    absent = ["tickMark", "parallelMark", "angleMark", "arrow", "dashed", "shaded"]
+    add("none " + " ".join(absent), "inferred",
+        "the triangle, right mark, squares and labels only")
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=dict(P), points=list(P),
+                  segments=[f"{a}{b}" for a, b in sides_xy.values()], claims=claims,
+                  ask=ask,
+                  title=title or f"Squares on the sides of triangle {''.join(names)}",
+                  description=description or (
+                      f"A right triangle with a square drawn outward on each side"
+                      + (", the squares divided into unit cells." if grid else ".")),
+                  scale="to scale where numeric — squares follow the drawn sides",
+                  medium=medium)
+
+
 BUILDERS = {fn.__name__[6:]: fn for fn in
             (build_grid_polygon, build_shaded_grid, build_rays_from_point, build_number_line,
              build_pictograph, build_rectangle_points, build_house_pentagon, build_cuboid,
@@ -5981,7 +8285,10 @@ BUILDERS = {fn.__name__[6:]: fn for fn in
              build_circles_in_circle, build_abacus, build_sorting_rings, build_shape_row,
              build_coordinate_plane, build_parallel_lines, build_bar_chart,
              build_symmetry_grid, build_labelled_composite, build_triangle_marks,
-             build_venn_sets, build_circle_parts)}
+             build_venn_sets, build_circle_parts, build_right_triangle,
+             build_circle_angles, build_triangle_parallel, build_parallel_area,
+             build_solid, build_function_graph, build_inequality_line,
+             build_histogram, build_tree_diagram, build_pythagoras_squares)}
 
 CATALOGUE = """
 template            stem-checked numbers                          inputs
@@ -6007,7 +8314,17 @@ symmetry_grid       cell                                          half=[(x,y)…
 labelled_composite  unknown sides when 2+ share an orientation   path=[[dir R|L|U|D, length, label?]…] 4–12 sides closing on A, unit, vertex_labels, right_marks, unit_px — label "x m" or null = unknown side (derived by closure when it is its orientation's only unknown)
 triangle_marks      every NUMERIC angle label                    angles={A:a,B:b,C:c} (sum 180, each ≥15), ticks={"AB":n} 1–3, arcs={"A":n} 1–3, right="C", angle_labels={"A":"60°"|"x"} (needs an arc), names, base_px? (auto-grows when labels crowd)
 venn_sets           none — items/counts are figure content       sets=["A","B"(,"C")] 2–3 (trefoil), regions={"A":[items]|n,"AB":…,"":…} ("" = outside every set, needs universal), universal="U"|None, r? (auto-grows) — counts need every region, a count may be one letter (unknown); shade= reserved (G10, refuses)
-circle_parts        radius when a LENGTH label prints; every length label    points={A:deg} (0°=E, 90°=down), features=[{"radius":"OA"|"diameter":"AB"|"chord":"CD"|"arc":"CD"|"sector":"OAB"|"segment":"CD","label"?,"major"?}], centre="O"|None, radius?, unit, r_px? (auto-grows 90→150) — a diameter's points are 180° apart; later: tangents, angles at centre/circumference, cyclic quads, equal-chord ticks
+circle_parts        radius when a LENGTH label prints; every length label    points={A:deg} (0°=E, 90°=down), features=[{"radius":"OA"|"diameter":"AB"|"chord":"CD"|"arc":"CD"|"sector":"OAB"|"segment":"CD","label"?,"major"?}], centre="O"|None, radius?, unit, r_px? (auto-grows 90→150) — a diameter's points are 180° apart; circle_angles adds tangents, cyclic quads, angle marks
+right_triangle      every numeric side/angle label; leg sides when numeric     names, right, up, sides={"AB":5|"x"}, unit, legs_px? (needed when a leg is unknown), angles={V:"30°"|"θ"}, altitude={"from","foot"}, extra_base={"D":t}, mirror="x"|"y"|"xy" — a²+b²=c² checked; numeric labels only restate drawn geometry
+circle_angles       every numeric angle label (±0.75° of drawn)                points={A:deg}, centre, cyclic="ABCD", chords, radii(+dashed), tangents=[{"at","ends"}], external={"T":[A,B]}, extend=[{"side","to"}], angles=[{"at","arms","label","arcs","reflex"}], ticks, segment, r_px? — tangents ⟂ radius auto-drawn
+triangle_parallel   sides values; numeric labels (fraction × side)             names, angles={A,B,C} (sum 180), div={X:("AB",t)}, parallel=("XY","BC") — fractions from the shared vertex must be equal; ticks on sub-segments, labels={"AX":"6 cm"|"x"}, angle_labels
+parallel_area       distance.value                                           upper={P:x}, lower={Q:x}, draw=[[P,Q,R]…] figures between the lines, gap, distance={"value","unit"} (draws MN perpendicular)
+solid               every numeric dim                                        shape=cylinder|cone|sphere|hemisphere|square_pyramid|triangular_prism, dims={"radius":7|"r","height":…}, unit — hidden edges dashed
+function_graph      m,c or a,h,k; x_range, y_range when given                  curve={"m","c"}|{"a","h","k"}, x_range, y_range?, points={P:(x,y)} on the curve, vertex="V", symmetry, grid — negative axes supported
+inequality_line     v0, v1; every dot/endpoint value                           dots=[ints] | interval={"a","b"|"left"|"right","open_a","open_b"} — filled/open endpoint circles, thick solution line
+histogram           bounds + freqs when values="stem"; step, v_max             bounds=[b0…bn] (unequal ok), freqs, step, v_max, values="stem"|"figure", polygon, x_title, y_title
+tree_diagram        every numerator/denominator                              stages=[stage1, stage2|{outcome:[(o,p)]}] — branches sum to 1, fraction labels "a/b"
+pythagoras_squares  every numeric side                                       names, right, up, legs={"AB":3|"x"}, unit, labels={side:False}, grid (integer sides only), leg_px?, mirror
 """.strip()
 
 SELF_TEST = [
@@ -6164,6 +8481,97 @@ SELF_TEST = [
      "features": [{"radius": "OE", "label": "5 cm"}, {"diameter": "AB"},
                   {"chord": "CD", "label": "chord"}, {"segment": "CD"}],
      "radius": 5, "unit": "cm"},
+    {"template": "right_triangle", "figure_id": "selftest-rtri",
+     "stem": "Triangle ABC is right-angled at B with AB = 3 cm, BC = 4 cm and "
+             "AC = 5 cm. The angle at C is marked x. (a) Find x.",
+     "ask": [["a", "the angle x"]],
+     "sides": {"AB": 3, "BC": 4, "CA": 5}, "angles": {"C": "x"}},
+    {"template": "right_triangle", "figure_id": "selftest-rtri2",
+     "stem": "In the figure CA = 10 m and the angle at A is 30°. The height to "
+             "the ground is marked x m. (a) Find x.",
+     "ask": [["a", "the height x"]],
+     "sides": {"CA": 10, "BC": "x"}, "unit": "m", "legs_px": [208, 120],
+     "angles": {"A": "30"}},
+    {"template": "circle_angles", "figure_id": "selftest-cyc",
+     "stem": "ABCD is a cyclic quadrilateral with centre O. Side BC is produced "
+             "to E; the exterior angle at C is 105°. (a) Find x.",
+     "ask": [["a", "the angle x"]],
+     "points": {"A": 200, "B": 270, "C": 10, "D": 120}, "cyclic": "ABCD",
+     "extend": [{"side": "BC", "to": "E"}],
+     "angles": [{"at": "C", "arms": ["D", "E"], "label": "105°"},
+                {"at": "A", "arms": ["B", "D"], "label": "x"}]},
+    {"template": "circle_angles", "figure_id": "selftest-tan",
+     "stem": "The circle has centre O. The line AB touches the circle at C. From "
+             "T, two tangents touch the circle at P and Q. (a) Name the tangent "
+             "segments equal to each other.",
+     "ask": [["a", "the equal tangents"]],
+     "points": {"C": 90, "P": 210, "Q": 330},
+     "tangents": [{"at": "C", "ends": ["A", "B"]}], "external": {"T": ["P", "Q"]}},
+    {"template": "triangle_parallel", "figure_id": "selftest-tpar",
+     "stem": "In triangle ABC, AB = 12 cm and X, Y are the midpoints of AB and AC "
+             "with XY parallel to BC. AX = XB = 6 cm. (a) Find XY.",
+     "ask": [["a", "XY"]],
+     "names": ["A", "B", "C"], "angles": {"A": 60, "B": 60, "C": 60},
+     "div": {"X": ["AB", 0.5], "Y": ["AC", 0.5]}, "parallel": ["XY", "BC"],
+     "ticks": {"AX": 1, "XB": 1, "AY": 1, "YC": 1},
+     "labels": {"AX": "6 cm", "XB": "x"}, "sides": {"AB": 12}},
+    {"template": "parallel_area", "figure_id": "selftest-parea",
+     "stem": "Triangles PQR and SQR share base QR between two parallel lines 3 cm "
+             "apart. (a) Compare their areas.",
+     "ask": [["a", "the two areas"]],
+     "upper": {"P": 40, "S": 160}, "lower": {"Q": 70, "R": 140},
+     "draw": [["P", "Q", "R"], ["S", "Q", "R"]],
+     "distance": {"value": 3, "unit": "cm"}},
+    {"template": "solid", "figure_id": "selftest-cone",
+     "stem": "A cone has base radius 7 cm and height 12 cm. (a) Find its volume "
+             "in terms of pi.",
+     "ask": [["a", "the volume"]],
+     "shape": "cone", "dims": {"radius": 7, "height": 12}},
+    {"template": "solid", "figure_id": "selftest-cyl",
+     "stem": "A cylinder has radius r and height 6 cm. (a) Write its curved "
+             "surface area.",
+     "ask": [["a", "the curved area"]],
+     "shape": "cylinder", "dims": {"radius": "r", "height": 6}},
+    {"template": "function_graph", "figure_id": "selftest-graph",
+     "stem": "The parabola y = (x - 1)^2 - 4 is drawn for x from -2 to 4. "
+             "(a) Write the coordinates of the vertex V.",
+     "ask": [["a", "the vertex"]],
+     "curve": {"a": 1, "h": 1, "k": -4}, "x_range": [-2, 4], "vertex": "V",
+     "symmetry": True, "grid": False, "unit_px": 30},
+    {"template": "function_graph", "figure_id": "selftest-fline",
+     "stem": "The line y = x - 3 is drawn for x from -1 to 4. Point P is where "
+             "the line cuts the y axis. (a) Give P's coordinates.",
+     "ask": [["a", "P's coordinates"]],
+     "curve": {"m": 1, "c": -3}, "x_range": [-1, 4],
+     "points": {"P": [0, -3]}, "grid": False, "unit_px": 36},
+    {"template": "inequality_line", "figure_id": "selftest-ineq",
+     "stem": "The number line shows the solution of -2 <= x < 3 on the range "
+             "-4 to 4. (a) Write the integer solutions.",
+     "ask": [["a", "the integer solutions"]],
+     "v0": -4, "v1": 4,
+     "interval": {"a": -2, "b": 3, "open_a": False, "open_b": True}},
+    {"template": "inequality_line", "figure_id": "selftest-ineq2",
+     "stem": "The number line marks the integer solutions from -4 to 2: they are "
+             "-4, -3, -2 and -1. (a) Write the values.",
+     "ask": [["a", "the marked values"]],
+     "v0": -4, "v1": 2, "dots": [-4, -3, -2, -1]},
+    {"template": "histogram", "figure_id": "selftest-hist",
+     "stem": "The histogram shows masses in classes 0-10, 10-20 and 20-30 with "
+             "frequencies 4, 7 and 5 on a scale of 2 per step up to 10. "
+             "(a) Which class is largest?",
+     "ask": [["a", "the largest class"]],
+     "bounds": [0, 10, 20, 30], "freqs": [4, 7, 5], "step": 2, "v_max": 10},
+    {"template": "tree_diagram", "figure_id": "selftest-tree",
+     "stem": "A box has 3 white and 2 black balls. Two draws are made with "
+             "replacement, each white with probability 3/5 and black 2/5. "
+             "(a) Find P(two whites).",
+     "ask": [["a", "P(two whites)"]],
+     "stages": [[["W", "3/5"], ["B", "2/5"]], [["W", "3/5"], ["B", "2/5"]]]},
+    {"template": "pythagoras_squares", "figure_id": "selftest-psq",
+     "stem": "A right triangle has legs 3 and 4 and hypotenuse 5. Squares are "
+             "drawn outward on each side. (a) Find the three square areas.",
+     "ask": [["a", "the square areas"]],
+     "legs": {"AB": 3, "BC": 4, "CA": 5}, "grid": True},
 ]
 
 
