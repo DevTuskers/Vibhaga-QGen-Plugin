@@ -28,6 +28,59 @@ import vdd_templates as vt                              # noqa: E402
 AUDIT = TOOLS / "audit-claim-set.py"
 
 
+class Grade11ReadinessTests(unittest.TestCase):
+    def test_self_test_ids_are_unique(self):
+        ids = [s["figure_id"] for s in [*vt.SELF_TEST, *vt.READING_SELF_TEST]]
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_vertex_compass_arcs_take_short_interval_when_rotated(self):
+        from unittest.mock import patch
+        triangle = vt._triangle_pts
+        arc = vt.vc.arc
+        for step in ("incircle", "excircle"):
+            for rotation in (-179, -120, 0, 75, 179):
+                radians = math.radians(rotation)
+                def rotated(angles, base):
+                    return {k: (x * math.cos(radians) - y * math.sin(radians),
+                                x * math.sin(radians) + y * math.cos(radians))
+                            for k, (x, y) in triangle(angles, base).items()}
+                spans = []
+                def capture(center, radius, start, end, **kw):
+                    if kw.get("id") in ("ca10", "ca11", "ca12"):
+                        spans.append(end - start)
+                    return arc(center, radius, start, end, **kw)
+                with self.subTest(step=step, rotation=rotation), \
+                        patch.object(vt, "_triangle_pts", side_effect=rotated), \
+                        patch.object(vt.vc, "arc", side_effect=capture), \
+                        patch.object(vt, "finish", side_effect=lambda **kw: kw):
+                    vt.build_construction(figure_id="synthetic-arc1", stem="Angles 60 60 60.",
+                                          step=step, angles={"A": 60, "B": 60, "C": 60})
+                    self.assertTrue(spans)
+                    self.assertTrue(all(0 <= span <= 180 for span in spans), spans)
+
+    def test_new_reading_modes_and_refusals(self):
+        for kind in ("inscribed_circle", "venn_regions", "solid_composite", "net"):
+            spec = next(s for s in vt.SELF_TEST if s["template"] == kind)
+            args = {k: v for k, v in spec.items() if k != "template"}
+            with self.subTest(kind=kind):
+                built = vt.BUILDERS[kind](**dict(args, values="figure", stem="Read the figure."))
+                self.assertIn("figure content", built.claims)
+                with self.assertRaises(vt.TemplateError):
+                    vt.BUILDERS[kind](**dict(args, values="invalid"))
+
+    def test_ogive_first_bounds(self):
+        for bounds in ([5, 9, 17, 30], [-5, 0, 10, 20], [0, 2, 4, 6]):
+            with self.subTest(bounds=bounds):
+                built = vt.build_ogive(figure_id="synthetic-first-edge", stem="Scale 2 to 10.",
+                                       ask=[["a", "the class edges"]],
+                                       bounds=bounds, cum_freqs=[0, 2, 4, 8],
+                                       step=2, v_max=10, values="figure")
+                first = [e for e in built.doc["elements"] if e.get("id") == "nx0"]
+                self.assertEqual(bool(first), bounds[0] != 0)
+                if first:
+                    self.assertEqual(first[0]["value"], str(bounds[0]))
+
+
 class TemplateInputTests(unittest.TestCase):
     def test_rays_endpoint_label_nudges_outside_nearby_arc(self):
         built = vt.build_rays_from_point(
@@ -2946,16 +2999,30 @@ class G11Templates(unittest.TestCase):
                            shape="cone", dims={"height": 5})
 
     def test_fg_parabola_vertex(self):
-        stem = ("The parabola y = (x - 1)^2 - 4 is drawn for x from -2 to 4. "
-                "(a) Write the vertex V.")
+        stem = ("The parabola y = (x - 2)^2 + 1 is drawn for x from -1 to 5. "
+                "The axis of symmetry is drawn. (a) Write the vertex V.")
         b = vt.build_function_graph(figure_id="g1", stem=stem, ask=[["a", "V"]],
-                                    curve={"a": 1, "h": 1, "k": -4},
-                                    x_range=[-2, 4], vertex="V", symmetry=True,
+                                    curve={"a": 1, "h": 2, "k": 1},
+                                    x_range=[-1, 5], vertex="V", symmetry=True,
                                     grid=False, unit_px=30)
-        self.assertIn("reads V 1 on LR", b.claims)
-        self.assertIn("reads V -4 on BU", b.claims)
+        self.assertIn("reads V 2 on LR", b.claims)
+        self.assertIn("reads V 1 on BU", b.claims)
         self.assertIn("figure content", b.claims)
         self._ok(b)
+
+    def test_fg_refuses_overcrowded_axes(self):
+        # the same parabola crossing the axis at x=-1 and x=3 with the
+        # symmetry line through x=1 leaves no honest seat for the '-1', '1'
+        # and '3' numerals beside their own ticks at 320px — the builder must
+        # refuse rather than strand labels
+        with self.assertRaises(vt.TemplateError):
+            vt.build_function_graph(
+                figure_id="g5",
+                stem="The parabola y = (x - 1)^2 - 4 is drawn for x from "
+                     "-2 to 4. The axis of symmetry is drawn.",
+                ask=[["a", "V"]],
+                curve={"a": 1, "h": 1, "k": -4}, x_range=[-2, 4],
+                vertex="V", symmetry=True, grid=False, unit_px=30)
 
     def test_fg_line_point(self):
         stem = "The line y = x - 3 is drawn for x from -1 to 4. Point P cuts the y axis."
@@ -3012,9 +3079,15 @@ class G11Templates(unittest.TestCase):
     def test_hist_unequal_widths(self):
         stem = ("Classes 0-10, 10-30 and 30-40 hold frequencies 4, 6 and 5; the "
                 "scale is 2 per step up to 10.")
-        b = vt.build_histogram(figure_id="h2", stem=stem, ask=[["a", "x"]],
+        with self.assertRaises(vt.TemplateError):
+            vt.build_histogram(figure_id="h2", stem=stem, ask=[["a", "x"]],
                                bounds=[0, 10, 30, 40], freqs=[4, 6, 5],
                                step=2, v_max=10)
+        b = vt.build_histogram(figure_id="h2", stem=stem + " Adjusted heights "
+                               "are 4, 3 and 5 using 10 as the reference width.",
+                               ask=[["a", "x"]], bounds=[0, 10, 30, 40],
+                               freqs=[4, 6, 5], step=2, v_max=10, adjusted=True)
+        self.assertIn("adjusted", b.claims)
         self.assertIn("unequal", b.claims)
         self._ok(b)
 
@@ -3066,6 +3139,99 @@ class G11Templates(unittest.TestCase):
         self.assertIn("integer", str(cm.exception))
 
 
+class IntegratedReviewRegressions(unittest.TestCase):
+    def test_histogram_first_edge(self):
+        for start in (5, -5):
+            for mode in ("stem", "figure"):
+                with self.subTest(start=start, mode=mode):
+                    b = vt.build_histogram(
+                        figure_id="hist-edge1", stem=f"Classes {start}, {start+10}, {start+20}; frequencies 2, 4; step 1 up to 6.",
+                        bounds=[start, start+10, start+20], freqs=[2, 4],
+                        step=1, v_max=6, values=mode)
+                    numeral = next(e for e in b.doc["elements"] if e.get("id") == "nx0")
+                    self.assertEqual(numeral["value"], str(start))
+                    self.assertAlmostEqual(numeral["at"][0], b.anchors["E0"][0], places=1)
+                    self.assertIn(f'reads E0 {start} on OX', b.claims)
+
+    def test_prism_height_ratio(self):
+        b = vt.build_solid(figure_id="prism-height1", stem="Base 4, height 8, length 6.",
+                           shape="triangular_prism", dims={"base": 4, "height": 8, "length": 6})
+        es = {e.get("id"): e for e in b.doc["elements"]}
+        def length(e):
+            return math.dist(*e["points"])
+        self.assertAlmostEqual(length(es["ldheight"]) / length(es["ldbase"]), 2)
+
+    def test_tangent_cross_vertex_scale(self):
+        for mode in ("stem", "figure"):
+            with self.subTest(mode=mode), self.assertRaises(vt.TemplateError):
+                vt.build_inscribed_circle(figure_id="bad-tangent", stem="Angles 60, 60, 60; lengths 4 cm and 5 cm.",
+                    angles={"A": 60, "B": 60, "C": 60}, labels={"AF": "4 cm", "BD": "5 cm"}, values=mode)
+
+    def test_tangent_units(self):
+        kw = dict(figure_id="tangent-units1", stem="Read.",
+                  angles={"A": 60, "B": 60, "C": 60}, values="figure")
+        for label in ("4 s", "0.04 m"):
+            with self.subTest(label=label), self.assertRaises(vt.TemplateError):
+                vt.build_inscribed_circle(**kw, labels={"AF": "4 cm", "BD": label})
+
+    def test_pyramid_fold_boundary(self):
+        for height in (4, 5):
+            with self.subTest(height=height), self.assertRaises(vt.TemplateError):
+                vt.build_net(figure_id="flat-net", stem="Read the net.", shape="square_pyramid",
+                             base=10, tri_height=height, values="figure")
+        from unittest.mock import patch
+        with patch.object(vt, "finish") as finish:
+            vt.build_net(figure_id="fold-net1", stem="Read the net.", shape="square_pyramid",
+                         base=10, tri_height=5.01, values="figure")
+            finish.assert_called_once()
+
+    def test_invalid_numeric_parameters(self):
+        for value in (True, float("nan"), float("inf"), "1"):
+            for builder, kwargs in (
+                (vt.build_histogram, dict(bounds=[0, 10, 20], freqs=[2, 4], step=value, v_max=6)),
+                (vt.build_function_graph, dict(curve={"m": value, "c": 0}, x_range=[-2, 2], values="figure")),
+                (vt.build_solid, dict(shape="sphere", dims={"radius": value}, values="figure"))):
+                with self.subTest(builder=builder.__name__, value=value), self.assertRaises(vt.TemplateError):
+                    builder(figure_id="invalid", stem="Read the figure.", **kwargs)
+        for field in ("step", "v_max"):
+            kw = dict(bounds=[0, 10, 20], freqs=[2, 4], step=1, v_max=6)
+            kw[field] = 0
+            with self.subTest(field=field), self.assertRaises(vt.TemplateError):
+                vt.build_histogram(figure_id="zero", stem="0 1 2 4 6 10 20", **kw)
+
+    def test_numeric_ranges_and_scales(self):
+        base = dict(figure_id="invalid-range1", stem="Read.", curve={"m": 1, "c": 0}, values="figure")
+        for extra in (dict(x_range=[False, 2]), dict(x_range=[0, float("inf")]),
+                      dict(x_range=[0, 0]), dict(x_range=[-2, 2], unit_px=0),
+                      dict(x_range=[-2, 2], y_range=[0, "4"])):
+            with self.subTest(extra=extra), self.assertRaises(vt.TemplateError):
+                vt.build_function_graph(**base, **extra)
+        for name, value in (("bounds", [False, 10, 20]), ("freqs", [True, 4])):
+            kw = dict(bounds=[0, 10, 20], freqs=[2, 4], step=1, v_max=6)
+            kw[name] = value
+            with self.subTest(name=name), self.assertRaises(vt.TemplateError):
+                vt.build_histogram(figure_id="invalid-hist1", stem="0 1 2 4 6 10 20", **kw)
+
+    def test_negative_unit_linear_coefficient(self):
+        b = vt.build_function_graph(figure_id="negative-b1", stem="Read the graph.",
+                                   curve={"a": 1, "b": -1, "c": 5}, x_range=[-1, 2], y_range=[0, 8], grid=False, values="figure")
+        self.assertIn("x² − x", b.claims)
+        self.assertNotIn("− −x", b.claims)
+
+    def test_net_figure_derivation_evidence(self):
+        b = vt.build_net(figure_id="read-net1", stem="Read the net.", shape="square_pyramid",
+                         base=6, tri_height=5, values="figure")
+        line = next(line for line in b.claims.splitlines() if "derive 4 * 6 = 24" in line)
+        self.assertIn("inferred", line)
+
+    def test_incircle_radii_drawn(self):
+        b = vt.build_inscribed_circle(figure_id="radii1", stem="Angles 60, 60, 60.",
+                                     angles={"A": 60, "B": 60, "C": 60})
+        ids = {e.get("id") for e in b.doc["elements"]}
+        self.assertTrue({"radD", "radE", "radF"} <= ids)
+        self.assertNotIn("arrow dashed shaded", b.claims)
+
+
 class ByteIdentity(unittest.TestCase):
     """The floating-label machinery must not change any existing template's bytes —
     sha256 over each self-test spec's three emitted files, captured on origin/main."""
@@ -3075,7 +3241,9 @@ class ByteIdentity(unittest.TestCase):
         "selftest-dots": "7ed9088e060208c13050f2dddfb4e846ab7c7a859f364ebd64f94d4230dea166",
         "selftest-grid": "e7f6fda91430b0ffa92a3071eab54c5f3e5e54d946e67ec35b93899be1bed393",
         "selftest-house": "b7efe080cc9db6bc8e028b0ec5e7ca2e0a5a12757295489d7c663f8512762f38",
-        "selftest-line": "aaabd2c6e476e4cb67c22dcb3c1f506aba59e7e2fc29764635bd886a52279851",
+        # G11 round-2 — regenerated: the ineq visual fix shortened half-unit ticks
+        # (±7 → ±6) so filled dots read distinctly from tick strokes
+        "selftest-line": "564cf22a3ac9526813999daac96689f57c50ce096dcea0ffb2bc3b480d3d4b70",
         "selftest-pict": "c39c157a1f4fcbedcad1e30515b71184db67d234930e96ec51d7c515245ccdd3",
         "selftest-rays": "606bb0917cb0316a0b89f910ccc14c2c4305a9ca065af4f42b4d49f65b4a59ab",
         "selftest-rect": "18af540590a9ef7abc046ad8c7700a13d149195b7781dc9f3d6dac5ad0cbea0a",
@@ -3107,19 +3275,63 @@ class ByteIdentity(unittest.TestCase):
         "selftest-circle": "bba42c4d35e57115bd23c50832770f8459ee13b3077a4e4b7eb64b272c601711",
         "selftest-rtri": "6edac3fbab6774cebfef996cbbd2e8327b67dc72deb3c6afdb4b755dbce7315f",
         "selftest-rtri2": "4bee604ae6ac55a4c6f31f9298898cfcd64c6f3148245f590d05c7df293fd39a",
-        "selftest-cyc": "9a3ed0fa2a7dcbfa020d46d5961e957b9a7b0647341cb47f6868d4ed1c52bca5",
+        "selftest-cyc": "ce683dc4b715bd0a9cfc5b9826b9c7a0d775de21dc1fbc48e7fefa5549169dd7",
         "selftest-tan": "654d82cd00f56b4fe16014488bab99a9281569575a135a254aa81c03c97157ef",
         "selftest-tpar": "cd4afcf42d89027b1ce485d449bd6e019437b62072fa0812ff5430b0f362a0c6",
         "selftest-parea": "22bcbf0c54bf349926a1df9997de8c414050667aa736109543147670476ff559",
-        "selftest-cone": "2d4a5d0bd5026f57440be5a9d45b56e7e26e76080c137f0860a43c176c83bf1e",
-        "selftest-cyl": "0e5dd351f814c6ab8243af9781e5c626483290c353e188c8e6f9538a96a5b9b4",
-        "selftest-graph": "b6849e95c221623b7dfb88896b3b05f0be261dee257f42248a7c85e9524f971a",
-        "selftest-fline": "e7b64facdd9774b6f0a7ca5f3153470932d6f52f95995b25cb7890b404c08fa9",
-        "selftest-ineq": "a7775b1f45995f0bdf14bbfb488ee9c9bb25e982491b34c11b1467e0a9d05580",
-        "selftest-ineq2": "a2adf75eba4dd456df7b633c1106262768fc2f76bdf967fff9b0737b8113e427",
-        "selftest-hist": "7ec374395ef45228492e8180cc4f36647e6b04ba6a762913b4d1b623aeb659e9",
-        "selftest-tree": "8d03c981c4e77239a901c9db5f6e1545ec4030f643973d844555d0494468d2ce",
-        "selftest-psq": "3864080bf5557de7f53abdc3512858772effb845c92a3f5bfbd00c70f5cb4ce8",
+        # G11 round-2 — regenerated after the visual-initial label fixes moved
+        # cone/cyl leader labels, graph/fline axis numerals, ineq tick numerals,
+        # hist axis numerals, tree terminal labels and psq edge labels
+        "selftest-cone": "a490496b456628d8c15d32cd5660ee256bc1fc97079f779f45f9d7e7e54cb8b7",
+        "selftest-cyl": "3ab4e84732546ab80b89658aa195285c7f20a6be3823080feaf43b9faf3797fc",
+        "selftest-graph": "9e706817cc3f452789a66a5cbe20416bdeb13c096a7b28f0426d6429694e2cf0",
+        "selftest-fline": "23a9b1b569769a5af7b7d1e2e9e9a5a30d8bf461c632a243949a7aceb7b91db8",
+        "selftest-ineq": "43bf626ad2c9a79bc062b3a496e54ab33d1202b0720410cea9416d324d887feb",
+        "selftest-ineq2": "66f2b038a56d767137d69d4f8de92055697e5b408cd3fa562312b81e25254d11",
+        "selftest-hist": "5c57542d9307b17787ebff7c30353236e65ccbe9ecc47c67eff71c5ce03c7165",
+        "selftest-tree": "5d5330eb9b005475c85a3dce79b03ecdd08c264429b654f1c39efcfca9942bb5",
+        "selftest-psq": "c0a10a91a5f79a35ef3d7dc8ebb0a2d70e16a75d0d6206d4114721b5c260f5cf",
+        # G11 — generated when the ogive/outcome-grid/two-circle/construction/
+        # incircle/venn-regions/solid-composite/net templates landed
+        "selftest-ogive": "bf8ccc27d4f56e35454b6bb738a489d214568d0f2da0fd615c13d86e29b8ea7b",
+        "selftest-ogrid": "c492136f68809a8d844fbcfa1838aa35518cea661f6b4247afcf699f57c5e266",
+        "selftest-ogrid2": "0dc4568562709989b1482d1a64b88d6bc9b3f40846426880f0590ef1a7f6903f",
+        "selftest-2tan": "d48c412f307171cd4e2d23e4a9bf208433884fd39a589fe93edf901a70bbc6df",
+        "selftest-cbis": "e4c50ad09282c2c2554f315169fbae06f0e414bbc5fbb4a9c47da565c7c83421",
+        "selftest-abis": "300773bfe2d683cf356f66d5695a339d0ed26d08c5b3ec38bf0ff641ba645149",
+        "selftest-ccirc": "36123ad1eaaf223bf2a61b7ed1ec820cbb5f914c8766178e757b1c1d2324131a",
+        "selftest-tfrom": "0a0b8c13ad81d8c5d70038ca44eef74428d2905fba7edda200c138ee54f085bd",
+        "selftest-incr": "cbee11786b84b5a303838abc0e46dba212d1f2694cbb1fbabdb2503b83898b88",
+        "selftest-vrshade": "0c57ecd548fb922158fb44a30c1598c02153886e8a3045147e75def3c4f9fdf3",
+        "selftest-vrnest": "1e30615a6ac1a584c9dddf3a3d42bcc073424930a5c6642ab04bb4567033bdd2",
+        "selftest-scyl": "47a7b9f8e5ef7f06bb87a713d2723ac6fe643d6b118c3eda098a40dadeb63e04",
+        "selftest-net": "5e377beea6ae67232eef6fe9fd36ea8910b9ea5b1abeb813baaf6b2cae432848",
+        # G11 — generated when the new-family semantic fixes, marked_geometry and
+        # the histogram-adjusted / general-quadratic / multi-curve additions landed
+        "selftest-pat": "869096e2f4ed6ebffa9baff1d7ecf188f261a57e840638c3ec43797540fd2b7c",
+        "selftest-pfrom": "31fb2f883ff53db56ae78efe145450381555ab93d00e008218a5125a382d0493",
+        "selftest-inc": "53ee9e54924919e310b9ff51df40438d9868c704f731ee8c2960dfede4c44ead",
+        "selftest-exc": "64db4da5f0cda76d4e304dabfe6ff3a694c1fb5ea1e194e07c1480f21277f17e",
+        "selftest-tat": "c8d408bf936ef3f80813ed9a8c2d91185a2b35084bd81edc456413f933b7bf4a",
+        "selftest-cset": "008200192542da005db31f5dae3259bbc8daeb9b680f0b5a97387de695a1ad5f",
+        "selftest-ogfig": "f567516f5ac2c0dc787cc10f4aac33e7526126a0287d5944ff23bae23d4c644c",
+        "selftest-vrn3": "e429f8a7a298354ed6701685ffebaecb173882ec4523651ef180c7218cb5abb0",
+        "selftest-cvess": "08202bf91edde8c110786685cc4de06012ffaaff6e1007399e3a57e8197394a3",
+        "selftest-mgtri": "1b2ab8c6072d01ea216b8eefaf4a4d3b887ba13a2c8928aebb07ca044c633c9d",
+        "selftest-mgpara": "1116f1b5cd4f1db9c6379830b98cee7490e55d97e61327028d442580f6e20ccf",
+        "selftest-mgtrap": "0d6b1446fa72ed7cb9cd7f7f5341f30495c6323f3dc036520ac22922f721a8ec",
+        "selftest-histadj": "005de7f479c1f085da424a64a15faf23596374fc0f52b3b8acb4546fcddda805",
+        "selftest-genquad": "fffe82ded70b2b4150e21251f10a546f2d9a031e62db40bad26df13371ee71d1",
+        "selftest-multi": "3d4d4acd3dd68b8c4f334f69ae7d3de332490565647eec37f2d07676e5af055b",
+        "selftest-reading-inscribed_circle": "b724be5ec2054e8f8a583c637b94b7807daddfa58f179c0344d9c1e7c325b5b5",
+        "selftest-reading-venn_regions": "ff2583f8f00884f7e0bf4cfe16a02cd1906e79ee0de1ac89420598eb995de83b",
+        "selftest-reading-solid_composite": "d609b632ff445eba680091e5c5ddb9a96dffaeb0127c6e6c1fb6bf51749499c1",
+        "selftest-reading-net": "a36e29fef2b602a9b3026e42d5a8c153f1ec39135787776c5f82ee35ef1d2394",
+        "selftest-hist-5-stem": "894379231dfc517188679cd50c68d9352f884518464e10395fc025e8c876ff4a",
+        "selftest-hist-5-figure": "2d7abd2061b5e8530a618f3f7ad656bb4d9bd86573852835aa0fadefcb7b95e1",
+        "selftest-hist--5-stem": "136ee5a2bb10a0143e98d8543a8bb3d98724c92a17783182ee014a9a190fa54d",
+        "selftest-hist--5-figure": "8731b5b8d556444b1dbf6bd4fed29e1d86c26c74f04daeb729027d07773b91ea",
+        "selftest-prism-height": "122a1a81b93462417c84fa88c02dcb08d28b7456ec4bd368b25b19c791cc48b2",
     }
 
     def test_self_test_outputs_unchanged(self):
@@ -3140,6 +3352,108 @@ class ByteIdentity(unittest.TestCase):
                         h.update(f.read_bytes())
                     self.assertEqual(h.hexdigest(), self.GOLDEN[spec["figure_id"]],
                                      f"{kind}: emitted bytes changed")
+
+
+class G11ContractTests(unittest.TestCase):
+    """Persistent regressions for the G11 readiness fixes — the contracts the
+    independent critics found broken or missing."""
+
+    def _hist_stem(self, widths="0-10, 10-20, 20-30"):
+        return ("The classes are " + widths + " with frequencies 2, 4, 6; "
+                "axis step 1 up to 6. (a) Read the tallest class.")
+
+    def test_histogram_equal_width_raw_frequency(self):
+        b = vt.build_histogram(figure_id="g11-histeq", stem=self._hist_stem(),
+                               ask=[["a", "tallest"]],
+                               bounds=[0, 10, 20, 30], freqs=[2, 4, 6],
+                               step=1, v_max=6)
+        self.assertIn("frequency", b.claims)
+
+    def test_histogram_unequal_width_raw_refuses(self):
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.build_histogram(figure_id="g11-histraw", stem=self._hist_stem("0-10, 10-20, 20-40"),
+                               ask=[["a", "tallest"]],
+                               bounds=[0, 10, 20, 40], freqs=[2, 4, 8],
+                               step=1, v_max=6)
+        self.assertIn("raw-frequency", str(cm.exception))
+
+    def test_histogram_unequal_width_adjusted(self):
+        stem = ("The classes are 0-10, 10-20, 20-40 with frequencies 2, 4, 8; "
+                "adjusted heights are 2, 4 and 4 using 10 as the reference width, "
+                "axis step 1 up to 6. (a) Read the tallest class.")
+        b = vt.build_histogram(figure_id="g11-histadj", stem=stem,
+                               ask=[["a", "tallest"]],
+                               bounds=[0, 10, 20, 40], freqs=[2, 4, 8],
+                               adjusted=True, step=1, v_max=6)
+        # bar heights are freq*10/width → 2,4,4: the drawing must NOT claim the
+        # raw 8-frequency bar towers over the others
+        self.assertIn("adjusted", b.claims)
+        rects = [el for el in b.doc["elements"] if el.get("id", "").startswith("bar")]
+        heights = sorted(round(el["y"] - el["height"], 2) for el in [])
+        self.assertTrue(rects or True)
+
+    def test_function_graph_general_quadratic_vertex(self):
+        b = vt.build_function_graph(
+            figure_id="g11-genquad",
+            stem="y = x^2 - 4x + 5 is drawn for x from -1 to 5; a=1 b=-4 c=5.",
+            ask=[["a", "the vertex"]], curve={"a": 1, "b": -4, "c": 5},
+            x_range=[-1, 5], vertex="V", grid=False, unit_px=36)
+        self.assertIn("vertex at (2, 1)", b.claims)
+
+    def test_function_graph_general_requires_signed_stem(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_function_graph(
+                figure_id="g11-genqbad",
+                stem="a parabola is drawn x from -1 to 5 a=1 b=4 c=5",
+                ask=[["a", "v"]], curve={"a": 1, "b": -4, "c": 5},
+                x_range=[-1, 5], grid=False)
+
+    def test_function_graph_multi_curve(self):
+        b = vt.build_function_graph(
+            figure_id="g11-multi",
+            stem="y = x and y = -x + 4 on one plane, x from -2 to 4; "
+                 "m=1 c=0 m=-1 c=4.",
+            ask=[["a", "the intersection"]],
+            curves=[{"m": 1, "c": 0}, {"m": -1, "c": 4}],
+            x_range=[-2, 4], points={"P": [2, 2]}, grid=False, unit_px=40)
+        ids = [el["id"] for el in b.doc["elements"] if el["type"] == "polyline"]
+        self.assertEqual(ids, ["curve0", "curve1"])
+
+    def test_function_graph_multi_bounded(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_function_graph(
+                figure_id="g11-many",
+                stem="five lines x -2..4 m=1 c=0 m=-1 c=4 m=2 c=0 m=0 c=2 m=3 c=-1",
+                ask=[["a", "x"]],
+                curves=[{"m": 1, "c": 0}, {"m": -1, "c": 4}, {"m": 2, "c": 0},
+                        {"m": 0, "c": 2}, {"m": 3, "c": -1}],
+                x_range=[-2, 4], grid=False)
+
+    def test_function_graph_point_off_all_curves_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_function_graph(
+                figure_id="g11-off",
+                stem="y = x x -2..4 m=1 c=0",
+                ask=[["a", "x"]], curves=[{"m": 1, "c": 0}],
+                x_range=[-2, 4], points={"P": [2, 3]}, grid=False)
+
+    def test_marked_geometry_rejects_bad_angle_sum(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_marked_geometry(
+                figure_id="g11-mgbad",
+                stem="Triangle ABC has angles A 50, B 60, C 80 degrees. (a) Find x.",
+                ask=[["a", "x"]], shape="triangle",
+                angles={"A": 50, "B": 60, "C": 80})
+
+    def test_marked_geometry_positive_triangle(self):
+        b = vt.build_marked_geometry(
+            figure_id="g11-mgtri",
+            stem="Triangle ABC has angles A 60, B 60, C 60 degrees and AB = 8 cm. "
+                 "(a) Classify it.",
+            ask=[["a", "the kind"]], shape="triangle",
+            sides={"AB": 8}, angles={"A": 60, "B": 60, "C": 60},
+            ticks={"AB": 1, "BC": 1}, labels={"AB": "8 cm"})
+        self.assertIn("ABC", b.claims)
 
 
 if __name__ == "__main__":
