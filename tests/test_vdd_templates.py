@@ -3332,6 +3332,101 @@ class ByteIdentity(unittest.TestCase):
         "selftest-hist--5-stem": "136ee5a2bb10a0143e98d8543a8bb3d98724c92a17783182ee014a9a190fa54d",
         "selftest-hist--5-figure": "8731b5b8d556444b1dbf6bd4fed29e1d86c26c74f04daeb729027d07773b91ea",
         "selftest-prism-height": "122a1a81b93462417c84fa88c02dcb08d28b7456ec4bd368b25b19c791cc48b2",
+        # G10 gaps 1-2 — generated when pie_chart (incl. the spinner mode) and the
+        # standalone sector / annular-sector templates landed
+        "selftest-pie": "b59c4975513f626234b9dbe8cab5c56c6e8f3eb504468dc4548eefbd9ce1375c",
+        "selftest-spin": "0bb6817a0080a7f4e1edd909e52e6c7ceef578eefea769ac42a98ccd818a088f",
+        "selftest-sec": "06785c0d8bd89093b4e18b9d57578fdc3720c1c7c473ad1f46facdd23e0dc7d4",
+        "selftest-semi": "494b7ee495b133e9bd432c72ac2a3d9339a76897176bf69e31752ca13995bd7b",
+        "selftest-annu": "3ee6167d59da66858a25ebdf64e94403700e49aecc69a5c1523fc2f6a9a0fe07",
+        "selftest-cafoot": "9c06dc3b3aab5b414e50cbebda8e26d70f633fab1df5f9f222c318e3bc8fe276",
+        "selftest-cax": "1c72bd9ecf8b07fa65275e9bb896c5cfd9505319a105a26d7217ca3e49516ec9",
+        "selftest-vcomp": "cd596042f266b98ac93e2bcac4db2c648bb72ade19e03bc8660d9b4bf76bbbf6",
+        "selftest-vcsh": "1dd9fb115595d103831b0c3174b0806621499982e6de559e329346b700535114",
+        "selftest-cineq": "d01603d0bc30a983abd661159b65591a04df500fc7a7ddcb98163db9c8cf4646",
+        "selftest-cdt": "f214dacea5b23b152bbfb939ce0719aecce552550ae5fa54151a89c2b24d5bfe",
+        "selftest-cx3": "d95f59d8f75365ca01fe3938d6401848ba5a4c4daea5f9b5d36dbf671b5c2e98",
+        "selftest-conv2-aas": "429ba1c5cfaf8fe8f4f143b716b4e74217db5e6b00c2212fb7e909859bc4145c",
+        "selftest-conv2-aas-b": "06026c0fae0cd7a5ff0a797532f7bb6ad50b9d1afde6e65671e2479d6ec03d2c",
+        "selftest-conv2-alternate": "38e03483801b44371197284bc8053f0861f8abbfa7625650555fe40ff19ec467",
+        "selftest-conv2-rhombus": "d0c514adb884e2f97ceae03e1709b715148338c1c900a9d917970cdcaa314c00",
+        "selftest-newsss-setup": "36e839477d281375857d64846b8ceb32069a5143827febe77b3a258491d98e64",
+        "selftest-newsss-completed": "5bffbc34fdf7d9d893add15ad6eebf2c42415322e0c3a154a6a02402c7710ea1",
+        "selftest-newsas-setup": "8ef0e892e5b870d944d84857b7b6115e8daf6c23670c0a268da37c3d54866117",
+        "selftest-newsas-completed": "d855029218e9f7fd4fc6645278ddd09023fcfe65bff5f136fe63a85fe8cd7c5f",
+        "selftest-newasa-setup": "f78150c0167768691a992c1bef51f4a0429c0d8e205cc1330063ed1d66d42129",
+        "selftest-newasa-completed": "68955f6990ea1eadb8811776985fc155fe02fa388400b7a8039ee5ec87d9b1f4",
+        "selftest-newparallel-setup": "877b7e5ede59972499eb0f01b8f5e9b98d500ac0405d6978f8b92ae6cc386d40",
+        "selftest-newparallel-completed": "c4d4ba310ba069b4af49e2922d714de17f2de7a62878bc306c1e3dd4a2551227",
+        "selftest-halfcyl-d": "9e09343b1f2c5668a2f49f279a3692e879b38f36c0edbbbb1658f38c4ffdbc8b",
+        "selftest-halfcyl-r": "aef8d11e9fc3f676f6d6c9c764ced3cc6973d09d5fd04cce08e784e1bdb19746",
+        "selftest-prism-right": "b6d269ff5a81f8d629135fa74a0900e892f8468f5aa69b282ba3f83664ea6230",
+        "selftest-prism-hyp": "6e6e0690eaeb72b22363ea9f729dc9406a16739c8588d8de96f124ae0e56c9c3",
+        "selftest-prism-iso": "c8ec2ac703332eed9863e4b4a7451d5ab0f6879c26d25750fccd4bf4922e3ce8",
+        "selftest-prism-scalene": "e1566b8625eebf77c64e8300fbe419173ab9247ae59a36b3f657291cbfaf4b32",
+        "selftest-prism-trough": "223d3f324163e08af947c23b6e9f99605063117822c7b24877d1c19aa2527585",
+        "selftest-net-right": "35eaa88d9b52003998f04f2c0ea435531903cba9cc93b7062a25f0d1e2e07d4e",
+        "selftest-net-scalene": "7517631c8c95cf9545fdb9059ae36980eff300ad272950117f7dd53843a1b58a",
+        "selftest-net-cylinder": "2908d7018855b658b985e51cec2afcbd0b93260b03a2a661f562970c3828b90a",
+        "selftest-net-repeat": "4adaebed974a8c2592beb0f978c0602801bd550a59f5d005472ea344e048ede7",
+        "selftest-motion-point": "ddc202896c736d4788a1f28a5991cfd82b983e006041dad7ff5543f0a6f93cff",
+        "selftest-motion-post": "0e2eb6254b8219db42653fae52e577c58dc0d4afef34f0e48129527abe7a5fc5",
+        "selftest-motion-bridge": "74214b9ba460f96898a55138eed5a06763400b2408d675b9ff0649670dd63bca",
+        "selftest-dots-rings": "204ebe4ea509baa87db95a05629587c0a37a5cd761df78e5e6d34df778688c39",
+        "selftest-dots-rings-fig": "f518508ea7ec2787fe1db5d1b707673e24c9ad1506d589b2b2e19539dd8d2530",
+        "selftest-slats": "4745b5ad18c29fb42604481bfff63fda3805c7198ea3f20e667ed708c6a3e425",
+        "selftest-clock-420": "28cbc096d5c8bad74da4d2c573cccd24d8c2b120fc303a7c2c43a5a21557dde9",
+        "selftest-clock-300": "b4992d5740156529c3e1d0eb8cbde8d6f9112a43f678c481a4649b74ac063209",
+        "selftest-pairing": "1eb02f048df09ed012d44c012b2f3407a1f2589de42f0c7137071529023c20bb",
+        "selftest-paired-sss": "a6704085f6cb88fbd4853192c4cd97883870506d3463352ff2643eefa7f4031e",
+        "selftest-paired-scale2": "1a03f1caafed003bdb09c21460032c67b2b9d1e662057459db14769da522cee8",
+        "selftest-paired-glue": "1f56846b9893748641f0d7fef642251346395625cb6df90f4a70748901b586b2",
+        "selftest-paired-hinge": "1e4a96185fc2528e3e8d2175d39d469c3bec28fc1005c14e566a2fdcdfda9a73",
+        "selftest-paired-parallelograms": "e1335eaa6ef3343a43b88361579c231397f23dbb8fbf6eb8fb38730a61162880",
+        "selftest-paired-quad": "b064ff42a3e7fc45769ceca9a0b172d7f3d9d4838948e14ae0a183077f1eee5c",
+        "selftest-paired-kite": "a249e659d6d48a5276826cb2040910a3505ab57551a217c13362d4eff1578572",
+        # bowtie regenerated: the angle-label fallback seats FIXED text at the anchor it
+        # claims (the float-label path anchored A1 ~47px from the placed glyph — VDD
+        # coverage FAIL; the anchor must be where the glyph lands)
+        "selftest-paired-bowtie": "c1a654625b631778bf1887166fb3c24c26fbdaa0be0e49a147d9d671e26f2999",
+        "selftest-paired-feet": "5016a229ac8b81c48412c08d89a201337b1614522f4c8f6e27521412160f1ca4",
+        # G10 third-pass scene outputs (existing goldens unchanged).
+        # 2026-11-17: refreshed — anchors dict order depended on set iteration
+        # (process hash seed); builder now sorts ground anchors, making bytes
+        # seed-stable. Rendered figure unchanged.
+        "selftest-elev": "1560aeb34abcf706d80ef8f144a9581f0e545107ea686ab309bb200bffc673c8",
+        "selftest-elev-eye": "9e50d813e8d9296626ce8096a99c357325f6870bd6f7668c8de49670bb42db92",
+        "selftest-2cgeo": "4496435b5646ae77bc9271342194aa9938a69ec26fba07ba968becd7722d90ee",
+        "selftest-2cgeo-touch": "63e0f76416d4508174725237ad891ecc20a316bb956210192a03eedf0561bf84",
+        "selftest-2cgeo-angle": "b9790f7b9bfd59f0c680869df701253e7e817a78ca00d170fa9bc772046ec297",
+        # G10 second-pass additions: outcome-grid events, fraction tape/tank,
+        # area model and the circular-composite profiles (new outputs only —
+        # selftest-ogrid/ogrid2 goldens verified byte-identical under the
+        # superset build_outcome_grid)
+        "selftest-ogrid3": "c3565a61276e74bf1c00185af12a84f9c387b872cb0c0006ec74fa91f6a812c4",
+        "selftest-tape": "422cd980f82f0ac14c141b79f4a4d8e02c23817c783b5dec8db5ce700fba23c6",
+        "selftest-tank": "a563103006ca1c50bac112e6e4a24b8e78b023b61d3f628f367d707d16976c62",
+        # 2026-11-17: refreshed — spec cells had the (3x+2)(2x+3) cross
+        # terms transposed; now [["6x^2","4x"],["9x","6"]] (true products)
+        "selftest-area": "17f3d9c309e9f2fbf1a196c850241ca8c2000eea31053f45e356214ef07994cd",
+        "selftest-circ-rect-attach": "4b6f9947bd5c9e57e34f42a8acc34c023de9231cc747aed66e159a2cba1f6cf7",
+        "selftest-circ-rect-cut": "36481a2f3b36682be00fa2d6dd178ab2ce0d534137f728091367eb0d367a827f",
+        "selftest-circ-rect-corner": "fa2bee75693d41982d45afe357a72044e64fbcee998e66e46a55a953af0b89dc",
+        "selftest-circ-rect-sector": "fdf5e0d60bdfb98ec4465905958d7ba396d8b70ed501070a5af3c2094897c2e5",
+        "selftest-circ-stadium": "d94a54f61da8e7c5ff75e80cac6017d711448609f0ab371d4770c167b7a6cffd",
+        "selftest-circ-stadium-fig": "f93b75a5b0535db5a425673c4cce434c23de093f2bf363996f52a228667f99c2",
+        "selftest-circ-tri-right": "071e844e1d64bdcf39f1fa3e79f4af0384c0ca07fadf47bb7c9f8582a2a2c1af",
+        "selftest-circ-tri-iso": "015e0c8cdf85a52271f55a922f24fcf3fe9682a8149e12f9a6de507cb40696a5",
+        "selftest-circ-tri-eq": "73e5770053571e5e4f5b8bb761abcd281af063fedd4575f53d75016cf583ee19",
+        "selftest-circ-sec-insc": "077af890912ef21c223f15fe93f73a93c12e16ccfaa66cc829c10885651b6895",
+        "selftest-circ-sec-att": "217c6079d3cb0f3fd0c5bd2067df1d475e39d88989f957d008ed72559d86615b",
+        "selftest-circ-sec-semi": "1677d1626cb6cc7881a1913cc7e9be450a2c72de3f864ca557d7360c89cb5cc5",
+        "selftest-circ-cutattach": "abcad3476562cab0d8e6d12740702182aa86b67814eb53d96602ae66b5911cfc",
+        "selftest-circ-annulus": "b89882a9aad3d49e78667a60357f10c20724d2dce9ed905b030eb7fdc7f3ec62",
+        "selftest-circ-annulus-sym": "dc1ef21f9f90f3f4518da382fb4cf9cec0e9ceeca900fb8d55d9d31f2ece4340",
+        "selftest-circ-annulus-fig": "51a27aa8707e4eee9020131ca121f3f4d50c95f6b0835b75a6c19ba9f498d22b",
+        "selftest-circ-square": "eecd8dd7ffe0167c442cd75181f9099b95e9614b0acf01c5c0207fb1e861df47",
+        "selftest-circ-square-sym": "f07e5269f238de9920fd85d7adcae9c7a9b0a8c87ac4310999077efd0c310832",
     }
 
     def test_self_test_outputs_unchanged(self):
@@ -3352,6 +3447,101 @@ class ByteIdentity(unittest.TestCase):
                         h.update(f.read_bytes())
                     self.assertEqual(h.hexdigest(), self.GOLDEN[spec["figure_id"]],
                                      f"{kind}: emitted bytes changed")
+
+
+class ConstructionGivenTests(unittest.TestCase):
+    def build(self, step="triangle_sss", **kwargs):
+        args = dict(figure_id="synthetic-compass1", stem="Lengths 8 7 6 4. Angles 30 45 60 75 90 105 120 135 150.",
+                    step=step, sides={"AB": 8, "BC": 7, "CA": 6})
+        args.update(kwargs)
+        return vt.build_construction(**args)
+
+    def test_setup_hides_all_results_and_arcs(self):
+        for step, sides, angles in (("triangle_sss", {"AB": 8, "BC": 7, "CA": 6}, None),
+                                    ("triangle_sas", {"AB": 8, "CA": 6}, {"A": 60}),
+                                    ("triangle_asa", {"AB": 8}, {"A": 60, "B": 45})):
+            with self.subTest(step=step):
+                b = self.build(step, sides=sides, angles=angles, stage="setup")
+                self.assertEqual(set(b.anchors), {"A", "B"})
+                self.assertFalse(any(e["type"] == "arc" for e in b.doc["elements"]))
+
+    def test_sss_physical_radii_and_intersection(self):
+        import math
+        b = self.build()
+        a, c, z = (b.anchors[k] for k in ("A", "B", "C"))
+        self.assertAlmostEqual(math.dist(a, z) / math.dist(a, c), 6 / 8, places=4)
+        self.assertAlmostEqual(math.dist(c, z) / math.dist(a, c), 7 / 8, places=4)
+        arcs = [e for e in b.doc["elements"] if e["type"] == "arc"]
+        self.assertEqual(len(arcs), 2)
+
+    def test_impossible_and_unsupported_givens(self):
+        for args in ({"sides": {"AB": 8, "BC": 4, "CA": 4}},
+                     {"sides": {"AB": 8, "BC": 1, "CA": 6}},
+                     {"sides": {"AB": 8, "BC": 7}},
+                     {"step": "triangle_asa", "sides": {"AB": 8}, "angles": {"A": 90, "B": 90}},
+                     {"step": "triangle_sas", "sides": {"AB": 8, "CA": 6}, "angles": {"A": 61}},
+                     {"step": "parallel_through", "sides": {"AB": 8}, "offset": 0},
+                     {"step": "parallel_through", "sides": {"AB": 8}, "offset": 8}):
+            with self.subTest(args=args), self.assertRaises(vt.TemplateError):
+                self.build(**args)
+
+    def test_numeric_types_and_missing_stem_refuse(self):
+        for value in (True, float("nan"), float("inf"), "8", None, [], {}):
+            with self.subTest(value=value), self.assertRaises(vt.TemplateError):
+                self.build(sides={"AB": value, "BC": 7, "CA": 6})
+        for value in (True, float("nan"), "4", [], {}):
+            with self.subTest(offset=value), self.assertRaises(vt.TemplateError):
+                self.build("parallel_through", sides={"AB": 8}, offset=value)
+        for args in ({"stem": "Lengths 8 and 7."},
+                     {"step": "triangle_sas", "sides": {"AB": 8, "CA": 6}, "angles": {"A": 60}, "stem": "Lengths 8 and 6."},
+                     {"step": "parallel_through", "sides": {"AB": 8}, "offset": 4, "stem": "Length 8."}):
+            with self.subTest(args=args), self.assertRaises(vt.TemplateError):
+                self.build(**args)
+
+    def test_parallel_copy_has_equal_actual_chords(self):
+        import math
+        b = self.build("parallel_through", sides={"AB": 8}, offset=4)
+        p = b.anchors
+        self.assertAlmostEqual(math.dist(p["E"], p["F"]), math.dist(p["S"], p["R"]))
+        self.assertAlmostEqual(p["C"][1], p["D"][1])
+        self.assertEqual(len([e for e in b.doc["elements"] if e["type"] == "arc"]), 3)
+
+    def test_inapplicable_kwargs_refuse_symmetrically(self):
+        for extra in ({"sides": {"AB": 8}}, {"offset": 4}, {"op": 2}, {"at_deg": 90}):
+            with self.subTest(old=extra), self.assertRaises(vt.TemplateError):
+                vt.build_construction(figure_id="synthetic-old", stem="AB is 8 units.",
+                                      step="perp_bisector", length=8, **extra)
+        for extra in ({"r_px": 110}, {"at_deg": 90}, {"op": 2}, {"method": "rhombus"}):
+            with self.subTest(new=extra), self.assertRaises(vt.TemplateError):
+                self.build(**extra)
+
+    def test_aas_derives_only_missing_base_angle(self):
+        for angles in ({"A": 60, "C": 75}, {"B": 45, "C": 75}):
+            b = self.build("triangle_aas", sides={"AB": 8}, angles=angles,
+                           stem="AB is 8 units; angles are " + " and ".join(map(str, angles.values())) + " degrees.")
+            self.assertIn("derive 180", b.claims)
+            self.assertIn("angle A C B = 75", b.claims)
+        for angles in (None, [], {"A": 60, "B": 45}, {"A": 90, "C": 90}, {"A": 150, "C": 15}):
+            with self.subTest(angles=angles), self.assertRaises(vt.TemplateError):
+                self.build("triangle_aas", sides={"AB": 8}, angles=angles)
+
+    def test_parallel_variants_actual_compass_geometry(self):
+        import math
+        b = self.build("parallel_through", sides={"AB": 8}, offset=4, method="alternate")
+        p = b.anchors
+        self.assertAlmostEqual(math.dist(p["E"], p["F"]), math.dist(p["S"], p["R"]))
+        self.assertGreater(p["S"][1], p["C"][1])
+        b = self.build("parallel_through", sides={"AB": 8}, offset=4, method="rhombus")
+        p = b.anchors
+        lengths = [math.dist(p[a], p[z]) for a, z in (("C", "P"), ("P", "Q"), ("Q", "R"), ("R", "C"))]
+        self.assertLess(max(lengths) - min(lengths), 0.01)
+        self.assertAlmostEqual(p["C"][1], p["R"][1])
+
+    def test_supported_compass_angles_build(self):
+        for theta in (30, 45, 60, 75, 90, 105, 120, 135, 150):
+            with self.subTest(theta=theta):
+                b = self.build("triangle_sas", sides={"AB": 8, "CA": 6}, angles={"A": theta}, base_px=300)
+                self.assertGreater(len([e for e in b.doc["elements"] if e["type"] == "arc"]), 1)
 
 
 class G11ContractTests(unittest.TestCase):
@@ -3456,5 +3646,1401 @@ class G11ContractTests(unittest.TestCase):
         self.assertIn("ABC", b.claims)
 
 
+class G10ContractTests(unittest.TestCase):
+    """Regressions for the bounded G10 gap-1/2 families — pie_chart (incl. the
+    spinner mode) and the standalone sector / annular-sector."""
+
+    PIE_STEM = ("The pie chart shows how 40 pupils travel: 10 walk, 20 cycle "
+                "and 10 come by bus. (a) Which group is largest?")
+
+    def test_pie_counts_drive_angles(self):
+        b = vt.build_pie_chart(figure_id="g10-pie", stem=self.PIE_STEM,
+                               ask=[["a", "the largest group"]],
+                               sectors=[{"label": "W", "count": 10},
+                                        {"label": "C", "count": 20},
+                                        {"label": "B", "count": 10}])
+        self.assertIn("derive 10 + 20 + 10 = 40", b.claims)
+        self.assertIn("20 * 360 / 40 = 180", b.claims)
+
+    def test_pie_count_not_in_stem_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_pie_chart(figure_id="g10-piebad", stem=self.PIE_STEM,
+                               sectors=[{"label": "W", "count": 12},
+                                        {"label": "C", "count": 20},
+                                        {"label": "B", "count": 8}])
+
+    def test_pie_mixed_keys_refuse(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_pie_chart(figure_id="g10-piemix", stem=self.PIE_STEM,
+                               sectors=[{"label": "W", "count": 10},
+                                        {"label": "C", "angle": 180},
+                                        {"label": "B", "count": 10}])
+
+    def test_pie_angle_sum_not_360_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_pie_chart(
+                figure_id="g10-piesum",
+                stem="Sectors of 90, 120 and 100 degrees.",
+                sectors=[{"label": "A", "angle": 90}, {"label": "B", "angle": 120},
+                         {"label": "C", "angle": 100}])
+
+    def test_pie_thin_sector_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_pie_chart(
+                figure_id="g10-piethin",
+                stem="Sectors of 5, 175 and 180 degrees.",
+                sectors=[{"label": "A", "angle": 5}, {"label": "B", "angle": 175},
+                         {"label": "C", "angle": 180}])
+
+    def test_pie_spinner_repeated_label_and_arrow(self):
+        b = vt.build_pie_chart(
+            figure_id="g10-spin",
+            stem="A spinner has sectors of 90, 120 and 150 degrees. "
+                 "(a) Which outcome is most likely?",
+            ask=[["a", "the likeliest outcome"]],
+            sectors=[{"label": "A", "angle": 90}, {"label": "B", "angle": 120},
+                     {"label": "A", "angle": 150}],
+            angle_labels=True, arrow={"deg": 30})
+        self.assertEqual(b.claims.count('label "A" names'), 1)
+        self.assertIn("the arrow is the spinner needle — it is not a sector "
+                      "boundary", b.claims)
+        self.assertIn("arrow O -> T", b.claims)
+
+    def test_pie_figure_mode_reads_off_the_figure(self):
+        b = vt.build_pie_chart(
+            figure_id="g10-piefig", stem="Read the marked figure.",
+            values="figure",
+            sectors=[{"label": "W", "count": 10}, {"label": "C", "count": 20},
+                     {"label": "B", "count": 10}])
+        self.assertIn("read-the-figure mode", b.claims)
+
+    def test_sector_numeric_label_must_restate_its_boundary(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_sector(
+                figure_id="g10-secbad",
+                stem="A sector has radius 7 cm and angle 60 degrees.",
+                angle=60, radius=7, labels={"radius": "8 cm"})
+        with self.assertRaises(vt.TemplateError):
+            vt.build_sector(
+                figure_id="g10-secbad2",
+                stem="A sector has radius 7 cm and angle 60 degrees.",
+                angle=60, radius=7, labels={"angle": "61°"})
+
+    def test_sector_arc_label_checked_against_geometry(self):
+        import math
+        b = vt.build_sector(
+            figure_id="g10-secarc",
+            stem="A sector has radius 7 cm and angle 60 degrees; the arc is "
+                 "7.3 cm.",
+            angle=60, radius=7,
+            labels={"radius": "7 cm", "arc": "7.3 cm"})
+        self.assertIn("arc centre O from A to B", b.claims)
+        # π·7·60/180 ≈ 7.33 — the printed label must match within 0.5%
+        with self.assertRaises(vt.TemplateError):
+            vt.build_sector(
+                figure_id="g10-secarc2",
+                stem="A sector has radius 7 cm and angle 60 degrees; the arc "
+                     "is 8 cm.",
+                angle=60, radius=7, labels={"arc": "8 cm"})
+
+    def test_sector_semicircle_and_quadrant(self):
+        for th in (180, 90):
+            with self.subTest(th=th):
+                b = vt.build_sector(
+                    figure_id=f"g10-sec{th}",
+                    stem=f"A sector of {th} degrees has radius 7 cm.",
+                    angle=th, radius=7, labels={"radius": "7 cm"})
+                self.assertIn("A", b.anchors)
+
+    def test_sector_annular_ring(self):
+        b = vt.build_sector(
+            figure_id="g10-annu",
+            stem="An annular sector has outer radius 14 cm, inner radius 9 cm "
+                 "and angle 60 degrees; the radial sides are 5 cm.",
+            angle=60, radius=14, inner=9,
+            labels={"radial": "5 cm", "arc": "x", "inner_arc": "y"})
+        self.assertIn("C", b.anchors)
+        self.assertIn("D", b.anchors)
+        self.assertIn("derive 14 - 9 = 5", b.claims)
+
+    def test_sector_annular_inner_must_be_smaller(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_sector(
+                figure_id="g10-annubad",
+                stem="An annular sector has outer radius 14 cm, inner radius "
+                     "15 cm and angle 60 degrees.",
+                angle=60, radius=14, inner=15)
+
+    def test_sector_whole_radius_is_not_an_annular_piece(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_sector(
+                figure_id="g10-annurad",
+                stem="An annular sector has outer radius 14 cm, inner radius "
+                     "7 cm and angle 60 degrees.",
+                angle=60, radius=14, inner=7, labels={"radius": "14 cm"})
+
+    def test_sector_label_not_in_stem_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_sector(
+                figure_id="g10-secstem",
+                stem="A sector has radius 7 cm and angle 60 degrees.",
+                angle=60, radius=7, labels={"radius": "9 cm"})
+
+    def test_sector_figure_mode(self):
+        b = vt.build_sector(
+            figure_id="g10-secfig", stem="Read the marked figure.",
+            values="figure", angle=60, radius=7,
+            labels={"radius": "7 cm"})
+        self.assertIn("inferred", b.claims)
+
+    def test_sector_labels_type_guard(self):
+        for labels in ([], ["radius"], "radius", "", 0, False):
+            with self.subTest(labels=labels):
+                with self.assertRaisesRegex(vt.TemplateError,
+                                            "labels must be a dict or None"):
+                    vt.build_sector(
+                        figure_id="g10-labeltype", ask=[["a", "the arc"]],
+                        stem="A sector has radius 7 cm and angle 60 degrees.",
+                        angle=60, radius=7, labels=labels)
+
+    def test_pie_symbolic_category_contract(self):
+        for mode in ("stem", "figure"):
+            for glyph in ("O", "T", "o", "t", "90°", "99", "1.5", "A1", 'A"'):
+                with self.subTest(mode=mode, glyph=glyph):
+                    with self.assertRaisesRegex(vt.TemplateError,
+                                                "symbolic token|reserved"):
+                        vt.build_pie_chart(
+                            figure_id="g10-symbol", ask=[["a", "the outcome"]],
+                            stem="A spinner has sectors of 90, 120 and 150 degrees.",
+                            values=mode, angle_labels=True, arrow={"deg": 30},
+                            sectors=[{"label": glyph, "angle": 90},
+                                     {"label": "B", "angle": 120},
+                                     {"label": "A", "angle": 150}])
+
+    def test_pie_needle_cannot_be_a_cut(self):
+        for start, cuts in ((-90, (-90, 270, 630, 0, 360, 120)),
+                            (10, (10, 370, 100, 220))):
+            for bearing in cuts:
+                with self.subTest(start=start, bearing=bearing):
+                    with self.assertRaisesRegex(vt.TemplateError,
+                                                "coincides with a radial boundary"):
+                        vt.build_pie_chart(
+                            figure_id="g10-cut", ask=[["a", "the outcome"]],
+                            stem="Sectors of 90, 120 and 150 degrees.",
+                            start=start, arrow={"deg": bearing},
+                            sectors=[{"label": "A", "angle": 90},
+                                     {"label": "B", "angle": 120},
+                                     {"label": "A", "angle": 150}])
+
+    def test_pie_fractional_printed_angles_refuse_early(self):
+        for values in ("stem", "figure"):
+            with self.subTest(values=values):
+                with self.assertRaisesRegex(vt.TemplateError,
+                                            "requires whole-degree sectors"):
+                    vt.build_pie_chart(
+                        figure_id="g10-precision", ask=[["a", "the largest group"]],
+                        stem="The category counts are 1, 2 and 4.",
+                        values=values, angle_labels=True,
+                        sectors=[{"label": "A", "count": 1},
+                                 {"label": "B", "count": 2},
+                                 {"label": "C", "count": 4}])
+
+    def test_pie_fractional_unlabelled_sectors_remain_supported(self):
+        b = vt.build_pie_chart(
+            figure_id="g10-fracok", ask=[["a", "the largest group"]],
+            stem="The category counts are 1, 2 and 4.",
+            sectors=[{"label": "A", "count": 1},
+                     {"label": "B", "count": 2},
+                     {"label": "C", "count": 4}])
+        self.assertIn("derive 1 + 2 + 4 = 7", b.claims)
+
+    def test_pie_whole_degree_count_labels_remain_supported(self):
+        b = vt.build_pie_chart(
+            figure_id="g10-whole", ask=[["a", "the largest group"]],
+            stem="The category counts are 3, 4 and 5.", angle_labels=True,
+            sectors=[{"label": "A", "count": 3},
+                     {"label": "B", "count": 4},
+                     {"label": "C", "count": 5}])
+        self.assertIn('label "90°" names angle_sec0', b.claims)
+        self.assertIn('label "120°" names angle_sec1', b.claims)
+        self.assertIn('label "150°" names angle_sec2', b.claims)
+
+
+class G10ExtendedContractTests(unittest.TestCase):
+    """Regressions for the bounded G10 gaps 3/8/10-11 — circle_angles chord
+    features, the single-set venn_regions, and the cartesian_plot half-planes +
+    piecewise graphs."""
+
+    def test_circle_foot_bisects_chord(self):
+        b = vt.build_circle_angles(
+            figure_id="g10-cafoot",
+            stem="O is the centre of a circle through A and B. The foot of the "
+                 "perpendicular from O to chord AB is F, and AF = 4 cm and "
+                 "AB = 8 cm. (a) Find OF.",
+            ask=[["a", "the centre-to-chord distance"]],
+            points={"A": 160, "B": 20}, chords=[["A", "B"]],
+            feet={"F": "AB"}, lengths={"AB": 8},
+            labels={"AF": "4 cm"}, ticks={"AF": 1, "FB": 1})
+        self.assertIn("right O F A", b.claims)
+        self.assertIn("equal AF FB", b.claims)
+        self.assertIn("on F AB", b.claims)
+        self.assertIn('label "4 cm" names AF | stem', b.claims)
+
+    def test_circle_foot_draws_perpendicular_and_bisection(self):
+        b = vt.build_circle_angles(
+            figure_id="g10-cafoot2",
+            stem="O is the centre; F is the foot of the perpendicular from O "
+                 "to chord AB and AB = 8 cm.",
+            points={"A": 160, "B": 20}, chords=[["A", "B"]],
+            feet={"F": "AB"}, lengths={"AB": 8})
+        self.assertIn("perpendicular", b.claims)
+
+    def test_circle_intersection_inside(self):
+        b = vt.build_circle_angles(
+            figure_id="g10-cax",
+            stem="Chords AD and BC of a circle meet at X inside it. "
+                 "(a) Name the equal-angle pairs.",
+            ask=[["a", "the equal angles"]],
+            points={"A": 150, "B": 30, "C": 200, "D": 320},
+            intersections={"X": ("AD", "BC")}, joins=[("X", "O")])
+        self.assertIn("on X AD", b.claims)
+        self.assertIn("on X BC", b.claims)
+        self.assertIn('label "X" names X', b.claims)
+
+    def test_circle_join_between_computed_points(self):
+        # F and M are computed (not rim) points — diameter detection must not
+        # touch `deg` for them (the KeyError regression).
+        b = vt.build_circle_angles(
+            figure_id="g10-cafm",
+            stem="A circle has chords AB and CD; F is the foot of the "
+                 "perpendicular from O to AB and M is the midpoint of CD.",
+            points={"A": 200, "B": 340, "C": 30, "D": 150},
+            chords=[["A", "B"], ["C", "D"]],
+            feet={"F": "AB"}, midpoints={"M": "CD"},
+            joins=[("F", "M")])
+        self.assertIn('describe "FM is joined"', b.claims)
+
+    def test_circle_join_computed_to_rim_and_extension(self):
+        # join F-A runs from a derived point to a rim point; a chord endpoint
+        # extension puts a derived point outside the rim arc set — neither
+        # may probe `deg`.
+        b = vt.build_circle_angles(
+            figure_id="g10-cafx",
+            stem="F is the foot of the perpendicular from O to chord AB and "
+                 "M is the midpoint of CD.",
+            points={"A": 200, "B": 340, "C": 30, "D": 150},
+            chords=[["A", "B"], ["C", "D"]],
+            feet={"F": "AB"}, midpoints={"M": "CD"},
+            joins=[("F", "A"), ("M", "C")])
+        self.assertIn('describe "FA is joined"', b.claims)
+        self.assertIn('describe "MC is joined"', b.claims)
+
+    def test_cartesian_bad_side_message_interpolates(self):
+        for boundary, side in (({"x": 1}, "near"), ({"y": 1}, "inside"),
+                               ({"m": 1, "c": 0}, "inside")):
+            with self.assertRaisesRegex(vt.TemplateError, "inside|near"):
+                vt.build_cartesian_plot(
+                    figure_id="g10-cside",
+                    stem="x from -4 to 4 and y from -4 to 4.",
+                    x_range=[-4, 4], y_range=[-4, 4],
+                    regions=[{"boundary": boundary, "side": side,
+                              "include": True}])
+
+    def test_venn_single_set_complement(self):
+        b = vt.build_venn_regions(
+            figure_id="g10-vcomp",
+            stem="In a universal set U, set A has 12 members and 8 elements lie "
+                 "outside A. (a) How many elements are in U?",
+            ask=[["a", "n(U)"]],
+            sets=["A"], regions={"A": 12, "": 8}, universal="U")
+        self.assertTrue(any(e.get("id") == "univ" for e in b.doc["elements"]))
+        self.assertIn("derive 12 + 8 = 20", b.claims)
+
+    def test_venn_single_set_complement_shade(self):
+        b = vt.build_venn_regions(
+            figure_id="g10-vcsh",
+            stem="Shade the complement of set A inside the universal set U. "
+                 "(a) Describe the shaded region.",
+            ask=[["a", "the shaded region"]],
+            sets=["A"], shade=[""], universal="U")
+        polys = [e for e in b.doc["elements"] if e["type"] == "polygon"]
+        self.assertTrue(polys)
+
+    def test_cartesian_half_plane_intersection(self):
+        b = vt.build_cartesian_plot(
+            figure_id="g10-cineq",
+            stem="Show the region where x is from 1 to 3 with x = 1 excluded, "
+                 "for x from -6 to 6 and y from -6 to 6 in steps of 3. "
+                 "(a) Is the boundary included?",
+            ask=[["a", "the inclusion"]],
+            x_range=[-6, 6], y_range=[-6, 6], y_step=3,
+            regions=[{"boundary": {"x": 1}, "side": "right", "include": False},
+                     {"boundary": {"x": 3}, "side": "left", "include": True}])
+        self.assertIn("axis LR from -6 to 6", b.claims)
+        self.assertIn("paint bd0 dashed", b.claims)
+        self.assertIn("the shaded region is where", b.claims)
+        shade = next(e for e in b.doc["elements"] if e.get("id") == "shade")
+        self.assertEqual(len(shade["points"]), 4)
+
+    def test_cartesian_dashed_boundary_is_excluded(self):
+        b = vt.build_cartesian_plot(
+            figure_id="g10-cx3",
+            stem="Shade the region where -3 < x <= 1 and -1 <= y < 3, for "
+                 "x from -4 to 4 in steps of 2 and y from -4 to 6, and mark "
+                 "P at (-2, 4). (a) Is P in the region?",
+            ask=[["a", "P's membership"]],
+            x_range=[-4, 4], x_step=2, y_range=[-4, 6], y_step=2,
+            regions=[{"boundary": {"x": -3}, "side": "right", "include": False},
+                     {"boundary": {"x": 1}, "side": "left", "include": True},
+                     {"boundary": {"y": -1}, "side": "above", "include": True},
+                     {"boundary": {"y": 3}, "side": "below", "include": False}],
+            points={"P": [-2, 4]})
+        bd = next(e for e in b.doc["elements"] if e.get("id") == "bd0")
+        self.assertEqual((bd.get("stroke") or {}).get("style"), "dashed")
+        self.assertIn("do NOT satisfy the inequality", b.claims)
+        self.assertIn("paint bd0 dashed", b.claims)
+
+    def test_cartesian_numerals_align_their_ticks(self):
+        b = vt.build_cartesian_plot(
+            figure_id="g10-cdt2",
+            stem="A journey: 0 km at 0 h, 80 km at 2 h, rests at 80 km until "
+                 "4 h, then 120 km at 6 h. Time runs 0 to 6 h and distance 0 "
+                 "to 150 km. (a) Find the fastest leg.",
+            ask=[["a", "the fastest leg"]],
+            x_name="t", y_name="d",
+            x_range=[0, 6], y_range=[0, 150],
+            segments=[{"points": [[0, 0], [2, 80], [4, 80], [6, 120]]}],
+            points={"P": [2, 80]}, guides=[[[4, 0], [4, 80]]])
+        els = b.doc["elements"]
+        xaxis = next(e for e in els if e.get("id") == "axX")["points"]
+        yaxis = next(e for e in els if e.get("id") == "axY")["points"]
+        y0_ax, x0_ax = xaxis[0][1], yaxis[0][0]
+        ticks_x = {e["points"][0][0] for e in els
+                   if e.get("id", "").startswith("tx")}
+        ticks_y = {e["points"][0][1] for e in els
+                   if e.get("id", "").startswith("ty")}
+        for e in els:
+            if not e.get("id", "").startswith(("nx", "ny")):
+                continue
+            if e["id"].startswith("nx"):
+                self.assertIn(e["at"][0], ticks_x,
+                              f"x numeral {e['value']} off its tick column")
+                self.assertNotEqual(e["at"][1], y0_ax)
+            else:
+                self.assertIn(e["at"][1], ticks_y,
+                              f"y numeral {e['value']} off its tick row")
+                self.assertNotEqual(e["at"][0], x0_ax)
+
+    def test_cartesian_reserved_anchor_names_refuse(self):
+        for nm in ("L", "R", "B", "U"):
+            with self.assertRaises(vt.TemplateError, msg=nm):
+                vt.build_cartesian_plot(
+                    figure_id="g10-cres",
+                    stem="x from -4 to 4 and y from -4 to 4.",
+                    x_range=[-4, 4], y_range=[-4, 4],
+                    points={nm: [1, 1]})
+
+    def test_cartesian_axis_name_collisions_refuse(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_cartesian_plot(
+                figure_id="g10-cdup",
+                stem="x from -4 to 4 and y from -4 to 4.",
+                x_name="t", y_name="t",
+                x_range=[-4, 4], y_range=[-4, 4])
+        with self.assertRaises(vt.TemplateError):
+            vt.build_cartesian_plot(
+                figure_id="g10-cap",
+                stem="x from -4 to 4 and y from -4 to 4, point P at (1, 1).",
+                x_name="P", y_range=[-4, 4], x_range=[-4, 4],
+                points={"P": [1, 1]})
+        with self.assertRaises(vt.TemplateError):
+            vt.build_cartesian_plot(
+                figure_id="g10-cgnum",
+                stem="x from -4 to 4 and y from -4 to 4, point 2 at (1, 1).",
+                x_range=[-4, 4], y_range=[-4, 4],
+                points={"2": [1, 1]})
+
+    def test_cartesian_stranded_numeral_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_cartesian_plot(
+                figure_id="g10-cnoseat",
+                stem="Shade the region x >= 3 with the boundary x = 3 "
+                     "excluded, for x from -4 to 8 and y from -4 to 8.",
+                x_range=[-4, 8], y_range=[-4, 8],
+                regions=[{"boundary": {"x": 3}, "side": "right",
+                          "include": False}])
+
+    def test_cartesian_empty_intersection_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_cartesian_plot(
+                figure_id="g10-cempty",
+                stem="y <= -1 and y >= 1 for x from -4 to 4 and y from -4 to 4.",
+                x_range=[-4, 4], y_range=[-4, 4],
+                regions=[{"boundary": {"y": -1}, "side": "below",
+                          "include": True},
+                         {"boundary": {"y": 1}, "side": "above",
+                          "include": True}])
+
+    def test_cartesian_range_without_origin_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_cartesian_plot(
+                figure_id="g10-cnozero",
+                stem="x from 2 to 8 and y from -4 to 4.",
+                x_range=[2, 8], y_range=[-4, 4], segments=[])
+
+    def test_cartesian_negative_coord_needs_signed_stem(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_cartesian_plot(
+                figure_id="g10-csign",
+                stem="Mark P on the plane, x from -4 to 4 and y from -4 to 4.",
+                x_range=[-4, 4], y_range=[-4, 4],
+                points={"P": [-2, 3]})
+
+    def test_cartesian_piecewise_journey(self):
+        b = vt.build_cartesian_plot(
+            figure_id="g10-cdt",
+            stem="A journey: 0 km at 0 h, 80 km at 2 h, rests at 80 km until "
+                 "4 h, then 120 km at 6 h. Time runs 0 to 6 h and distance 0 "
+                 "to 150 km. (a) Find the fastest leg.",
+            ask=[["a", "the fastest leg"]],
+            x_name="t", y_name="d",
+            x_range=[0, 6], y_range=[0, 150],
+            segments=[{"points": [[0, 0], [2, 80], [4, 80], [6, 120]]}],
+            points={"P": [2, 80]}, guides=[[[4, 0], [4, 80]]])
+        self.assertIn("piecewise line", b.claims)
+        self.assertIn("reads P 80 on BU", b.claims)
+        self.assertIn("paint gd0 dashed", b.claims)
+
+
+class Grade10SolidsTests(unittest.TestCase):
+    """Contract tests for the profiled solids / nets extension (G10)."""
+    STEM = "A synthetic object has lengths 4, 5, 6, 7, 8, 10 and 11 cm."
+    CASES = [
+        (vt.build_solid, dict(shape="half_cylinder", dims={"diameter": 8, "length": 11})),
+        (vt.build_solid, dict(shape="half_cylinder", dims={"radius": 4, "length": 11})),
+        (vt.build_solid, dict(shape="triangular_prism", profile="right",
+                              dims={"base": 6, "height": 8, "length": 11})),
+        (vt.build_solid, dict(shape="triangular_prism", profile="right",
+                              dims={"base": 6, "right": 10, "length": 11})),
+        (vt.build_solid, dict(shape="triangular_prism", profile="isosceles",
+                              dims={"base": 6, "left": 5, "length": 11}, altitude=True)),
+        (vt.build_solid, dict(shape="triangular_prism", profile="scalene",
+                              dims={"base": 7, "left": 5, "right": 6, "length": 11})),
+        (vt.build_solid, dict(shape="triangular_prism", profile="isosceles",
+                              open_top=True, dims={"base": 6, "left": 5, "length": 11})),
+        (vt.build_net, dict(shape="triangular_prism", profile="right",
+                            dims={"base": 6, "height": 8, "length": 11})),
+        (vt.build_net, dict(shape="triangular_prism", profile="scalene",
+                            dims={"base": 7, "left": 5, "right": 6, "length": 11})),
+        (vt.build_net, dict(shape="cylinder", dims={"radius": 4, "height": 11})),
+        (vt.build_net, dict(shape="triangular_prism", profile="right",
+                            dims={"base": 6, "height": 8, "length": 6})),
+    ]
+
+    def test_accepts_build(self):
+        for i, (fn, kwargs) in enumerate(self.CASES):
+            with self.subTest(i=i):
+                b = fn(figure_id=f"g10s{i}", stem=self.STEM, **kwargs)
+                self.assertTrue(b.doc["elements"])
+                self.assertIn("channel:  constructed", b.claims)
+
+    def test_each_numeric_given_is_stem_checked(self):
+        for i, (fn, kwargs) in enumerate(self.CASES):
+            for value in kwargs["dims"].values():
+                stem = "Lengths " + ", ".join(
+                    str(v) for v in set(kwargs["dims"].values()) - {value}) + " cm."
+                with self.subTest(i=i, missing=value):
+                    with self.assertRaises(vt.TemplateError):
+                        fn(figure_id="bad1", stem=stem, **kwargs)
+
+    def test_figure_mode_skips_stem_checks(self):
+        b = vt.build_net(figure_id="g10s-fig", stem="Read the printed dimensions.",
+                         shape="cylinder", dims={"radius": 4, "height": 11},
+                         values="figure")
+        self.assertTrue(b.doc["elements"])
+
+    def test_invalid_dim_types_refuse(self):
+        for value in [True, False, float("nan"), float("inf"), "4", None, 0, -2, {}, []]:
+            with self.subTest(value=value):
+                with self.assertRaises(vt.TemplateError):
+                    vt.build_solid(figure_id="bad", stem=self.STEM,
+                                   shape="half_cylinder",
+                                   dims={"radius": value, "length": 11})
+
+    def test_impossible_profiles_refuse(self):
+        for profile, dims in [("right", {"base": 7, "right": 6, "length": 11}),
+                              ("scalene", {"base": 11, "left": 4, "right": 5, "length": 11}),
+                              ("isosceles", {"base": 11, "left": 5, "length": 11})]:
+            with self.subTest(profile=profile):
+                with self.assertRaises(vt.TemplateError):
+                    vt.build_net(figure_id="bad", stem=self.STEM,
+                                 shape="triangular_prism", profile=profile, dims=dims)
+
+    def test_scalene_endpoint_foot_refuses(self):
+        # a 3-4-5 'scalene' set puts the foot on the base endpoint — it is really
+        # a right triangle and would draw with no right-angle mark
+        with self.assertRaises(vt.TemplateError):
+            vt.build_solid(figure_id="bad", stem="Sides 3, 4, 5 and 11 cm.",
+                           shape="triangular_prism", profile="scalene",
+                           dims={"base": 3, "left": 4, "right": 5, "length": 11})
+        with self.assertRaises(vt.TemplateError):
+            vt.build_net(figure_id="bad2", stem="Sides 3, 4, 5 and 11 cm.",
+                         shape="triangular_prism", profile="scalene",
+                         dims={"base": 3, "left": 5, "right": 4, "length": 11})
+
+    def test_x_reserved_for_altitude_foot(self):
+        for kw in (dict(altitude=True, dims={"base": 6, "left": 5, "length": 11}),
+                   dict(dims={"base": 6, "height": 8, "length": 11})):
+            with self.subTest(kw=list(kw)):
+                with self.assertRaises(vt.TemplateError):
+                    vt.build_solid(figure_id="bad", stem=self.STEM,
+                                   shape="triangular_prism",
+                                   profile="isosceles" if "left" in kw["dims"] else "right",
+                                   names=["A", "B", "C", "D", "E", "X"], **kw)
+
+    def test_altitude_refused_on_right_profile(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_solid(figure_id="bad", stem=self.STEM,
+                           shape="triangular_prism", profile="right",
+                           dims={"base": 7, "height": 5, "length": 11},
+                           altitude=True)
+
+    def test_altitude_ink_is_claimed(self):
+        b = vt.build_solid(figure_id="g10s-alt", stem=self.STEM,
+                           shape="triangular_prism", profile="isosceles",
+                           dims={"base": 6, "left": 5, "length": 11}, altitude=True)
+        self.assertIn("altitude", b.claims)
+        self.assertIn("X", b.anchors)
+
+    def test_right_net_x0_skips_dashed_height_element(self):
+        # x == 0: the altitude foot is B itself. The scratch code drew a dashed
+        # 'height' element duplicating the flap edge U->B; it is now skipped
+        # while the height label still binds a segment (U,B)
+        b = vt.build_net(figure_id="g10n-x0", stem=self.STEM,
+                         shape="triangular_prism", profile="right",
+                         dims={"base": 6, "height": 8, "length": 11})
+        self.assertFalse(any(e.get("id") == "height" for e in b.doc["elements"]))
+        self.assertNotIn("X", b.anchors)
+        self.assertIn('label "8 cm" names UB', b.claims)
+
+    def test_right_profile_has_no_duplicate_x_anchor(self):
+        b = vt.build_solid(figure_id="g10s-nox", stem=self.STEM,
+                           shape="triangular_prism", profile="right",
+                           dims={"base": 6, "height": 8, "length": 11})
+        self.assertNotIn("X", b.anchors)
+        n = vt.build_net(figure_id="g10n-nox", stem=self.STEM,
+                         shape="triangular_prism", profile="right",
+                         dims={"base": 6, "height": 8, "length": 11})
+        self.assertNotIn("X", n.anchors)
+
+    def test_legacy_delegation_unchanged(self):
+        a = vt.build_solid(figure_id="leg1", stem=self.STEM,
+                           shape="sphere", dims={"radius": 4})
+        self.assertIn("sphere", a.claims)
+        n = vt.build_net(figure_id="leg2", stem=self.STEM,
+                         shape="square_pyramid", base=4, tri_height=5)
+        self.assertIn("pyramid", n.claims)
+
+    def test_new_options_need_new_shapes(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_solid(figure_id="bad", stem=self.STEM, shape="sphere",
+                           dims={"radius": 4}, altitude=True)
+        with self.assertRaises(vt.TemplateError):
+            vt.build_net(figure_id="bad", stem=self.STEM, shape="square_pyramid",
+                         dims={"base": 4})
+
+
+class Grade10PatternTests(unittest.TestCase):
+    """Contract tests for motion/rings/slats/clock/pairing profiles (G10)."""
+    CASES = [
+        dict(template="motion_states", figure_id="g10p1",
+             stem="A particle moves 18 m in 6 s.", distance=18, elapsed=6),
+        dict(template="motion_states", figure_id="g10p2",
+             stem="A train is 48 m long and takes 8 s to pass a post.",
+             profile="post", length=48, elapsed=8),
+        dict(template="motion_states", figure_id="g10p3",
+             stem="A train is 40 m long. The bridge is 80 m long; passage takes 9 s.",
+             profile="bridge", length=40, bridge=80, elapsed=9),
+        dict(template="dot_pattern", figure_id="g10p4",
+             stem="The 3 rings start with 6 bulbs and increase by 4 bulbs each ring.",
+             kind="rings", stages=3, first=6, increment=4),
+        dict(template="dot_pattern", figure_id="g10p5",
+             stem="Count the bulbs in each ring and describe the pattern.",
+             kind="rings", stages=3, first=7, increment=4, values="figure"),
+        dict(template="slat_frame", figure_id="g10p6",
+             stem="The first slat is 80 cm, the increment is 8 cm, and the last "
+                  "is 160 cm. Each slat is 8 cm wide.",
+             first=80, increment=8, last=160, slat_width=8),
+        dict(template="clock_face", figure_id="g10p7",
+             stem="The clock shows hour 4 and minute 20.", hour=4, minute=20),
+        dict(template="clock_face", figure_id="g10p8",
+             stem="The clock shows hour 3 and minute 0.", hour=3, minute=0),
+        dict(template="pairing_arcs", figure_id="g10p9",
+             stem="An arithmetic sequence has first term 4, common difference 2 "
+                  "and 8 terms.", first=4, increment=2, terms=8),
+    ]
+
+    def build(self, case):
+        spec = dict(case)
+        return vt.BUILDERS[spec.pop("template")](**spec)
+
+    def test_outputs(self):
+        for case in self.CASES:
+            with self.subTest(case=case["figure_id"]):
+                b = self.build(case)
+                self.assertTrue(b.doc["elements"])
+                self.assertIn("load-bearing:", b.claims)
+                self.assertIn("channel:  constructed", b.claims)
+
+    def test_preconversion_types(self):
+        for index, key in ((0, "distance"), (1, "length"), (2, "bridge"),
+                           (3, "first"), (3, "increment"), (3, "stages"),
+                           (5, "slat_width"), (5, "last"), (6, "hour"),
+                           (6, "minute"), (8, "terms"), (8, "increment"),
+                           (0, "elapsed")):
+            for value in (True, False, "3", float("nan"), float("inf"), {}, []):
+                case = dict(self.CASES[index], **{key: value})
+                with self.subTest(key=key, value=value):
+                    with self.assertRaises(vt.TemplateError):
+                        self.build(case)
+
+    def test_missing_stem_givens(self):
+        for case in self.CASES:
+            if case.get("values") == "figure":
+                continue
+            with self.subTest(case=case["figure_id"]):
+                with self.assertRaises(vt.TemplateError):
+                    self.build(dict(case, stem="A synthetic task with no numeric givens."))
+
+    def test_refusals(self):
+        for case in (dict(self.CASES[5], last=161, stem=self.CASES[5]["stem"] + " 161"),
+                     dict(self.CASES[8], terms=7, stem=self.CASES[8]["stem"] + " 7"),
+                     dict(self.CASES[3], values="hidden"),
+                     dict(self.CASES[6], hour=13),
+                     dict(self.CASES[0], profile="photo"),
+                     dict(self.CASES[1], distance=12)):
+            with self.assertRaises(vt.TemplateError):
+                self.build(case)
+
+    def test_rings_reject_legacy_layout_params(self):
+        with self.assertRaises(vt.TemplateError):
+            self.build(dict(self.CASES[3], dot_r=8))
+        with self.assertRaises(vt.TemplateError):
+            self.build(dict(figure_id="g10p10",
+                            stem="Triangular dots, 3 stages.",
+                            template="dot_pattern",
+                            kind="triangle", stages=3, first=6))
+
+    def test_exact_counts(self):
+        rings = self.build(self.CASES[3])
+        for ring, count in ((1, 6), (2, 10), (3, 14)):
+            self.assertEqual(sum(e["id"].startswith(f"r{ring}d")
+                                 for e in rings.doc["elements"]), count)
+        slats = self.build(self.CASES[5])
+        self.assertEqual(sum(e["id"].startswith("slat")
+                             for e in slats.doc["elements"]), 11)
+        pairs = self.build(self.CASES[8])
+        self.assertEqual(sum(e["type"] == "polyline"
+                             for e in pairs.doc["elements"]), 4)
+
+    def test_pair_endpoints_and_clock(self):
+        b = self.build(self.CASES[8])
+        terms = [e for e in b.doc["elements"]
+                 if e["type"] == "text" and e.get("fontSize") == 16]
+        for i, curve in enumerate(e for e in b.doc["elements"]
+                                  if e["type"] == "polyline"):
+            self.assertEqual(len(curve["points"]), 25)
+            self.assertAlmostEqual(curve["points"][0][0], terms[i]["at"][0], delta=0.02)
+            self.assertAlmostEqual(curve["points"][-1][0], terms[-1 - i]["at"][0],
+                                   delta=0.02)
+            self.assertLess(curve["points"][12][1], curve["points"][0][1])
+        clock = self.build(self.CASES[6])
+        self.assertEqual(sum(e["id"].startswith("tick")
+                             for e in clock.doc["elements"]), 12)
+        o, h = clock.anchors["O"], clock.anchors["H"]
+        angle = math.degrees(math.atan2(h[1] - o[1], h[0] - o[0]))
+        self.assertAlmostEqual(angle, 40, delta=0.02)
+
+
+class Grade10PairedGeometryTests(unittest.TestCase):
+    """Contract tests for build_paired_geometry (G10)."""
+    STEM_SSS = ("Triangle ABC has sides 8 cm, 7 cm and 5 cm and triangle PQR has "
+                "sides 7 cm, 8 cm and 5 cm. (a) Are they congruent?")
+
+    def B(self, **kw):
+        kw.setdefault("figure_id", "t1")
+        return vt.build_paired_geometry(**kw)
+
+    def test_sss_pair_congruent(self):
+        b = self.B(stem=self.STEM_SSS, ask=[["a", "congruence"]], shapes=[
+            {"shape": "triangle", "names": "ABC",
+             "sides": {"AB": 8, "BC": 7, "CA": 5}},
+            {"shape": "triangle", "names": "PQR",
+             "sides": {"PQ": 7, "QR": 8, "RP": 5},
+             "place": {"to": [300, 0], "anchor": "P", "flip": True}}],
+            correspond=[{"tri": "ABC", "to": "RQP", "scale": "congruent"}],
+            ticks={"AB": 1, "RQ": 1, "BC": 2, "QP": 2, "CA": 3, "PR": 3})
+        self.assertIn("congruent", b.claims)
+
+    def test_similar_pair_scale2(self):
+        stem = ("Triangle ABC has sides 3 cm, 4 cm and 5 cm; triangle DEF is "
+                "drawn at scale 2 with sides 6 cm, 8 cm and 10 cm. "
+                "(a) Show the scale factor is 2.")
+        b = self.B(stem=stem, ask=[["a", "the factor"]], shapes=[
+            {"shape": "triangle", "names": "ABC",
+             "sides": {"AB": 3, "BC": 4, "CA": 5}},
+            {"shape": "triangle", "names": "DEF",
+             "sides": {"DE": 6, "EF": 8, "FD": 10},
+             "place": {"to": [260, 0], "anchor": "D"}}],
+            correspond=[{"tri": "ABC", "to": "DEF", "scale": 2}])
+        self.assertIn("scale", b.claims)
+
+    def test_shared_side_glue_and_hinge(self):
+        stem = ("Triangles ABC and DCB share the base BC of 6 cm; AB = 5 cm, "
+                "DC = 5 cm. (a) Name the equal sides.")
+        b = self.B(stem=stem, ask=[["a", "the equal sides"]], shapes=[
+            {"shape": "triangle", "names": "ABC",
+             "sides": {"AB": 5, "BC": 6, "CA": 6}},
+            {"shape": "triangle", "names": "DCB",
+             "sides": {"DC": 5, "CB": 6, "DB": 6},
+             "place": {"glue": {"C": "C", "B": "B"}, "flip": True}}],
+            ticks={"AB": 1, "DC": 1})
+        self.assertTrue(b.doc["elements"])
+        hinge = self.B(stem="Triangles ABC and DEF share the vertex A; AB = 5 cm, "
+                            "BC = 6 cm, CA = 7 cm; DE = 5 cm, EF = 6 cm, FD = 7 cm.",
+                       shapes=[
+            {"shape": "triangle", "names": "ABC",
+             "sides": {"AB": 5, "BC": 6, "CA": 7}},
+            {"shape": "triangle", "names": "DEF",
+             "sides": {"DE": 5, "EF": 6, "FD": 7},
+             "place": {"hinge": {"D": "A"}, "rotate": 140, "flip": True}}])
+        # the hinge aliases D onto A: the letter D never prints, the second
+        # scaffold claims itself as triangle AEF, and only five letters anchor
+        self.assertNotIn("D", hinge.anchors)
+        self.assertEqual(sorted(hinge.anchors), ["A", "B", "C", "E", "F"])
+        self.assertIn('describe "AEF is a triangle"', hinge.claims)
+        seg_line = next(l for l in hinge.claims.splitlines()
+                        if l.startswith("segments:"))
+        for seg in ("AE", "EF", "AF"):
+            self.assertIn(seg, seg_line.split())
+
+    def test_unknown_scaffold_keys_refuse(self):
+        with self.assertRaises(vt.TemplateError):
+            self.B(stem=self.STEM_SSS, ask=[["a", "x"]], shapes=[
+                {"shape": "triangle", "names": "ABC",
+                 "sides": {"AB": 8, "BC": 7, "CA": 5}, "angle": {"A": 40}}])
+
+    def test_quad_kite_bowtie_accept(self):
+        quad = self.B(stem="Quadrilateral ABCD has AB = 5 cm, BC = 6 cm, CD = 4 cm, "
+                           "DA = 7 cm and diagonal AC = 8 cm.",
+                      shapes=[{"shape": "quadrilateral", "names": "ABCD",
+                               "sides": {"AB": 5, "BC": 6, "CD": 4, "DA": 7},
+                               "diagonal": {"AC": 8}}],
+                      labels={"AB": "5 cm", "BC": "6 cm"})
+        self.assertIn("quadrilateral", quad.claims)
+        kite = self.B(stem="Kite ABCD has AB = AD = 5 cm, CB = CD = 8 cm and "
+                           "diagonal AC = 9 cm.",
+                      shapes=[{"shape": "kite", "names": "ABCD",
+                               "sides": {"AB": 5, "BC": 8}, "diagonal": {"AC": 9}}],
+                      ticks={"AB": 1, "AD": 1, "CB": 2, "CD": 2})
+        self.assertIn("axis of symmetry", kite.claims)
+        bow = self.B(stem="Angles 70 35 55.",
+                     shapes=[{"shape": "bowtie", "names": "ABCD", "cross": "X",
+                              "angles": {"A": 70, "D": 35, "C": 55}}])
+        self.assertIn("vertically opposite", bow.claims)
+
+    def test_figure_mode(self):
+        b = self.B(stem="Read the marked figure.", values="figure", shapes=[
+            {"shape": "triangle", "names": "ABC",
+             "sides": {"AB": 8, "BC": 7, "CA": 5}},
+            {"shape": "triangle", "names": "PQR",
+             "sides": {"PQ": 7, "QR": 8, "RP": 5},
+             "place": {"to": [300, 0], "anchor": "P", "flip": True}}],
+            labels={"AB": "8 cm", "PQ": "7 cm"})
+        self.assertTrue(b.doc["elements"])
+
+    def refuse(self, kw, needle=""):
+        with self.assertRaises(vt.TemplateError) as cm:
+            self.B(**kw)
+        if needle:
+            self.assertIn(needle, str(cm.exception))
+
+    def test_refusals(self):
+        self.refuse(dict(stem="Sides 7 and 5 about 30; twice.", shapes=[
+            {"shape": "triangle", "names": "ABC",
+             "sides": {"AB": 7, "BC": 5}, "angles": {"A": 30}},
+            {"shape": "triangle", "names": "PQR", "sides": {"PQ": 5, "PR": 7},
+             "angles": {"P": 30}, "place": {"to": [300, 0]}}]), "SSA")
+        self.refuse(dict(stem="Sides 1 cm, 2 cm and 10 cm.", shapes=[
+            {"shape": "triangle", "names": "ABC",
+             "sides": {"AB": 1, "BC": 2, "CA": 10}}]), "inequality")
+        self.refuse(dict(stem="Sides 1 1 1 1 diagonal 9.", shapes=[
+            {"shape": "quadrilateral", "names": "ABCD",
+             "sides": {"AB": 1, "BC": 1, "CD": 1, "DA": 1},
+             "diagonal": {"AC": 9}}]), "close")
+        self.refuse(dict(stem="Shared side 6 cm; other sides 5 cm, 6 cm and "
+                         "9 cm.", shapes=[
+            {"shape": "triangle", "names": "ABC",
+             "sides": {"AB": 5, "BC": 6, "CA": 6}},
+            {"shape": "triangle", "names": "DEF",
+             "sides": {"DE": 5, "EF": 9, "DF": 6},
+             "place": {"glue": {"E": "B", "F": "C"}}}]), "stretch")
+        self.refuse(dict(stem=self.STEM_SSS, shapes=[
+            {"shape": "triangle", "names": "ABC",
+             "sides": {"AB": 8, "BC": 7, "CA": 5}},
+            {"shape": "triangle", "names": "PQR",
+             "sides": {"PQ": 7, "QR": 8, "RP": 5},
+             "place": {"to": [300, 0], "anchor": "P"}}],
+            ticks={"AB": 1, "PQ": 1}), "tick")
+        self.refuse(dict(stem="Sides 3 4 5 and 6 8 11, drawn at scale 2.",
+                     shapes=[
+            {"shape": "triangle", "names": "ABC",
+             "sides": {"AB": 3, "BC": 4, "CA": 5}},
+            {"shape": "triangle", "names": "DEF",
+             "sides": {"DE": 6, "EF": 8, "FD": 11},
+             "place": {"to": [300, 0], "anchor": "D"}}],
+            correspond=[{"tri": "ABC", "to": "DEF", "scale": 2}]),
+            "NOT similar")
+        self.refuse(dict(stem="Sides 3 4 5.", values="bogus", shapes=[
+            {"shape": "triangle", "names": "ABC",
+             "sides": {"AB": 3, "BC": 4, "CA": 5}}]), "values")
+        self.refuse(dict(stem="Sides 8 and 7 only.", shapes=[
+            {"shape": "triangle", "names": "ABC",
+             "sides": {"AB": 8, "BC": 7, "CA": 5}}]),
+            "not a number the stem states")
+        self.refuse(dict(stem=self.STEM_SSS, shapes=[
+            {"shape": "triangle", "names": "ABC",
+             "sides": {"AB": 8, "BC": 7, "CA": 5}},
+            {"shape": "triangle", "names": "PQR",
+             "sides": {"PQ": 7, "QR": 8, "RP": 5}}]), "place")
+        self.refuse(dict(stem="Sides 3 4 5 twice.", shapes=[
+            {"shape": "triangle", "names": "ABC",
+             "sides": {"AB": 3, "BC": 4, "CA": 5}},
+            {"shape": "triangle", "names": "ABD",
+             "sides": {"AB": 3, "BD": 4, "DA": 5},
+             "place": {"to": [0, 0]}}]), "already placed")
+        self.refuse(dict(stem="Kite sides 5 8 diagonal BD 9.", shapes=[
+            {"shape": "kite", "names": "ABCD",
+             "sides": {"AB": 5, "BC": 8}, "diagonal": {"BD": 9}}]), "AC")
+        self.refuse(dict(stem="Angles 70 35 60 50.", shapes=[
+            {"shape": "bowtie", "names": "ABCD", "cross": "X",
+             "angles": {"A": 70, "B": 35, "C": 60, "D": 50}}]), "crossing")
+
+
+class G10PartitionContract(unittest.TestCase):
+    """outcome_grid events + fraction_tape + area_model — representative
+    accept/refusal contract (ported from wt partition-work scratch tests)."""
+
+    OG = dict(rows=["H", "T"], cols=["1", "2", "3", "4"], marks="all",
+              values="figure")
+
+    def B(self, template, **kw):
+        kw.setdefault("figure_id", "synthetic-part1")
+        kw.setdefault("stem", "A die and a coin are thrown together. The grid "
+                              "shows every ordered pair. (a) Count them.")
+        kw.setdefault("ask", [["a", "the answer"]])
+        return vt.BUILDERS[template](**kw)
+
+    def test_oval_diagonal_contour_accept(self):
+        b = self.B("outcome_grid",
+                   events=[{"cells": [[0, 1], [1, 0]], "style": "oval",
+                            "label": "A"}], **self.OG)
+        self.assertIn("channel:  constructed", b.claims)
+
+    def test_disconnected_event_splits_into_regions(self):
+        b = self.B("outcome_grid",
+                   events=[{"cells": [[0, 0], [3, 1]], "style": "oval",
+                            "label": "A"}], **self.OG)
+        ids = [el["id"] for el in b.doc["elements"]]
+        self.assertIn("ev0_0", ids)
+        self.assertIn("ev0_1", ids)
+
+    def test_circle_arrow_default_and_box_arrow_flag(self):
+        b = self.B("outcome_grid",
+                   events=[{"cells": [[2, 0]], "style": "circle",
+                            "label": "E"}], **self.OG)
+        self.assertIn("eva0", [el["id"] for el in b.doc["elements"]])
+        b2 = self.B("outcome_grid",
+                    events=[{"cells": [[0, 0], [1, 0], [0, 1], [1, 1]],
+                             "style": "box", "label": "B", "arrow": False}],
+                    rows=["H", "T"], cols=["1", "2", "3"], marks="all",
+                    values="figure")
+        self.assertFalse(any(el["id"].startswith("eva")
+                             for el in b2.doc["elements"]))
+
+    def test_event_refusals(self):
+        ring = [[c, r] for c in range(3) for r in range(3)
+                if (c, r) != (1, 1)]
+        for kw in (
+                # an oval swallowing a non-member cell refuses
+                dict(rows=["H", "T", "H"], cols=["1", "2", "3"], marks="all",
+                     values="figure",
+                     events=[{"cells": ring, "style": "oval", "label": "A"}]),
+                # two events drawing the identical contour refuse
+                dict(marks="all", values="figure",
+                     rows=["H", "T"], cols=["1", "2"],
+                     events=[{"cells": [[0, 0]], "style": "circle",
+                              "label": "A"},
+                             {"cells": [[0, 0]], "style": "circle",
+                              "label": "B"}]),
+                # a circle over two connected cells refuses
+                dict(marks="all", values="figure",
+                     rows=["H", "T"], cols=["1", "2"],
+                     events=[{"cells": [[0, 0], [0, 1]], "style": "circle"}]),
+                # a box over a notched block refuses
+                dict(marks="all", values="figure",
+                     rows=["H", "T"], cols=["1", "2", "3"],
+                     events=[{"cells": [[0, 0], [1, 0], [0, 1]],
+                              "style": "box"}]),
+                # whole-number cell indexes — the tightened validation
+                dict(marks="all", values="figure",
+                     rows=["H", "T"], cols=["1", "2"],
+                     events=[{"cells": [[0.5, 0]], "style": "oval"}]),
+                dict(marks=[[float("nan"), 0]], values="figure",
+                     rows=["H", "T"], cols=["1", "2"]),
+                dict(marks=[[False, 0]], values="figure",
+                     rows=["H", "T"], cols=["1", "2"]),
+                dict(marks="all", values="figure",
+                     rows=["H", "T"], cols=["1", "2"],
+                     outline={"cols": [0.5, 1], "rows": [0, 1]})):
+            with self.subTest(kw=kw), self.assertRaises(vt.TemplateError):
+                self.B("outcome_grid", **kw)
+
+    def test_fraction_tape_accepts(self):
+        for kw in (
+                dict(stem="Three strips show 1/2 = 2/4 = 4/8. (a) Write them.",
+                     panels=[{"parts": 2, "shaded": 1, "label": "1/2"},
+                             {"parts": 4, "shaded": 2, "label": "2/4"},
+                             {"parts": 8, "shaded": 4, "label": "4/8",
+                              "braces": [{"span": [0, 3], "label": "4/8",
+                                          "side": "under"}]}]),
+                dict(stem="The strips show 5/4 as one whole and 1/4.",
+                     panels=[{"parts": 4, "shaded": 4},
+                             {"parts": 4, "shaded": 1, "label": "5/4"}]),
+                dict(stem="A 350 litre tank is 3/8 full. (a) How much water?",
+                     tank={"parts": 8, "filled": 3, "label": "350 L",
+                           "level_label": "3/8"}),
+                dict(stem="Two strips. (a) Name the share.", values="figure",
+                     panels=[{"parts": 4, "shaded": 3, "label": "3/4"}])):
+            with self.subTest(kw=str(kw)[:80]):
+                b = self.B("fraction_tape", **kw)
+                self.assertIn("channel:  constructed", b.claims)
+
+    def test_fraction_tape_refusals(self):
+        for kw in (
+                {},                                   # neither panels nor tank
+                dict(panels=[{"parts": 2, "shaded": 1}],
+                     tank={"parts": 2, "filled": 1}),  # both
+                dict(panels=[{"parts": 2.5, "shaded": 1}]),
+                dict(panels=[{"parts": 2, "shaded": True}]),
+                dict(panels=[{"parts": 2, "shaded": 3}]),   # over-shaded
+                dict(panels=[{"parts": 4, "shaded": 1,
+                              "braces": [{"label": "1/4"}]}]),   # no span
+                dict(panels=[{"parts": 4, "shaded": 1,
+                              "braces": [{"span": [2, 1],
+                                          "label": "x"}]}]),     # reversed span
+                dict(panels=[{"parts": 4, "shaded": 1,
+                              "braces": [{"span": [0, 1], "label": "x",
+                                          "side": "sideways"}]}]),
+                dict(stem="Two strips show the same share.",
+                     panels=[{"parts": 2, "shaded": 1, "label": "3/4"}]),
+                dict(tank={"parts": 4, "filled": float("nan")}),
+                dict(panels=[{"parts": 2, "shaded": 1}], strip_w=True)):
+            with self.subTest(kw=str(kw)[:80]), \
+                    self.assertRaises(vt.TemplateError):
+                self.B("fraction_tape", **kw)
+
+    def test_area_model_accept_and_refusals(self):
+        b = self.B("area_model",
+                   stem="The rectangle shows (3x + 2)(2x + 3) = "
+                        "6x^2 + 9x + 4x + 6. (a) Give the product.",
+                   col_labels=["3x", "2"], row_labels=["2x", "3"],
+                   cells=[["6x^2", "4x"], ["9x", "6"]], names="PQRS")
+        self.assertIn("channel:  constructed", b.claims)
+        # no vertex letters are drawn — corners are anchors only
+        self.assertFalse(any(el.get("type") == "text" and
+                             el.get("value") in "PQRS"
+                             for el in b.doc["elements"]))
+        good = dict(stem="The rectangle shows (x + 2)(x + 5). (a) Expand.",
+                    col_labels=["x", "2"], row_labels=["x", "5"],
+                    cells=[["x^2", "2x"], ["5x", "10"]])
+        for kw in (dict(names="ABCA"), dict(names="abc d"),
+                   dict(col_labels=["x"]), dict(cells=[["x^2"]]),
+                   dict(col_w=True),
+                   dict(stem="The rectangle shows a product.",
+                        col_labels=["x", "7"], row_labels=["x", "5"],
+                        cells=[["x^2", "7x"], ["5x", "35"]])):
+            with self.subTest(kw=str(kw)[:80]), \
+                    self.assertRaises(vt.TemplateError):
+                self.B("area_model", **{**good, **kw})
+
+
+class G10CircularContract(unittest.TestCase):
+    """circular_composite — representative accept/refusal contract (ported
+    from wt circular-work scratch tests)."""
+
+    STEM = ("Lengths 2, 5, 6, 7, 8, 10 cm; angle 90 degrees. Symbolic "
+            "dimensions r, s, 5a and 2x. Find the boundary or shaded area.")
+
+    def B(self, **kw):
+        kw.setdefault("figure_id", "synthetic-circ1")
+        kw.setdefault("stem", self.STEM)
+        kw.setdefault("ask", [["a", "the answer"]])
+        return vt.build_circular_composite(**kw)
+
+    def test_keyword_only(self):
+        import inspect
+        self.assertTrue(all(
+            p.kind == p.KEYWORD_ONLY for p in
+            inspect.signature(vt.build_circular_composite).parameters.values()))
+
+    def test_profile_accepts(self):
+        cases = [
+            dict(shape="rect", length=10, width=6,
+                 pieces=[dict(on="BC", kind="semicircle")]),
+            dict(shape="rect", length=10, width=6,
+                 pieces=[dict(on="BC", kind="semicircle", mode="cut")]),
+            dict(shape="rect", length=10, width=6,
+                 pieces=[dict(corner="B", kind="sector", mode="cut",
+                              radius=2)]),
+            dict(shape="rect", length=10, width=6,
+                 pieces=[dict(on="BC", kind="sector", angle=90)]),
+            dict(shape="stadium", length=10, width=6,
+                 labels={"length": "10 cm", "width": "6 cm"}),
+            dict(shape="triangle", mode="right", base=6, height=8,
+                 pieces=[dict(on="base", kind="semicircle")]),
+            dict(shape="triangle", base=6, leg=5,
+                 pieces=[dict(on="base", kind="semicircle")]),
+            dict(shape="triangle", mode="equilateral", base=6,
+                 pieces=[dict(on="base", kind="semicircle")]),
+            dict(shape="sector", angle=90, radius=7,
+                 pieces=[dict(on="AB", kind="triangle")]),
+            dict(shape="sector", angle=90, radius=7,
+                 pieces=[dict(on="AB", kind="triangle", mode="attach",
+                              leg=8)]),
+            dict(shape="sector", angle=90, radius=7,
+                 pieces=[dict(on="OA", kind="semicircle")]),
+            dict(shape="cut_attach", radius=7),
+            dict(shape="annulus", outer=10, inner=5),
+            dict(shape="annulus", outer="r", inner="s"),
+            dict(shape="nested_square", outer=10, inner=5),
+            dict(shape="nested_square", outer="5a", inner="2x"),
+        ]
+        for spec in cases:
+            with self.subTest(spec=spec):
+                b = self.B(**spec)
+                self.assertIn("channel:  constructed", b.claims)
+
+    def test_arc_sweeps_bounded(self):
+        for spec in (dict(shape="rect", length=10, width=6,
+                          pieces=[dict(on="BC", kind="semicircle")]),
+                     dict(shape="rect", length=10, width=6,
+                          pieces=[dict(corner="B", kind="sector", mode="cut",
+                                       radius=2)]),
+                     dict(shape="stadium", length=10, width=6),
+                     dict(shape="triangle", base=6, leg=5,
+                          pieces=[dict(on="base", kind="semicircle")]),
+                     dict(shape="sector", angle=90, radius=7,
+                          pieces=[dict(on="OA", kind="semicircle")]),
+                     dict(shape="cut_attach", radius=7)):
+            with self.subTest(spec=spec):
+                b = self.B(**spec)
+                for el in b.doc["elements"]:
+                    if el["type"] == "arc":
+                        self.assertGreater(el["end"] - el["start"], 0)
+                        self.assertLessEqual(el["end"] - el["start"], 180.01)
+
+    def test_perimeters(self):
+        for spec, total in (
+                (dict(shape="rect", length=10, width=6,
+                      pieces=[dict(on="BC", kind="semicircle")]),
+                 26 + 3 * math.pi),
+                (dict(shape="stadium", length=10, width=6),
+                 20 + 6 * math.pi),
+                (dict(shape="triangle", mode="right", base=6, height=8,
+                      pieces=[dict(on="base", kind="semicircle")]),
+                 18 + 3 * math.pi),
+                (dict(shape="sector", angle=90, radius=7,
+                      pieces=[dict(on="AB", kind="triangle", mode="attach",
+                                   leg=8)]), 30),
+                (dict(shape="cut_attach", radius=7), 14 * math.pi)):
+            with self.subTest(total=total):
+                b = self.B(**spec)
+                derives = [l for l in b.claims.splitlines() if "derive " in l]
+                self.assertAlmostEqual(
+                    float(derives[-1].split(" = ")[1].split(" |")[0]), total)
+
+    def test_figure_mode(self):
+        b = self.B(stem="Read the figure.", shape="stadium", length=10,
+                   width=6, values="figure",
+                   labels={"length": "10 cm", "width": "6 cm"})
+        self.assertIn("figure content", b.claims)
+        with self.assertRaises(vt.TemplateError):
+            # figure mode needs printed numeric givens — none here
+            self.B(stem="Read the figure.", shape="rect", length=10, width=6,
+                   values="figure",
+                   pieces=[dict(on="BC", kind="semicircle")])
+
+    def test_refusals(self):
+        for spec in (
+                dict(shape="rect", length=10, width=6),         # no piece
+                dict(shape="rect", length=4, width=10,          # cut reaches
+                     pieces=[dict(on="BC", kind="semicircle",   # the far side
+                                  mode="cut")]),
+                dict(shape="rect", length=10, width=6,          # multi-piece
+                     pieces=[dict(on="BC", kind="semicircle"),
+                             dict(on="DA", kind="semicircle")]),
+                dict(shape="rect", length=10, width=6,          # bad side
+                     pieces=[dict(on="BC", kind="semicircle")],
+                     labels={"BC": "3 cm"}),
+                dict(shape="rect", length=10, width=6,          # extra arg
+                     pieces=[dict(on="BC", kind="semicircle", radius=4)]),
+                dict(shape="stadium", length=True, width=6),
+                dict(shape="stadium", length=float("nan"), width=6),
+                dict(shape="annulus", outer=5, inner=10),       # inner>=outer
+                dict(shape="annulus", outer="2a", inner="5a"),  # same-var order
+                dict(shape="bogus", length=10, width=6),
+                dict(shape="triangle", base=6, leg=5),          # needs a piece
+        ):
+            with self.subTest(spec=str(spec)[:80]), \
+                    self.assertRaises(vt.TemplateError):
+                self.B(**spec)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class ElevationSceneTests(unittest.TestCase):
+    def test_unknown_angle_still_has_auditable_derivation(self):
+        b = vt.build_elevation_scene(**dict(
+            self.KW, sights=[{'from': 'G', 'to': 'T', 'angle': 'x'}]))
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = b.write(tmp)
+            result = subprocess.run([sys.executable, str(AUDIT), str(paths['claims'])],
+                                    capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    STEM = ('A post FT stands on level ground. It is 8 m tall. An observer at G '
+            'is 6 m from the foot and sees the top at an angle of elevation 53°.')
+    KW = dict(figure_id='scn-elev1', stem=STEM, post=('F', 'T'),
+              sights=[{'from': 'G', 'to': 'T', 'angle': 53,
+                       'kind': 'elevation', 'side': 'left'}],
+              heights={'FT': 8}, distances={'FG': 6})
+
+    def test_builds_and_audits_clean(self):
+        b = vt.build_elevation_scene(**self.KW)
+        self.assertIn('constructed', b.claims)
+        self.assertIn('right G F T', b.claims)           # post ⊥ ground
+        self.assertRegex(b.claims, r'angle [A-Z] G T = 53\b')
+        # a ground observer's arc is owned by the horizontal through G — no
+        # elevated datum is drawn, so no `parallel` claim either
+        self.assertNotIn('parallel G', b.claims)
+
+    def test_eye_level_datum(self):
+        b = vt.build_elevation_scene(
+            figure_id='scn-elev2',
+            stem=('A post FT is 8 m tall. An observer\'s eye E is 1.6 m above '
+                  'ground point G, 6 m from the foot; the angle of elevation '
+                  'of the top is 47°.'),
+            post=('F', 'T'), eyes={'E': 'G'},
+            sights=[{'from': 'E', 'to': 'T', 'angle': 47,
+                     'kind': 'elevation', 'side': 'left'}],
+            heights={'FT': 8, 'GE': 1.6}, distances={'FG': 6})
+        self.assertIn('right F G E', b.claims)
+        self.assertRegex(b.claims, r'angle [A-Z] E T = 47\b')
+        # the datum claim — never a ground angle
+        self.assertRegex(b.claims, r'parallel E[A-Z] FG\b')
+
+    def test_underdetermined_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_elevation_scene(
+                figure_id='scn-u1', stem='A post FT is 8 m tall.',
+                post=('F', 'T'),
+                sights=[{'from': 'G', 'to': 'T', 'angle': 'x'}],
+                heights={'FT': 8})
+
+    def test_inconsistent_refuses(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_elevation_scene(
+                figure_id='scn-i1',
+                stem='Post 8 m, observer 6 m away, elevation 20°.',
+                post=('F', 'T'),
+                sights=[{'from': 'G', 'to': 'T', 'angle': 20,
+                         'kind': 'elevation', 'side': 'left'}],
+                heights={'FT': 8}, distances={'FG': 6})
+
+    def test_kind_side_reverified(self):
+        with self.assertRaises(vt.TemplateError):       # declared depression
+            vt.build_elevation_scene(
+                figure_id='scn-k1',
+                stem='Post 8 m, observer 6 m away, elevation x.',
+                post=('F', 'T'),
+                sights=[{'from': 'G', 'to': 'T', 'angle': 'x',
+                         'kind': 'depression', 'side': 'left'}],
+                heights={'FT': 8}, distances={'FG': 6})
+        with self.assertRaises(vt.TemplateError):       # wrong side
+            vt.build_elevation_scene(
+                figure_id='scn-k2',
+                stem='Post 8 m, observer 6 m away, elevation x.',
+                post=('F', 'T'),
+                sights=[{'from': 'G', 'to': 'T', 'angle': 'x',
+                         'kind': 'elevation', 'side': 'right'}],
+                heights={'FT': 8}, distances={'FG': 6})
+
+    def test_stem_number_honesty(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_elevation_scene(
+                figure_id='scn-n1', stem='A post stands on level ground.',
+                post=('F', 'T'),
+                sights=[{'from': 'G', 'to': 'T', 'angle': 53,
+                         'kind': 'elevation', 'side': 'left'}],
+                heights={'FT': 8}, distances={'FG': 6})
+        with self.assertRaises(vt.TemplateError):       # angle not in stem
+            vt.build_elevation_scene(
+                figure_id='scn-n2', stem='Post 8 m, distance 6 m.',
+                post=('F', 'T'),
+                sights=[{'from': 'G', 'to': 'T', 'angle': 53,
+                         'kind': 'elevation', 'side': 'left'}],
+                heights={'FT': 8}, distances={'FG': 6})
+
+    def test_figure_mode(self):
+        b = vt.build_elevation_scene(
+            **dict(self.KW, stem='Read the figure.', values='figure'))
+        self.assertIn('figure content', b.claims)
+        with self.assertRaises(vt.TemplateError):
+            vt.build_elevation_scene(**dict(self.KW, values='bogus'))
+
+    def test_shape_refusals(self):
+        with self.assertRaises(vt.TemplateError):       # 3 sights
+            vt.build_elevation_scene(
+                **dict(self.KW, sights=[self.KW['sights'][0]] * 3))
+        with self.assertRaises(vt.TemplateError):       # 3 observers
+            vt.build_elevation_scene(
+                **dict(self.KW, eyes={'E': 'G', 'I': 'H', 'O': 'J'}))
+        with self.assertRaises(vt.TemplateError):       # eye on a post letter
+            vt.build_elevation_scene(**dict(self.KW, eyes={'T': 'G'}))
+        with self.assertRaises(vt.TemplateError):       # numeric angle, no kind
+            vt.build_elevation_scene(
+                **dict(self.KW, sights=[{'from': 'G', 'to': 'T', 'angle': 53}]))
+        with self.assertRaises(vt.TemplateError):       # angle out of range
+            vt.build_elevation_scene(
+                figure_id='scn-r1',
+                stem='Post 8 m, distance 6 m, angle 2°.',
+                post=('F', 'T'),
+                sights=[{'from': 'G', 'to': 'T', 'angle': 2,
+                         'kind': 'elevation', 'side': 'left'}],
+                heights={'FT': 8}, distances={'FG': 6})
+        with self.assertRaises(vt.TemplateError):       # distance not ground pair
+            vt.build_elevation_scene(
+                figure_id='scn-r2', stem='Post 8 m, "distance" FT 8.',
+                post=('F', 'T'),
+                sights=[{'from': 'G', 'to': 'T', 'angle': 45,
+                         'kind': 'elevation', 'side': 'left'}],
+                distances={'FT': 8})
+
+
+class TwoCircleGeometryTests(unittest.TestCase):
+    STEM = ('Two circles of radii 5 cm and 4 cm have centres 6 cm apart. '
+            'The circles intersect at P and Q; the centre line meets PQ at M.')
+    KW = dict(figure_id='scn-2c1', stem=STEM, r1=5, r2=4, d=6)
+
+    def test_intersect_builds(self):
+        b = vt.build_two_circle_geometry(**self.KW)
+        self.assertIn('right A M P', b.claims)
+        self.assertIn('collinear A M B', b.claims)
+        self.assertIn('equal PM MQ', b.claims)
+        self.assertIn('circle centre A through P Q', b.claims)
+
+    def test_touch_modes(self):
+        b = vt.build_two_circle_geometry(figure_id='scn-2c2',
+                                         stem='Radii 5 cm and 3 cm, centres 8 cm.',
+                                         r1=5, r2=3, d=8)
+        self.assertIn('on P AB', b.claims)              # external touch
+        b = vt.build_two_circle_geometry(figure_id='scn-2c3',
+                                         stem='Radii 5 cm and 2 cm, centres 3 cm.',
+                                         r1=5, r2=2, d=3)
+        self.assertIn('collinear A B P', b.claims)      # internal touch
+
+    def test_topology_refusals(self):
+        with self.assertRaises(vt.TemplateError):       # separate
+            vt.build_two_circle_geometry(figure_id='scn-s1',
+                                         stem='Radii 5 3, d 10.', r1=5, r2=3, d=10)
+        with self.assertRaises(vt.TemplateError):       # contained
+            vt.build_two_circle_geometry(figure_id='scn-s2',
+                                         stem='Radii 6 2, d 3.', r1=6, r2=2, d=3)
+        with self.assertRaises(vt.TemplateError):       # too-thin chord
+            vt.build_two_circle_geometry(figure_id='scn-s3',
+                                         stem='Radii 5 4.9, d 9.85.',
+                                         r1=5, r2=4.9, d=9.85)
+        with self.assertRaises(vt.TemplateError):       # foot on a touch pair
+            vt.build_two_circle_geometry(figure_id='scn-s4',
+                                         stem='Radii 5 3, centres 8.',
+                                         r1=5, r2=3, d=8, foot='M')
+
+    def test_rim_joins_interior_angles(self):
+        # rim S on circle 1 at 135° (canvas y-down: upper-left), join SP, an
+        # interior point N on SP, and a verified angle mark at P.
+        b = vt.build_two_circle_geometry(
+            figure_id='scn-2c4',
+            stem='Radii 5 4, centres 6. S and R are rim points; N is on SP.',
+            r1=5, r2=4, d=6,
+            rim={'S': {'circle': 1, 'deg': -135},
+                 'R': {'circle': 2, 'deg': -45}},
+            joins=['SP', 'RQ'], on_segment={'N': ('SP', 0.8)})
+        self.assertIn('on N SP', b.claims)
+        self.assertIn('circle centre A through P Q S', b.claims)
+
+    def test_angle_mark_revalidated(self):
+        # the true angle PAQ at circle 1's centre in the 5/4/6 layout:
+        x = (36 + 25 - 16) / 12.0
+        half = math.degrees(math.atan2(math.sqrt(25 - x * x), x))
+        true = round(2 * half)
+        b = vt.build_two_circle_geometry(
+            figure_id='scn-2c5',
+            stem=f'Radii 5 4, centres 6. Angle PAQ is {true}°.',
+            r1=5, r2=4, d=6,
+            angles=[{'at': 'A', 'arms': ('P', 'Q'), 'label': f'{true}°'}])
+        self.assertIn(f'angle P A Q = {true}', b.claims)
+        with self.assertRaises(vt.TemplateError):       # wrong glyph refused
+            vt.build_two_circle_geometry(
+                figure_id='scn-2c6',
+                stem='Radii 5 4, centres 6. Angle PAQ is 90°.',
+                r1=5, r2=4, d=6,
+                angles=[{'at': 'A', 'arms': ('P', 'Q'), 'label': '90°'}])
+
+    def test_stem_number_and_figure_mode(self):
+        with self.assertRaises(vt.TemplateError):
+            vt.build_two_circle_geometry(figure_id='scn-f1',
+                                         stem='Two circles.', r1=5, r2=4, d=6)
+        b = vt.build_two_circle_geometry(**dict(self.KW, stem='Read the figure.',
+                                              values='figure'))
+        self.assertIn('figure content', b.claims)
+        self.assertIn('5 cm', b.claims) and self.assertIn('6 cm', b.claims)
+
+    def test_shape_refusals(self):
+        with self.assertRaises(vt.TemplateError):       # rim collides
+            vt.build_two_circle_geometry(**dict(
+                self.KW, rim={'P': {'circle': 1, 'deg': 30}}))
+        with self.assertRaises(vt.TemplateError):       # rim lands on P (~41.4°)
+            vt.build_two_circle_geometry(**dict(
+                self.KW, rim={'S': {'circle': 1, 'deg': 41}}))
+        with self.assertRaises(vt.TemplateError):       # unknown join endpoint
+            vt.build_two_circle_geometry(**dict(self.KW, joins=['PZ']))
+        with self.assertRaises(vt.TemplateError):       # on_segment off a join
+            vt.build_two_circle_geometry(**dict(
+                self.KW, on_segment={'N': ('PQ', 0.5)}))
+        with self.assertRaises(vt.TemplateError):       # t outside (0,1)
+            vt.build_two_circle_geometry(**dict(
+                self.KW, joins=['AP'], on_segment={'N': ('AP', 1.5)}))
+
+    def test_diameter_chord_foot_refuses(self):
+        # r1=3, r2=5, d=4 puts the chord through centre A (x=0) — the foot IS A.
+        with self.assertRaises(vt.TemplateError):
+            vt.build_two_circle_geometry(figure_id='scn-d1',
+                                         stem='Radii 3 5, centres 4.',
+                                         r1=3, r2=5, d=4)
+        b = vt.build_two_circle_geometry(figure_id='scn-d2',
+                                         stem='Radii 3 5, centres 4.',
+                                         r1=3, r2=5, d=4, foot=None)
+        self.assertIn('equal AP AQ', b.claims)
