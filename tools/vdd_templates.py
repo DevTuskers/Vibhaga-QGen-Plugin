@@ -2236,8 +2236,19 @@ def build_cuboid(*, figure_id, stem, ask=None, title=None, description=None, med
 # 9. dot_pattern — stages of a dot pattern (triangle / square / rectangle counts)
 # ────────────────────────────────────────────────────────────────────────────────
 def build_dot_pattern(*, figure_id, stem, ask=None, title=None, description=None, medium="english",
-                      stages, kind="triangle", dot_r=5.0, dx=26.0, dy=22.5, gap=36.0):
+                      stages, kind="triangle", dot_r=5.0, dx=26.0, dy=22.5, gap=36.0,
+                      first=None, increment=None, values="stem"):
     vc.reset_ids()
+    if kind == "rings":
+        for lname, lval, ldefault in (("dot_r", dot_r, 5.0), ("dx", dx, 26.0),
+                                      ("dy", dy, 22.5), ("gap", gap, 36.0)):
+            if lval != ldefault:
+                raise TemplateError(f"dot_pattern: {lname} does not apply to kind='rings'")
+        return _build_ring_pattern(figure_id=figure_id, stem=stem, ask=ask, title=title,
+                                   description=description, medium=medium, rings=stages,
+                                   first=first, increment=increment, values=values)
+    if first is not None or increment is not None or values != "stem":
+        raise TemplateError("dot_pattern: first, increment and values apply to kind='rings' only")
     if kind not in ("triangle", "square", "rectangle"):
         raise TemplateError(f"dot_pattern: kind {kind!r} — one of triangle, square, rectangle")
     if not (isinstance(stages, int) and 1 <= stages <= 8):
@@ -9189,14 +9200,23 @@ def build_ogive(*, figure_id, stem, ask=None, title=None, description=None,
 
 def build_outcome_grid(*, figure_id, stem, ask=None, title=None, description=None,
                        medium="english", rows, cols, marks="all", outline=None,
-                       cell=46.0, values="stem"):
+                       events=None, cell=46.0, values="stem"):
     """An outcome (sample-space) grid: `cols` values head the columns along the
     bottom, `rows` values head the rows down the left — `rows[0]` heads the TOP
     row — and each cell is one ordered pair. `marks` = "all" crosses every cell,
     or a list of [col, row] 0-based indexes into `cols`/`rows` crossing just
     those cells (the listed outcomes are figure content).
     `outline` = {"cols": [c0, c1], "rows": [r0, r1]} (inclusive) draws a heavier
-    box around that block of cells — the event region.
+    box around that block of cells — one rectangular event region.
+    `events` = [{"cells": [[col,row]…], "style": "oval"|"box"|"circle",
+    "label": "A", "arrow": true}] draws one TRUE cell-set contour per event —
+    a `circle` around a single cell, a `box` around a full rectangular block,
+    or an `oval` stadium hugging the member cells' hull (diagonal runs get the
+    tilted capsule the corpus draws; a stadium that would swallow a non-member
+    cell refuses rather than outline what isn't the event). Cells not connected
+    edge-or-corner-wise split into separate contours of the same event. `label`
+    prints outside the grid to the right with an arrow to the region (pointer
+    ink, not data).
     Numeric header values are stem-checked when values="stem"; `values="figure"`
     makes them figure content (the student reads the axes)."""
     kind = "outcome_grid"
@@ -9226,8 +9246,9 @@ def build_outcome_grid(*, figure_id, stem, ask=None, title=None, description=Non
         for m in marks:
             if not isinstance(m, (list, tuple)) or len(m) != 2 or \
                     any(isinstance(v, bool) or not isinstance(v, (int, float))
-                        for v in m):
-                raise TemplateError(f"{kind}: a mark is [col_index, row_index]")
+                        or not float(v).is_integer() for v in m):
+                raise TemplateError(f"{kind}: a mark is [col_index, row_index] — "
+                                    "two whole-number indexes")
             ci, ri = int(m[0]), int(m[1])
             if not (0 <= ci < nc and 0 <= ri < nr):
                 raise TemplateError(f"{kind}: mark {m} is off the {nc}x{nr} grid")
@@ -9242,8 +9263,9 @@ def build_outcome_grid(*, figure_id, stem, ask=None, title=None, description=Non
                 not isinstance(outline["rows"], (list, tuple)) or \
                 len(outline["cols"]) != 2 or len(outline["rows"]) != 2 or \
                 any(isinstance(v, bool) or not isinstance(v, (int, float))
+                    or not float(v).is_integer()
                     for v in list(outline["cols"]) + list(outline["rows"])):
-            raise TemplateError(f"{kind}: outline is {{'cols': [c0,c1], 'rows': [r0,r1]}} — two numeric indexes each")
+            raise TemplateError(f"{kind}: outline is {{'cols': [c0,c1], 'rows': [r0,r1]}} — two whole-number indexes each")
         c0, c1 = (int(v) for v in outline["cols"])
         r0, r1 = (int(v) for v in outline["rows"])
         if not (0 <= c0 <= c1 < nc and 0 <= r0 <= r1 < nr):
@@ -9266,7 +9288,166 @@ def build_outcome_grid(*, figure_id, stem, ask=None, title=None, description=Non
         elements.append({"id": "event", "type": "rect", "x": c0 * cell, "y": r0 * cell,
                          "width": (c1 - c0 + 1) * cell, "height": (r1 - r0 + 1) * cell,
                          "stroke": {"width": 3.0, "color": "#1d4ed8"}})
+    ev_specs: list[tuple] = []
+    if events is not None:
+        if not isinstance(events, (list, tuple)) or not events:
+            raise TemplateError(f"{kind}: events is a non-empty list of event dicts")
+        seen_ev: set[tuple] = set()
+        for ei, ev in enumerate(events):
+            if not isinstance(ev, dict) or \
+                    not isinstance(ev.get("cells"), (list, tuple)) or not ev["cells"]:
+                raise TemplateError(f"{kind}: event {ei} needs a non-empty 'cells' list")
+            style = ev.get("style", "oval")
+            if style not in ("oval", "box", "circle"):
+                raise TemplateError(f"{kind}: event {ei} style is oval|box|circle")
+            cellset: set[tuple[int, int]] = set()
+            for mc in ev["cells"]:
+                if not isinstance(mc, (list, tuple)) or len(mc) != 2 or \
+                        any(isinstance(v, bool) or not isinstance(v, (int, float))
+                            or not float(v).is_integer() for v in mc):
+                    raise TemplateError(f"{kind}: event {ei} cell {mc} — two "
+                                        "whole-number [col,row] indexes")
+                ci_, ri_ = int(mc[0]), int(mc[1])
+                if not (0 <= ci_ < nc and 0 <= ri_ < nr):
+                    raise TemplateError(f"{kind}: event {ei} cell {mc} is off the "
+                                        f"{nc}x{nr} grid")
+                cellset.add((ci_, ri_))
+            lab = ev.get("label")
+            if lab is not None and (not isinstance(lab, str) or
+                    not 1 <= len(lab.strip()) <= 8):
+                raise TemplateError(f"{kind}: event {ei} label needs 1–8 chars")
+            if lab is not None:
+                lab = lab.strip()
+            ar = ev.get("arrow", True)
+            if not isinstance(ar, bool):
+                raise TemplateError(f"{kind}: event {ei} 'arrow' is a flag")
+            if (style, frozenset(cellset)) in seen_ev:
+                raise TemplateError(f"{kind}: two events would draw the identical "
+                                    f"{style} contour — the ink cannot tell them apart")
+            seen_ev.add((style, frozenset(cellset)))
+            ev_specs.append((ei, style, cellset, lab, ar and lab is not None))
+    _EV_INK = "#1d4ed8"
+    ev_drawn: list[tuple] = []          # (spec index, comps, label, arrow?)
+    all_centres = {(ci, ri): ((ci + 0.5) * cell, (ri + 0.5) * cell)
+                   for ci in range(nc) for ri in range(nr)}
+    for ei, style, cellset, lab, want_arrow in ev_specs:
+        centres = {c: all_centres[c] for c in cellset}
+        comps: list[set] = []
+        for csq in sorted(cellset):
+            for comp in comps:
+                if any(abs(csq[0] - o[0]) <= 1 and abs(csq[1] - o[1]) <= 1
+                       for o in comp):
+                    comp.add(csq)
+                    break
+            else:
+                comps.append({csq})
+        merged = True
+        while merged:
+            merged = False
+            for i in range(len(comps)):
+                for j in range(i + 1, len(comps)):
+                    if any(abs(a[0] - b[0]) <= 1 and abs(a[1] - b[1]) <= 1
+                           for a in comps[i] for b in comps[j]):
+                        comps[i] |= comps[j]
+                        comps.pop(j)
+                        merged = True
+                        break
+                if merged:
+                    break
+        rings: list[tuple[str, object]] = []     # ("circle",(c,r)) | ("poly",pts)
+        for comp in comps:
+            if style == "circle":
+                if len(comp) != 1:
+                    raise TemplateError(
+                        f"{kind}: event {ei} style 'circle' needs exactly one cell "
+                        f"per region — got {len(comp)} connected cells (use 'oval' "
+                        "for a multi-cell region)")
+                cc = next(iter(comp))
+                rings.append(("circle", (centres[cc], cell * 0.36)))
+                continue
+            if style == "box":
+                bc0 = min(c[0] for c in comp); bc1 = max(c[0] for c in comp)
+                br0 = min(c[1] for c in comp); br1 = max(c[1] for c in comp)
+                if len(comp) != (bc1 - bc0 + 1) * (br1 - br0 + 1):
+                    raise TemplateError(
+                        f"{kind}: event {ei} style 'box' needs a full rectangular "
+                        "block — the cells leave a hole/notch a box would falsely "
+                        "include (use 'oval')")
+                ins = cell * 0.10
+                rings.append(("poly", [(bc0 * cell + ins, br0 * cell + ins),
+                                       ((bc1 + 1) * cell - ins, br0 * cell + ins),
+                                       ((bc1 + 1) * cell - ins, (br1 + 1) * cell - ins),
+                                       (bc0 * cell + ins, (br1 + 1) * cell - ins)]))
+                continue
+            pts = [centres[c] for c in comp]
+            if len(comp) == 1:
+                rings.append(("circle", (pts[0], cell * 0.42)))
+                continue
+            hull = _convex_hull(pts)
+            rad = cell * 0.45
+            outsiders = [pt for c, pt in all_centres.items()
+                         if c not in cellset
+                         and _in_stadium(pt, hull, rad)]
+            if outsiders:
+                raise TemplateError(
+                    f"{kind}: event {ei}'s oval would enclose {len(outsiders)} "
+                    "non-member cell(s) — a region this shape cannot be drawn as "
+                    "one honest contour (split it, or use 'box' on a full block)")
+            rings.append(("poly", _stadium(hull, rad)))
+        for ri_, (shape, geo) in enumerate(rings):
+            if shape == "circle":
+                c_, r_ = geo
+                elements.append(vc.circle(c_, r_, id=f"ev{ei}_{ri_}",
+                                          width=3.0))
+                elements[-1]["stroke"] = {"width": 3.0, "color": _EV_INK}
+            else:
+                elements.append({"id": f"ev{ei}_{ri_}", "type": "polygon",
+                                 "points": [vc.P(p) for p in geo],
+                                 "stroke": {"width": 3.0, "color": _EV_INK}})
+        ev_drawn.append((ei, rings, lab, want_arrow))
     P: dict[str, XY] = {"P": (0.0, 0.0), "Q": (W, H)}
+    ev_label_at: dict[int, XY] = {}
+    ev_anchor_pair: dict[int, tuple] = {}
+    if any(lab is not None for _ei, _r, lab, _a in ev_drawn):
+        lets = _unused_letters({"P", "Q"}, 2 * len(ev_drawn))
+        order = sorted(range(len(ev_drawn)),
+                       key=lambda k: sum(g[0][1] if s == "circle" else
+                                         sum(p[1] for p in g) / len(g)
+                                         for s, g in ev_drawn[k][1]) / len(ev_drawn[k][1]))
+        placed: list[tuple[int, float]] = []
+        y_prev = -1e9
+        for k in order:
+            rings = ev_drawn[k][1]
+            ywant = sum(g[0][1] if s == "circle" else sum(p[1] for p in g) / len(g)
+                        for s, g in rings) / len(rings)
+            y = max(ywant, y_prev + 30.0)
+            placed.append((k, y))
+            y_prev = y
+        overflow = max(0.0, placed[-1][1] - (H - 8.0)) if placed else 0.0
+        for k, y in placed:
+            ev_label_at[k] = (W + 20.0, y - overflow)
+        for k, (ei, rings, lab, want_arrow) in enumerate(ev_drawn):
+            if lab is None:
+                continue
+            lx, ly = ev_label_at[k]
+            elements.append(vc.text((lx, ly), lab, id=f"evl{ei}", size=15,
+                                    align="start"))
+            P[lets[2 * k]] = (lx, ly)
+            tgt = min(((_nearest_on_poly((lx, ly), g) if s == "poly" else
+                        (g[0][0] + g[1] * (lx - g[0][0]) / max(1e-9,
+                            vc.dist((lx, ly), g[0])),
+                        g[0][1] + g[1] * (ly - g[0][1]) / max(1e-9,
+                            vc.dist((lx, ly), g[0]))))
+                       for s, g in rings),
+                      key=lambda q: vc.dist((lx, ly), q))
+            P[lets[2 * k + 1]] = tgt
+            if want_arrow:
+                ux, uy = vc.unit((lx, ly), tgt)
+                tail = (W + 10.0, ly)
+                head = (tgt[0] + ux * 5.0, tgt[1] + uy * 5.0)
+                elements.append(vc.arrow(tail, head, head="end", id=f"eva{ei}",
+                                         width=1.5))
+            ev_anchor_pair[k] = (lets[2 * k], lets[2 * k + 1])
     head: list[tuple[str, str]] = []
     seen_glyph: set[str] = set()
     for i, v in enumerate(cols):
@@ -9312,10 +9493,37 @@ def build_outcome_grid(*, figure_id, stem, ask=None, title=None, description=Non
         c0, c1, r0, r1 = oreg
         add(f'describe "a heavier box outlines the {(c1 - c0 + 1) * (r1 - r0 + 1)} '
             'cells of the event region"', "inferred", "the event block")
+    ev_label_seen: dict[str, int] = {}
+    any_arrow = False
+    for k, (ei, rings, lab, want_arrow) in enumerate(ev_drawn):
+        spec_cells = ev_specs[k][2]
+        add(f'describe "event {lab or ei + 1} outlines {len(spec_cells)} cell(s)'
+            + (f' in {len(rings)} separate contours' if len(rings) > 1 else '')
+            + f' — {ev_specs[k][1]} ink"', "inferred",
+            "the event's true cell-set region(s)")
+        if lab is not None:
+            if lab in ev_label_seen:
+                add(f'describe "the label {lab} also groups the cells of event '
+                    f'{ei + 1} — one label, {ev_label_seen[lab] + 1} regions"',
+                    "inferred", "a repeated event label")
+                ev_label_seen[lab] += 1
+            else:
+                ev_label_seen[lab] = 1
+                add(f'label "{lab}" names {ev_anchor_pair[k][0]}', "inferred",
+                    "the event label beside the grid")
+            if want_arrow:
+                any_arrow = True
+                add(f"arrow {ev_anchor_pair[k][0]} -> {ev_anchor_pair[k][1]}",
+                    "inferred", "the label's pointer to its region")
+    if any_arrow:
+        add('describe "the arrows point from the event labels to their regions — '
+            'pointer ink, not data"', "inferred", "the label arrows")
     add(f"derive {nr} * {nc} = {nr * nc}", "inferred",
         "rows times columns counts the ordered pairs")
-    add("none tickMark parallelMark angleMark arrow shaded", "inferred",
-        "grid lines, crosses and header values only")
+    add("none tickMark parallelMark angleMark" + (" shaded" if any_arrow
+        else " arrow shaded"), "inferred",
+        "grid lines, crosses, event contours, label pointers and header values only"
+        if ev_drawn else "grid lines, crosses and header values only")
     return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
                   anchors=dict(P), points=list(P), segments=[], claims=claims,
                   ask=ask, title=title or "An outcome grid",
@@ -9329,6 +9537,423 @@ def build_outcome_grid(*, figure_id, stem, ask=None, title=None, description=Non
                          else "with the listed outcomes crossed.")),
                   scale="equal cells — the grid is schematic, not to scale",
                   medium=medium)
+
+
+# -------------------------------------------------------------------
+# outcome-grid event contours + fraction tapes / algebraic area model
+# (ported from wt/g10-templates/partition-work/partition_extension.py)
+# -------------------------------------------------------------------
+
+def _convex_hull(pts: list[XY]) -> list[XY]:
+    """Monotone-chain convex hull of `pts` (>=2 distinct points), CCW-ish order."""
+    p = sorted(set(pts))
+    if len(p) <= 2:
+        return p
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lower = []
+    for q in p:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], q) <= 0:
+            lower.pop()
+        lower.append(q)
+    upper = []
+    for q in reversed(p):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], q) <= 0:
+            upper.pop()
+        upper.append(q)
+    return lower[:-1] + upper[:-1]
+
+
+def _stadium(hull: list[XY], r: float, step: float = 8.0) -> list[XY]:
+    """The outer parallel body of `hull` at distance `r`, sampled as a polygon —
+    a circle for a single point, a capsule for a segment, a rounded hull else."""
+    out = []
+    for k in range(max(8, int(360 / step))):
+        th = math.radians(k * step)
+        ux, uy = math.cos(th), math.sin(th)
+        cx, cy = max(hull, key=lambda p: p[0] * ux + p[1] * uy)
+        out.append((cx + r * ux, cy + r * uy))
+    return out
+
+
+def _in_stadium(p: XY, hull: list[XY], r: float, tol: float = 1e-9) -> bool:
+    """Is `p` inside the r-parallel body of `hull` (inside the hull, or within r
+    of its outline)?"""
+    if len(hull) == 1:
+        return vc.dist(p, hull[0]) <= r + tol
+    if _pt_in_poly(p, hull):
+        return True
+    return min(_pt_seg(p, hull[i], hull[(i + 1) % len(hull)])
+               for i in range(len(hull))) <= r + tol
+
+
+def _nearest_on_poly(p: XY, pts: list[XY]) -> XY:
+    """The nearest point to `p` on the closed polygon/ring `pts`."""
+    best, bd = pts[0], float("inf")
+    for i in range(len(pts)):
+        a, b = pts[i], pts[(i + 1) % len(pts)]
+        ax, ay = b[0] - a[0], b[1] - a[1]
+        t = 0.0 if ax == ay == 0 else max(0.0, min(1.0,
+            ((p[0] - a[0]) * ax + (p[1] - a[1]) * ay) / (ax * ax + ay * ay)))
+        q = (a[0] + t * ax, a[1] + t * ay)
+        d = vc.dist(p, q)
+        if d < bd:
+            best, bd = q, d
+    return best
+
+
+_FRAC_LABEL_NUM = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _tape_label_numbers(kind: str, label: str, stem: str, fig_mode: bool) -> None:
+    """A printed tape label: every numeral in it (a fraction's two terms, a
+    capacity's value) is a stem number in `stem` mode — symbolic tokens carry
+    no digits and stay figure content."""
+    if fig_mode:
+        return
+    nums = _FRAC_LABEL_NUM.findall(label)
+    if nums:
+        require_stem(stem, **{f"{label!r}[{i}]": float(v)
+                              for i, v in enumerate(nums)})
+
+
+def build_fraction_tape(*, figure_id, stem, ask=None, title=None,
+                        description=None, medium="english", panels=None,
+                        tank=None, strip_w=260.0, strip_h=40.0, panel_gap=26.0,
+                        values="stem"):
+    """Aligned fraction strips — or a vertical tank level.
+
+    `panels` = [{"parts": n, "shaded": k, "label"?, "braces"?}]: every panel is
+    a strip of the SAME whole length, left edges aligned, split into `parts`
+    equal cells with the first `shaded` filled. Aligned equal wholes make
+    equivalent fractions line up (1/2 = 2/4 = 4/8 panels), and a run of full
+    panels followed by a partial one is the improper/mixed-number model.
+    `braces` = [{"span": [i0, i1], "label": "3/5", "side": "under"|"over"}] — a
+    square bracket under/over a contiguous cell span with its label.
+    `label` prints at the strip's right end.
+
+    `tank` = {"parts": n, "filled": k, "label"?, "level_label"?} — a vertical
+    rectangle partitioned into n equal bands with the BOTTOM `filled` shaded
+    (the water level); `label` prints a capacity (e.g. "350 L") to the right,
+    `level_label` a fraction beside the waterline.
+
+    Part/shaded counts are figure content (the student counts the cells) —
+    never stem givens; every numeral inside a printed label is a stem number in
+    values="stem" mode and figure content in "figure" mode."""
+    kind = "fraction_tape"
+    vc.reset_ids()
+    if values not in ("stem", "figure"):
+        raise TemplateError(f"{kind}: values must be 'stem' or 'figure'")
+    fig_mode = values == "figure"
+    if (panels is None) == (tank is None):
+        raise TemplateError(f"{kind}: pass exactly one of `panels` or `tank`")
+    for nm_, v_ in (("strip_w", strip_w), ("strip_h", strip_h),
+                    ("panel_gap", panel_gap)):
+        if isinstance(v_, bool) or not isinstance(v_, (int, float)) or \
+                not math.isfinite(float(v_)) or float(v_) <= 0:
+            raise TemplateError(f"{kind}: {nm_} must be a positive finite number")
+
+    def whole_num(v, what, lo, hi):
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or \
+                not math.isfinite(float(v)) or not float(v).is_integer():
+            raise TemplateError(f"{kind}: {what} must be a whole number")
+        if not lo <= int(v) <= hi:
+            raise TemplateError(f"{kind}: {what} must be {lo}–{hi}")
+        return int(v)
+
+    elements: list[dict] = []
+    anchors: dict[str, XY] = {}
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    label_seen: dict[str, str] = {}
+
+    def glyph_claim(glyph: str, tok: str, note: str) -> None:
+        if glyph in label_seen:
+            return
+        label_seen[glyph] = tok
+        add(f'label "{glyph}" names {tok}',
+            "inferred" if fig_mode or not _FRAC_LABEL_NUM.search(glyph) else "stem",
+            note)
+
+    def strip(y, parts, shaded, pi, vertical=False):
+        cw = strip_w / parts
+        for j in range(shaded):
+            elements.append({"id": f"p{pi}sh{j}", "type": "rect",
+                             "x": j * cw, "y": y, "width": cw, "height": strip_h,
+                             "fill": {"color": vc.SHADE}, "stroke": {"width": 0}})
+        for j in range(1, parts):
+            elements.append(vc.line((j * cw, y), (j * cw, y + strip_h),
+                                    id=f"p{pi}d{j}", width=1.0))
+        elements.append(vc.polygon([(0, y), (strip_w, y), (strip_w, y + strip_h),
+                                    (0, y + strip_h)], id=f"p{pi}f"))
+        return cw
+
+    def brace(x0, x1, y, side, pi, bi):
+        dy = 8.0 if side == "under" else -8.0
+        y2 = y + dy
+        elements.append(vc.polyline([(x0, y), (x0, y2), (x1, y2), (x1, y)],
+                                    id=f"p{pi}b{bi}"))
+        return ((x0 + x1) / 2, y2)
+
+    W = float(strip_w)
+    if panels is not None:
+        if not isinstance(panels, (list, tuple)) or not 1 <= len(panels) <= 8:
+            raise TemplateError(f"{kind}: panels needs 1–8 entries")
+        y = 0.0
+        n_label_anchors = 0
+        for pi, spec in enumerate(panels):
+            if not isinstance(spec, dict):
+                raise TemplateError(f"{kind}: panel {pi} must be a dict")
+            parts = whole_num(spec.get("parts"), f"panel {pi} 'parts'", 1, 24)
+            shaded = whole_num(spec.get("shaded", 0), f"panel {pi} 'shaded'",
+                               0, parts)
+            cw = strip(y, parts, shaded, pi)
+            lab = spec.get("label")
+            if lab is not None:
+                if not isinstance(lab, str) or not 1 <= len(lab.strip()) <= 12:
+                    raise TemplateError(f"{kind}: panel {pi} label needs 1–12 chars")
+                _tape_label_numbers(kind, lab, stem, fig_mode)
+                n_label_anchors += 1
+                an = f"L{n_label_anchors}"
+                anchors[an] = (W, y + strip_h / 2)
+                elements.append(_float_label(f"tl{an}", lab,
+                                             (W + 2, y + strip_h / 2), gap=12))
+                glyph_claim(lab, an, "the printed fraction beside a strip")
+            for bi, br in enumerate(spec.get("braces") or []):
+                if not isinstance(br, dict) or "span" not in br:
+                    raise TemplateError(f"{kind}: panel {pi} brace {bi} needs a 'span'")
+                sp = br["span"]
+                if not isinstance(sp, (list, tuple)) or len(sp) != 2 or \
+                        any(isinstance(v, bool) or not isinstance(v, (int, float))
+                            or not float(v).is_integer() for v in sp):
+                    raise TemplateError(f"{kind}: panel {pi} brace span is two "
+                                        "integer cell indexes")
+                i0, i1 = int(sp[0]), int(sp[1])
+                if not (0 <= i0 <= i1 < parts):
+                    raise TemplateError(f"{kind}: panel {pi} brace span {sp} is "
+                                        f"outside its {parts} cells")
+                bl = br.get("label")
+                if bl is None or not isinstance(bl, str) or \
+                        not 1 <= len(bl.strip()) <= 12:
+                    raise TemplateError(f"{kind}: panel {pi} brace {bi} needs a "
+                                        "1–12 char label")
+                _tape_label_numbers(kind, bl, stem, fig_mode)
+                side = br.get("side", "under")
+                if side not in ("under", "over"):
+                    raise TemplateError(f"{kind}: brace side is 'under' or 'over'")
+                by = y + strip_h if side == "under" else y
+                mid = brace(i0 * cw, (i1 + 1) * cw, by, side, pi, bi)
+                n_label_anchors += 1
+                an = f"B{n_label_anchors}"
+                anchors[an] = mid
+                elements.append(_float_label(f"tb{pi}_{bi}", bl, mid, gap=10))
+                glyph_claim(bl, an, "the printed label under a grouping brace")
+                add(f'describe "a brace marks cells {i0}–{i1} of panel {pi + 1} '
+                    f'as {bl}"', "inferred", "the grouping bracket")
+            add(f"shaded {shaded} of {parts} cells", "inferred",
+                f"panel {pi + 1}'s shaded share")
+            add(f"derive {shaded} / {parts} = {_num_exact(shaded / parts)}",
+                "inferred", f"panel {pi + 1} shades {shaded}/{parts} of its strip")
+            y += strip_h + float(panel_gap)
+        H_last = y - float(panel_gap)
+        anchors["P"], anchors["Q"] = (0.0, 0.0), (W, H_last)
+        for i in range(len(panels)):
+            for j in range(i + 1, len(panels)):
+                fi = panels[i].get("shaded", 0) / panels[i]["parts"]
+                fj = panels[j].get("shaded", 0) / panels[j]["parts"]
+                if abs(fi - fj) < 1e-9:
+                    add(f'describe "panels {i + 1} and {j + 1} shade equal shares '
+                        'of identical wholes"', "inferred",
+                        "aligned equal-length strips make the equivalence visible")
+        add(f'describe "every strip shares one whole length — the left edges are '
+            'aligned"', "inferred", "the equal-wholes layout")
+        if fig_mode:
+            add('describe "the printed numbers are figure content — the student '
+                'reads them off the figure"', "inferred", "read-the-figure mode")
+        absent = "tickMark parallelMark angleMark arrow dashed"
+        add(f"none {absent}" + ("" if any(p.get("shaded", 0) for p in panels)
+                                else " shaded"), "inferred",
+            "strips, fills, braces and labels only")
+        n_el = len(elements)
+        return finish(kind=kind, figure_id=figure_id, stem=stem,
+                      elements=elements, anchors=anchors, points=list(anchors),
+                      segments=[], claims=claims, ask=ask,
+                      title=title or "Aligned fraction strips",
+                      description=description or (
+                          f"{len(panels)} equal-length strips, each split into "
+                          "equal parts with a share shaded; aligned left edges."),
+                      scale="every strip is the same whole length — shares are "
+                            "read by alignment",
+                      budget=n_el if n_el > 32 else None,
+                      departures=([f"{n_el} elements — one rect per shaded cell, "
+                                   "one line per divider and one polyline per "
+                                   "brace is the honest drawing"]
+                                  if n_el > 32 else None), medium=medium)
+
+    if not isinstance(tank, dict):
+        raise TemplateError(f"{kind}: tank must be a dict")
+    parts = whole_num(tank.get("parts"), "tank 'parts'", 1, 10)
+    filled = whole_num(tank.get("filled", 0), "tank 'filled'", 0, parts)
+    TW = 96.0
+    TH = parts * 36.0
+    bh = TH / parts
+    for j in range(filled):
+        elements.append({"id": f"tk{j}", "type": "rect", "x": 0.0,
+                         "y": TH - (j + 1) * bh, "width": TW, "height": bh,
+                         "fill": {"color": vc.SHADE}, "stroke": {"width": 0}})
+    for j in range(1, parts):
+        elements.append(vc.line((0, j * bh), (TW, j * bh), id=f"tkd{j}",
+                                width=1.0))
+    elements.append(vc.polygon([(0, 0), (TW, 0), (TW, TH), (0, TH)], id="tkf"))
+    water_y = TH - filled * bh
+    if 0 < filled < parts:
+        elements.append(vc.line((0, water_y), (TW, water_y), id="wl", width=3.0))
+    anchors["P"], anchors["Q"] = (0.0, 0.0), (TW, TH)
+    lab = tank.get("label")
+    if lab is not None:
+        if not isinstance(lab, str) or not 1 <= len(lab.strip()) <= 12:
+            raise TemplateError(f"{kind}: tank label needs 1–12 chars")
+        _tape_label_numbers(kind, lab, stem, fig_mode)
+        anchors["T1"] = (TW, TH / 2)
+        elements.append(_float_label("tcap", lab, (TW + 2, TH / 2), gap=12))
+        glyph_claim(lab, "T1", "the printed capacity beside the tank")
+    ll = tank.get("level_label")
+    if ll is not None:
+        if not isinstance(ll, str) or not 1 <= len(ll.strip()) <= 12:
+            raise TemplateError(f"{kind}: tank level_label needs 1–12 chars")
+        _tape_label_numbers(kind, ll, stem, fig_mode)
+        anchors["T2"] = (0.0, water_y)
+        elements.append(_float_label("tlvl", ll, (-2, water_y), gap=10))
+        glyph_claim(ll, "T2", "the printed water-level fraction")
+    add(f"shaded {filled} of {parts} cells", "inferred",
+        "the tank's filled bands")
+    add(f"derive {filled} / {parts} = {_num_exact(filled / parts)}", "inferred",
+        f"the water fills {filled}/{parts} of the tank")
+    add(f'describe "a vertical tank split into {parts} equal bands, the bottom '
+        f'{filled} shaded to the waterline"', "inferred", "the capacity model")
+    if fig_mode:
+        add('describe "the printed numbers are figure content — the student '
+            'reads them off the figure"', "inferred", "read-the-figure mode")
+    add("none tickMark parallelMark angleMark arrow dashed"
+        + ("" if filled else " shaded"), "inferred",
+        "the tank, bands, waterline and labels only")
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=anchors, points=list(anchors), segments=[],
+                  claims=claims, ask=ask,
+                  title=title or "A fraction-of-capacity tank",
+                  description=description or (
+                      f"A vertical tank partitioned into {parts} equal bands; "
+                      f"the bottom {filled} are shaded to the water level."),
+                  scale="the bands are equal — the shaded share is the "
+                        "fraction of capacity", medium=medium)
+
+
+def build_area_model(*, figure_id, stem, ask=None, title=None, description=None,
+                     medium="english", col_labels, row_labels, cells,
+                     names="ABCD", col_w=110.0, row_h=64.0, values="stem"):
+    """A 2×2 algebraic area model: rectangle `names` split by one vertical and
+    one horizontal partition into four regions. `col_labels` (two KaTeX tokens,
+    printed above the columns) and `row_labels` (printed left of the rows) are
+    the side decompositions; `cells[r][c]` is each region's product latex.
+    Symbolic — the cell sizes do not encode values (no sham to-scale claim); a
+    purely numeric label token is a stem number in `stem` mode, figure content
+    in `figure` mode."""
+    kind = "area_model"
+    vc.reset_ids()
+    if values not in ("stem", "figure"):
+        raise TemplateError(f"{kind}: values must be 'stem' or 'figure'")
+    fig_mode = values == "figure"
+    if not isinstance(names, str) or not re.fullmatch(r"[A-Z]{4}", names) or \
+            len(set(names)) != 4:
+        raise TemplateError(f"{kind}: names must be 4 distinct capitals")
+    for nm_, seq in (("col_labels", col_labels), ("row_labels", row_labels)):
+        if not isinstance(seq, (list, tuple)) or len(seq) != 2 or \
+                not all(isinstance(s, str) and 1 <= len(s.strip()) <= 10
+                        for s in seq):
+            raise TemplateError(f"{kind}: {nm_} needs exactly 2 short latex tokens")
+    if not isinstance(cells, (list, tuple)) or len(cells) != 2 or \
+            any(not isinstance(r_, (list, tuple)) or len(r_) != 2 for r_ in cells) or \
+            not all(isinstance(s, str) and 1 <= len(s.strip()) <= 14
+                    for r_ in cells for s in r_):
+        raise TemplateError(f"{kind}: cells needs a 2x2 grid of short latex tokens")
+    for nm_, v_ in (("col_w", col_w), ("row_h", row_h)):
+        if isinstance(v_, bool) or not isinstance(v_, (int, float)) or \
+                not math.isfinite(float(v_)) or float(v_) < 40:
+            raise TemplateError(f"{kind}: {nm_} must be a number >= 40")
+    if not fig_mode:
+        for tok in list(col_labels) + list(row_labels) + \
+                    [c for r_ in cells for c in r_]:
+            if re.fullmatch(r"\d+(?:\.\d+)?", tok.strip()):
+                require_stem(stem, **{f"label {tok!r}": float(tok)})
+    W, H = 2 * float(col_w), 2 * float(row_h)
+    cw, rh = float(col_w), float(row_h)
+    A, B, C, D = (0.0, 0.0), (W, 0.0), (W, H), (0.0, H)
+    P = dict(zip(names, (A, B, C, D)))
+    elements: list[dict] = [
+        vc.polygon([A, B, C, D], id="frame"),
+        vc.line((cw, 0), (cw, H), id="pv", width=1.5),
+        vc.line((0, rh), (W, rh), id="ph", width=1.5)]
+    for j, tok in enumerate(col_labels):
+        elements.append(vc.math_label(((j + 0.5) * cw, -30), tok, id=f"mc{j}"))
+    for i, tok in enumerate(row_labels):
+        elements.append(vc.math_label((-16, (i + 0.5) * rh), tok, id=f"mr{i}",
+                                      align="end"))
+    for i in range(2):
+        for j in range(2):
+            elements.append(vc.math_label(((j + 0.5) * cw, (i + 0.5) * rh),
+                                          cells[i][j], id=f"mz{i}{j}"))
+    # Corner letters are deliberately NOT drawn: every drawn token is KaTeX and
+    # a text vertex letter would trip the font-mix rule; the anchors still name
+    # the vertices for the `right`/`grid` claims.
+    claims: list[tuple[str, str, str]] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    add(f"grid 2 by 2 over {names[0]} {names[2]}", "inferred",
+        "one vertical and one horizontal partition")
+    for i, nm in enumerate(names):
+        add(f"right {names[i - 1]} {nm} {names[(i + 1) % 4]}", "inferred",
+            "a rectangle's corner")
+    add(f'describe "the column sides are {math_visible(col_labels[0]).strip()} '
+        f'and {math_visible(col_labels[1]).strip()}; the row sides are '
+        f'{math_visible(row_labels[0]).strip()} and '
+        f'{math_visible(row_labels[1]).strip()}"', "inferred",
+        "the side decompositions")
+    for i in range(2):
+        for j in range(2):
+            add(f'describe "region ({i},{j}) is labelled '
+                f'{math_visible(cells[i][j]).strip()} — the product of '
+                f'{math_visible(col_labels[j]).strip()} and '
+                f'{math_visible(row_labels[i]).strip()}"', "inferred",
+                "a region area")
+    add("derive 2 * 2 = 4", "inferred", "two columns times two rows — the regions")
+    add(f'describe "the rectangle\u2019s vertices are anchored {names[0]}, '
+        f'{names[1]}, {names[2]}, {names[3]} clockwise — anchors only, no '
+        'vertex letters are drawn"', "inferred", "the named corners")
+    if fig_mode:
+        add('describe "the printed numbers are figure content — the student '
+            'reads them off the figure"', "inferred", "read-the-figure mode")
+    add("none tickMark parallelMark angleMark arrow dashed shaded", "inferred",
+        "the rectangle, two partitions and KaTeX labels only")
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                  anchors=dict(P), points=list(P),
+                  segments=[f"{names[i]}{names[(i + 1) % 4]}" for i in range(4)],
+                  claims=claims, ask=ask,
+                  title=title or "A 2x2 algebraic area model",
+                  description=description or (
+                      "A rectangle partitioned into four regions; the side "
+                      "labels decompose each side and each region is labelled "
+                      "with its product."),
+                  scale="symbolic — cell sizes do not encode the labels' values",
+                  medium=medium)
+
 
 
 def build_two_circle_tangents(*, figure_id, stem, ask=None, title=None,
@@ -9458,7 +10083,8 @@ def build_two_circle_tangents(*, figure_id, stem, ask=None, title=None,
 
 _CONSTRUCTION_STEPS = ("perp_bisector", "angle_bisector", "perp_at", "perp_from",
                        "circumcircle", "incircle", "excircle", "tangent_at",
-                       "tangents_from")
+                       "tangents_from", "triangle_sss", "triangle_sas",
+                       "triangle_asa", "triangle_aas", "parallel_through")
 
 
 def _triangle_pts(ang: dict, base_px: float):
@@ -9470,13 +10096,19 @@ def _triangle_pts(ang: dict, base_px: float):
 
 def build_construction(*, figure_id, stem, ask=None, title=None, description=None,
                        medium="english", step, length=None, angle=None, angles=None,
-                       base_px=None, r_px=110.0, at_deg=90.0, op=2.0,
-                       stage="completed"):
+                       base_px=None, r_px=None, at_deg=None, op=None,
+                       stage="completed", sides=None, offset=None, method=None):
     """A ruler-and-compass construction figure: the finished line/circle is drawn
     solid and the compass work as dashed arcs — exactly the marks the corpus's
     construction crops show. `step` is one of perp_bisector | angle_bisector |
     perp_at | perp_from | circumcircle | incircle | excircle | tangent_at |
-    tangents_from. `length` (segment steps) and `angle` / `angles` (angle and
+    tangents_from | triangle_sss | triangle_sas | triangle_asa | triangle_aas |
+    parallel_through. New triangle steps take sides={AB,BC,CA}, {AB,CA}, or {AB};
+    SAS angles={A}, ASA angles={A,B}, AAS angles={A,C} or {B,C} (derives the
+    missing base angle). Parallel takes sides={AB}, offset>0 and method
+    corresponding (default), alternate, or rhombus. Inapplicable kwargs refuse.
+    Constructible angles: 30,45,60,75,90,105,120,135,150 degrees only.
+    Numeric givens remain stem-only. `length` (segment steps) and `angle` / `angles` (angle and
     triangle steps) are stem numbers; `base_px`, `r_px`, `at_deg`, `op` (the
     external point's distance in radii) are canvas choices declared inferred.
     `stage` = "completed" (default) draws the FINISHED construction — use it for
@@ -9492,6 +10124,40 @@ def build_construction(*, figure_id, stem, ask=None, title=None, description=Non
         raise TemplateError(f"{kind}: step must be one of {_CONSTRUCTION_STEPS}")
     if stage not in ("setup", "completed"):
         raise TemplateError(f"{kind}: stage must be 'setup' or 'completed'")
+    if method is not None and method not in ("corresponding", "alternate", "rhombus"):
+        raise TemplateError(f"{kind}: method must be one of "
+                            "('corresponding', 'alternate', 'rhombus')")
+    _NEW_STEPS = ("triangle_sss", "triangle_sas", "triangle_asa", "triangle_aas",
+                  "parallel_through")
+    _step_params = {
+        "perp_bisector": {"length"}, "perp_at": {"length"}, "perp_from": {"length"},
+        "angle_bisector": {"angle"},
+        "circumcircle": {"angles", "base_px"}, "incircle": {"angles", "base_px"},
+        "excircle": {"angles", "base_px"},
+        "tangent_at": {"r_px", "at_deg"}, "tangents_from": {"r_px", "op"},
+        "triangle_sss": {"sides", "base_px"},
+        "triangle_sas": {"sides", "angles", "base_px"},
+        "triangle_asa": {"sides", "angles", "base_px"},
+        "triangle_aas": {"sides", "angles", "base_px"},
+        "parallel_through": {"sides", "offset", "base_px", "method"}}
+    _param_values = {"length": length, "angle": angle, "angles": angles,
+                     "base_px": base_px, "r_px": r_px, "at_deg": at_deg, "op": op,
+                     "sides": sides, "offset": offset, "method": method}
+    for _nm, _v in _param_values.items():
+        if _nm not in _step_params[step] and _v is not None:
+            raise TemplateError(f"{kind}: `{_nm}` does not apply to step {step}")
+    r_px = 110.0 if r_px is None else r_px
+    at_deg = 90.0 if at_deg is None else at_deg
+    op = 2.0 if op is None else op
+    for nm, value in (("length", length), ("angle", angle), ("base_px", base_px),
+                      ("r_px", r_px), ("at_deg", at_deg), ("op", op),
+                      ("offset", offset)):
+        if value is not None and (isinstance(value, bool) or
+                not isinstance(value, (int, float)) or not math.isfinite(value)):
+            raise TemplateError(f"{kind}: {nm} must be a finite number")
+    if (step in _NEW_STEPS
+            and base_px is not None and not 180 <= base_px <= 400):
+        raise TemplateError(f"{kind}: new-step base_px must be 180–400")
     elements: list[dict] = []
     P: dict[str, XY] = {}
     claims: list[tuple[str, str, str]] = []
@@ -9512,9 +10178,246 @@ def build_construction(*, figure_id, stem, ask=None, title=None, description=Non
         elements.append(vc.arc(c, r, a0, a1, id=f"ca{i}", dashed=True))
 
     def numval(nm_, v_):
-        if isinstance(v_, bool) or not isinstance(v_, (int, float)) or v_ <= 0:
-            raise TemplateError(f"{kind}: {nm_} must be a positive number")
+        if (isinstance(v_, bool) or not isinstance(v_, (int, float)) or
+                not math.isfinite(v_) or v_ <= 0):
+            raise TemplateError(f"{kind}: {nm_} must be a positive finite number")
         return float(v_)
+
+    if step in _NEW_STEPS:
+        allowed = {"triangle_sss": ({"AB", "BC", "CA"}, False),
+                   "triangle_sas": ({"AB", "CA"}, True),
+                   "triangle_asa": ({"AB"}, True),
+                   "triangle_aas": ({"AB"}, True),
+                   "parallel_through": ({"AB"}, False)}
+        keys, uses_angles = allowed[step]
+        if not isinstance(sides, dict) or set(sides) != keys:
+            raise TemplateError(f"construction: sides must have keys {sorted(keys)}")
+        lengths = {k: numval(k, v) for k, v in sides.items()}
+        require_stem(stem, **lengths)
+        aa = {}
+        derived_angle = None
+        if uses_angles:
+            want = {"A"} if step == "triangle_sas" else (
+                {"A", "B"} if step == "triangle_asa" else ({"A", "C"}, {"B", "C"}))
+            ok = isinstance(angles, dict) and (
+                set(angles) in want if step == "triangle_aas" else set(angles) == want)
+            if not isinstance(angles, dict) or not ok:
+                raise TemplateError(f"construction: angles keys must be one of "
+                                    f"{[sorted(w) for w in want] if step == 'triangle_aas' else sorted(want)}")
+            given = {k: numval(k, v) for k, v in angles.items()}
+            require_stem(stem, **given)
+            if step == "triangle_aas":
+                if sum(given.values()) >= 180:
+                    raise TemplateError("construction: the two given angles must sum to less than 180")
+                missing = "B" if "A" in given else "A"
+                derived_angle = (missing, 180.0 - sum(given.values()))
+                aa = dict(given)
+                aa[missing] = derived_angle[1]
+            else:
+                aa = given
+            constructible = (30, 45, 60, 75, 90, 105, 120, 135, 150)
+            base_angles = (aa["A"], aa["B"]) if step in ("triangle_asa", "triangle_aas") else (aa["A"],)
+            if any(v not in constructible for v in base_angles):
+                raise TemplateError("construction: only taught compass angles in 15-degree steps from 30 to 150, excluding 165")
+            if step == "triangle_asa" and sum(aa.values()) >= 180:
+                raise TemplateError("construction: base angles must sum to less than 180")
+        elif angles is not None:
+            raise TemplateError("construction: this step does not accept angles")
+        if any(v is not None for v in (length, angle)):
+            raise TemplateError("construction: use sides and angles for the new steps")
+        if step != "parallel_through" and offset is not None:
+            raise TemplateError("construction: offset is only for parallel_through")
+        L = lengths["AB"]
+        unit = (base_px or 260.0) / L
+        if not math.isfinite(unit) or unit <= 0:
+            raise TemplateError("construction: physical scale is outside the finite drawing range")
+        A, B = (0.0, 0.0), (L * unit, 0.0)
+        if step == "triangle_sss":
+            b, c = lengths["CA"] / L, lengths["BC"] / L
+            if not (math.isfinite(b) and math.isfinite(c) and
+                    max(b, c) <= 4 and abs(b - c) < 1 < b + c):
+                raise TemplateError("construction: impossible, degenerate or unreadable SSS triangle")
+            x = (b * b + 1 - c * c) / 2
+            C = (x * B[0], -math.sqrt(max(0.0, b * b - x * x)) * B[0])
+        elif step == "triangle_sas":
+            C = vc.polar(A, lengths["CA"] * unit, -aa["A"])
+        elif step in ("triangle_asa", "triangle_aas"):
+            C = vc.triangle_from_angles(A, B, aa["A"], aa["B"], c_side=-1)
+        else:
+            h = numval("offset", offset)
+            require_stem(stem, offset=h)
+            if not 0.35 <= h / L <= 0.85:
+                raise TemplateError("construction: offset/AB must be 0.35–0.85 for legible external incidence")
+            C = (0.38 * L * unit, -h * unit)
+            if (method or "corresponding") == "rhombus":
+                add(f"derive {_num_exact(h)} / {_num_exact(L)} = {_num_exact(h / L)}", "inferred", "the external point's height as a fraction of the given base")
+        if step != "parallel_through":
+            area2 = abs((B[0] - A[0]) * (C[1] - A[1]))
+            ds = [math.dist(A, B), math.dist(A, C), math.dist(B, C)]
+            if min(ds) < 70 or max(ds) > 520 or area2 / max(ds) < 65:
+                raise TemplateError("construction: triangle too thin or too large to draw honestly")
+        elements.append(vc.line(A, B, id="givenAB"))
+        dot("A", A); dot("B", B)
+        segs = ["AB"]
+        for k, v in lengths.items():
+            add(f'describe "given {k} is {_num_exact(v)} units"', "stem", "numeric givens are in the stem only")
+        for k, v in (given if derived_angle else aa).items():
+            add(f'describe "given angle at {k} is {_num_exact(v)} degrees"', "stem", "numeric givens are in the stem only")
+        if derived_angle:
+            gv = list(given.values())
+            derived_claim = add(f"derive 180 - {_num_exact(gv[0])} - {_num_exact(gv[1])} = {_num_exact(derived_angle[1])}",
+                "inferred", "the angle sum gives the missing base angle to construct")
+        if step == "triangle_sss":
+            add(f"derive {_num_exact(L)} + {_num_exact(lengths['BC'])} + {_num_exact(lengths['CA'])} = {_num_exact(sum(lengths.values()))}", "inferred", "the perimeter of the specified triangle")
+        elif step == "triangle_sas":
+            add(f"derive {_num_exact(L)} + {_num_exact(lengths['CA'])} = {_num_exact(L + lengths['CA'])}", "inferred", "the combined length of the two given sides")
+        elif step in ("triangle_asa", "triangle_aas"):
+            if not derived_angle:
+                add(f"derive 180 - {_num_exact(aa['A'])} - {_num_exact(aa['B'])} = {_num_exact(180 - sum(aa.values()))}", "inferred", "the third angle of the specified triangle")
+        elif (method or "corresponding") != "rhombus":
+            add(f"derive {_num_exact(L)} * 2 = {_num_exact(2 * L)}", "inferred", "AB and the equally long displayed portion CD together have twice the given length")
+        arc_id = 0
+
+        def arc_at(o, r, target, spread=14):
+            nonlocal arc_id
+            arc_id += 1
+            d = math.degrees(math.atan2(target[1] - o[1], target[0] - o[0]))
+            compass_arc(o, r, d - spread, d + spread, f"new{arc_id}")
+
+        def angle_work(o, direction, theta, radius):
+            sign = 1 if direction == 180 else -1
+
+            def at(t):
+                return vc.polar(o, radius, direction + sign * t)
+
+            def bisect(lo, hi):
+                p, q = at(lo), at(hi)
+                rho = radius
+                half = math.radians((hi - lo) / 2)
+                reach = radius * math.cos(half) + math.sqrt(rho * rho - radius * radius * math.sin(half) ** 2)
+                meet = vc.polar(o, reach, direction + sign * (lo + hi) / 2)
+                arc_at(o, radius, p)
+                arc_at(o, radius, q)
+                arc_at(p, rho, meet)
+                arc_at(q, rho, meet)
+
+            def sixty(t):
+                p = at(0 if t == 60 else 180)
+                q = at(t)
+                arc_at(o, radius, q)
+                arc_at(p, radius, q)
+
+            if theta in (30, 60, 75):
+                sixty(60)
+            if theta in (105, 120, 150):
+                sixty(120)
+            if theta in (45, 75, 90, 105, 135):
+                p, q = at(0), at(180)
+                meet = vc.polar(o, radius * math.sqrt(3), direction + sign * 90)
+                arc_at(o, radius, p); arc_at(o, radius, q)
+                arc_at(p, 2 * radius, meet); arc_at(q, 2 * radius, meet)
+            pair = {30: (0, 60), 45: (0, 90), 75: (60, 90),
+                    105: (90, 120), 135: (90, 180), 150: (120, 180)}
+            if theta in pair:
+                bisect(*pair[theta])
+
+        if step == "parallel_through":
+            dot("C", C)
+            add(f'describe "C is {_num_exact(h)} units above AB"', "stem", "the external point is given")
+            if stage == "completed":
+                m = method or "corresponding"
+                if m in ("corresponding", "alternate"):
+                    if m == "corresponding":
+                        D = (C[0] + L * unit, C[1])
+                        rdir = 0.0
+                    else:
+                        D = (C[0] - L * unit, C[1])
+                        rdir = 180.0
+                    dot("D", D)
+                    elements.append(vc.line(C, D, id="parallelCD"))
+                    tip = vc.polar(A, math.dist(A, C) + 95, math.degrees(math.atan2(C[1], C[0])))
+                    elements.append(vc.line(A, tip, id="transversal"))
+                    r = 65.0
+                    d = math.degrees(math.atan2(C[1], C[0]))
+                    E, F = vc.polar(A, r, 0), vc.polar(A, r, d)
+                    S, R = vc.polar(C, r, d if m == "corresponding" else d + 180), vc.polar(C, r, rdir)
+                    compass_arc(A, r, d - 10, 10, "source")
+                    if m == "corresponding":
+                        compass_arc(C, r, d - 10, 10, "copy")
+                    else:
+                        a0, a1 = sorted((d + 180, 180.0))
+                        compass_arc(C, r, a0, a1, "copy")
+                    arc_at(S, math.dist(E, F), R)
+                    P.update(E=E, F=F, S=S, R=R)
+                    segs += ["CD", "AC", "AE", "AF", "CS", "CR"]
+                    add("parallel AB CD", "inferred", f"equal {m} angles from compass chord transfer")
+                    add("equal AB CD", "inferred", "the displayed portions use the same physical scale and length")
+                    add("equal EF SR", "inferred", "the compass transfers the same chord")
+                    add("equal AE CS", "inferred", "the source and copied arcs have the same radius")
+                    add("equal AF CR", "inferred", "the source and copied arcs have the same radius")
+                    suffix = "" if m == "corresponding" else " by the alternate-angles copy"
+                    add(f'describe "equal-radius arcs at A and C and the chord-radius arc centred at S locate R; CR determines the parallel{suffix}"', "inferred", "genuine angle-copy work")
+                else:
+                    hu = h * unit
+                    rho = 1.5 * hu
+                    Px = C[0] - math.sqrt(rho * rho - hu * hu)
+                    Pt, Qt = (Px, 0.0), (Px + rho, 0.0)
+                    Rt = (C[0] + rho, C[1])
+                    Dt = (Rt[0] + 60.0, Rt[1])
+                    dot("P", Pt); dot("Q", Qt); dot("R", Rt); dot("D", Dt)
+                    elements.append(vc.line(Pt, Qt, id="pq", dashed=True))
+                    elements.append(vc.line((C[0] - 0.2 * L * unit, C[1]),
+                                            (Dt[0], Dt[1]), id="parallelCD"))
+                    arc_at(C, rho, Pt)
+                    arc_at(Pt, rho, Qt)
+                    arc_at(Qt, rho, Rt)
+                    arc_at(C, rho, Rt)
+                    segs += ["CD", "PQ", "CR"]
+                    add("parallel AB CD", "inferred", "PQRC is a rhombus — opposite sides are parallel")
+                    add("equal CP PQ", "inferred", "the same compass radius")
+                    add("equal PQ QR", "inferred", "the same compass radius")
+                    add("equal QR RC", "inferred", "the same compass radius")
+                    add("equal RC CP", "inferred", "the same compass radius — four equal sides make the rhombus")
+                    add('describe "one unchanged compass radius steps P then Q off along AB and meets the C-side arc at R; PQRC is a rhombus so CR is parallel to AB"', "inferred", "the equal-radii parallel construction")
+        elif stage == "completed":
+            dot("C", C)
+            elements += [vc.line(A, C, id="resultAC"), vc.line(B, C, id="resultBC")]
+            segs += ["AC", "BC"]
+            if step == "triangle_sss":
+                arc_at(A, lengths["CA"] * unit, C)
+                arc_at(B, lengths["BC"] * unit, C)
+                add('describe "the compass circles centred at A and B intersect at C"', "inferred", "the radii are the two given sides")
+            else:
+                angle_work(A, 0, aa["A"], 42)
+                if step == "triangle_sas":
+                    arc_at(A, lengths["CA"] * unit, C)
+                else:
+                    angle_work(B, 180, aa["B"], 42)
+                add('describe "equilateral-circle intersections and perpendicular or angle-bisector compass arcs construct the given rays"', "inferred", "the apex lies on the constructed rays")
+            for k, v in lengths.items():
+                edge = "AC" if k == "CA" else k
+                add(f'describe "constructed {edge} has length {_num_exact(v)} units"', "inferred", "physical-to-canvas scale is uniform")
+                if edge != "AB":
+                    add(f"ratio len {edge} / len AB = {_num_exact(v / L)}", "stem", "the given physical lengths set the actual compass radii")
+            for k, v in aa.items():
+                u, w = {"A": ("B", "C"), "B": ("A", "C"), "C": ("A", "B")}[k]
+                if derived_angle and k == derived_angle[0]:
+                    add(f"angle {u} {k} {w} = {_num_exact(v)}", "inferred",
+                        f"the derived base angle that the compass work constructs, per derive {derived_claim}")
+                else:
+                    add(f"angle {u} {k} {w} = {_num_exact(v)}", "stem", "the constructed angle")
+        add('describe "numeric givens are stated in the stem; no numeric labels are printed"', "inferred", "stem-only construction contract")
+        add(f'describe "{stage} construction stage"', "inferred", "setup contains only the base and any given external point; completed contains the construction work")
+        add("none tickMark parallelMark angleMark arrow shaded" +
+            (" dashed" if stage == "setup" else ""), "inferred", "only the declared construction ink")
+        return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                      anchors=dict(P), points=list(P), segments=segs, claims=claims,
+                      ask=ask, title=title or "A compass construction",
+                      description=description or (f"A {stage} compass construction of " +
+                          ("a line through the external point C parallel to AB. " if step == "parallel_through" else "triangle ABC from the givens in the stem. ") +
+                          ("Dashed compass arcs show the construction work." if stage == "completed" else "Only the given base and any external point are shown; the result is not drawn.")),
+                      scale=f"uniform scale: {_num_exact(unit)} canvas units per physical unit; compass openings are construction choices",
+                      medium=medium)
 
     seg_steps = ("perp_bisector", "perp_at", "perp_from")
     if step in seg_steps:
@@ -13077,6 +13980,2072 @@ def build_cartesian_plot(*, figure_id, stem, ask=None, title=None, description=N
                   medium=medium)
 
 
+# ────────────────────────────────────────────────────────────────────────────────
+# G10 plane composer — multi-scaffold paired/connected marked geometry
+# (paired triangles, parallelograms, quadrilaterals, kites, bowties) with
+# stem-backed placement, verified marks and true correspondences.
+# ────────────────────────────────────────────────────────────────────────────────
+_QUAD4 = ("parallelogram", "rectangle", "rhombus", "trapezium")
+_NEW4 = ("quadrilateral", "kite")
+_SHAPES = ("triangle",) + _QUAD4 + _NEW4 + ("bowtie",)
+
+
+def _fnum(kind, what, v, positive=False):
+    if not isinstance(v, (int, float)) or isinstance(v, bool) or \
+            not math.isfinite(v):
+        raise TemplateError(f"{kind}: {what} must be a finite number — got {v!r}")
+    v = float(v)
+    if positive and v <= 0:
+        raise TemplateError(f"{kind}: {what} must be positive — got {v:g}")
+    return v
+
+
+def _canon(a, b):
+    return "".join(sorted((a, b)))
+
+
+def _tri_angles(a, b, c):
+    A = math.degrees(math.acos(max(-1.0, min(1.0,
+        (b * b + c * c - a * a) / (2 * b * c)))))
+    B = math.degrees(math.acos(max(-1.0, min(1.0,
+        (a * a + c * c - b * b) / (2 * a * c)))))
+    return A, B, 180.0 - A - B
+
+
+def _third_point(P0, P1, d0, d1, up):
+    """V with |V-P0|=d0, |V-P1|=d1; up picks the side of the P0->P1 axis."""
+    ux, uy = vc.unit(P0, P1)
+    d = vc.dist(P0, P1)
+    x = (d0 * d0 + d * d - d1 * d1) / (2 * d)
+    h2 = d0 * d0 - x * x
+    if h2 <= 1e-9:
+        return None
+    h = math.sqrt(h2)
+    s = -1.0 if up else 1.0
+    return (P0[0] + ux * x + s * (-uy) * h,
+            P0[1] + uy * x + s * (ux) * h)
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Scaffold solvers — canonical coordinates, in the scaffold's own units
+# (physical scaffolds) or base_px-scaled (angle-drawn scaffolds).
+# ────────────────────────────────────────────────────────────────────────────
+
+def _solve_triangle(kind, spec, names, base_px):
+    """Return (P_local, true_len, physical) — true_len maps canonical edge -> units."""
+    sides = spec.get("sides")
+    angles = spec.get("angles")
+    A, B, C = names
+    e = {"AB": _canon(A, B), "BC": _canon(B, C), "CA": _canon(C, A)}
+    edges_of = {"AB": (A, B), "BC": (B, C), "CA": (C, A),
+                "BA": (B, A), "CB": (C, B), "AC": (A, C)}
+    num_sides = {}
+    canon_edges = {e["AB"], e["BC"], e["CA"]}
+    if sides is not None:
+        if not isinstance(sides, dict) or not sides:
+            raise TemplateError(f"{kind}: triangle {''.join(names)} needs a non-empty "
+                                "`sides` dict")
+        for s, v in sides.items():
+            key = "".join(sorted(s)) if isinstance(s, str) else None
+            if key not in canon_edges:
+                raise TemplateError(f"{kind}: {s!r} is not a side of triangle "
+                                    f"{''.join(names)}")
+            if isinstance(v, str):
+                raise TemplateError(
+                    f"{kind}: side {s}={v!r} — a dimension must be a stem number; "
+                    "print an unknown as a `labels` glyph (e.g. \"x\"), not as a side")
+            num_sides[key] = _fnum(kind, f"side {s}", v, positive=True)
+    ang = {}
+    given_ang = {}
+    if angles is not None:
+        if not isinstance(angles, dict) or not angles:
+            raise TemplateError(f"{kind}: `angles` must name triangle vertices")
+        for v_, a_ in angles.items():
+            if v_ not in names:
+                raise TemplateError(f"{kind}: angle vertex {v_!r} is not in "
+                                    f"{''.join(names)}")
+            ang[v_] = _fnum(kind, f"angle {v_}", a_)
+            if not 0 < ang[v_] < 180:
+                raise TemplateError(f"{kind}: angle {v_}={ang[v_]:g} not in (0,180)")
+    given_ang = dict(ang)
+    ns, na = len(num_sides), len(ang)
+    P = {A: (0.0, 0.0)}
+    true_len = dict(num_sides)
+    physical = False
+    if ns == 3 and na == 0:
+        physical = True
+        c, a_, b_ = num_sides[e["AB"]], num_sides[e["BC"]], num_sides[e["CA"]]
+        if a_ + b_ <= c or a_ + c <= b_ or b_ + c <= a_:
+            raise TemplateError(
+                f"{kind}: sides {b_:g}, {a_:g}, {c:g} fail the triangle "
+                "inequality — impossible SSS givens")
+        P[B] = (c, 0.0)
+        V = _third_point(P[A], P[B], b_, a_, up=True)
+        P[C] = V
+        ang[A], ang[B], ang[C] = _tri_angles(a_, b_, c)
+        if min(ang.values()) < 3:
+            raise TemplateError(f"{kind}: an angle of {min(ang.values()):.1f}° is "
+                                "too thin to draw honestly")
+    elif ns == 2 and na == 1:
+        physical = True
+        kv = next(iter(ang))
+        pair = sorted(num_sides)
+        shared = set(num_sides)
+        sides_at = {v_: [k for k in pair if v_ in k] for v_ in names}
+        if kv not in sides_at or len(sides_at[kv]) != 2:
+            raise TemplateError(
+                f"{kind}: two sides plus a non-included angle (SSA) is ambiguous — "
+                f"the stated angle must sit at the vertex shared by the two sides "
+                "(SAS); a non-included angle has two solutions and is refused")
+        av, bv = sides_at[kv]
+        th = ang[kv]
+        P = {}
+        P[kv] = (0.0, 0.0)
+        a1 = [x for x in av if x != kv][0]
+        b1 = [x for x in bv if x != kv][0]
+        P[a1] = (num_sides[av], 0.0)
+        t = math.radians(th)
+        P[b1] = (num_sides[bv] * math.cos(t), -num_sides[bv] * math.sin(t))
+        third_e = _canon(a1, b1)
+        true_len[third_e] = vc.dist(P[a1], P[b1])
+        la, lb, lc = (vc.dist(P[B], P[C]), vc.dist(P[A], P[C]),
+                      vc.dist(P[A], P[B]))
+        ang2 = dict(ang)
+        ang2[A], ang2[B], ang2[C] = _tri_angles(la, lb, lc)
+        ang = ang2
+    elif ns == 1 and na >= 2:
+        physical = True
+        if na == 3:
+            raise TemplateError(f"{kind}: pass either `angles` (drawing) or "
+                                "`sides`+`angles` (SAS/ASA), not all three angles "
+                                "with a side — that is over-determined; keep the "
+                                "consistent subset")
+        e0 = next(iter(num_sides))
+        v0, v1 = tuple(e0)
+        P[v0], P[v1] = (0.0, 0.0), (num_sides[e0], 0.0)
+        w = [x for x in names if x not in e0]
+        third = w[0]
+        a0 = ang.get(v0)
+        a1 = ang.get(v1)
+        a2 = ang.get(third)
+        if a2 is not None and a0 is not None:
+            a1 = 180.0 - a0 - a2
+        elif a2 is not None and a1 is not None:
+            a0 = 180.0 - a1 - a2
+        if a0 is None or a1 is None:
+            raise TemplateError(f"{kind}: ASA needs the given side's two endpoint "
+                                "angles (or a third that derives one)")
+        if not (0 < a0 < 180 and 0 < a1 < 180) or a0 + a1 >= 180:
+            raise TemplateError(f"{kind}: endpoint angles {a0:g}°, {a1:g}° cannot "
+                                "close a triangle on that side")
+        ang[v0], ang[v1] = a0, a1
+        ang[third] = 180.0 - a0 - a1
+        P[third] = vc.triangle_from_angles(P[v0], P[v1], a0, a1)
+        for s_ in (e["AB"], e["BC"], e["CA"]):
+            if s_ not in true_len:
+                true_len[s_] = vc.dist(P[s_[0]], P[s_[1]])
+    elif ns == 0 and na == 3:
+        if abs(sum(ang.values()) - 180.0) > 1e-6:
+            raise TemplateError(f"{kind}: the angles sum to {sum(ang.values()):g}, "
+                                "not 180")
+        if min(ang.values()) < 15:
+            raise TemplateError(f"{kind}: an angle under 15° is too thin to draw")
+        P[A], P[B] = (0.0, 0.0), (float(base_px), 0.0)
+        P[C] = vc.triangle_from_angles(P[A], P[B], ang[A], ang[B])
+    else:
+        raise TemplateError(
+            f"{kind}: triangle {''.join(names)} needs one of: `angles` all three "
+            "(drawn from angles); `sides` all three (SSS); `sides` two + `angles` "
+            "the included vertex (SAS); `sides` one + `angles` two (ASA). "
+            f"Got {ns} side(s), {na} angle(s) — SSA is refused as ambiguous")
+    for s_, v_ in true_len.items():
+        if v_ <= 0 or not math.isfinite(v_):
+            raise TemplateError(f"{kind}: side {s_} has no finite length")
+    stated_ang = dict(given_ang) if (ns and na) else {}
+    return P, true_len, physical, ang, dict(num_sides), stated_ang
+
+
+def _solve_quad4(kind, spec, names, shape):
+    """parallelogram/rectangle/rhombus/trapezium — marked_geometry's solvers, in units."""
+    sides = spec.get("sides")
+    if not isinstance(sides, dict):
+        raise TemplateError(f"{kind}: a {shape} needs `sides`")
+    A, B, C, D = names
+    order = [A, B, C, D]
+    edges = [(order[i], order[(i + 1) % 4]) for i in range(4)]
+    norm = {}
+    for s, v in sides.items():
+        if not (isinstance(s, str) and len(s) == 2):
+            raise TemplateError(f"{kind}: side name {s!r} must be two letters")
+        a_, b_ = s
+        pair = tuple(sorted((a_, b_)))
+        if pair not in {tuple(sorted(e_)) for e_ in edges}:
+            raise TemplateError(f"{kind}: {s!r} is not a side of {shape} "
+                                f"{''.join(names)}")
+        if isinstance(v, str):
+            raise TemplateError(
+                f"{kind}: side {s}={v!r} — a dimension must be a stem number; "
+                "print an unknown as a `labels` glyph, not as a side")
+        norm["".join(pair)] = _fnum(kind, f"side {s}", v, positive=True)
+    e_base = _canon(A, B)
+    e_legL = _canon(A, D)
+    e_legR = _canon(B, C)
+    e_top = _canon(C, D)
+    need = {"parallelogram": [e_base, e_legL],
+            "rectangle": [e_base, e_legL],
+            "rhombus": [e_base],
+            "trapezium": [e_base, e_top, e_legL, e_legR]}[shape]
+    for k_ in need:
+        if k_ not in norm:
+            raise TemplateError(f"{kind}: a {shape} needs sides {need} — "
+                                f"{k_} is missing")
+    det = dict(norm)
+    if shape in ("parallelogram", "rectangle"):
+        det[e_top], det[e_legR] = norm[e_base], norm[e_legL]
+    elif shape == "rhombus":
+        for e_ in (e_legL, e_legR, e_top):
+            det[e_] = norm[e_base]
+    elif shape == "trapezium":
+        pass
+    for k_, v_ in norm.items():
+        if abs(v_ - det.get(k_, v_)) > 0.005 * det.get(k_, v_):
+            raise TemplateError(
+                f"{kind}: the spec states {k_}={v_:g} but a {shape} makes it "
+                f"{det[k_]:g} — a stated side may only restate the shape")
+    P = {A: (0.0, 0.0), B: (det[e_base], 0.0)}
+    ang = {}
+    if shape in ("parallelogram", "rhombus"):
+        angles = spec.get("angles")
+        if not isinstance(angles, dict) or set(angles) != {A}:
+            raise TemplateError(f"{kind}: a {shape} needs `angles` = "
+                                f"{{'{A}': degrees}}")
+        th = _fnum(kind, f"angle {A}", angles[A])
+        if not 15 <= th <= 165:
+            raise TemplateError(f"{kind}: angle {A}={th:g} must be in [15,165]")
+        s_ = det[e_legL]
+        u_ = (math.cos(math.radians(th)), -math.sin(math.radians(th)))
+        P[D] = (s_ * u_[0], s_ * u_[1])
+        P[C] = (P[B][0] + P[D][0], P[B][1] + P[D][1])
+        ang[A] = th
+    elif shape == "rectangle":
+        h_ = det[e_legL]
+        P[D], P[C] = (0.0, -h_), (det[e_base], -h_)
+        for v_ in names:
+            ang[v_] = 90.0
+    else:
+        b1, b2 = det[e_base], det[e_top]
+        l1, l2 = det[e_legL], det[e_legR]
+        d_ = b1 - b2
+        if abs(d_) < 1e-9:
+            raise TemplateError(f"{kind}: AB and CD are equal ({b1:g}) — that "
+                                "trapezium is a parallelogram; use shape "
+                                "'parallelogram'")
+        p_ = (d_ * d_ + l1 * l1 - l2 * l2) / (2 * d_)
+        h2 = l1 * l1 - p_ * p_
+        if h2 <= 1e-9:
+            raise TemplateError(f"{kind}: bases {b1:g},{b2:g} with legs "
+                                f"{l1:g},{l2:g} cannot close a trapezium "
+                                "(height² <= 0)")
+        h_ = math.sqrt(h2)
+        P[D] = (p_, -h_)
+        P[C] = ((p_ + b2), -h_)
+    return P, det, edges, ang, dict(norm)
+
+
+def _solve_diagonal_quad(kind, spec, names, shape):
+    """General quadrilateral / kite — two SSS triangles on a stated diagonal."""
+    sides = spec.get("sides")
+    diag = spec.get("diagonal")
+    if not isinstance(sides, dict) or not isinstance(diag, dict) or len(diag) != 1:
+        raise TemplateError(
+            f"{kind}: a {shape} needs `sides` and exactly one `diagonal` "
+            "{\"AC\": d} or {\"BD\": d} — the diagonal is the shared edge of "
+            "the two SSS triangles it is solved from")
+    A, B, C, D = names
+    e_base, e_legR, e_top, e_legL = _canon(A, B), _canon(B, C), _canon(C, D), _canon(A, D)
+    norm = {}
+    for s, v in sides.items():
+        if not (isinstance(s, str) and len(s) == 2):
+            raise TemplateError(f"{kind}: side name {s!r} must be two letters")
+        pair = "".join(sorted(s))
+        if pair not in (e_base, e_legR, e_top, e_legL):
+            raise TemplateError(f"{kind}: {s!r} is not a side of quadrilateral "
+                                f"{''.join(names)}")
+        if isinstance(v, str):
+            raise TemplateError(
+                f"{kind}: side {s}={v!r} — a dimension must be a stem number; "
+                "print an unknown as a `labels` glyph, not as a side")
+        norm[pair] = _fnum(kind, f"side {s}", v, positive=True)
+    dname, dval = next(iter(diag.items()))
+    if not (isinstance(dname, str) and len(dname) == 2 and
+            set(dname) in ({A, C}, {B, D})):
+        raise TemplateError(f"{kind}: the diagonal must be AC or BD of "
+                            f"{''.join(names)} — got {dname!r}")
+    if isinstance(dval, str):
+        raise TemplateError(f"{kind}: diagonal {dname}={dval!r} must be numeric")
+    dv = _fnum(kind, f"diagonal {dname}", dval, positive=True)
+    if shape == "kite":
+        for k_ in (e_base, e_legR):
+            if k_ not in norm:
+                raise TemplateError(f"{kind}: a kite needs `sides` {A}B and {B}C "
+                                    f"({e_base}, {e_legR}); {D}A={A}B and "
+                                    f"{C}D={C}B are implied")
+        if set(norm) != {e_base, e_legR}:
+            raise TemplateError(f"{kind}: a kite's `sides` are exactly {A}B and "
+                                f"{B}C — the mirrored pair is implied, not stated")
+        norm[e_legL], norm[e_top] = norm[e_base], norm[e_legR]
+        if dname != "AC":
+            raise TemplateError(f"{kind}: a kite's axis of symmetry is {A}C — "
+                                f"the diagonal must be {{'AC': d}}")
+    else:
+        for k_ in (e_base, e_legR, e_top, e_legL):
+            if k_ not in norm:
+                raise TemplateError(f"{kind}: a quadrilateral needs all four "
+                                    f"sides — {k_} is missing")
+    P = {}
+    if set(dname) == {A, C}:
+        P[A], P[C] = (0.0, 0.0), (dv, 0.0)
+        VB = _third_point(P[A], P[C], norm[e_base], norm[e_legR], up=True)
+        VD = _third_point(P[A], P[C], norm[e_legL], norm[e_top], up=False)
+        if VB is None or VD is None:
+            raise TemplateError(
+                f"{kind}: sides/diagonal cannot close quadrilateral {''.join(names)}"
+                " — check the triangle inequality on both halves")
+        P[B], P[D] = VB, VD
+    else:
+        P[B], P[D] = (0.0, 0.0), (dv, 0.0)
+        VA = _third_point(P[B], P[D], norm[e_base], norm[e_legL], up=True)
+        VC = _third_point(P[B], P[D], norm[e_legR], norm[e_top], up=False)
+        if VA is None or VC is None:
+            raise TemplateError(
+                f"{kind}: sides/diagonal cannot close quadrilateral {''.join(names)}")
+        P[A], P[C] = VA, VC
+    stated = dict(norm)
+    stated["".join(sorted(dname))] = dv
+    det = dict(stated)
+    edges = [(A, B), (B, C), (C, D), (D, A)]
+    return P, det, edges, dname, stated
+
+
+def _bowtie(kind, spec):
+    """names "ABCD": outer sides AB (left) and CD (right); the crossing lines
+    run A-X-D and B-X-C where X = `cross`; `angles` at >=3 outer vertices."""
+    names = list(spec["names"])
+    X = spec.get("cross")
+    angles = spec.get("angles") or {}
+    ang = {}
+    for v_, a_ in angles.items():
+        if v_ not in names:
+            raise TemplateError(f"{kind}: bowtie angle {v_!r} is not a vertex of "
+                                f"{''.join(names)}")
+        ang[v_] = _fnum(kind, f"angle {v_}", a_)
+        if not 5 <= ang[v_] < 175:
+            raise TemplateError(f"{kind}: bowtie angle {v_}={ang[v_]:g} out of "
+                                "range")
+    A, B, C, D = names
+    have = set(ang)
+    if len(have) < 3:
+        raise TemplateError(f"{kind}: a bowtie needs `angles` at three or four "
+                            "outer vertices (the fourth is derived from the "
+                            "shared crossing angle)")
+    if {A, B} <= have:
+        x_left = 180.0 - ang[A] - ang[B]
+    else:
+        x_left = None
+    if {C, D} <= have:
+        x_right = 180.0 - ang[C] - ang[D]
+    else:
+        x_right = None
+    if x_left is not None and x_right is not None:
+        if abs(x_left - x_right) > 0.75:
+            raise TemplateError(
+                f"{kind}: the two triangles' crossing angles differ "
+                f"({x_left:g}° vs {x_right:g}°) — vertically opposite angles are "
+                "equal; the given angles are inconsistent")
+        phi = (x_left + x_right) / 2.0
+    else:
+        phi = x_left if x_left is not None else x_right
+    if not 10 <= phi <= 170:
+        raise TemplateError(f"{kind}: the crossing angle {phi:g}° is too thin or "
+                            "too flat to draw")
+    if A not in ang:
+        ang[A] = 180.0 - phi - ang[B]
+    if B not in ang:
+        ang[B] = 180.0 - phi - ang[A]
+    if C not in ang:
+        ang[C] = 180.0 - phi - ang[D]
+    if D not in ang:
+        ang[D] = 180.0 - phi - ang[C]
+    for v_ in names:
+        if not 3 <= ang[v_] < 178:
+            raise TemplateError(f"{kind}: derived angle at {v_} is {ang[v_]:g}° — "
+                                "cannot draw")
+    # ray directions from X (canvas radians, 0=east, y down):
+    # line A-X-D and line B-X-C ; A upper-left, D lower-right, B lower-left, C upper-right
+    h = math.radians(phi) / 2.0
+    dirA = math.pi - h
+    dirD = dirA - math.pi
+    dirB = math.pi + h
+    dirC = dirB - math.pi
+    # lengths inside triangle ABX: XA opp angle B, XB opp angle A
+    xa = 100.0
+    xb = xa * math.sin(math.radians(ang[A])) / math.sin(math.radians(ang[B]))
+    # inside triangle CDX: XC opp angle D, XD opp angle C ; scale relative via `ratio`
+    r = _fnum(kind, "ratio", spec.get("ratio", 1.0), positive=True)
+    xc = r * xb
+    xd = xc * math.sin(math.radians(ang[C])) / math.sin(math.radians(ang[D]))
+    size = _fnum(kind, "size", spec.get("size", 1.0), positive=True)
+    P = {X: (0.0, 0.0)}
+    for nm, (dd, rr) in {A: (dirA, xa), B: (dirB, xb),
+                         C: (dirC, xc), D: (dirD, xd)}.items():
+        P[nm] = (size * rr * math.cos(dd), size * rr * math.sin(dd))
+    edges = [(A, B), (C, D), (A, D), (B, C)]
+    return P, edges, ang
+
+
+def build_paired_geometry(*, figure_id, stem, ask=None, title=None,
+                          description=None, medium="english", shapes,
+                          unit="cm", values="stem", correspond=None,
+                          collinear=None, joins=None, div=None, medians=None,
+                          altitudes=None, intersect=None, extend=None,
+                          diagonals=None, arcs=None, angle_labels=None,
+                          marks=None, rights=None, parallel=None, ticks=None,
+                          labels=None, base_px=None):
+    """Two or more computed scaffolds composed into one marked figure.
+
+    Each entry of `shapes` is a scaffold spec:
+
+      {"shape": "triangle"|"parallelogram"|"rectangle"|"rhombus"|"trapezium"|
+                "quadrilateral"|"kite"|"bowtie",
+       "names": "ABC" / "ABCD",
+       "angles"/"sides"/"diagonal": per profile (see below),
+       "place":  placement — scaffold 0 defaults to canonical.
+                 {"to": [x,y], "anchor": V, "rotate": deg, "flip": bool}
+                 {"hinge": {"V": "P"}, "rotate": deg, "flip": bool}  share vertex P
+                 {"glue": {"V1": "P", "V2": "Q"}, "flip": bool}      share side PQ
+       "size":   drawn size of an ANGLE-drawn (unscaled) scaffold relative to the
+                 base — a layout freedom declared `inferred`, never stem-checked.
+       "cross":  bowtie only — the fresh crossing letter.
+       "ratio":  bowtie only — drawn size of the second triangle's ray, default 1.
+      }
+
+    Profiles:
+      triangle        angles {A,B,C} (sum 180, drawn from angles — no physical
+                      scale; length labels need `sides` to restate) · or
+                      sides {AB,BC,CA} (SSS) · or sides {two} + angles {shared
+                      vertex} (SAS) · or sides {one} + angles {two} (ASA).
+                      Two sides + a NON-included angle is refused (SSA ambiguity).
+      parallelogram/rectangle/rhombus/trapezium   as marked_geometry.
+      quadrilateral   sides {AB,BC,CD,DA} + diagonal {"AC"|"BD": d} — solved as
+                      two SSS triangles, B and D on opposite sides of AC.
+      kite            sides {AB,BC} + diagonal {"AC": d} — AD=AB, CD=CB implied;
+                      the AC axis of symmetry is drawn automatically.
+      bowtie          names "ABCD": outer sides AB and CD are drawn; the
+                      crossing lines are A-X-D and B-X-C (X = `cross`, computed
+                      at the intersection); `angles` at >=3 outer vertices; the
+                      two triangles' implied crossing angles must agree within
+                      0.75°. `ratio` = drawn size of the second triangle's ray.
+
+    Cross-scaffold truth (all re-validated on the merged coordinates):
+      correspond  [{"tri":"ABC","to":"PQR","scale":1|k}] — vertex-wise congruence
+                  (scale 1) or similarity (k, a stem number in stem mode). Every
+                  corresponding side ratio must equal k within 0.75% of the drawn
+                  lengths and corresponding angles within 0.75°, else refusal.
+      collinear   [[P,Q,R(,S…)]] ordered-collinearity claims, verified.
+      ticks / parallel / rights / arcs / angle_labels / marks / labels — the
+      marked_geometry grammar, verified across the WHOLE merged figure, so a
+      tick pairing AB with PQ asserts true drawn equality.
+      div/medians/altitudes/intersect/extend/joins — derived points on any DRAWN
+      segment (a diagonal is a segment, so BL ⟂ AC and P on BD both work).
+    """
+    kind = "paired_geometry"
+    vc.reset_ids()
+    if values not in ("stem", "figure"):
+        raise TemplateError(f"{kind}: values must be 'stem' or 'figure'")
+    fig_mode = values == "figure"
+    if base_px is None:
+        last = None
+        for b_ in (220.0, 280.0, 360.0):
+            try:
+                return build_paired_geometry(
+                    figure_id=figure_id, stem=stem, ask=ask, title=title,
+                    description=description, medium=medium, shapes=shapes,
+                    unit=unit, values=values, correspond=correspond,
+                    collinear=collinear, joins=joins, div=div, medians=medians,
+                    altitudes=altitudes, intersect=intersect, extend=extend,
+                    diagonals=diagonals, arcs=arcs, angle_labels=angle_labels,
+                    marks=marks, rights=rights, parallel=parallel, ticks=ticks,
+                    labels=labels, base_px=b_)
+            except TemplateError as e_:
+                last = e_
+                if not re.search(r"rendered px|cannot clear|no clear seat|"
+                                 r"found no clear|final scale", str(e_)):
+                    raise
+        raise last
+    base_px = _fnum(kind, "base_px", base_px, positive=True)
+    if not (isinstance(shapes, (list, tuple)) and 1 <= len(shapes) <= 4):
+        raise TemplateError(f"{kind}: `shapes` is a list of 1–4 scaffold specs — "
+                            "a single marked_geometry-shape figure routes to "
+                            "marked_geometry; this builder exists for the paired/"
+                            "connected and quad profiles it cannot reach")
+
+    # ── per-scaffold canonical solve ────────────────────────────────────────
+    scaffs = []
+    used_names: set[str] = set()
+    for i, spec in enumerate(shapes):
+        if not isinstance(spec, dict):
+            raise TemplateError(f"{kind}: scaffold {i} must be a dict")
+        unknown = set(spec) - {"shape", "names", "angles", "sides", "diagonal",
+                               "place", "size", "cross", "ratio"}
+        if unknown:
+            raise TemplateError(f"{kind}: scaffold {i} has unknown keys "
+                                f"{sorted(unknown)} — expected one of shape, "
+                                "names, angles, sides, diagonal, place, size, "
+                                "cross, ratio")
+        shp = str(spec.get("shape", "")).strip().lower()
+        if shp not in _SHAPES:
+            raise TemplateError(f"{kind}: scaffold {i} shape must be one of "
+                                f"{', '.join(_SHAPES)}")
+        nms = spec.get("names")
+        if isinstance(nms, str):
+            nms = list(nms.strip())
+        nneed = 3 if shp == "triangle" else 4
+        if not (isinstance(nms, (list, tuple)) and len(nms) == nneed and
+                len(set(nms)) == nneed and
+                all(isinstance(n, str) and re.fullmatch(r"[A-Z]", n) for n in nms)):
+            raise TemplateError(f"{kind}: scaffold {i} needs {nneed} distinct "
+                                "single-capital `names`")
+        nms = list(nms)
+        size = _fnum(kind, f"scaffold {i} size", spec.get("size", 1.0),
+                     positive=True)
+        if shp == "triangle":
+            Pl, tl, phys, ang, st, st_ang = _solve_triangle(
+                kind, spec, nms, base_px * size)
+            edges = [(nms[0], nms[1]), (nms[1], nms[2]), (nms[2], nms[0])]
+            rec = {"shape": shp, "names": nms, "P0": Pl, "edges": edges,
+                   "true": tl, "phys": phys, "ang": ang, "size": size,
+                   "stated": st, "stated_ang": st_ang}
+        elif shp in _QUAD4:
+            Pl, det, edges, ang, st = _solve_quad4(kind, spec, nms, shp)
+            rec = {"shape": shp, "names": nms, "P0": Pl, "edges": edges,
+                   "true": det, "phys": True, "ang": ang, "size": size,
+                   "stated": st, "stated_ang": {}}
+        elif shp in _NEW4:
+            Pl, det, edges, dname, st = _solve_diagonal_quad(kind, spec, nms, shp)
+            rec = {"shape": shp, "names": nms, "P0": Pl, "edges": edges,
+                   "true": det, "phys": True, "ang": {}, "size": size,
+                   "stated": st, "stated_ang": {}, "diag": dname}
+        else:
+            X = spec.get("cross")
+            if not (isinstance(X, str) and re.fullmatch(r"[A-Z]", X)) or \
+                    X in nms:
+                raise TemplateError(f"{kind}: a bowtie needs a fresh single-"
+                                    "capital `cross` letter")
+            Pl, edges, ang = _bowtie(kind, dict(spec, names=nms))
+            rec = {"shape": shp, "names": nms + [X], "P0": Pl, "edges": edges,
+                   "true": {}, "phys": False, "ang": ang, "size": size,
+                   "stated": {}, "stated_ang": dict(spec.get("angles") or {}),
+                   "cross": X}
+        for nm in nms:
+            if nm in used_names and \
+                    nm not in (spec.get("place") or {}).get("glue", {}):
+                raise TemplateError(
+                    f"{kind}: point {nm} is already placed — a shared vertex must "
+                    "be declared in `glue`, otherwise rename it")
+        used_names.update(nms)
+        scaffs.append(rec)
+
+    # stem evidence: every stated numeric given must appear in the stem
+    if not fig_mode:
+        for rec in scaffs:
+            for k_, v_ in (rec["stated"] or {}).items():
+                require_stem(stem, **{f"side {k_}": v_})
+            for v_, a_ in (rec["stated_ang"] or {}).items():
+                require_stem(stem, **{f"angle {v_}": a_})
+
+    # figure px-per-unit shared by all physical scaffolds
+    ref = None
+    for rec in scaffs:
+        if rec["phys"]:
+            e0 = _canon(*rec["edges"][0])
+            ref = rec["true"].get(e0)
+            break
+    upx = base_px / ref if ref else None
+    for rec in scaffs:
+        if rec["phys"]:
+            rec["P0"] = {k: (p[0] * upx, p[1] * upx) for k, p in rec["P0"].items()}
+            rec["sc"] = upx
+        else:
+            rec["sc"] = None
+
+    # ── placement ───────────────────────────────────────────────────────────
+    P: dict[str, tuple] = {}
+    alias: dict[str, str] = {}
+    for i, rec in enumerate(scaffs):
+        spec = shapes[i]
+        pl = spec.get("place")
+        P0 = rec["P0"]
+        nms = rec["names"]
+        if pl is None:
+            if i == 0:
+                out = dict(P0)
+            else:
+                raise TemplateError(
+                    f"{kind}: scaffold {i} needs `place` — "
+                    "{'to':[x,y]} (free), {'hinge':{'V':'P'},'rotate':deg} "
+                    "(shared vertex) or {'glue':{'V1':'P','V2':'Q'}} (shared side)")
+        else:
+            if not isinstance(pl, dict):
+                raise TemplateError(f"{kind}: scaffold {i} `place` must be a dict")
+            flip = bool(pl.get("flip"))
+            glue = pl.get("glue")
+            hinge = pl.get("hinge")
+            anchor = pl.get("anchor")
+            if glue is not None:
+                if not (isinstance(glue, dict) and len(glue) == 2):
+                    raise TemplateError(f"{kind}: `glue` maps exactly two scaffold "
+                                        "vertices onto two placed points")
+                (la, ta), (lb, tb) = [(k, v) for k, v in glue.items()]
+                for lv, tv in ((la, ta), (lb, tb)):
+                    if lv not in P0:
+                        raise TemplateError(f"{kind}: glue source {lv!r} is not a "
+                                            f"vertex of scaffold {i}")
+                    if not (isinstance(tv, str) and tv in P):
+                        raise TemplateError(f"{kind}: glue target {tv!r} is not a "
+                                            "placed point")
+                if la == lb or ta == tb:
+                    raise TemplateError(f"{kind}: glue endpoints must differ")
+                u = (P0[lb][0] - P0[la][0], P0[lb][1] - P0[la][1])
+                v = (P[tb][0] - P[ta][0], P[tb][1] - P[ta][1])
+                lu, lv_ = math.hypot(*u), math.hypot(*v)
+                if lu < 1e-9 or lv_ < 1e-9:
+                    raise TemplateError(f"{kind}: glue maps a zero-length pair")
+                s_g = lv_ / lu
+                if rec["phys"] and abs(s_g - 1.0) > 0.005:
+                    raise TemplateError(
+                        f"{kind}: gluing {la}{lb} onto {ta}{tb} would stretch the "
+                        f"scaffold by ×{s_g:.3g} — the shared side's true length "
+                        "must equal the existing segment's drawn length; fix the "
+                        "sides or the glue")
+                ux, uy = u[0] / lu, u[1] / lu
+                vx_, vy_ = v[0] / lv_, v[1] / lv_
+                out = {}
+                for nm, p in P0.items():
+                    w = (p[0] - P0[la][0], p[1] - P0[la][1])
+                    c1 = w[0] * ux + w[1] * uy
+                    c2 = -w[0] * uy + w[1] * ux
+                    if flip:
+                        c2 = -c2
+                    out[nm] = (P[ta][0] + s_g * (c1 * vx_ - c2 * vy_),
+                               P[ta][1] + s_g * (c1 * vy_ + c2 * vx_))
+                    if nm in (la, lb):
+                        continue
+                alias[la], alias[lb] = ta, tb
+                out[la], out[lb] = P[ta], P[tb]
+            else:
+                if hinge is not None:
+                    if not (isinstance(hinge, dict) and len(hinge) == 1):
+                        raise TemplateError(f"{kind}: `hinge` is one "
+                                            "{'scaffoldVertex': 'placedPoint'}")
+                    hv, tv = next(iter(hinge.items()))
+                    if hv not in P0 or tv not in P:
+                        raise TemplateError(f"{kind}: hinge {hv}->{tv} needs a "
+                                            "scaffold vertex and a placed point")
+                    anchor, dest = hv, P[tv]
+                else:
+                    to = pl.get("to")
+                    if not (isinstance(to, (list, tuple)) and len(to) == 2):
+                        raise TemplateError(
+                            f"{kind}: scaffold {i} `place` needs 'to':[x,y], a "
+                            "'hinge' or a 'glue'")
+                    anchor = anchor or nms[0]
+                    if anchor not in P0:
+                        raise TemplateError(f"{kind}: anchor {anchor!r} is not a "
+                                            f"vertex of scaffold {i}")
+                    dest = (_fnum(kind, "place.to[0]", to[0]),
+                            _fnum(kind, "place.to[1]", to[1]))
+                rot = _fnum(kind, "place.rotate", pl.get("rotate", 0.0))
+                th = math.radians(rot)
+                co, si = math.cos(th), math.sin(th)
+                out = {}
+                for nm, p in P0.items():
+                    w = (p[0] - P0[anchor][0], p[1] - P0[anchor][1])
+                    if flip:
+                        w = (w[0], -w[1])
+                    out[nm] = (dest[0] + co * w[0] - si * w[1],
+                               dest[1] + si * w[0] + co * w[1])
+                if hinge is not None:
+                    alias[hv] = tv
+                    out[hv] = P[tv]
+        for nm, xy in out.items():
+            tgt = alias.get(nm, nm)
+            if tgt in P:
+                if vc.dist(P[tgt], xy) > 1e-6:
+                    raise TemplateError(
+                        f"{kind}: placed {nm}->{tgt} lands {vc.dist(P[tgt], xy):.3g} "
+                        "units from the existing point — the glue/hinge does not "
+                        "share the vertex it declares")
+                continue
+            for onm, oxy in P.items():
+                if vc.dist(oxy, xy) < 0.5:
+                    raise TemplateError(
+                        f"{kind}: scaffold {i}'s {nm} lands on top of {onm} — two "
+                        "different letters cannot mark one position; glue them or "
+                        "move the scaffold")
+            P[tgt] = xy
+        rec["P"] = {nm: P[alias.get(nm, nm)] for nm in rec["names"]}
+
+    # canonical merged edges (drawn segments), deduped
+    drawn_seg: dict[str, tuple] = {}
+    for rec in scaffs:
+        for a, b in rec["edges"]:
+            sa, sb = alias.get(a, a), alias.get(b, b)
+            drawn_seg.setdefault(_canon(sa, sb), (sa, sb))
+        if rec["shape"] in _NEW4 and rec.get("diag"):
+            d_ = rec["diag"]
+            drawn_seg.setdefault(_canon(d_[0], d_[1]), (d_[0], d_[1]))
+
+    # per-scaffold diagonals
+    diag_flag = diagonals
+    if isinstance(diag_flag, bool):
+        diag_specs = {i: diag_flag for i in range(len(scaffs))}
+    elif isinstance(diag_flag, (list, tuple)):
+        diag_specs = {i: bool(diag_flag[i]) for i in range(len(diag_flag))}
+    elif diag_flag is None:
+        diag_specs = {}
+    else:
+        raise TemplateError(f"{kind}: `diagonals` is a bool or a per-scaffold list")
+    for i, draw_it in diag_specs.items():
+        if not draw_it:
+            continue
+        nms = scaffs[i]["names"]
+        if len(nms) != 4:
+            raise TemplateError(f"{kind}: `diagonals` is a quadrilateral feature")
+        for d_ in ((nms[0], nms[2]), (nms[1], nms[3])):
+            sa, sb = alias.get(d_[0], d_[0]), alias.get(d_[1], d_[1])
+            drawn_seg.setdefault(_canon(sa, sb), (sa, sb))
+
+    # ── derived points (never caller coordinates) ───────────────────────────
+    def seg_pair(s):
+        if not (isinstance(s, str) and len(s) == 2):
+            raise TemplateError(f"{kind}: {s!r} is not a two-letter segment name")
+        a_, b_ = alias.get(s[0], s[0]), alias.get(s[1], s[1])
+        if a_ not in P or b_ not in P or a_ == b_:
+            raise TemplateError(f"{kind}: {s!r} names unknown points")
+        return a_, b_
+
+    dv: dict[str, tuple] = {}
+    for nm, spec in (div or {}).items():
+        if not (isinstance(nm, str) and re.fullmatch(r"[A-Z]", nm)) or nm in P:
+            raise TemplateError(f"{kind}: divider {nm!r} must be a fresh capital")
+        if not (isinstance(spec, (list, tuple)) and len(spec) == 2):
+            raise TemplateError(f"{kind}: {nm} needs ['segment', fraction]")
+        a_, b_ = seg_pair(spec[0])
+        if _canon(a_, b_) not in drawn_seg:
+            raise TemplateError(f"{kind}: {nm} divides {spec[0]!r}, which is not a "
+                                "drawn segment")
+        t = _fnum(kind, f"{nm}'s fraction", spec[1])
+        if not 0.02 < t < 0.98:
+            raise TemplateError(f"{kind}: {nm}'s fraction must lie in (0.02,0.98)")
+        dv[nm] = (a_, b_, t)
+        P[nm] = vc.lerp(P[a_], P[b_], t)
+
+    ext: dict[str, tuple] = {}
+    for spec in (extend or []):
+        if not (isinstance(spec, dict) and "side" in spec and "to" in spec):
+            raise TemplateError(f"{kind}: an extension needs {{'side','to','t'?}}")
+        a_, b_ = seg_pair(spec["side"])
+        nm = spec["to"]
+        if not (isinstance(nm, str) and re.fullmatch(r"[A-Z]", nm)) or nm in P:
+            raise TemplateError(f"{kind}: the produced point {nm!r} must be a "
+                                "fresh capital")
+        t = _fnum(kind, f"extension {nm}'s t", spec.get("t", 0.5))
+        if not 0.05 <= t <= 2.0:
+            raise TemplateError(f"{kind}: extension {nm}'s t must be in [0.05,2]")
+        ext[nm] = (a_, b_)
+        P[nm] = (P[b_][0] + (P[b_][0] - P[a_][0]) * t,
+                 P[b_][1] + (P[b_][1] - P[a_][1]) * t)
+        drawn_seg.setdefault(_canon(b_, nm), (b_, nm))
+
+    med: dict[str, tuple] = {}
+    for nm, spec in (medians or {}).items():
+        if not (isinstance(nm, str) and re.fullmatch(r"[A-Z]", nm)) or nm in P:
+            raise TemplateError(f"{kind}: midpoint {nm!r} must be a fresh capital")
+        if not (isinstance(spec, (list, tuple)) and len(spec) == 2 and
+                spec[0] in P):
+            raise TemplateError(f"{kind}: median {nm} needs ['vertex','segment']")
+        a_, b_ = seg_pair(spec[1])
+        v_ = spec[0]
+        if v_ in (a_, b_):
+            raise TemplateError(f"{kind}: a median from {v_} onto its own "
+                                "endpoint is degenerate")
+        if _canon(a_, b_) not in drawn_seg:
+            raise TemplateError(f"{kind}: median target {spec[1]!r} is not drawn")
+        med[nm] = (v_, a_, b_)
+        P[nm] = vc.lerp(P[a_], P[b_], 0.5)
+        drawn_seg.setdefault(_canon(v_, nm), (v_, nm))
+
+    alt: dict[str, tuple] = {}
+    for nm, spec in (altitudes or {}).items():
+        if not (isinstance(nm, str) and re.fullmatch(r"[A-Z]", nm)) or nm in P:
+            raise TemplateError(f"{kind}: foot {nm!r} must be a fresh capital")
+        if not (isinstance(spec, (list, tuple)) and len(spec) == 2 and
+                spec[0] in P):
+            raise TemplateError(f"{kind}: altitude {nm} needs ['vertex','segment']")
+        a_, b_ = seg_pair(spec[1])
+        v_ = spec[0]
+        if v_ in (a_, b_):
+            raise TemplateError(f"{kind}: an altitude from {v_} onto its own "
+                                "endpoint is degenerate")
+        if _canon(a_, b_) not in drawn_seg:
+            raise TemplateError(f"{kind}: altitude target {spec[1]!r} is not a "
+                                "drawn segment")
+        f_ = vc.foot_of_perpendicular(P[v_], P[a_], P[b_])
+        seg = (P[b_][0] - P[a_][0], P[b_][1] - P[a_][1])
+        n2 = seg[0] ** 2 + seg[1] ** 2
+        t_ = ((f_[0] - P[a_][0]) * seg[0] + (f_[1] - P[a_][1]) * seg[1]) / n2
+        if not -0.001 <= t_ <= 1.001:
+            raise TemplateError(
+                f"{kind}: the perpendicular from {v_} meets line {a_}{b_} outside "
+                "the drawn segment — an altitude foot cannot float off the figure")
+        alt[nm] = (v_, a_, b_)
+        P[nm] = f_
+        drawn_seg.setdefault(_canon(v_, nm), (v_, nm))
+
+    for j_ in (joins or []):
+        if not (isinstance(j_, str) and len(j_) == 2):
+            raise TemplateError(f"{kind}: join {j_!r} must be two letters")
+        a_, b_ = seg_pair(j_)
+        if vc.dist(P[a_], P[b_]) < 1e-6:
+            raise TemplateError(f"{kind}: join {j_} is zero-length")
+        drawn_seg.setdefault(_canon(a_, b_), (a_, b_))
+
+    its: dict[str, tuple] = {}
+    for nm, spec in (intersect or {}).items():
+        if not (isinstance(nm, str) and re.fullmatch(r"[A-Z]", nm)) or nm in P:
+            raise TemplateError(f"{kind}: intersection {nm!r} must be a fresh "
+                                "capital")
+        if not (isinstance(spec, (list, tuple)) and len(spec) == 2):
+            raise TemplateError(f"{kind}: {nm} needs ['seg1','seg2']")
+        segs = []
+        for s in spec:
+            a_, b_ = seg_pair(s)
+            if _canon(a_, b_) not in drawn_seg:
+                raise TemplateError(f"{kind}: {s!r} is not a drawn segment {nm} "
+                                    "can sit on")
+            segs.append((a_, b_))
+        r_ = (P[segs[0][1]][0] - P[segs[0][0]][0],
+              P[segs[0][1]][1] - P[segs[0][0]][1])
+        s_ = (P[segs[1][1]][0] - P[segs[1][0]][0],
+              P[segs[1][1]][1] - P[segs[1][0]][1])
+        den = r_[0] * s_[1] - r_[1] * s_[0]
+        if abs(den) <= 1e-9 * math.hypot(*r_) * math.hypot(*s_):
+            raise TemplateError(f"{kind}: {spec[0]} and {spec[1]} are parallel or "
+                                "coincident — no interior intersection to mark")
+        q_ = vc.intersect(P[segs[0][0]], P[segs[0][1]],
+                          P[segs[1][0]], P[segs[1][1]])
+
+        def t_on(q, sg):
+            a_, b_ = P[sg[0]], P[sg[1]]
+            d_ = (b_[0] - a_[0], b_[1] - a_[1])
+            n2 = d_[0] ** 2 + d_[1] ** 2
+            return ((q[0] - a_[0]) * d_[0] + (q[1] - a_[1]) * d_[1]) / n2
+        t1, t2 = t_on(q_, segs[0]), t_on(q_, segs[1])
+        if not (0.001 < t1 < 0.999 and 0.001 < t2 < 0.999):
+            raise TemplateError(f"{kind}: {spec[0]} and {spec[1]} do not cross "
+                                "inside both segments")
+        its[nm] = segs
+        P[nm] = q_
+
+    # scaffold vertex neighbourhood for default arc arms (its own cyclic order)
+    nbr: dict[str, tuple] = {}
+    for rec in scaffs:
+        nms = [alias.get(n, n) for n in rec["names"]]
+        for j, v_ in enumerate(nms):
+            nbr.setdefault(v_, (nms[(j - 1) % len(nms)], nms[(j + 1) % len(nms)]))
+
+    # ── marks — same re-validation as marked_geometry, on the merged P ──────
+    def host_seg(s):
+        a_, b_ = seg_pair(s)
+        if _canon(a_, b_) in drawn_seg:
+            return a_, b_, (a_, b_)
+        for key, (pa, pb) in drawn_seg.items():
+            if _mg_on_seg(P[pa], P[pb], P[a_]) and _mg_on_seg(P[pa], P[pb], P[b_]):
+                return a_, b_, (pa, pb)
+        raise TemplateError(f"{kind}: {s!r} — its two points do not lie on one "
+                            "drawn segment")
+
+    def seg_scaffold_scale(a_, b_):
+        """px-per-unit of the scaffold(s) whose edge/segment hosts a-b, else None."""
+        for rec in scaffs:
+            nms = set(alias.get(n, n) for n in rec["names"])
+            if {a_, b_} <= nms:
+                return rec["sc"], rec
+        return None, None
+
+    def seg_true_len(a_, b_, host):
+        sc_, rec = seg_scaffold_scale(host[0], host[1])
+        if sc_ is not None:
+            return vc.dist(P[a_], P[b_]) / sc_
+        whole = (rec or {}).get("true", {}).get(_canon(*host))
+        if whole is None:
+            raise TemplateError(
+                f"{kind}: no stated length for the segment holding {a_}{b_} — give "
+                "the scaffold numeric `sides` so a printed label can only restate "
+                "truth")
+        fr = vc.dist(P[a_], P[b_]) / vc.dist(P[host[0]], P[host[1]])
+        return whole * fr
+
+    par: list[tuple[list, int]] = []
+    for k_, cls in enumerate(parallel or []):
+        if not (isinstance(cls, (list, tuple)) and 2 <= len(cls) <= 4):
+            raise TemplateError(f"{kind}: a parallel class is a list of 2–4 "
+                                "segments")
+        pts = []
+        for s in cls:
+            try:
+                a_, b_, _h = host_seg(s)
+            except TemplateError as e_:
+                raise TemplateError(f"{kind}: a parallel mark on {s!r} — {e_}") \
+                    from None
+            pts.append((a_, b_))
+        for i_ in range(len(pts)):
+            for j_ in range(i_ + 1, len(pts)):
+                u1 = vc.unit(P[pts[i_][0]], P[pts[i_][1]])
+                u2 = vc.unit(P[pts[j_][0]], P[pts[j_][1]])
+                off = math.degrees(math.asin(min(1.0, abs(
+                    u1[0] * u2[1] - u1[1] * u2[0]))))
+                if off > 0.75:
+                    raise TemplateError(
+                        f"{kind}: {pts[i_][0]}{pts[i_][1]} and "
+                        f"{pts[j_][0]}{pts[j_][1]} draw {off:.2f}° apart — a "
+                        "parallel mark cannot be drawn on them")
+        par.append((pts, k_ + 1))
+
+    tk: dict[tuple, int] = {}
+    for s, c_ in (ticks or {}).items():
+        if not isinstance(c_, int) or isinstance(c_, bool) or not 1 <= c_ <= 3:
+            raise TemplateError(f"{kind}: tick count on {s} must be an integer "
+                                "1–3")
+        a_, b_, _h = host_seg(s)
+        canon = tuple(sorted((a_, b_)))
+        if canon in tk:
+            raise TemplateError(f"{kind}: {s!r} ticks the same segment twice")
+        tk[canon] = c_
+    tkl = list(tk)
+
+    def eq(x, y):
+        return abs(x - y) <= 1e-6 * max(x, y) + 0.05
+    for i_ in range(len(tkl)):
+        for j_ in range(i_ + 1, len(tkl)):
+            s1, s2 = tkl[i_], tkl[j_]
+            d1 = vc.dist(P[s1[0]], P[s1[1]])
+            d2 = vc.dist(P[s2[0]], P[s2[1]])
+            if (tk[s1] == tk[s2]) != eq(d1, d2):
+                raise TemplateError(
+                    f"{kind}: {s1[0]}{s1[1]} and {s2[0]}{s2[1]} carry "
+                    f"{'the same' if tk[s1] == tk[s2] else 'different'} ticks "
+                    f"but are {'not ' if tk[s1] == tk[s2] else ''}equal — a mark "
+                    "must match the drawn geometry")
+    rt: list[tuple] = []
+    for spec in (rights or []):
+        if not (isinstance(spec, (list, tuple)) and len(spec) == 3):
+            raise TemplateError(f"{kind}: a right mark is [vertex, arm1, arm2]")
+        v_, a_, b_ = [alias.get(x, x) for x in spec]
+        if not all(x in P for x in (v_, a_, b_)):
+            raise TemplateError(f"{kind}: right mark {spec} names unknown points")
+        if a_ == b_ or v_ in (a_, b_):
+            raise TemplateError(f"{kind}: right mark at {v_} — arms must be two "
+                                "distinct non-vertex points")
+        u1 = vc.unit(P[v_], P[a_])
+        u2 = vc.unit(P[v_], P[b_])
+        got = math.degrees(math.acos(max(-1.0, min(1.0,
+            u1[0] * u2[0] + u1[1] * u2[1]))))
+        if abs(got - 90.0) > 0.5:
+            raise TemplateError(f"{kind}: a right mark at {v_} needs 90° — the "
+                                f"drawn angle is {got:.2f}°")
+        rt.append((v_, a_, b_))
+
+    am: list[dict] = []
+    al_map = {alias.get(k, k): v for k, v in (angle_labels or {}).items()}
+    for v_, c_ in (arcs or {}).items():
+        v_ = alias.get(v_, v_)
+        if v_ not in nbr:
+            raise TemplateError(f"{kind}: arc vertex {v_!r} is not a scaffold "
+                                "vertex")
+        if not isinstance(c_, int) or isinstance(c_, bool) or not 1 <= c_ <= 3:
+            raise TemplateError(f"{kind}: arc count at {v_} must be an integer "
+                                "1–3")
+        am.append({"at": v_, "arms": list(nbr[v_]), "arcs": c_,
+                   "label": al_map.get(v_)})
+    for m_ in (marks or []):
+        if not (isinstance(m_, dict) and "at" in m_):
+            raise TemplateError(f"{kind}: an angle mark needs at least {{'at':V}}")
+        v_ = alias.get(m_["at"], m_["at"])
+        arms = m_.get("arms")
+        if arms is None:
+            if v_ not in nbr:
+                raise TemplateError(f"{kind}: mark at {v_!r} needs explicit arms")
+            arms = list(nbr[v_])
+        arms = [alias.get(x, x) for x in arms]
+        if not (isinstance(arms, list) and len(arms) == 2 and
+                arms[0] in P and arms[1] in P and arms[0] != arms[1] and
+                v_ not in arms):
+            raise TemplateError(f"{kind}: mark arms at {v_} must be two distinct "
+                                "known points")
+        c_ = m_.get("arcs", 1)
+        if not isinstance(c_, int) or isinstance(c_, bool) or not 1 <= c_ <= 3:
+            raise TemplateError(f"{kind}: arc count at {v_} must be an integer "
+                                "1–3")
+        am.append({"at": v_, "arms": arms, "arcs": c_, "label": m_.get("label"),
+                   "reflex": bool(m_.get("reflex"))})
+    known_labs = set(al_map) - set(am_v["at"] for am_v in am)
+    if known_labs:
+        raise TemplateError(f"{kind}: angle label(s) {sorted(known_labs)} have no "
+                            "arc to sit on")
+    seen_angle_glyphs = set()
+    for m_ in am:
+        v_, a_, b_ = m_["at"], m_["arms"][0], m_["arms"][1]
+        if v_ not in P:
+            raise TemplateError(f"{kind}: mark vertex {v_} is not a named point")
+        u1 = vc.unit(P[v_], P[a_])
+        u2 = vc.unit(P[v_], P[b_])
+        got = abs(math.degrees(math.atan2(u1[0] * u2[1] - u1[1] * u2[0],
+                                        u1[0] * u2[0] + u1[1] * u2[1])))
+        if m_.get("reflex"):
+            got = 360.0 - got
+        if got < 10:
+            raise TemplateError(f"{kind}: the angle at {v_} is {got:.1f}° — too "
+                                "thin to mark honestly")
+        m_["deg"] = got
+        t_ = m_.get("label")
+        if t_ is not None:
+            kk, num, txt = _angle_text_kind(kind, t_, v_)
+            if txt in seen_angle_glyphs:
+                raise TemplateError(
+                    f"{kind}: the angle label {txt!r} is printed twice — each "
+                    "printed glyph binds ONE label claim; mark equal angles "
+                    "with equal arc counts and print the numeral once")
+            seen_angle_glyphs.add(txt)
+            if kk == "num":
+                if abs(num - got) > 0.75:
+                    raise TemplateError(
+                        f"{kind}: label {txt!r} at {v_} prints {num:g} but the "
+                        f"drawn angle is {got:.2f}° — a label may only restate "
+                        "its own angle")
+                if not fig_mode:
+                    require_stem(stem, **{f"angle at {v_} ({txt!r})": num})
+            m_["kind"], m_["num"], m_["txt"], m_["label"] = kk, num, txt, t_
+    for i_ in range(len(am)):
+        for j_ in range(i_ + 1, len(am)):
+            if am[i_]["arcs"] == am[j_]["arcs"]:
+                if abs(am[i_]["deg"] - am[j_]["deg"]) > 0.75:
+                    raise TemplateError(
+                        f"{kind}: same-count arcs at {am[i_]['at']} and "
+                        f"{am[j_]['at']} mark unequal angles "
+                        f"({am[i_]['deg']:.1f} vs {am[j_]['deg']:.1f})")
+            elif abs(am[i_]["deg"] - am[j_]["deg"]) <= 0.75:
+                raise TemplateError(
+                    f"{kind}: equal angles at {am[i_]['at']} and {am[j_]['at']} "
+                    "carry different arc counts")
+
+    # ── correspondences — true congruence/similarity, not asserted ──────────
+    corr: list[dict] = []
+    for spec in correspond or []:
+        if not (isinstance(spec, dict) and "tri" in spec and "to" in spec):
+            raise TemplateError(f"{kind}: a correspondence needs "
+                                "{'tri':'ABC','to':'PQR','scale'?}")
+        t1, t2 = spec["tri"], spec["to"]
+        if not (isinstance(t1, str) and isinstance(t2, str) and
+                len(t1) == len(t2) == 3):
+            raise TemplateError(f"{kind}: correspondences map triangle vertex "
+                                "triples")
+        v1 = [alias.get(x, x) for x in t1]
+        v2 = [alias.get(x, x) for x in t2]
+        if not all(x in P for x in v1 + v2):
+            raise TemplateError(f"{kind}: {t1}->{t2} names unplaced points")
+        k = spec.get("scale", 1)
+        if k == "congruent":
+            k = 1
+        k = _fnum(kind, "correspond scale", k, positive=True)
+        if not fig_mode and k != 1:
+            require_stem(stem, **{"correspondence scale": k})
+        ratios = []
+        ok = True
+        for i_ in range(3):
+            a1, b1 = v1[i_], v1[(i_ + 1) % 3]
+            a2, b2 = v2[i_], v2[(i_ + 1) % 3]
+            d1, d2 = vc.dist(P[a1], P[b1]), vc.dist(P[a2], P[b2])
+            ratios.append(d2 / d1)
+            if abs(d2 / d1 - k) > 0.0075 * k:
+                ok = False
+        ang_ok = True
+        for i_ in range(3):
+            a_, b_, c_ = v1[i_], v1[(i_ + 1) % 3], v1[(i_ + 2) % 3]
+            x_, y_, z_ = v2[i_], v2[(i_ + 1) % 3], v2[(i_ + 2) % 3]
+            u1 = vc.unit(P[a_], P[b_]); u2 = vc.unit(P[a_], P[c_])
+            w1 = vc.unit(P[x_], P[y_]); w2 = vc.unit(P[x_], P[z_])
+            g1 = math.degrees(math.acos(max(-1, min(1, u1[0] * u2[0] + u1[1] * u2[1]))))
+            g2 = math.degrees(math.acos(max(-1, min(1, w1[0] * w2[0] + w1[1] * w2[1]))))
+            if abs(g1 - g2) > 0.75:
+                ang_ok = False
+        if not (ok and ang_ok):
+            raise TemplateError(
+                f"{kind}: {''.join(v1)} is NOT similar to {''.join(v2)} at scale "
+                f"{k:g} — drawn side ratios {['%.3g' % r for r in ratios]} and "
+                "corresponding angles must match; fix the givens or drop the "
+                "correspondence")
+        corr.append({"v1": v1, "v2": v2, "k": k})
+
+    # ── collinearity claims — verified, ordered ─────────────────────────────
+    col_specs = []
+    for grp in collinear or []:
+        if not (isinstance(grp, (list, tuple)) and len(grp) >= 3):
+            raise TemplateError(f"{kind}: a collinear claim is a list of >=3 "
+                                "points")
+        grp = [alias.get(x, x) for x in grp]
+        if not all(x in P for x in grp):
+            raise TemplateError(f"{kind}: collinear {grp} names unknown points")
+        a_, b_ = P[grp[0]], P[grp[-1]]
+        d_ = (b_[0] - a_[0], b_[1] - a_[1])
+        n_ = math.hypot(*d_)
+        if n_ < 1e-9:
+            raise TemplateError(f"{kind}: collinear endpoints coincide")
+        tlast = -1e-9
+        for x in grp:
+            p = P[x]
+            if abs((p[0] - a_[0]) * d_[1] - (p[1] - a_[1]) * d_[0]) / n_ > 0.75:
+                raise TemplateError(
+                    f"{kind}: {x} is not collinear with {' '.join(grp)} — a "
+                    "collinear claim cannot be drawn")
+            t_ = ((p[0] - a_[0]) * d_[0] + (p[1] - a_[1]) * d_[1]) / (n_ * n_)
+            if t_ <= tlast + 1e-6:
+                raise TemplateError(f"{kind}: {' '.join(grp)} are not in that "
+                                    "order along the line")
+            tlast = t_
+        col_specs.append(grp)
+
+    # ── elements ────────────────────────────────────────────────────────────
+    elements: list[dict] = []
+    for a_, b_ in drawn_seg.values():
+        elements.append(vc.line(P[a_], P[b_], id=f"s{a_}{b_}"))
+    for pts, count in par:
+        for a_, b_ in pts:
+            elements += vc.parallel_marks(P[a_], P[b_], count, size=9)
+    for (a_, b_), c_ in tk.items():
+        elements += vc.tick_marks(P[a_], P[b_], c_, size=10)
+    for v_, a_, b_ in rt:
+        elements += vc.right_angle_mark(P[v_], P[a_], P[b_], r=13)
+    for nm, (v_, a_, b_) in alt.items():
+        elements += vc.right_angle_mark(P[nm], P[v_], P[a_], r=12)
+
+    span0 = float(base_px) * max(2.0, len(scaffs)) + 120.0
+    xs = [p[0] for p in P.values()]
+    span0 = max(span0, (max(xs) - min(xs)) + 120.0)
+    clr = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, span0)
+    for m_ in am:
+        v_ = m_["at"]
+        r0 = 24.0 if m_["deg"] >= 40 else 34.0
+        if m_.get("label") is None:
+            elements += vc.angle_label(P[v_], P[m_["arms"][0]], P[m_["arms"][1]],
+                                       r=r0, arcs=m_["arcs"],
+                                       reflex=bool(m_.get("reflex")))
+        else:
+            try:
+                els_ = _angle_arc_label(
+                    kind, elements, P[v_], P[m_["arms"][0]], P[m_["arms"][1]],
+                    m_["txt"], arcs=m_["arcs"], r0=r0, clr=clr,
+                    reflex=bool(m_.get("reflex")))
+            except TemplateError:
+                ua_ = vc.unit(P[v_], P[m_["arms"][0]])
+                ub_ = vc.unit(P[v_], P[m_["arms"][1]])
+                bx_, by_ = ua_[0] + ub_[0], ua_[1] + ub_[1]
+                n_ = math.hypot(bx_, by_)
+                if n_ < 1e-9:
+                    raise
+                bx_, by_ = bx_ / n_, by_ / n_
+                if m_.get("reflex"):
+                    bx_, by_ = -bx_, -by_
+                elements += vc.angle_label(P[v_], P[m_["arms"][0]],
+                                           P[m_["arms"][1]], r=r0,
+                                           arcs=m_["arcs"],
+                                           reflex=bool(m_.get("reflex")))
+                # the wedge interior seats nothing — keep the arc at r0 and walk
+                # the label out along the bisector past the arms' ends until a
+                # FIXED seat clears every stroke; the claim anchor is exactly the
+                # seated glyph's `at`. Refuse when nothing seats.
+                seated = False
+                strokes_now = stroke_segments(elements)
+                far_ = max(60.0, 2.4 * min(vc.dist(P[v_], P[m_["arms"][0]]),
+                                         vc.dist(P[v_], P[m_["arms"][1]])))
+                for d_ in _arange(30.0, far_, 2.0):
+                    el_ = vc.text((P[v_][0] + bx_ * d_, P[v_][1] + by_ * d_),
+                                  m_["txt"], id=f"al{v_}")
+                    box_ = label_boxes([el_], FS)[0][1:]
+                    if min(_seg_rect_dist(p_, q_, box_) - w_ / 2
+                           for p_, q_, w_ in strokes_now) >= clr:
+                        elements.append(el_)
+                        P[f"{v_}1"] = tuple(el_["at"])
+                        m_["floated"] = True
+                        seated = True
+                        break
+                if not seated:
+                    raise
+                continue
+            elements += els_
+            P[f"{v_}1"] = tuple(els_[-1]["at"])
+
+    allxy = list(P.values())
+    cen = (sum(p[0] for p in allxy) / len(allxy),
+           sum(p[1] for p in allxy) / len(allxy))
+    vertex_names = set()
+    for rec in scaffs:
+        vertex_names.update(alias.get(n, n) for n in rec["names"])
+    interior_pts = ([nm for nm in list(dv) + list(med) + list(alt) + list(its)]
+                    + [alias.get(r["cross"], r["cross"]) for r in scaffs
+                       if r["shape"] == "bowtie"])
+    for rec in scaffs:
+        for nm in rec["names"]:
+            tgt = alias.get(nm, nm)
+            if tgt not in vertex_names or tgt in interior_pts:
+                continue
+            elements.append(_float_label(f"lbv{tgt}", tgt, P[tgt]))
+            vertex_names.discard(tgt)
+    for nm in ext:
+        elements.append(_float_label(f"lbv{nm}", nm, P[nm]))
+    for nm in interior_pts:
+        elements.append({"id": f"pt{nm}", "type": "point",
+                         "at": vc.P(P[nm]), "r": 3.2})
+
+    boxes: list = []
+    printed: dict[tuple, str] = {}
+    for s, glyph in (labels or {}).items():
+        a_, b_, host = host_seg(s)
+        if not isinstance(glyph, str) or not glyph.strip():
+            raise TemplateError(f"{kind}: label on {s} must be a non-empty string")
+        glyph = glyph.strip()
+        m_ = _LEN_LABEL.fullmatch(glyph)
+        if m_ and m_[1] and re.fullmatch(r"\d+(?:\.\d+)?", m_[1]):
+            v_ = float(m_[1])
+            true_ = seg_true_len(a_, b_, host)
+            if abs(v_ - true_) > 0.005 * true_:
+                raise TemplateError(
+                    f"{kind}: label {glyph!r} on {s} prints {v_:g} but the "
+                    f"segment's true length is {true_:.4g} — a label may only "
+                    "restate its own length")
+            if not fig_mode:
+                require_stem(stem, **{f"label {glyph!r}": v_})
+        elif not _RT_SIDE_VAL.fullmatch(glyph):
+            raise TemplateError(f"{kind}: label {glyph!r} on {s} must be a length "
+                                "like '6 cm' or one lowercase letter")
+        canon = tuple(sorted((a_, b_)))
+        if canon in printed:
+            raise TemplateError(f"{kind}: {s!r} labels the same segment twice")
+        el = _seat_side_label(kind, elements, boxes, P[a_], P[b_], glyph, cen,
+                                 clr, f"sl{a_}{b_}")
+        elements.append(el)
+        boxes.append(label_boxes([el], FS)[0][1:])
+        printed[canon] = glyph
+    if len(set(printed.values())) != len(printed):
+        dup = next(g for g in printed.values()
+                   if list(printed.values()).count(g) > 1)
+        raise TemplateError(f"{kind}: {dup!r} is printed twice — each printed "
+                            "glyph binds ONE label claim")
+    for nm in interior_pts:
+        elements.append(_float_label(f"lbd{nm}", nm, P[nm]))
+
+    # ── claims ──────────────────────────────────────────────────────────────
+    claims: list[tuple] = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    quad_note = {"parallelogram": "a parallelogram", "rectangle": "a rectangle",
+                 "rhombus": "a rhombus", "trapezium": "a trapezium",
+                 "quadrilateral": "a quadrilateral", "kite": "a kite"}
+    evv = "stem" if not fig_mode else "inferred"
+    for rec in scaffs:
+        nms = [alias.get(n, n) for n in rec["names"]]
+        q = "".join(nms)
+        if rec["shape"] == "triangle":
+            add(f'describe "{q} is a triangle"', evv, "the scaffold drawn from "
+                "the stated givens")
+        elif rec["shape"] == "bowtie":
+            X = rec["cross"]
+            add(f'describe "lines {nms[0]}{X}{nms[3]} and {nms[1]}{X}{nms[2]} '
+                f'cross at {X}, forming the triangles {nms[0]}{nms[1]}{X} and '
+                f'{nms[2]}{nms[3]}{X}"', evv, "the bowtie")
+            add(f"on {X} {_canon(nms[0], nms[3])}", "inferred",
+                f"{X} lies on the drawn crossing line")
+            add(f"on {X} {_canon(nms[1], nms[2])}", "inferred",
+                f"{X} lies on the drawn crossing line")
+            add(f'describe "angle {nms[0]}{X}{nms[1]} and angle '
+                f'{nms[3]}{X}{nms[2]} are vertically opposite and equal"',
+                "inferred", "the crossing")
+        else:
+            add(f'describe "{q} is {quad_note[rec["shape"]]}"', evv,
+                "the shape the sides and diagonal construct")
+            if rec["shape"] in ("parallelogram", "rectangle", "rhombus",
+                                "trapezium"):
+                add(f"parallel {nms[0]}{nms[1]} {nms[3]}{nms[2]}", "inferred",
+                    "opposite sides / the two bases, by construction")
+            if rec["shape"] in ("parallelogram", "rectangle", "rhombus"):
+                add(f"parallel {nms[1]}{nms[2]} {nms[0]}{nms[3]}", "inferred",
+                    "opposite sides of the drawn shape")
+                add(f"equal {nms[0]}{nms[1]} {nms[2]}{nms[3]}", "inferred",
+                    "opposite sides of the drawn shape")
+                add(f"equal {nms[1]}{nms[2]} {nms[0]}{nms[3]}", "inferred",
+                    "opposite sides of the drawn shape")
+            if rec["shape"] == "rectangle":
+                for j, v_ in enumerate(nms):
+                    p_, q_ = nms[(j - 1) % 4], nms[(j + 1) % 4]
+                    add(f"right {p_} {v_} {q_}", "inferred", "a rectangle's "
+                        "corner")
+            if rec["shape"] == "kite":
+                add(f"equal {nms[0]}{nms[1]} {nms[0]}{nms[3]}", "inferred",
+                    "the kite's adjacent equal pair, by construction")
+                add(f"equal {nms[1]}{nms[2]} {nms[2]}{nms[3]}", "inferred",
+                    "the kite's adjacent equal pair, by construction")
+                add(f'describe "the diagonal {nms[0]}{nms[2]} is the kite\'s '
+                    'axis of symmetry"', "inferred", "the solved diagonal")
+    for c_ in corr:
+        v1, v2, k = c_["v1"], c_["v2"], c_["k"]
+        if k == 1:
+            add(f'describe "triangle {"".join(v1)} is congruent to triangle '
+                f'{"".join(v2)} — correspondence verified at scale 1"', evv,
+                "the declared correspondence")
+            for i_ in range(3):
+                s1 = "".join(sorted((v1[i_], v1[(i_ + 1) % 3])))
+                s2 = "".join(sorted((v2[i_], v2[(i_ + 1) % 3])))
+                add(f"equal {s1} {s2}", "inferred",
+                    "corresponding sides of the congruent pair")
+        else:
+            kd = add(f"derive {k:g} / 1 = {k:g}", evv,
+                     "the declared scale factor")
+            add(f'describe "triangle {"".join(v1)} is similar to triangle '
+                f'{"".join(v2)} at scale 1:{k:g} — correspondence verified"',
+                evv, "the declared correspondence")
+            for i_ in range(3):
+                s1 = "".join(sorted((v1[i_], v1[(i_ + 1) % 3])))
+                s2 = "".join(sorted((v2[i_], v2[(i_ + 1) % 3])))
+                add(f"ratio len {s2} / len {s1} = {k:g}", evv,
+                    f"a corresponding side pair, citing {kd}")
+    for grp in col_specs:
+        for i_ in range(len(grp) - 2):
+            add(f"collinear {grp[i_]} {grp[i_ + 1]} {grp[i_ + 2]}", "inferred",
+                "verified ordered along the line")
+    for pts, count in par:
+        for i_ in range(len(pts)):
+            for j_ in range(i_ + 1, len(pts)):
+                add(f"parallel {pts[i_][0]}{pts[i_][1]} "
+                    f"{pts[j_][0]}{pts[j_][1]}", "inferred",
+                    f"the {count}-arrow marks — drawn parallel")
+    for nm, (a_, b_, t_) in dv.items():
+        add(f"on {nm} {_canon(a_, b_)}", "inferred",
+            f"{nm} divides {a_}{b_} at {t_:g} from {a_}")
+    for nm, (a_, b_) in ext.items():
+        add(f"collinear {a_} {b_} {nm}", "inferred",
+            f"{a_}{b_} is produced to {nm}")
+    for nm, (v_, a_, b_) in med.items():
+        add(f"on {nm} {_canon(a_, b_)}", "inferred",
+            f"{nm} is the midpoint of {a_}{b_} — the median from {v_}")
+        add(f"equal {a_}{nm} {nm}{b_}", "inferred", "the midpoint's halves")
+    for nm, (v_, a_, b_) in alt.items():
+        add(f"on {nm} {_canon(a_, b_)}", "inferred",
+            f"{nm} is the foot of the perpendicular from {v_} to {a_}{b_}")
+        add(f"right {v_} {nm} {a_}", "inferred", "the altitude's mark")
+    for nm, segs in its.items():
+        for s_ in segs:
+            add(f"on {nm} {s_[0]}{s_[1]}", "inferred",
+                f"{nm} is the computed intersection")
+    tkg: dict[int, list] = {}
+    for (a_, b_), c_ in tk.items():
+        tkg.setdefault(c_, []).append(f"{a_}{b_}")
+    for c_, ss in tkg.items():
+        for i_ in range(len(ss)):
+            for j_ in range(i_ + 1, len(ss)):
+                add(f"equal {ss[i_]} {ss[j_]}", "inferred",
+                    f"both carry {c_} tick mark{'s' if c_ > 1 else ''}")
+        if len(ss) == 1:
+            add(f'describe "{ss[0]} carries {c_} tick mark'
+                f'{"s" if c_ > 1 else ""}"', "inferred", "the drawn tick")
+    for v_, a_, b_ in rt:
+        add(f"right {a_} {v_} {b_}", "inferred", "the right-angle mark")
+    arc_groups: dict[int, list] = {}
+    for m_ in am:
+        arc_groups.setdefault(m_["arcs"], []).append(m_)
+    for c_, grp in arc_groups.items():
+        if len(grp) < 2:
+            continue
+        for i_ in range(len(grp)):
+            for j_ in range(i_ + 1, len(grp)):
+                g1, g2 = grp[i_], grp[j_]
+                add(f'describe "angle {g1["arms"][0]}{g1["at"]}{g1["arms"][1]} '
+                    f'and angle {g2["arms"][0]}{g2["at"]}{g2["arms"][1]} carry '
+                    f'the same arc mark — they are equal"', "inferred",
+                    f"{c_} arc{'s' if c_ > 1 else ''} at each")
+    for m_ in am:
+        a_, b_ = m_["arms"]
+        v_ = m_["at"]
+        if m_.get("label") is not None:
+            if m_.get("kind") == "num" and not fig_mode:
+                add(f"angle {a_} {v_} {b_} = {m_['num']:g}", "stem",
+                    f"the printed {m_['txt']} at {v_}")
+            elif m_.get("kind") == "num":
+                add(f'describe "angle {a_}{v_}{b_} is marked {m_["txt"]} — read '
+                    'off the figure"', "inferred", "a figure-mode numeric angle")
+            else:
+                add(f'describe "the angle at {v_} is marked {m_["txt"]} — the '
+                    'unknown"', "inferred", "a letter label")
+        elif m_.get("reflex"):
+            add(f'describe "the reflex angle at {v_} is marked '
+                f'({m_["deg"]:.1f}°)"', "inferred", "the reflex arc")
+    for (a_, b_), glyph in printed.items():
+        num = bool(re.fullmatch(r"\d+(?:\.\d+)?", glyph.split()[0]))
+        ev = "stem" if (num and not fig_mode) else "inferred"
+        add(f'label "{glyph}" names {a_}{b_}', ev,
+            f"the printed label on {a_}{b_}")
+    seen_v = set()
+    for rec in scaffs:
+        for nm in rec["names"]:
+            tgt = alias.get(nm, nm)
+            if tgt in seen_v:
+                continue
+            seen_v.add(tgt)
+            add(f'label "{tgt}" names {tgt}', "inferred", "a vertex letter")
+    for nm in ext:
+        add(f'label "{nm}" names {nm}', "inferred", "the produced point's letter")
+    for nm in interior_pts:
+        add(f'label "{nm}" names {nm}', "inferred",
+            "a construction point's letter")
+    for m_ in am:
+        if m_.get("label") is not None:
+            add(f'label "{m_["txt"]}" names {m_["at"]}1', "inferred",
+                f"the arc label at {m_['at']} (anchor {m_['at']}1)")
+    if fig_mode:
+        add('describe "printed lengths and angles are figure content — the '
+            'student reads them off the figure"', "inferred",
+            "the read-the-figure mode (values=figure)")
+    der = None
+    tri_ang = [r for r in scaffs if r["shape"] == "triangle" and
+               len(r.get("ang") or {}) == 3]
+    if tri_ang:
+        rec = tri_ang[0]
+        nms = [alias.get(n, n) for n in rec["names"]]
+        _av = " + ".join(f"{rec['ang'][n]:g}" for n in rec["names"])
+        der = (f"derive {_av} = 180", "the angle sum of the first triangle")
+    if der is None:
+        quad_num = [r for r in scaffs if r["shape"] in _QUAD4 + _NEW4]
+        if quad_num:
+            rec = quad_num[0]
+            vals = [rec["true"].get(_canon(*e)) for e in rec["edges"]]
+            if all(v is not None for v in vals):
+                der = (f"derive {' + '.join(f'{v:g}' for v in vals)} = "
+                       f"{_num_exact(sum(vals))}",
+                       "the quadrilateral's perimeter")
+    if der is None and corr:
+        k = corr[0]["k"]
+        der = (f"derive {k:g} / 1 = {k:g}", "the correspondence scale")
+    if der is None:
+        seen = [float(g.split()[0]) for g in printed.values()
+                if re.fullmatch(r"\d+(?:\.\d+)?", g.split()[0])]
+        if len(seen) >= 2 and not fig_mode:
+            der = (f"derive {seen[0]:g} + {seen[1]:g} = "
+                   f"{_num_exact(seen[0] + seen[1])}", "two printed lengths")
+    if der is None:
+        der = ("derive 180 - 90 = 90", "a right angle's complement — the "
+               "constructed set's required derive")
+    add(der[0], "inferred", der[1])
+    absent = ["arrow", "shaded", "dashed", "angleMark", "tickMark",
+              "parallelMark"]
+    if am or rt or alt:
+        absent.remove("angleMark")
+    if tk:
+        absent.remove("tickMark")
+    if par:
+        absent.remove("parallelMark")
+        absent.remove("arrow")
+    add("none " + " ".join(absent), "inferred",
+        "only the marks claimed above are drawn")
+    seen_: set = set()
+    claims = [c_ for c_ in claims if not (c_[0] in seen_ or seen_.add(c_[0]))]
+    segs = list(drawn_seg)
+    segs += [f"{a}{b}" for (a, b) in printed]
+    for pts, _c in par:
+        for a_, b_ in pts:
+            if a_ + b_ not in segs:
+                segs.append(a_ + b_)
+    anchors = dict(P)
+    feats = []
+    if len(scaffs) > 1:
+        feats.append(f"{len(scaffs)} connected scaffolds")
+    if corr:
+        feats.append("verified correspondences")
+    if par:
+        feats.append("parallel marks")
+    if tk:
+        feats.append("tick marks")
+    if alt or med or dv or its:
+        feats.append("computed construction points")
+    if am:
+        feats.append("angle arcs")
+    scale_txt = ("physical scaffolds share one px-per-unit scale; angle-drawn "
+                 "scaffolds at the declared relative size")
+    if fig_mode:
+        scale_txt += "; printed values are read off the figure, not from the stem"
+    return finish(
+        kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+        anchors=anchors, points=list(P), segments=segs, claims=claims, ask=ask,
+        title=title or "A composed marked figure",
+        description=description or (
+            f"{len(scaffs)} scaffold(s) computed from the stated givens" +
+            (f", showing {', '.join(feats)}." if feats else ".")),
+        scale=scale_txt, medium=medium,
+        budget=len(elements) if len(elements) > 32 else None,
+        departures=([f"{len(elements)} elements — connected scaffolds carry "
+                     "their own marks and letters (S6b §3.4)"]
+                    if len(elements) > 32 else None))
+
+
+def _mg_on_seg(a, b, p):
+    d_ = (b[0] - a[0], b[1] - a[1])
+    n2 = d_[0] ** 2 + d_[1] ** 2
+    if n2 < 1e-9:
+        return False
+    if abs((p[0] - a[0]) * d_[1] - (p[1] - a[1]) * d_[0]) / math.sqrt(n2) > 0.75:
+        return False
+    t_ = ((p[0] - a[0]) * d_[0] + (p[1] - a[1]) * d_[1]) / n2
+    return -0.001 <= t_ <= 1.001
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# G10 solids extension — half-cylinder, profiled triangular prisms (right /
+# isosceles / scalene, apex-down open trough) and triangular-prism / cylinder
+# nets. Legacy shapes delegate to the original builders unchanged.
+# ────────────────────────────────────────────────────────────────────────────────
+_legacy_build_solid = build_solid
+_legacy_build_net = build_net
+
+
+def _solid_inputs(dims, allowed, stem, values, scale):
+    if values not in ('stem', 'figure'):
+        raise TemplateError('values must be stem or figure')
+    if not isinstance(dims, dict) or set(dims) - set(allowed):
+        raise TemplateError('unsupported dimension slots')
+    _finite_number(scale)
+    if not 0.5 <= scale <= 3:
+        raise TemplateError('scale_px must be 0.5–3')
+    result = {}
+    for name, value in dims.items():
+        _finite_number(value)
+        if value <= 0:
+            raise TemplateError(f'{name} must be positive')
+        result[name] = float(value)
+    if values == 'stem':
+        require_stem(stem, **result)
+    return result
+
+
+def _solid_profile(dims, profile):
+    if profile not in ('right', 'isosceles', 'scalene'):
+        raise TemplateError('profile must be right, isosceles or scalene')
+    if not {'base', 'length'} <= dims.keys():
+        raise TemplateError('base and length are required')
+    b = dims['base']
+    if profile == 'right':
+        if set(dims) not in ({'base', 'height', 'length'}, {'base', 'right', 'length'}):
+            raise TemplateError('right profile needs base and height OR base and hypotenuse right')
+        x = 0.0
+        h2 = dims['height'] ** 2 if 'height' in dims else dims['right'] ** 2 - b ** 2
+    elif profile == 'isosceles':
+        if set(dims) not in ({'base', 'height', 'length'}, {'base', 'left', 'length'}):
+            raise TemplateError('isosceles profile needs base and height OR base and left slant')
+        x = b / 2
+        h2 = dims['height'] ** 2 if 'height' in dims else dims['left'] ** 2 - x ** 2
+    else:
+        if set(dims) != {'base', 'left', 'right', 'length'}:
+            raise TemplateError('scalene profile needs base, left, right and length')
+        sides = [b, dims['left'], dims['right']]
+        if any(math.isclose(sides[i],sides[j],rel_tol=1e-9) for i in range(3) for j in range(i)):
+            raise TemplateError('scalene profile requires three unequal sides')
+        x = (dims['left'] ** 2 + b ** 2 - dims['right'] ** 2) / (2 * b)
+        h2 = dims['left'] ** 2 - x ** 2
+        if x <= 0.015 * b or b - x <= 0.015 * b:
+            raise TemplateError('scalene foot must clear both base endpoints — a foot at an '
+                                'endpoint is a right triangle (use the right profile, which '
+                                'draws the right-angle mark)')
+    if h2 <= 0 or not 0 <= x <= b:
+        raise TemplateError('impossible or obtuse-foot cross-section')
+    h = math.sqrt(h2)
+    if min(h, b, dims['length']) / max(h, b, dims['length']) < 0.08:
+        raise TemplateError('cross-section or length is too thin for readable geometry')
+    return b, x, h, math.hypot(x, h), math.hypot(b - x, h)
+
+
+def _solid_finish(*, figure_id, stem, elements, anchors, labels, description, scale,
+                  values, unit, ask, title, medium, projected=False, extra=None):
+    if not isinstance(unit, str) or not re.fullmatch(r'[A-Za-z]{1,5}', unit):
+        raise TemplateError('unit must be 1–5 English letters')
+    claims = list(extra or [])
+    ambiguous = []
+    seen = {}
+    groups = {}
+    for v,a,b,_ in labels:
+        groups.setdefault(v,[]).append((a,b))
+    for v, pairs in groups.items():
+        if len(pairs) > 1:
+            for a,b in pairs:
+                elements += vc.tick_marks(anchors[a],anchors[b],count=2)
+    for i, (value, a, b, note) in enumerate(labels):
+        glyph = f'{value:g} {unit}' if isinstance(value, (int, float)) else value
+        target = f'{a}{b}'
+        if glyph in seen:
+            claims.append((f'describe "true dimension {target} equals {seen[glyph]}, already labelled {glyph}"','inferred','equal physical dimensions; not a claim about projected edge lengths'))
+            continue
+        seen[glyph] = target
+        seat = anchors[b] if note.startswith('radius') else vc.lerp(anchors[a], anchors[b], .5)
+        elements.append(_float_label(f'dim{i}', glyph, seat, gap=18))
+        claims.append((f'label "{glyph}" names {target}', 'stem' if values == 'stem' and isinstance(value, (int, float)) else 'inferred', note))
+        if projected and 'projected' in note:
+            ambiguous.append(f'K{len(claims)}')
+    claims.append((f'describe "{description}"', 'inferred', 'computed geometry'))
+    nums = [v for v, _, _, _ in labels if isinstance(v, (int, float))]
+    claims.append((f'derive {nums[0]:g} * {nums[1]:g} = {_num_exact(nums[0]*nums[1])}', 'inferred', 'product of the first two printed true dimensions'))
+    claims.append(('none parallelMark arrow shaded', 'inferred', 'outline and dimensional construction only'))
+    return finish(kind='solid' if projected else 'net', figure_id=figure_id, stem=stem,
+                     elements=elements, anchors=anchors, points=list(anchors),
+                     segments=list(dict.fromkeys(a+b for _, a, b, _ in labels)),
+                     claims=claims, ask=ask, title=title or description,
+                     description=description, scale=scale, medium=medium,
+                     ambiguous=ambiguous or None)
+
+
+def build_solid(*, figure_id, stem, shape, dims, profile=None, names=None,
+                altitude=False, open_top=False, unit='cm', scale_px=1.0,
+                values='stem', ask=None, title=None, description=None, medium='english'):
+    if shape != 'half_cylinder' and not (shape == 'triangular_prism' and profile is not None):
+        if profile is not None or names is not None or altitude or open_top:
+            raise TemplateError('profile, names, altitude and open_top need a profiled triangular prism')
+        return _legacy_build_solid(figure_id=figure_id, stem=stem, shape=shape, dims=dims,
+                              unit=unit, scale_px=scale_px, values=values, ask=ask,
+                              title=title, description=description, medium=medium)
+    for flag in (altitude, open_top):
+        if not isinstance(flag, bool):
+            raise TemplateError('altitude and open_top must be Boolean')
+    d = _solid_inputs(dims, ('base', 'height', 'left', 'right', 'length') if shape == 'triangular_prism'
+                      else ('radius', 'diameter', 'length'), stem, values, scale_px)
+    vc.reset_ids()
+    elements, labels, extra = [], [], []
+    if shape == 'half_cylinder':
+        if profile is not None or names is not None or altitude or open_top:
+            raise TemplateError('half-cylinder has no profile options')
+        if set(d) not in ({'radius', 'length'}, {'diameter', 'length'}):
+            raise TemplateError('half-cylinder needs radius OR diameter, and length')
+        r = d.get('radius', d.get('diameter', 0) / 2)
+        l = d['length']
+        if min(r, l) / max(r, l) < .08:
+            raise TemplateError('half-cylinder is too thin')
+        k = 210 * scale_px / max(2*r, l)
+        r, l = r*k, l*k
+        off = (.65*l, -.38*l)
+        P = {'A': (-r, 0), 'B': (r, 0), 'C': (-r+off[0], off[1]),
+             'D': (r+off[0], off[1]), 'O': (0, 0)}
+        tangent = math.degrees(math.atan2(off[0], -off[1]))
+        t = math.radians(tangent)
+        q = (r*math.cos(t), r*math.sin(t))
+        elements += [vc.polygon([P[n] for n in ('A','B','D','C')], id='cutFace'),
+                     _ellipse_el((0,0), r, r, id='nearSemi', a0=0,a1=180),
+                     _ellipse_el(off, r, r, id='farVisible', a0=0,a1=tangent),
+                     _ellipse_el(off, r, r, id='farHidden', a0=tangent,a1=180,dashed=True),
+                     vc.line(q,(q[0]+off[0],q[1]+off[1]),id='curvedGenerator')]
+        labels.append((d['length'], 'B','D', 'true axial length; obliquely projected'))
+        if 'radius' in d:
+            elements.append(vc.line(P['O'],P['B'], id='radiusLeader', dashed=True))
+            labels.append((d['radius'],'O','B','radius on the true semicircular end'))
+        else:
+            labels.append((d['diameter'],'A','B','diameter on the true semicircular end'))
+        desc = 'A half-cylinder with two semicircular ends and a flat rectangular axial cut face; occluded far arc dashed and exposed silhouette solid'
+    else:
+        b,x,h,left,right = _solid_profile(d, profile)
+        named = names is not None
+        if names is None:
+            names = ['A','B','C','D','E','F']
+        if not isinstance(names, (list,tuple)) or len(names) != 6 or any(not isinstance(n,str) or not re.fullmatch('[A-Z]',n) for n in names) or len(set(names)) != 6:
+            raise TemplateError('names must be six distinct uppercase letters')
+        if (altitude or 'height' in d) and 'X' in names:
+            raise TemplateError('X is reserved for the altitude foot')
+        if altitude and profile == 'right':
+            raise TemplateError('altitude applies to isosceles/scalene profiles '
+                                'only — on a right profile the left leg is the '
+                                'altitude; pass dims={"height": …} to label it')
+        k = 235 * scale_px / max(b,h,d['length'])
+        sign = 1 if open_top else -1
+        front = [(x*k, sign*h*k), (0,0), (b*k,0)]
+        off = (.65*d['length']*k,-.38*d['length']*k)
+        back = [(a+off[0],c+off[1]) for a,c in front]
+        P = dict(zip(names,front+back))
+        for i in range(3):
+            j = (i+1)%3
+            elements.append(vc.line(front[i],front[j],id=f'near{i}'))
+            elements.append(vc.line(back[i],back[j],id=f'far{i}',dashed=not open_top and i in (0,1)))
+            elements.append(vc.line(front[i],back[i],id=f'axial{i}',dashed=not open_top and i==1))
+        if profile != 'right' and (altitude or 'height' in d):
+            P['X']=(x*k,0)
+            elements.append(vc.line(P[names[0]],P['X'],id='altitude',dashed=True))
+            elements += vc.right_angle_mark(P['X'],P[names[0]],P[names[2]],r=9)
+            extra.append((f'describe "the dashed segment {names[0]}X is the end-face altitude to foot X, marked perpendicular to {names[1]}{names[2]}"','inferred','altitude ink; X is the computed foot, deliberately unlettered — a letter would crowd the base edge'))
+        targets = {'base':(names[1],names[2]), 'height':(names[0],'X' if 'X' in P else names[1]),
+                   'left':(names[0],names[1]), 'right':(names[0],names[2]),
+                   'length':(names[2],names[5])}
+        if profile == 'right':
+            elements += vc.right_angle_mark(P[names[1]],P[names[0]],P[names[2]],r=9)
+        if profile == 'isosceles':
+            elements += vc.tick_marks(front[0],front[1])
+            elements += vc.tick_marks(front[0],front[2])
+            extra.append((f'equal {names[0]}{names[1]} {names[0]}{names[2]}','inferred','computed isosceles end slants; equal ticks'))
+        for key,value in d.items():
+            a,c = targets[key]
+            labels.append((value,a,c,'true axial length; obliquely projected' if key == 'length' else f'true end-face {key}'))
+        if named or altitude:
+            for i,n in enumerate(names):
+                elements.append(_float_label(f'vertex{i}',n,P[n],gap=14))
+                extra.append((f'label "{n}" names {n}','inferred','named end vertex'))
+        article = 'an' if profile == 'isosceles' else 'a'
+        desc = f'A right triangular prism with {article} {profile} cross-section and congruent parallel ends'
+        if open_top:
+            desc += '; apex-down open trough: the base-width longitudinal face is absent, rim edges remain'
+        extra.append((f'describe "cross-section base {b:g}, altitude {h:g}, left {left:g}, right {right:g}; solved from supplied constraints"', 'inferred','true physical cross-section; not projected edge measurements'))
+    return _solid_finish(figure_id=figure_id,stem=stem,elements=elements,anchors=P,
+                         labels=labels,description=description or desc,
+                         scale='true end-face geometry; axial edges projected by (0.65,-0.38); do not measure projected lengths',
+                         values=values,unit=unit,ask=ask,title=title,medium=medium,
+                         projected=True,extra=extra)
+
+
+def build_net(*, figure_id, stem, shape, dims=None, profile=None, unit='cm',
+              scale_px=1.0, values='stem', ask=None, title=None, description=None,
+              medium='english', **legacy):
+    if shape not in ('triangular_prism','cylinder'):
+        if dims is not None or profile is not None or scale_px != 1:
+            raise TemplateError('new options need triangular_prism or cylinder')
+        return _legacy_build_net(figure_id=figure_id,stem=stem,shape=shape,unit=unit,values=values,
+                            ask=ask,title=title,description=description,medium=medium,**legacy)
+    if legacy:
+        raise TemplateError('nets use dims, not legacy pyramid options')
+    d = _solid_inputs(dims, ('radius','height') if shape=='cylinder' else ('base','height','left','right','length'),stem,values,scale_px)
+    vc.reset_ids()
+    elements,labels,extra,P = [],[],[],{}
+    if shape == 'cylinder':
+        if set(d) != {'radius','height'} or profile is not None:
+            raise TemplateError('cylinder net needs radius and height only')
+        r,h = d['radius'],d['height']
+        w = 2*math.pi*r
+        if min(r,h)/max(w,h) < .06:
+            raise TemplateError('cylinder net is too thin')
+        k=330*scale_px/max(w,h+4*r)
+        r,h,w=r*k,h*k,w*k
+        P={'A':(0,0),'B':(w,0),'C':(w,h),'D':(0,h),
+           'O':(w/4,-r),'R':(w/4+r,-r),'S':(3*w/4,h+r)}
+        elements += [vc.polygon([P[n] for n in 'ABCD'],id='lateral'),
+                     vc.circle(P['O'],r,id='endTop'),vc.circle(P['S'],r,id='endBottom'),
+                     vc.line(P['O'],P['R'],id='radius',dashed=True)]
+        labels=[(d['radius'],'O','R','radius of both congruent circles'),
+                (d['height'],'B','C','axial height of the lateral rectangle'),
+                ('2π × r','A','B','rectangle width is exactly the circumference, not a numeric length of 2')]
+        desc='A cylinder net: a true circumference-width rectangle and two congruent circular ends tangent at attachment points; circular joins are not straight fold edges'
+    else:
+        b,x,h,left,right = _solid_profile(d,profile)
+        widths=[left,b,right]
+        k=350*scale_px/max(sum(widths),d['length']+2*h)
+        edges=[0,left*k,(left+b)*k,sum(widths)*k]
+        L=d['length']*k
+        for i,z in enumerate(edges):
+            P['ABCD'[i]]=(z,0)
+            P['EFGH'[i]]=(z,L)
+            elements.append(vc.line((z,0),(z,L),id=f'vertical{i}',dashed=i in (1,2)))
+        for i in range(3):
+            for row,y in [('T',0),('B',L)]:
+                elements.append(vc.line((edges[i],y),(edges[i+1],y),id=f'{row}edge{i}',dashed=i==1))
+        for suffix,y,sgn in [('U',0,-1),('V',L,1)]:
+            apex=(edges[1]+x*k,y+sgn*h*k)
+            P[suffix]=apex
+            elements += [vc.line((edges[1],y),apex,id=f'flap{suffix}left'),
+                         vc.line(apex,(edges[2],y),id=f'flap{suffix}right')]
+        if profile == 'right':
+            elements += vc.right_angle_mark(P['B'],P['U'],P['C'],r=9)
+            elements += vc.right_angle_mark(P['F'],P['V'],P['G'],r=9)
+        for key,value in d.items():
+            if key=='base': a,c='B','C'
+            elif key=='length': a,c='D','H'
+            elif key=='left': a,c='A','B'
+            elif key=='right': a,c='C','D'
+            else:
+                if x == 0:
+                    a,c='U','B'
+                else:
+                    P['X']=(edges[1]+x*k,0)
+                    elements.append(vc.line(P['U'],P['X'],id='height',dashed=True))
+                    a,c='U','X'
+            labels.append((value,a,c,f'true {key} dimension'))
+        desc='A triangular-prism net: three rectangles of widths left slant, base, right slant; two congruent end triangles share the central base edges; all four shared fold edges dashed'
+        extra.append((f'describe "rectangle widths {left:g}, {b:g}, {right:g} equal the three solved cross-section sides"','inferred','one physical unit scale throughout'))
+    return _solid_finish(figure_id=figure_id,stem=stem,elements=elements,anchors=P,
+                         labels=labels,description=description or desc,
+                         scale='all faces use one true physical unit scale',values=values,
+                         unit=unit,ask=ask,title=title,medium=medium,extra=extra)
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# G10 pattern profiles — motion states, concentric-ring dot patterns (reached
+# through dot_pattern kind="rings"), arithmetic slat frames, clock faces and
+# arithmetic pairing arcs. Every numeric input is checked by _pattern_number
+# before any conversion or arithmetic.
+# ────────────────────────────────────────────────────────────────────────────────
+
+def _pattern_number(value, name, *, low=None, high=None, whole=False):
+    result = _finite_number(value)
+    if low is not None and result < low or high is not None and result > high:
+        raise TemplateError(f"{name}: outside bounded range")
+    if whole and result != int(result):
+        raise TemplateError(f"{name}: must be a whole number")
+    return int(result) if whole else result
+
+
+def _pattern_finish(*, kind, figure_id, stem, elements, claims, anchors=None, segments=(),
+          ask=None, title=None, description=None, medium="english", scale="symbolic layout"):
+    anchors = anchors or {}
+    seen = set()
+    for element in elements:
+        glyph = element.get("value") if element["type"] == "text" else element.get("label")
+        if glyph is not None and glyph not in seen:
+            seen.add(glyph)
+            target = glyph if glyph in anchors else f"glyph{len(seen)}"
+            claims.append((f'label "{glyph}" names {target}', "inferred",
+                           "the printed symbolic state, dimension or term"))
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                     anchors=anchors, points=list(anchors), segments=list(segments),
+                     claims=claims, ask=ask, title=title or kind.replace("_", " "),
+                     description=description or " ".join(pred[10:-1] for pred, _, _ in claims
+                                                         if pred.startswith('describe "')),
+                     scale=scale, medium=medium,
+                     budget=len(elements) if len(elements) > 32 else None,
+                     departures=[f"{len(elements)} elements — individually countable marks and labels"]
+                     if len(elements) > 32 else None)
+
+
+def build_motion_states(*, figure_id, stem, profile="point", distance=None, length=None,
+                        bridge=None, elapsed=None, ask=None, title=None, description=None,
+                        medium="english"):
+    vc.reset_ids()
+    if profile not in ("point", "post", "bridge"):
+        raise TemplateError("motion_states: point, post or bridge only")
+    if elapsed is not None:
+        elapsed = _pattern_number(elapsed, "elapsed", low=0.001, high=100000)
+        require_stem(stem, elapsed=elapsed)
+    if profile == "point":
+        if length is not None or bridge is not None:
+            raise TemplateError("point motion takes distance, not train dimensions")
+        distance = _pattern_number(distance, "distance", low=0.001, high=100000)
+        require_stem(stem, distance=distance)
+        origin, end, scale = 0, distance, 200 / distance
+    else:
+        if distance is not None or profile == "post" and bridge is not None:
+            raise TemplateError("train motion uses computed displacement")
+        length = _pattern_number(length, "length", low=0.001, high=100000)
+        require_stem(stem, length=length)
+        bridge = _pattern_number(bridge, "bridge", low=0.001, high=100000) if profile == "bridge" else 0
+        if bridge:
+            require_stem(stem, bridge=bridge)
+        origin, end = -length, bridge + length
+        scale = 240 / (end - origin)
+        if length * scale < 35 or bridge and bridge * scale < 35:
+            raise TemplateError("motion dimensions too unequal for readable states")
+    x = lambda value: (value - origin) * scale
+    elements = [vc.line((-12, 0), (x(end) + 12, 0), id="track")]
+    claims = []
+    anchors = {}
+    if profile == "point":
+        anchors = {"A": (x(0), 0), "B": (x(end), 0)}
+        elements += [vc.circle(anchors[k], 4, fill=vc.INK, id=k) for k in anchors]
+        elements += [vc.text((x(0), 30), "A"), vc.text((x(end), 30), "B"),
+                     vc.text((100, 32), f"{distance:g} m")]
+        start, stop = x(0), x(end)
+        claims.append((f"derive {distance:g} / 1 = {distance:g}", "inferred", "the stated displacement in metres"))
+        claims.append((f'describe "A and B lie on the same straight track; displacement is {distance:g} m"',
+                       "stem", "input distance checked against stem"))
+    else:
+        for name, rear, front in (("S", -length, 0), ("T", bridge, bridge + length)):
+            a, b = x(rear), x(front)
+            body = vc.polygon([(a, -32), (b, -32), (b, -12), (a, -12)], id=name)
+            if name == "S":
+                body["stroke"] = {"style": "dashed"}
+            elements += [body, vc.text(((a + b) / 2, -58), name),
+                         vc.text(((a + b) / 2 + (-14 if name == "S" else 14), 30), f"{length:g} m")]
+        elements += [vc.line((x(0), 0), (x(0), 35), id="post")]
+        claims.append(('describe "S is a dashed initial-state outline; T is the solid final-state outline, not a second simultaneous train"',
+                       "inferred", "ghost outline distinguishes the two time states"))
+        if bridge:
+            elements += [vc.line((x(0), 25), (x(bridge), 25), width=4, id="bridge"),
+                         vc.text(((x(0) + x(bridge)) / 2, 60), f"{bridge:g} m")]
+        start, stop = x(-length / 2), x(bridge + length / 2)
+        claims.append((f'describe "S front meets the fixed reference; T rear clears it; both states share one track"',
+                       "inferred", "computed endpoints use the same longitudinal coordinate"))
+        claims.append((f"derive {length:g} + {bridge:g} = {length + bridge:g}",
+                       "inferred", "distance moved by either endpoint between the two states"))
+    elements += [vc.arrow((start, -95), (stop, -95), id="motion")]
+    if elapsed is not None:
+        elements += [vc.text(((start + stop) / 2, -125), f"{elapsed:g} s")]
+    claims.append(('describe "motion arrow points from initial to final position, not a scale for speed"',
+                   "inferred", "uniform motion is stated in the stem, not inferred from arrow length"))
+    claims.append(("none tickMark parallelMark angleMark angleArc shaded" + (" dashed" if profile == "point" else ""),
+                   "inferred", "symbolic motion only"))
+    return _pattern_finish(kind="motion_states", figure_id=figure_id, stem=stem, elements=elements,
+                 claims=claims, anchors=anchors, segments=["AB"] if anchors else [], ask=ask,
+                 title=title, description=description, medium=medium,
+                 scale="to scale along the shared track; transverse heights and arrow offset are symbolic")
+
+
+def _build_ring_pattern(*, figure_id, stem, rings, first, increment, values="stem",
+                        ask=None, title=None, description=None, medium="english"):
+    vc.reset_ids()
+    rings = _pattern_number(rings, "rings", low=1, high=4, whole=True)
+    first = _pattern_number(first, "first", low=3, high=24, whole=True)
+    increment = _pattern_number(increment, "increment", low=0, high=12, whole=True)
+    if values not in ("stem", "figure"):
+        raise TemplateError("values must be stem or figure")
+    if values == "stem":
+        require_stem(stem, rings=rings, first=first, increment=increment)
+    counts = [first + i * increment for i in range(rings)]
+    if counts[-1] > 36 or sum(counts) > 90:
+        raise TemplateError("ring_pattern: count budget exceeded")
+    elements, claims = [], []
+    for i, count in enumerate(counts):
+        radius = 34 + 34 * i
+        if 2 * radius * math.sin(math.pi / count) < 10:
+            raise TemplateError("ring_pattern: bulbs too close to count")
+        elements.append(vc.circle((0, 0), radius, id=f"ring{i + 1}"))
+        for j in range(count):
+            p = on_circle_point((0, 0), radius, -90 + 360 * j / count)
+            elements.append(vc.circle(p, 3.2, fill=vc.INK, id=f"r{i + 1}d{j + 1}"))
+        claims.append((f'describe "ring {i + 1} contains exactly {count} individually drawn bulbs"',
+                       "inferred", "arithmetic count; radius is a layout choice, not proportional to count"))
+    for previous, count in zip(counts, counts[1:]):
+        claims.append((f"derive {previous} + {increment} = {count}", "inferred", "successive ring count"))
+    if rings == 1:
+        claims.append((f"derive {first} / 1 = {first}", "inferred", "the single ring count"))
+    claims.append(('describe "concentric rings have arithmetic bulb counts; count the dots, not circumference"',
+                   "inferred", "figure-reading values" if values == "figure" else "stem-checked counts"))
+    claims.append(("none tickMark parallelMark angleMark angleArc arrow dashed shaded", "inferred", "rings and dots only"))
+    return _pattern_finish(kind="ring_pattern", figure_id=figure_id, stem=stem, elements=elements,
+                 claims=claims, ask=ask, title=title, description=description, medium=medium,
+                 scale="not to scale — radii are layout choices; exact dot counts are figure content")
+
+
+def build_slat_frame(*, figure_id, stem, first, increment, last, slat_width,
+                     ask=None, title=None, description=None, medium="english"):
+    vc.reset_ids()
+    first = _pattern_number(first, "first", low=0.001, high=100000)
+    increment = _pattern_number(increment, "increment", low=0.001, high=100000)
+    last = _pattern_number(last, "last", low=first + increment, high=100000)
+    slat_width = _pattern_number(slat_width, "slat_width", low=0.001, high=100000)
+    require_stem(stem, first=first, increment=increment, last=last, slat_width=slat_width)
+    steps = (last - first) / increment
+    if abs(steps - round(steps)) > 1e-8 or not 1 <= round(steps) <= 23:
+        raise TemplateError("slat_frame: last must give 2..24 exact arithmetic slats")
+    n = round(steps) + 1
+    s = 200 / max(last, n * slat_width)
+    if n * slat_width * s < 85 or slat_width * s < 4:
+        raise TemplateError("slat_frame: geometry too narrow to read faithfully")
+    elements, claims = [], []
+    anchors = {"A": (0, 0), "B": (n * slat_width * s, 0), "C": (0, -first * s),
+               "D": (n * slat_width * s, -last * s)}
+    for i in range(n):
+        a, b, h = i * slat_width * s, (i + 1) * slat_width * s, (first + i * increment) * s
+        elements.append(vc.polygon([(a, 0), (b, 0), (b, -h), (a, -h)], id=f"slat{i + 1}"))
+    elements += [vc.text((-20, -first * s / 2), f"{first:g} cm", align="end"),
+                 vc.text((n * slat_width * s + 20, -last * s / 2), f"{last:g} cm", align="start"),
+                 vc.text((0, 35), f"d = {increment:g} cm"),
+                 vc.text((n * slat_width * s, 35), f"w = {slat_width:g} cm")]
+    claims += [(f"derive ({last:g} - {first:g}) / {increment:g} + 1 = {n}", "inferred", "number of slats"),
+               (f"ratio len AC / len BD = {first / last:.12g}", "stem", "first and last physical heights use one scale"),
+               (f'describe "{n} contiguous slats have heights {first:g} plus successive increments {increment:g} cm; no gaps"',
+                "inferred", "all slats computed, not a decorative fake count"),
+               ("none tickMark parallelMark angleMark angleArc arrow dashed shaded", "inferred", "dimensioned slats only")]
+    return _pattern_finish(kind="slat_frame", figure_id=figure_id, stem=stem, elements=elements,
+                 claims=claims, anchors=anchors, segments=["AC", "BD"], ask=ask,
+                 title=title, description=description, medium=medium, scale="to scale — one physical cm scale in both axes")
+
+
+def build_clock_face(*, figure_id, stem, hour, minute=0, ask=None, title=None,
+                     description=None, medium="english"):
+    vc.reset_ids()
+    hour = _pattern_number(hour, "hour", low=1, high=12, whole=True)
+    minute = _pattern_number(minute, "minute", low=0, high=59, whole=True)
+    require_stem(stem, hour=hour, minute=minute)
+    elements = [vc.circle((0, 0), 90, id="face")]
+    claims = []
+    for h in range(1, 13):
+        deg = h * 30 - 90
+        elements.append(vc.line(on_circle_point((0, 0), 82, deg),
+                                on_circle_point((0, 0), 90, deg), id=f"tick{h}"))
+        elements.append(vc.text(on_circle_point((0, 0), 114, deg), str(h), size=15))
+    minute_deg = minute * 6 - 90
+    hour_deg = (hour % 12) * 30 + minute / 2 - 90
+    anchors = {"O": (0, 0), "H": on_circle_point((0, 0), 48, hour_deg),
+               "M": on_circle_point((0, 0), 72, minute_deg)}
+    elements += [vc.line(anchors["O"], anchors["H"], width=4, id="hour_hand"),
+                 vc.line(anchors["O"], anchors["M"], width=2, id="minute_hand"),
+                 vc.circle((0, 0), 3, fill=vc.INK, id="pivot")]
+    claims += [("derive 360 / 12 = 30", "inferred", "twelve-hour dial convention"),
+               (f"derive {hour} * 30 + {minute} / 2 = {hour * 30 + minute / 2:g}", "inferred", "hour hand clockwise angle; 360 degrees is the same as 0"),
+               (f'describe "12 equally spaced hour ticks; minute hand is {minute * 6:g} degrees clockwise from 12; hour hand is {((hour % 12) * 30 + minute / 2):g} degrees clockwise from 12"',
+                "inferred", "hour hand includes elapsed-minute displacement; ticks are apparatus conventions"),
+               ('describe "each moving hand tip traces its own circle centred at the pivot O"', "inferred", "rigid hands of fixed lengths"),
+               ("none tickMark parallelMark angleMark angleArc arrow dashed shaded", "inferred", "hour ruling is not an equality tickMark")]
+    return _pattern_finish(kind="clock_face", figure_id=figure_id, stem=stem, elements=elements,
+                 claims=claims, anchors=anchors, segments=["OH", "OM"], ask=ask,
+                 title=title, description=description, medium=medium,
+                 scale="exact hand angles and fixed radii; arbitrary physical clock size")
+
+
+def build_pairing_arcs(*, figure_id, stem, first, increment, terms, ask=None,
+                       title=None, description=None, medium="english"):
+    vc.reset_ids()
+    first = _pattern_number(first, "first", low=0, high=99, whole=True)
+    increment = _pattern_number(increment, "increment", low=1, high=20, whole=True)
+    terms = _pattern_number(terms, "terms", low=2, high=8, whole=True)
+    if terms % 2:
+        raise TemplateError("pairing_arcs: even term count only; no invented central pair")
+    require_stem(stem, first=first, increment=increment, terms=terms)
+    values = [first + i * increment for i in range(terms)]
+    if values[-1] > 99:
+        raise TemplateError("pairing_arcs: at most two-digit terms")
+    spacing = 52
+    elements, claims = [], []
+    for i, value in enumerate(values):
+        elements.append(vc.text((i * spacing, 28), str(value), size=16))
+        if i < terms - 1:
+            elements.append(vc.text(((i + 0.5) * spacing, 28), "+", size=20))
+    pair_sum = values[0] + values[-1]
+    for i in range(terms // 2):
+        j = terms - 1 - i
+        radius = (j - i) * spacing / 2
+        centre = (terms - 1) * spacing / 2
+        elements.append(vc.polyline([on_circle_point((centre, 0), radius, 180 + j * 7.5)
+                                     for j in range(25)], id=f"pair{i + 1}"))
+        elements.append(vc.text((centre, -radius - 25), str(pair_sum), size=14))
+        claims.append((f"derive {values[i]} + {values[j]} = {pair_sum}", "inferred", "opposite terms of the arithmetic sequence"))
+        claims.append((f'describe "pair{i + 1} joins term {i + 1} to term {j + 1}"', "inferred", "computed nested semicircular arc endpoints"))
+    claims.insert(0, (f"derive {first} + ({terms} - 1) * {increment} = {values[-1]}", "inferred", "last term"))
+    for i, value in enumerate(values[1:-1], 1):
+        claims.insert(i, (f"derive {values[i - 1]} + {increment} = {value}", "inferred", "interior arithmetic term"))
+    claims.append(("none tickMark parallelMark angleMark angleArc arrow dashed shaded", "inferred", "pairing arcs are not angle arcs"))
+    return _pattern_finish(kind="pairing_arcs", figure_id=figure_id, stem=stem, elements=elements,
+                 claims=claims, ask=ask, title=title, description=description, medium=medium,
+                 scale="not to scale — term order and pair incidence carry the mathematics")
+
+
 def _validate_numeric_inputs(fn):
     from functools import wraps
     import inspect
@@ -13140,14 +16109,2773 @@ def _validate_numeric_inputs(fn):
     return validated
 
 
+# -------------------------------------------------------------------
+# circular_composite — bounded circular-composite profiles (ported from
+# wt/g10-templates/circular-work/circular_extension.py; helpers carry the
+# _circ_ prefix to stay clear of module names)
+# -------------------------------------------------------------------
+
+_CIRC_KIND = "circular_composite"
+_CIRC_SIDES = ("AB", "BC", "CD", "DA")
+_CIRC_SYM = re.compile(r"(?:[1-9][0-9]{0,3})?[a-z]$")
+_CIRC_ANGLE_GLYPH = re.compile(r"[a-zθαβγφ]$")
+
+
+def _circ_number(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TemplateError(f"{_CIRC_KIND}: numeric parameters must be finite numbers, not bools or mistyped values")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise TemplateError(f"{_CIRC_KIND}: numeric parameters must be finite")
+    return _finite_number(value)
+
+
+def _circ_pos(name, v):
+    v = _circ_number(v)
+    if not 1e-6 <= v <= 1e6:
+        raise TemplateError(f"{_CIRC_KIND}: {name} must be a positive number between 0.000001 and 1000000")
+    return v
+
+
+def _circ_deg(name, v):
+    v = _circ_number(v)
+    if not 0 < v <= 360:
+        raise TemplateError(f"{_CIRC_KIND}: {name} must be a number of degrees in (0, 360]")
+    return v
+
+
+def _circ_unit_check(unit):
+    if not isinstance(unit, str) or not re.fullmatch(r"[A-Za-z]{1,3}", unit):
+        raise TemplateError(f"{_CIRC_KIND}: unit is a short Latin unit like cm or m")
+
+
+def _circ_dim(name, v):
+    """A numeric dimension or a symbolic token ('r', 'a', '5a', '2x')."""
+    if isinstance(v, str):
+        s = v.strip()
+        if not _CIRC_SYM.fullmatch(s):
+            raise TemplateError(f"{_CIRC_KIND}: {name} token {v!r} is 1–8 Latin/digit "
+                                "characters like 'r' or '5a'")
+        return ("sym", s)
+    return ("num", _circ_pos(name, v))
+
+
+def _circ_glyph(g, what, unit):
+    """A printed boundary glyph: number+unit that restates the boundary, a lone
+    number, or a short symbolic token. Returns ('num', value) or ('sym', text)."""
+    if not isinstance(g, str) or not g.strip():
+        raise TemplateError(f"{_CIRC_KIND}: {what} label is a non-empty glyph")
+    g = g.strip()
+    m = _LEN_LABEL.fullmatch(g)
+    if m and (m[2] is None or m[2] == unit):
+        return ("num", float(m[1]))
+    if m and m[2] is not None:
+        raise TemplateError(f"{_CIRC_KIND}: {what} label {g!r} uses unit {m[2]!r} — the "
+                            f"figure's unit is {unit!r}")
+    if _CIRC_SYM.fullmatch(g) and not g[0].isdigit():
+        return ("sym", g)
+    raise TemplateError(f"{_CIRC_KIND}: {what} label {g!r} is a number+unit "
+                        f"(in {unit}) or a short letter token")
+
+
+def _circ_bind(glyph_kind, glyph_val, true_value, what, unit):
+    """A numeric glyph may only restate its own boundary within 0.5%."""
+    if glyph_kind == "num" and abs(glyph_val - true_value) > 0.005 * true_value:
+        raise TemplateError(f"{_CIRC_KIND}: {what} label prints {glyph_val:g} but the "
+                            f"boundary is {true_value:.6g} — a label may only "
+                            "restate its own value")
+
+
+def _circ_check_pieces(pieces):
+    if pieces is None:
+        return []
+    if not isinstance(pieces, list):
+        raise TemplateError(f"{_CIRC_KIND}: pieces must be a list of dicts")
+    out = []
+    for i, p in enumerate(pieces):
+        if not isinstance(p, dict):
+            raise TemplateError(f"{_CIRC_KIND}: pieces[{i}] must be a dict")
+        if any(not isinstance(k, str) for k in p):
+            raise TemplateError(f"{_CIRC_KIND}: piece keys must be text")
+        out.append(dict(p))
+    return out
+
+
+def _circ_boxes(elements):
+    return [b[1:] for b in label_boxes(elements, FS)]
+
+
+def _circ_clr(span):
+    return _clearance_units(STROKE_PX + SLACK_STROKE + 1.0, span) + 2.0
+
+
+def _circ_gapl(span):
+    return _clearance_units(5.0, span)
+
+
+def _circ_free(box, elements, boxes, clr, gapl):
+    return (all(_seg_rect_dist(p, q, box) - w / 2 >= clr
+                for p, q, w in stroke_segments(elements)) and
+            all(_rect_gap(box, o) >= 2 * gapl for o in boxes))
+
+
+def _circ_seat_arc_label(elements, boxes, c, r, mid_deg, glyph, clr, gapl):
+    """Seat a glyph off an arc's bisector, outside first then inside."""
+    for k in range(10):
+        u = (math.cos(math.radians(mid_deg)), math.sin(math.radians(mid_deg)))
+        half = _label_half_along(glyph, FS, u[0], u[1])
+        d = r + clr + half + 2.0 + 5.0 * k
+        at = vc.polar(c, d, mid_deg)
+        box = _text_box(glyph, at)
+        if _circ_free(box, elements, boxes, clr, gapl):
+            return at
+    for k in range(10):
+        u = (math.cos(math.radians(mid_deg)), math.sin(math.radians(mid_deg)))
+        half = _label_half_along(glyph, FS, u[0], u[1])
+        d = r - clr - half - 2.0 - 5.0 * k
+        if d <= 6.0:
+            break
+        at = vc.polar(c, d, mid_deg)
+        box = _text_box(glyph, at)
+        if _circ_free(box, elements, boxes, clr, gapl):
+            return at
+    raise TemplateError(f"{_CIRC_KIND}: the arc label {glyph!r} has no clear seat — "
+                        "widen the figure or drop it")
+
+
+def _circ_arc_outward(c, r, p, q, outward_deg):
+    """(start, end) for the arc element whose sweep passes through outward_deg."""
+    a = _angle_of(p, c) % 360
+    b = _angle_of(q, c) % 360
+    sweep = (b - a) % 360
+    if sweep <= 1e-9:
+        raise TemplateError(f"{_CIRC_KIND}: an arc needs distinct endpoints")
+    if (outward_deg - a) % 360 <= sweep + 1e-9:
+        return a, a + sweep
+    return b, b + (a - b) % 360
+
+
+def _circ_norm_out(p, q, inside_pt):
+    nx, ny = vc.normal(p, q)
+    m = vc.lerp(p, q, 0.5)
+    if (inside_pt[0] - m[0]) * nx + (inside_pt[1] - m[1]) * ny > 0:
+        nx, ny = -nx, -ny
+    return nx, ny
+
+
+def _circ_rect_body(length, width, unit_px, pieces, unit, values, stem):
+    """Rectangle A(0,0) B(L,0) C(L,-W) D(0,-W): compute the piece geometry,
+    arc list, trims and perimeter terms. No elements are drawn here."""
+    upx = _circ_number(unit_px) if unit_px is not None else \
+        240.0 / max(length, width)
+    if not 8.0 <= upx <= 240.0:
+        raise TemplateError(f"{_CIRC_KIND}: unit_px must be 8-240")
+    L, W = length * upx, width * upx
+    if min(L, W) < 22.0:
+        raise TemplateError(f"{_CIRC_KIND}: the {min(length, width):g} {unit} side "
+                            "draws under 22 units - raise unit_px")
+    V = {"A": (0.0, 0.0), "B": (L, 0.0), "C": (L, -W), "D": (0.0, -W)}
+    G = (L / 2.0, -W / 2.0)
+    side_ends = {"AB": ("A", "B"), "BC": ("B", "C"), "CD": ("C", "D"),
+                 "DA": ("D", "A")}
+    side_len = {"AB": length, "BC": width, "CD": length, "DA": width}
+    seen_sides, seen_corners = set(), set()
+    specs = []
+    for p in pieces:
+        allowed = {"on", "corner", "kind", "mode", "angle", "align", "radius",
+                   "label"}
+        bad = set(p) - allowed
+        if bad:
+            raise TemplateError(f"{_CIRC_KIND}: piece keys {sorted(bad)} are not "
+                                f"supported ({sorted(allowed)})")
+        kind = p.get("kind")
+        mode = p.get("mode", "attach")
+        if kind not in ("semicircle", "sector"):
+            raise TemplateError(f"{_CIRC_KIND}: piece kind {kind!r} is 'semicircle' "
+                                "or 'sector'")
+        if mode not in ("attach", "cut"):
+            raise TemplateError(f"{_CIRC_KIND}: piece mode {mode!r} is 'attach' or "
+                                "'cut'")
+        if ("on" in p) == ("corner" in p):
+            raise TemplateError(f"{_CIRC_KIND}: a piece needs exactly one of 'on' "
+                                "(a side) or 'corner'")
+        if "corner" in p:
+            if set(p) - {"corner", "kind", "mode", "angle", "radius", "label"}:
+                raise TemplateError(f"{_CIRC_KIND}: unused corner piece arguments")
+            cor = p["corner"]
+            if not (isinstance(cor, str) and cor in "ABCD" and len(cor) == 1):
+                raise TemplateError(f"{_CIRC_KIND}: corner {cor!r} is one of A B C D")
+            if cor in seen_corners:
+                raise TemplateError(f"{_CIRC_KIND}: corner {cor} already carries a "
+                                    "piece")
+            seen_corners.add(cor)
+            if kind != "sector" or mode != "cut":
+                raise TemplateError(f"{_CIRC_KIND}: a corner piece is a 'sector' cut "
+                                    "(a quadrant out of the corner)")
+            ang = _circ_deg("piece angle", p.get("angle", 90.0))
+            if abs(ang - 90.0) > 1e-9:
+                raise TemplateError(f"{_CIRC_KIND}: a rectangle corner takes only a "
+                                    "90-degree sector cut")
+            r_u = _circ_pos("piece radius", p.get("radius"))
+            if values == "stem":
+                require_stem(stem, **{"corner cut radius": r_u})
+                if "angle" in p:
+                    require_stem(stem, **{"corner angle": ang})
+            adj = [s for s, ee in side_ends.items() if cor in ee]
+            if r_u >= min(side_len[s] for s in adj):
+                raise TemplateError(f"{_CIRC_KIND}: the corner cut radius {r_u:g} "
+                                    "does not fit on the corner's sides")
+            specs.append({"corner": cor, "kind": "sector", "mode": "cut",
+                          "angle": 90.0, "r_u": r_u, "label": p.get("label")})
+            continue
+        on = p.get("on")
+        if on not in _CIRC_SIDES:
+            raise TemplateError(f"{_CIRC_KIND}: piece 'on' is one of {_CIRC_SIDES}")
+        if on in seen_sides:
+            raise TemplateError(f"{_CIRC_KIND}: side {on} already carries a piece")
+        seen_sides.add(on)
+        if kind == "semicircle":
+            if set(p) - {"on", "kind", "mode", "label"}:
+                raise TemplateError(f"{_CIRC_KIND}: semicircle radius is derived from its diameter; no extra givens")
+            specs.append({"on": on, "kind": "semicircle", "mode": mode,
+                          "label": p.get("label")})
+            continue
+        if mode != "attach":
+            raise TemplateError(f"{_CIRC_KIND}: a side sector only attaches - a "
+                                "sector side notch is not a bounded profile")
+        ang = _circ_deg("piece angle", p.get("angle"))
+        if ang >= 180.0:
+            raise TemplateError(f"{_CIRC_KIND}: an attached sector's angle must be "
+                                "under 180 degrees")
+        if "radius" in p:
+            raise TemplateError(f"{_CIRC_KIND}: side sector radius is derived from the shared side")
+        al = p.get("align", "start")
+        if al not in ("start", "end"):
+            raise TemplateError(f"{_CIRC_KIND}: sector 'align' is 'start' or 'end' - "
+                                "the side endpoint its centre sits on")
+        if values == "stem":
+            require_stem(stem, **{"attached sector angle": ang})
+        specs.append({"on": on, "kind": "sector", "mode": "attach",
+                      "angle": ang, "align": al, "label": p.get("label")})
+    trim = {s: {"start": 0.0, "end": 0.0} for s in _CIRC_SIDES}
+    cut_sides, attach_sides = {}, {}
+    arcs = []
+    perim_terms, perim_notes = [], []
+    for p in specs:
+        if "corner" in p:
+            for s, (a_, b_) in side_ends.items():
+                if p["corner"] == a_:
+                    trim[s]["start"] += p["r_u"] * upx
+                elif p["corner"] == b_:
+                    trim[s]["end"] += p["r_u"] * upx
+    for s in _CIRC_SIDES:
+        a_nm, b_nm = side_ends[s]
+        a, b = V[a_nm], V[b_nm]
+        sl_px = side_len[s] * upx
+        nx, ny = _circ_norm_out(a, b, G)
+        out_deg = math.degrees(math.atan2(ny, nx)) % 360.0
+        p_side = next((p for p in specs if p.get("on") == s), None)
+        if p_side is not None and p_side["mode"] == "cut":
+            if trim[s]["start"] or trim[s]["end"]:
+                raise TemplateError(f"{_CIRC_KIND}: side {s} cannot carry a cut and "
+                                    "a corner cut at its end")
+            mid = vc.lerp(a, b, 0.5)
+            r = sl_px / 2.0
+            s0, s1 = _circ_arc_outward(mid, r, a, b, (out_deg + 180.0) % 360.0)
+            arcs.append({"c": mid, "r": r, "s0": s0, "s1": s1,
+                         "meta": ("cut_semi", s)})
+            perim_terms.append(math.pi * side_len[s] / 2.0)
+            perim_notes.append(f"side {s} is replaced by a semicircular arc of "
+                               f"diameter {side_len[s]:g} {unit}")
+            continue
+        if p_side is not None and p_side["kind"] == "sector":
+            cen_nm = a_nm if p_side["align"] == "start" else b_nm
+            far_nm = b_nm if p_side["align"] == "start" else a_nm
+            cen = V[cen_nm]
+            base_deg = _angle_of(V[far_nm], cen)
+            direction = 1.0 if ((out_deg - base_deg) % 360.0) < 180.0 else -1.0
+            end_deg = base_deg + direction * p_side["angle"]
+            tip = vc.polar(cen, sl_px, end_deg)
+            a0, a1 = (base_deg, end_deg) if direction > 0 else (end_deg, base_deg)
+            arcs.append({"c": cen, "r": sl_px, "s0": a0, "s1": a1,
+                         "meta": ("att_sec", s)})
+            p_side.update(_cen=cen_nm, _far=far_nm, _tip=tip,
+                          _tip_nm="TUVW"[_CIRC_SIDES.index(s)], _base=base_deg, _dir=direction,
+                          _mid=((base_deg + end_deg) / 2.0) % 360.0)
+            perim_terms += [side_len[s],
+                            math.pi * side_len[s] * p_side["angle"] / 180.0]
+            perim_notes.append(f"side {s} is the attached sector's shared "
+                               f"radius - only its free radius "
+                               f"{side_len[s]:g} {unit} and {p_side['angle']:g} "
+                               "arc count")
+            continue
+        t0 = trim[s]["start"] / sl_px
+        t1 = 1.0 - trim[s]["end"] / sl_px
+        if trim[s]["start"] + trim[s]["end"] >= sl_px - 20.0:
+            raise TemplateError(f"{_CIRC_KIND}: corner cuts on {s} leave no straight "
+                                "boundary - shrink the radii")
+        if p_side is None:
+            perim_terms.append(side_len[s] * (t1 - t0))
+        if trim[s]["start"] or trim[s]["end"]:
+            perim_notes.append(f"side {s} loses "
+                               f"{(trim[s]['start'] + trim[s]['end']) / upx:g} "
+                               f"{unit} to a corner cut")
+    for p in specs:
+        if "corner" not in p:
+            continue
+        cor = p["corner"]
+        v = V[cor]
+        r_px_c = p["r_u"] * upx
+        pts = []
+        for s, (a_, b_) in side_ends.items():
+            other = V[b_] if a_ == cor else (V[a_] if b_ == cor else None)
+            if other is not None:
+                pts.append(vc.polar(v, r_px_c, _angle_of(other, v)))
+        in_deg = math.degrees(math.atan2(G[1] - v[1], G[0] - v[0])) % 360.0
+        s0, s1 = _circ_arc_outward(v, r_px_c, pts[0], pts[1], in_deg)
+        arcs.append({"c": v, "r": r_px_c, "s0": s0, "s1": s1,
+                     "meta": ("corner", cor), "mid": in_deg})
+        perim_terms.append(math.pi * p["r_u"] / 2.0)
+        perim_notes.append(f"corner {cor} is replaced by a quadrant arc of "
+                           f"radius {p['r_u']:g} {unit}")
+    for p in specs:
+        if p.get("kind") == "semicircle" and "on" in p and p["mode"] == "attach":
+            s = p["on"]
+            a, b = V[side_ends[s][0]], V[side_ends[s][1]]
+            mid = vc.lerp(a, b, 0.5)
+            nx, ny = _circ_norm_out(a, b, G)
+            out_deg = math.degrees(math.atan2(ny, nx)) % 360.0
+            s0, s1 = _circ_arc_outward(mid, side_len[s] * upx / 2.0, a, b, out_deg)
+            arcs.append({"c": mid, "r": side_len[s] * upx / 2.0, "s0": s0,
+                         "s1": s1, "meta": ("att_semi", s), "mid": out_deg})
+            p["_mid"] = out_deg
+            perim_terms.append(math.pi * side_len[s] / 2.0)
+            perim_notes.append(f"side {s} is a shared join - only the "
+                               f"semicircle arc (pi x {side_len[s]:g} / 2) "
+                               "counts")
+    return {"V": V, "G": G, "L": L, "W": W, "upx": upx, "side_len": side_len,
+            "side_ends": side_ends, "arcs": arcs, "specs": specs,
+            "perim_terms": perim_terms, "perim_notes": perim_notes,
+            "trim": trim, "span": L + W + 160.0}
+
+
+def _circ_build_rect(figure_id, stem, ask, title, description, medium, unit, values,
+                length, width, pieces, labels, shaded, letters, unit_px):
+    L_u, W_u = _circ_pos("length", length), _circ_pos("width", width)
+    labels = labels or {}
+    if not isinstance(labels, dict):
+        raise TemplateError(f"{_CIRC_KIND}: labels must be a dict of side -> glyph")
+    bad = set(labels) - set(_CIRC_SIDES)
+    if bad:
+        raise TemplateError(f"{_CIRC_KIND}: side labels {sorted(bad)} are not one of "
+                            f"{_CIRC_SIDES}")
+    gl = {s: _circ_glyph(g, f"side {s}", unit) for s, g in labels.items()}
+    claims = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    evv = "stem" if values == "stem" else "inferred"
+    for s, (gk, gv) in gl.items():
+        if gk == "num":
+            true = L_u if s in ("AB", "CD") else W_u
+            _circ_bind(gk, gv, true, f"side {s}", unit)
+    if values == "stem":
+        chk = {"length": L_u, "width": W_u}
+        for s, (gk, gv) in gl.items():
+            if gk == "num":
+                chk[f"side {s} label"] = gv
+        require_stem(stem, **chk)
+    body = _circ_rect_body(L_u, W_u, unit_px, pieces, unit, values, stem)
+    for s in labels:
+        if any(body["trim"][s].values()) or any(p.get("on") == s and p["mode"] == "cut" for p in body["specs"]):
+            raise TemplateError(f"{_CIRC_KIND}: side {s} is removed or trimmed; its original length is not a true boundary label")
+    V, G, upx = body["V"], body["G"], body["upx"]
+    span = body["span"]
+    clr, gapl = _circ_clr(span), _circ_gapl(span)
+    specs = body["specs"]
+    side_ends, side_len = body["side_ends"], body["side_len"]
+    cut_sides = {p["on"]: p for p in specs
+                 if "on" in p and p["mode"] == "cut"}
+    attach_sides = {p["on"]: p for p in specs
+                    if "on" in p and p["mode"] == "attach"}
+    corner_specs = {p["corner"]: p for p in specs if "corner" in p}
+    elements = []
+    if shaded:
+        elements.append(vc.polygon(_circ_union_outline(body), fill=vc.SHADE,
+                                   stroke_width=0, id="fill"))
+    for s in _CIRC_SIDES:
+        a_nm, b_nm = side_ends[s]
+        a, b = V[a_nm], V[b_nm]
+        sl_px = side_len[s] * upx
+        if s in cut_sides:
+            continue
+        t0 = body["trim"][s]["start"] / sl_px
+        t1 = 1.0 - body["trim"][s]["end"] / sl_px
+        elements.append(vc.line(vc.lerp(a, b, t0), vc.lerp(a, b, t1),
+                                id=f"l{s}"))
+    for arc_ in body["arcs"]:
+        elements.append(vc.arc(arc_["c"], arc_["r"], arc_["s0"], arc_["s1"],
+                               id=f"a{len(elements)}"))
+    for s, p in attach_sides.items():
+        if p["kind"] == "sector":
+            elements.append(vc.line(V[p["_cen"]], p["_tip"], id=f"lr{s}"))
+    if letters:
+        for nm, pt in V.items():
+            if nm in corner_specs:
+                continue
+            elements.append(_float_label(f"lb{nm}", nm, pt))
+    boxes = _circ_boxes(elements)
+    for s, g in labels.items():
+        a_nm, b_nm = side_ends[s]
+        a, b = V[a_nm], V[b_nm]
+        if s in attach_sides or s in cut_sides:
+            away = G
+        else:
+            nx, ny = _circ_norm_out(a, b, G)
+            away = (G[0] - nx * 200.0, G[1] - ny * 200.0)
+        el_ = _seat_side_label(_CIRC_KIND, elements, boxes, a, b, g, away,
+                                  clr, f"fl{s}")
+        elements.append(el_)
+        boxes.append(_text_box(g, el_["at"]))
+    for s, p in {**cut_sides, **attach_sides}.items():
+        g = p.get("label")
+        if not g:
+            continue
+        a_nm, b_nm = side_ends[s]
+        a, b = V[a_nm], V[b_nm]
+        sl_u = side_len[s]
+        if p["kind"] == "semicircle":
+            true_arc = math.pi * sl_u / 2.0
+            c_ = vc.lerp(a, b, 0.5)
+            r_ = sl_u * upx / 2.0
+            nx, ny = _circ_norm_out(a, b, G)
+            if p["mode"] == "cut":
+                nx, ny = -nx, -ny
+            mid_deg = math.degrees(math.atan2(ny, nx)) % 360.0
+        else:
+            true_arc = math.pi * sl_u * p["angle"] / 180.0
+            c_ = V[p["_cen"]]
+            r_ = sl_u * upx
+            mid_deg = p["_mid"]
+        gk, gv = _circ_glyph(g, f"arc on {s}", unit)
+        _circ_bind(gk, gv, true_arc, f"arc on {s}", unit)
+        if values == "stem" and gk == "num":
+            require_stem(stem, **{f"arc label on {s}": gv})
+        at = _circ_seat_arc_label(elements, boxes, c_, r_, mid_deg, g, clr, gapl)
+        elements.append(vc.text(at, g, id=f"fla{s}"))
+        boxes.append(_text_box(g, at))
+        p["_ltarget"] = f"arc_{s.lower()}"
+    for cor, p in corner_specs.items():
+        g = p.get("label")
+        if not g:
+            continue
+        gk, gv = _circ_glyph(g, f"corner {cor} arc", unit)
+        _circ_bind(gk, gv, math.pi * p["r_u"] / 2.0, f"corner {cor} arc", unit)
+        if values == "stem" and gk == "num":
+            require_stem(stem, **{f"corner {cor} arc label": gv})
+        v = V[cor]
+        arc_ = next(a for a in body["arcs"] if a["meta"] == ("corner", cor))
+        at = _circ_seat_arc_label(elements, boxes, v, p["r_u"] * upx, arc_["mid"],
+                             g, clr, gapl)
+        elements.append(vc.text(at, g, id=f"flc{cor}"))
+        boxes.append(_text_box(g, at))
+        p["_ltarget"] = f"arc_c{cor.lower()}"
+    return _circ_rect_claims(figure_id, stem, ask, title, description, medium, unit,
+                        values, L_u, W_u, labels, gl, body, elements,
+                        shaded, evv, claims, add, cut_sides, attach_sides,
+                        corner_specs, letters)
+
+
+def _circ_union_outline(body):
+    """One closed path around the composite for the optional fill: attach
+    pieces take their outward arc, cuts dip in, corner cuts trim."""
+    V, upx, G = body["V"], body["upx"], body["G"]
+    side_ends, side_len = body["side_ends"], body["side_len"]
+    arcs_by_side = {}
+    corner_arc = {}
+    for a_ in body["arcs"]:
+        kind_, key = a_["meta"]
+        if kind_ == "corner":
+            corner_arc[key] = a_
+        else:
+            arcs_by_side[key] = a_
+    specs = body["specs"]
+    pts = []
+    for i, s in enumerate(_CIRC_SIDES):
+        a_nm, b_nm = side_ends[s]
+        a, b = V[a_nm], V[b_nm]
+        sl_px = side_len[s] * upx
+        arc_ = arcs_by_side.get(s)
+        p_side = next((p for p in specs if p.get("on") == s), None)
+        if arc_ is not None and p_side is not None and \
+                (p_side["mode"] == "cut" or p_side["kind"] == "semicircle"):
+            samples = vc.sampled_arc(arc_["c"], arc_["r"], arc_["s0"], arc_["s1"])
+            if vc.dist(samples[-1], a) < vc.dist(samples[0], a):
+                samples.reverse()
+            pts += samples
+        elif arc_ is not None and p_side is not None:
+            pts.append(a)
+            samples = vc.sampled_arc(arc_["c"], arc_["r"], arc_["s0"], arc_["s1"])
+            first = p_side["_tip"] if p_side["_cen"] == a_nm else a
+            if vc.dist(samples[-1], first) < vc.dist(samples[0], first):
+                samples.reverse()
+            pts += samples
+            pts.append(b)
+        else:
+            t0 = body["trim"][s]["start"] / sl_px
+            t1 = 1.0 - body["trim"][s]["end"] / sl_px
+            pts.append(vc.lerp(a, b, t0))
+            pts.append(vc.lerp(a, b, t1))
+        if b_nm in corner_arc:
+            ca = corner_arc[b_nm]
+            samples = vc.sampled_arc(ca["c"], ca["r"], ca["s0"], ca["s1"])
+            if vc.dist(samples[-1], pts[-1]) < vc.dist(samples[0], pts[-1]):
+                samples.reverse()
+            pts += samples
+    return pts
+
+
+def _circ_rect_claims(figure_id, stem, ask, title, description, medium, unit, values,
+                 L_u, W_u, labels, gl, body, elements, shaded, evv, claims, add,
+                 cut_sides, attach_sides, corner_specs, letters):
+    V = body["V"]
+    side_ends = body["side_ends"]
+    anchors = dict(V)
+    points = list(anchors)
+    segments = []
+    is_sq = abs(L_u - W_u) <= 1e-9
+    if values == "figure":
+        add('describe "the printed givens are figure content - the question asks '
+            'the student to read them"', "inferred", "read-the-figure mode")
+    shape_word = "a square" if is_sq else "a rectangle"
+    add(f'describe "{shape_word} ABCD joined to circular pieces - a composite '
+        'figure"', "inferred", "the figure's shape")
+    for i, nm in enumerate("ABCD"):
+        if nm in corner_specs:
+            continue
+        add(f"right {'ABCD'[i - 1]} {nm} {'ABCD'[(i + 1) % 4]}", "inferred",
+            f"the corner at {nm}")
+    add("parallel AB CD", "inferred", "opposite sides")
+    add("parallel BC DA", "inferred", "opposite sides")
+    add("equal AB CD", "inferred", "opposite sides")
+    add("equal BC DA", "inferred", "opposite sides")
+    for s in _CIRC_SIDES:
+        a_nm, b_nm = side_ends[s]
+        if s in cut_sides:
+            mn = "MNPR"[_CIRC_SIDES.index(s)]
+            anchors[mn] = vc.lerp(V[a_nm], V[b_nm], 0.5)
+            points.append(mn)
+            add(f"arc centre {mn} from {a_nm} to {b_nm}", "inferred",
+                f"the semicircle cut into side {s}")
+            add(f"on {mn} {s}", "inferred",
+                "the cut's centre is the side's midpoint")
+            add(f'describe "a semicircle of diameter {body["side_len"][s]:g} '
+                f'{unit} is cut into the {s} side - the arc is the boundary"',
+                "inferred", "the cut")
+        elif s in attach_sides:
+            p = attach_sides[s]
+            if p["kind"] == "semicircle":
+                mn = "MNPR"[_CIRC_SIDES.index(s)]
+                anchors[mn] = vc.lerp(V[a_nm], V[b_nm], 0.5)
+                points.append(mn)
+                add(f"arc centre {mn} from {a_nm} to {b_nm}", "inferred",
+                    f"the semicircle attached on side {s}")
+                add(f"on {mn} {s}", "inferred",
+                    "the semicircle's centre is the side's midpoint")
+                add(f'describe "a semicircle of diameter '
+                    f'{body["side_len"][s]:g} {unit} is attached on the {s} '
+                    'side - the shared side is not part of the outer '
+                    'perimeter"', "inferred", "the join")
+            else:
+                anchors[p["_tip_nm"]] = p["_tip"]
+                points.append(p["_tip_nm"])
+                segments.append(f"{p['_cen']}{p['_tip_nm']}")
+                add(f"arc centre {p['_cen']} from {p['_far']} to {p['_tip_nm']}",
+                    "inferred",
+                    f"the {p['angle']:g}-degree sector attached on side {s}")
+                add(f"angle {p['_far']} {p['_cen']} {p['_tip_nm']} = "
+                    f"{p['angle']:g}", evv, "the attached sector's angle")
+                add(f"equal {s} {p['_cen']}{p['_tip_nm']}", "inferred",
+                    "both radii equal the side")
+                add(f'describe "a {p["angle"]:g}-degree sector of radius '
+                    f'{body["side_len"][s]:g} {unit} is attached on the {s} '
+                    f'side with centre {p["_cen"]} - the shared radius is not '
+                    'part of the outer perimeter"', "inferred", "the join")
+                add(f'describe "the free tip of the sector on {s} is anchor '
+                    f'{p["_tip_nm"]} - it is not lettered"', "inferred",
+                    "an unlettered anchor")
+    for cor, p in corner_specs.items():
+        adj = sorted(s for s, ee in side_ends.items() if cor in ee)
+        add(f'describe "a quadrant of radius {p["r_u"]:g} {unit} is cut out at '
+            f'corner {cor}; the arc joins points on sides {" and ".join(adj)}"',
+            "inferred", "the corner cut")
+    for s, g in labels.items():
+        add(f'label "{g}" names {s}', evv, f"side {s}'s glyph")
+        segments.append(s)
+    for p in list(cut_sides.values()) + list(attach_sides.values()) + \
+            list(corner_specs.values()):
+        if p.get("label"):
+            add(f'label "{p["label"]}" names {p["_ltarget"]}', evv,
+                "the arc's glyph")
+    area = L_u * W_u
+    for p in body["specs"]:
+        if "corner" in p:
+            area -= math.pi * p["r_u"] ** 2 / 4
+        elif p["kind"] == "semicircle":
+            delta = math.pi * body["side_len"][p["on"]] ** 2 / 8
+            area += delta if p["mode"] == "attach" else -delta
+        else:
+            area += math.pi * body["side_len"][p["on"]] ** 2 * p["angle"] / 360
+    add(f"derive {_num_exact(L_u * W_u)} + {_num_exact(area - L_u * W_u)} = {_num_exact(area)}", evv, "composite area: rectangle plus attachments minus cuts")
+    expr = " + ".join(_num_exact(t) for t in body["perim_terms"])
+    add(f"derive {expr} = {_num_exact(sum(body['perim_terms']))}", evv,
+        "the outer perimeter - " + "; ".join(body["perim_notes"]))
+    if letters:
+        for nm in "ABCD":
+            if nm not in corner_specs:
+                add(f'label "{nm}" names {nm}', "inferred", "a corner letter")
+    absent = "tickMark parallelMark angleMark arrow dashed"
+    if not shaded:
+        absent += " shaded"
+    add(f"none {absent}", "inferred", "the outline and labels only")
+    return finish(kind=_CIRC_KIND, figure_id=figure_id, stem=stem,
+                     elements=elements, anchors=anchors, points=points,
+                     segments=segments, claims=claims, ask=ask,
+                     title=title or "A composite figure",
+                     description=description or (
+                         f"{shape_word.capitalize()} with circular pieces "
+                         "attached or cut, with labelled givens."),
+                     scale=f"drawn to scale: {vc.r2(body['upx']):g} units = "
+                           f"1 {unit}", medium=medium)
+
+
+def _circ_build_stadium(figure_id, stem, ask, title, description, medium, unit,
+                   values, length, width, labels, shaded, unit_px):
+    L_u, W_u = _circ_pos("length", length), _circ_pos("width", width)
+    upx = _circ_number(unit_px) if unit_px is not None else 240.0 / max(L_u, W_u)
+    if not 8.0 <= upx <= 240.0:
+        raise TemplateError(f"{_CIRC_KIND}: unit_px must keep the figure readable")
+    L, W = L_u * upx, W_u * upx
+    if W < 30.0:
+        raise TemplateError(f"{_CIRC_KIND}: the {W_u:g} {unit} width draws under 30 "
+                            "units — raise unit_px")
+    labels = labels or {}
+    bad = set(labels) - {"length", "width"}
+    if bad:
+        raise TemplateError(f"{_CIRC_KIND}: stadium labels are 'length' and 'width'")
+    gl = {k: _circ_glyph(g, k, unit) for k, g in labels.items()}
+    if values == "stem":
+        chk = {"length": L_u, "width": W_u}
+        for k, (gk, gv) in gl.items():
+            if gk == "num":
+                _circ_bind(gk, gv, L_u if k == "length" else W_u, k, unit)
+                chk[f"{k} label"] = gv
+        require_stem(stem, **chk)
+    else:
+        for k, (gk, gv) in gl.items():
+            if gk == "num":
+                _circ_bind(gk, gv, L_u if k == "length" else W_u, k, unit)
+    A = (0.0, 0.0)
+    B = (L, 0.0)
+    C1 = (0.0, -W / 2.0)
+    C2 = (L, -W / 2.0)
+    r = W / 2.0
+    T1 = (0.0, -W)
+    T2 = (L, -W)
+    elements = []
+    pts = ([A, B] + list(reversed(vc.sampled_arc(C2, r, -90.0, 90.0))) +
+           [T1] + list(reversed(vc.sampled_arc(C1, r, 90.0, 270.0))))
+    elements.append(vc.polygon(pts, fill=(vc.SHADE if shaded else None),
+                               id="stad"))
+    elements.extend([{"id": "centreleft", "type": "point", "at": vc.P(C1), "r": 3},
+                     {"id": "centreright", "type": "point", "at": vc.P(C2), "r": 3}])
+    span = L + W + 160.0
+    clr, gapl = _circ_clr(span), _circ_gapl(span)
+    boxes = _circ_boxes(elements)
+    el_l = _seat_side_label(_CIRC_KIND, elements, boxes, A, B,
+                               labels.get("length", f"{L_u:g} {unit}"),
+                               (L / 2.0, -W / 2.0 - 4 * r - 60.0), clr, "fllen")
+    if "length" in labels:
+        elements.append(el_l)
+        boxes.append(_text_box(labels["length"], el_l["at"]))
+    if "width" in labels:
+        elements.append(vc.line(B, T2, id="diameter"))
+        g = labels["width"]
+        el_w = _seat_side_label(_CIRC_KIND, elements, boxes, B, T2, g,
+                                    (L / 2, -W / 2), clr, "flwid")
+        elements.append(el_w)
+        boxes.append(_text_box(g, el_w["at"]))
+    anchors = {"A": A, "B": B, "C": T2, "D": T1, "E": C1, "F": C2}
+    claims = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    evv = "stem" if values == "stem" else "inferred"
+    if values == "figure":
+        add('describe "the printed givens are figure content — the question asks '
+            'the student to read them"', "inferred", "read-the-figure mode")
+    add('describe "a stadium — a rectangle of length '
+        f'{L_u:g} {unit} closed by a semicircle of diameter {W_u:g} {unit} on '
+        'each short side; the diameter joins are not drawn and are not part of '
+        'the outer perimeter"', "inferred", "the figure's shape")
+    add("arc centre F from B to C", "inferred", "the right semicircle")
+    add("arc centre E from D to A", "inferred", "the left semicircle")
+    add("equal EF AB", "inferred", "the centres' span equals the straights")
+    if "length" in labels:
+        add(f'label "{labels["length"]}" names AB', evv, "the straight's glyph")
+    if "width" in labels:
+        add(f'label "{labels["width"]}" names BC', evv,
+            "the semicircle diameter's glyph")
+    add(f"derive {_num_exact(L_u * W_u)} + {_num_exact(math.pi * W_u ** 2 / 4)} = {_num_exact(L_u * W_u + math.pi * W_u ** 2 / 4)}", evv, "stadium area: rectangle plus two semicircular ends")
+    terms = [2.0 * L_u, math.pi * W_u]
+    add(f"derive 2 * {_num_exact(L_u)} + {_num_exact(math.pi * W_u)} = "
+        f"{_num_exact(sum(terms))}", evv,
+        "the outer perimeter — two straights plus two semicircular arcs making "
+        "one full circle")
+    add("none tickMark parallelMark angleMark arrow dashed" +
+        ("" if shaded else " shaded"), "inferred", "the outline and labels only")
+    return finish(kind=_CIRC_KIND, figure_id=figure_id, stem=stem,
+                     elements=elements, anchors=anchors,
+                     points=list(anchors), segments=["AB", "CD"] + (["BC"] if "width" in labels else []),
+                     claims=claims, ask=ask,
+                     title=title or "A stadium",
+                     description=description or (
+                         "A stadium: a rectangle closed by a semicircle on each "
+                         "short side, with labelled givens."),
+                     scale=f"drawn to scale: {vc.r2(upx):g} units = 1 {unit}",
+                     medium=medium)
+
+
+def _circ_build_triangle(figure_id, stem, ask, title, description, medium, unit,
+                    values, mode, base, height, leg, pieces, labels, shaded,
+                    unit_px, letters):
+    if mode not in ("right", "isosceles", "equilateral"):
+        raise TemplateError(f"{_CIRC_KIND}: triangle mode is 'right', 'isosceles' or "
+                            "'equilateral'")
+    B_u = _circ_pos("base", base)
+    if mode == "right":
+        H_u = _circ_pos("height", height)
+    elif mode == "isosceles":
+        H_u = None
+        Leg_u = _circ_pos("leg", leg)
+        if Leg_u <= B_u / 2.0:
+            raise TemplateError(f"{_CIRC_KIND}: leg {Leg_u:g} must exceed half the "
+                                f"base {B_u:g} for a real triangle")
+        H_u = math.sqrt(Leg_u ** 2 - (B_u / 2.0) ** 2)
+    else:
+        H_u = B_u * math.sqrt(3.0) / 2.0
+        Leg_u = B_u
+    if mode == "right":
+        Leg_u = math.hypot(B_u, H_u)
+    longest = max(B_u, H_u if mode == "right" else Leg_u)
+    upx = _circ_number(unit_px) if unit_px is not None else 240.0 / longest
+    if not 8.0 <= upx <= 240.0:
+        raise TemplateError(f"{_CIRC_KIND}: unit_px must keep the figure readable")
+    b_px, h_px = B_u * upx, H_u * upx
+    if min(b_px, h_px) < 22.0:
+        raise TemplateError(f"{_CIRC_KIND}: the triangle draws under 22 units — "
+                            "raise unit_px")
+    if mode == "right":
+        V = {"A": (0.0, 0.0), "B": (b_px, 0.0), "C": (0.0, -h_px)}
+        side_len = {"base": B_u, "left": H_u, "right": Leg_u}
+        side_pts = {"base": ("A", "B"), "left": ("A", "C"), "right": ("B", "C")}
+    else:
+        V = {"A": (0.0, 0.0), "B": (b_px, 0.0), "C": (b_px / 2.0, -h_px)}
+        side_len = {"base": B_u, "left": Leg_u, "right": Leg_u}
+        side_pts = {"base": ("A", "B"), "left": ("A", "C"), "right": ("B", "C")}
+    G = ((V["A"][0] + V["B"][0] + V["C"][0]) / 3.0,
+         (V["A"][1] + V["B"][1] + V["C"][1]) / 3.0)
+    labels = labels or {}
+    bad = set(labels) - set(side_len)
+    if bad:
+        raise TemplateError(f"{_CIRC_KIND}: triangle labels are base/left/right")
+    gl = {k: _circ_glyph(g, f"side {k}", unit) for k, g in labels.items()}
+    if values == "stem":
+        chk = {"base": B_u}
+        if mode == "right":
+            chk["height"] = _circ_pos("height", height)
+        if mode == "isosceles":
+            chk["leg"] = Leg_u
+        for k, (gk, gv) in gl.items():
+            if gk == "num":
+                _circ_bind(gk, gv, side_len[k], f"side {k}", unit)
+                chk[f"{k} label"] = gv
+        require_stem(stem, **chk)
+    else:
+        for k, (gk, gv) in gl.items():
+            if gk == "num":
+                _circ_bind(gk, gv, side_len[k], f"side {k}", unit)
+    pieces = _circ_check_pieces(pieces)
+    seen = set()
+    for i, p in enumerate(pieces):
+        bad = set(p) - {"on", "kind", "label"}
+        if bad or p.get("kind") != "semicircle" or p.get("on") not in side_len:
+            raise TemplateError(f"{_CIRC_KIND}: a triangle piece is "
+                                "{on: base|left|right, kind: 'semicircle'} — "
+                                "attach only")
+        if p["on"] in seen:
+            raise TemplateError(f"{_CIRC_KIND}: side {p['on']} already carries a piece")
+        seen.add(p["on"])
+    span = max(b_px, h_px) + 260.0
+    clr, gapl = _circ_clr(span), _circ_gapl(span)
+    elements = []
+    fill = [V["A"], V["B"], V["C"]]
+    for s in ("base", "left", "right"):
+        a_nm, b_nm = side_pts[s]
+        elements.append(vc.line(V[a_nm], V[b_nm], id=f"l{s}"))
+    for i, p in enumerate(pieces):
+        s = p["on"]
+        a_nm, b_nm = side_pts[s]
+        a, b = V[a_nm], V[b_nm]
+        mid = vc.lerp(a, b, 0.5)
+        r = side_len[s] * upx / 2.0
+        nx, ny = _circ_norm_out(a, b, G)
+        out_deg = math.degrees(math.atan2(ny, nx)) % 360.0
+        s0, s1 = _circ_arc_outward(mid, r, a, b, out_deg)
+        elements.append(vc.arc(mid, r, s0, s1, id=f"a{i}"))
+        p["_c"], p["_r"], p["_mid_deg"] = mid, r, out_deg
+        anchors_m = mid
+        p["_m"] = anchors_m
+        if shaded:
+            elements.insert(0, vc.polygon(vc.sampled_arc(mid, r, s0, s1),
+                                          fill=vc.SHADE, stroke_width=0, id=f"fillarc{i}"))
+    if shaded:
+        fill_pts = [V["A"], V["B"], V["C"]]
+        elements.insert(0, vc.polygon(fill_pts, fill=vc.SHADE, stroke_width=0,
+                                      id="fill"))
+    if letters:
+        for nm in "ABC":
+            elements.append(_float_label(f"lb{nm}", nm, V[nm]))
+    boxes = _circ_boxes(elements)
+    for k, g in labels.items():
+        a_nm, b_nm = side_pts[k]
+        nx, ny = _circ_norm_out(V[a_nm], V[b_nm], G)
+        if k in seen:
+            away = G
+        else:
+            away = (G[0] - nx * 200.0, G[1] - ny * 200.0)
+        el_ = _seat_side_label(_CIRC_KIND, elements, boxes, V[a_nm], V[b_nm], g,
+                                  away, clr, f"fl{k}")
+        elements.append(el_)
+        boxes.append(_text_box(g, el_["at"]))
+    for i, p in enumerate(pieces):
+        g = p.get("label")
+        if not g:
+            continue
+        s = p["on"]
+        gk, gv = _circ_glyph(g, f"arc on {s}", unit)
+        _circ_bind(gk, gv, math.pi * side_len[s] / 2.0, f"arc on {s}", unit)
+        if values == "stem" and gk == "num":
+            require_stem(stem, **{f"arc label on {s}": gv})
+        at = _circ_seat_arc_label(elements, boxes, p["_c"], p["_r"], p["_mid_deg"],
+                             g, clr, gapl)
+        elements.append(vc.text(at, g, id=f"fla{i}"))
+        boxes.append(_text_box(g, at))
+    anchors = dict(V)
+    points = list(anchors)
+    claims = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    evv = "stem" if values == "stem" else "inferred"
+    if values == "figure":
+        add('describe "the printed givens are figure content — the question asks '
+            'the student to read them"', "inferred", "read-the-figure mode")
+    words = {"right": "a right-angled triangle", "isosceles":
+             "an isosceles triangle", "equilateral": "an equilateral triangle"}
+    add(f'describe "{words[mode]} ABC with a semicircle attached on a side — a '
+        'composite figure"', "inferred", "the figure's shape")
+    if mode == "right":
+        add("right B A C", "inferred", "the right angle at A")
+    if mode == "isosceles":
+        add("equal AC BC", "inferred", "the two equal legs")
+    if mode == "equilateral":
+        add("equal AB AC", "inferred", "equal sides")
+        add("equal AB BC", "inferred", "equal sides")
+    for i, p in enumerate(pieces):
+        s = p["on"]
+        a_nm, b_nm = side_pts[s]
+        mn = "MNP"[("base", "left", "right").index(s)]
+        anchors[mn] = p["_m"]
+        points.append(mn)
+        add(f"arc centre {mn} from {a_nm} to {b_nm}", "inferred",
+            f"the semicircle attached on the {s} side")
+        add(f"on {mn} {a_nm}{b_nm}", "inferred",
+            "the centre is the side's midpoint")
+        add(f'describe "a semicircle of diameter {side_len[s]:g} {unit} is '
+            f'attached on the {s} side — the shared side is not part of the '
+            'outer perimeter"', "inferred", "the join")
+        if p.get("label"):
+            add(f'label "{p["label"]}" names arc_{s}', evv, "the arc's glyph")
+    for k, g in labels.items():
+        add(f'label "{g}" names {side_pts[k][0]}{side_pts[k][1]}', evv,
+            f"the {k} side's glyph")
+    for nm in "ABC":
+        if letters:
+            add(f'label "{nm}" names {nm}', "inferred", "a vertex letter")
+    triangle_area = B_u * H_u / 2
+    attached_area = sum(math.pi * side_len[p["on"]] ** 2 / 8 for p in pieces)
+    add(f"derive {_num_exact(triangle_area)} + {_num_exact(attached_area)} = {_num_exact(triangle_area + attached_area)}", evv, "composite area: triangle plus attached semicircle")
+    terms = [side_len[s] for s in ("base", "left", "right")]
+    for p in pieces:
+        s = p["on"]
+        terms.remove(side_len[s])
+        terms.append(math.pi * side_len[s] / 2.0)
+    expr = " + ".join(_num_exact(t) for t in terms)
+    add(f"derive {expr} = {_num_exact(sum(terms))}", evv,
+        "the outer perimeter — shared sides are replaced by their semicircle's "
+        "arc")
+    add("none tickMark parallelMark angleMark arrow dashed" +
+        ("" if shaded else " shaded"), "inferred", "the outline and labels only")
+    segs = [f"{side_pts[k][0]}{side_pts[k][1]}" for k in labels]
+    return finish(kind=_CIRC_KIND, figure_id=figure_id, stem=stem,
+                     elements=elements, anchors=anchors, points=points,
+                     segments=segs, claims=claims, ask=ask,
+                     title=title or "A triangle composite",
+                     description=description or (
+                         f"{words[mode].capitalize()} with a semicircle "
+                         "attached, with labelled givens."),
+                     scale=f"drawn to scale: {vc.r2(upx):g} units = 1 {unit}",
+                     medium=medium)
+
+
+def _circ_build_sector(figure_id, stem, ask, title, description, medium, unit,
+                  values, angle, radius, start, pieces, labels, shaded, r_px,
+                  letters):
+    th = _circ_deg("angle", angle)
+    if th >= 360.0:
+        raise TemplateError(f"{_CIRC_KIND}: sector angle must be under 360 — use "
+                            "'annulus' for a full ring")
+    R_u = _circ_pos("radius", radius)
+    r_px = _circ_number(r_px) if r_px is not None else 110.0
+    if not 60.0 <= r_px <= 160.0:
+        raise TemplateError(f"{_CIRC_KIND}: r_px must be 60–160 units")
+    if start is not None:
+        start = _circ_number(start) % 360
+    labels = labels or {}
+    bad = set(labels) - {"radius", "radius_b", "arc", "angle"}
+    if bad:
+        raise TemplateError(f"{_CIRC_KIND}: sector labels are radius/radius_b/arc/angle")
+    gl = {}
+    for k, g in labels.items():
+        if k == "angle":
+            if not isinstance(g, str) or not g.strip():
+                raise TemplateError(f"{_CIRC_KIND}: angle label is a non-empty glyph")
+            g = g.strip()
+            m = _ANGLE_NUM.fullmatch(g)
+            if m:
+                v = float(m[1])
+                if abs(v - th) > 0.5:
+                    raise TemplateError(f"{_CIRC_KIND}: angle label {g!r} prints {v:g} "
+                                        f"but the angle is {th:g}")
+                gl[k] = ("num", v, g)
+            elif _CIRC_ANGLE_GLYPH.fullmatch(g):
+                gl[k] = ("sym", g, g)
+            else:
+                raise TemplateError(f"{_CIRC_KIND}: angle label {g!r} is the size or a "
+                                    "single letter")
+        else:
+            gk, gv = _circ_glyph(g, k, unit)
+            gl[k] = (gk, gv, g)
+    arc_len = math.pi * R_u * th / 180.0
+    for k, (gk, gv, g) in gl.items():
+        if gk != "num":
+            continue
+        true = {"radius": R_u, "radius_b": R_u, "arc": arc_len, "angle": th}[k]
+        _circ_bind(gk, gv, true, k, unit)
+    if values == "stem":
+        chk = {"angle": th, "radius": R_u}
+        chk.update({f"{k} label": gv for k, (gk, gv, g) in gl.items()
+                    if gk == "num"})
+        require_stem(stem, **chk)
+    pieces = _circ_check_pieces(pieces)
+    O = (0.0, 0.0)
+    s0 = (-90.0 - th / 2.0) if start is None else float(start)
+    s1 = s0 + th
+    A = vc.polar(O, r_px, s0)
+    B = vc.polar(O, r_px, s1)
+    chord = vc.dist(A, B)
+    chord_u = 2.0 * R_u * math.sin(math.radians(th / 2.0))
+    mid_arc = vc.polar(O, r_px, s0 + th / 2.0)
+    G = vc.lerp(O, mid_arc, 0.45)
+    seen = set()
+    for i, p in enumerate(pieces):
+        bad = set(p) - {"on", "kind", "mode", "leg", "label"}
+        if bad or p.get("kind") not in ("semicircle", "triangle") or \
+                p.get("on") not in ("OA", "OB", "AB"):
+            raise TemplateError(f"{_CIRC_KIND}: a sector piece is "
+                                "{on: OA|OB|AB, kind: 'semicircle'|'triangle'}")
+        if p["on"] in seen:
+            raise TemplateError(f"{_CIRC_KIND}: {p['on']} already carries a piece")
+        seen.add(p["on"])
+        if p["kind"] == "semicircle" and p["on"] == "AB":
+            raise TemplateError(f"{_CIRC_KIND}: a semicircle attaches on a radius "
+                                "(OA/OB); on the chord use 'triangle'")
+        if p["kind"] == "semicircle" and set(p) - {"on", "kind", "label"}:
+            raise TemplateError(f"{_CIRC_KIND}: semicircle takes only on/kind/label")
+        if p["kind"] == "triangle":
+            if "label" in p:
+                raise TemplateError(f"{_CIRC_KIND}: triangle piece labels are not supported")
+            p["_mode"] = p.get("mode", "inscribed")
+            if p["_mode"] not in ("inscribed", "attach"):
+                raise TemplateError(f"{_CIRC_KIND}: triangle mode is 'inscribed' or "
+                                    "'attach'")
+            if p["_mode"] == "inscribed" and "leg" in p:
+                raise TemplateError(f"{_CIRC_KIND}: inscribed triangle is fixed by the sector; no leg argument")
+            if p["_mode"] == "attach":
+                lg = _circ_pos("triangle leg", p.get("leg"))
+                if lg <= chord_u / 2.0:
+                    raise TemplateError(f"{_CIRC_KIND}: leg {lg:g} must exceed half "
+                                        f"the chord {chord_u:.4g}")
+                if th >= 180 or lg < R_u * math.tan(math.radians(th / 2)):
+                    raise TemplateError(f"{_CIRC_KIND}: attached triangle must contain the circular segment without crossing the arc")
+                p["_leg"] = lg
+                if values == "stem":
+                    require_stem(stem, **{"triangle leg": lg})
+    span = 2.0 * r_px + 160.0
+    clr, gapl = _circ_clr(span), _circ_gapl(span)
+    elements = [vc.polygon([O] + vc.sampled_arc(O, r_px, s0, s1),
+                           fill=(vc.SHADE if shaded else None), id="sec")]
+    elements.append({"id": "ptO", "type": "point", "at": vc.P(O), "r": 3.5})
+    claims = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    evv = "stem" if values == "stem" else "inferred"
+    boxes = _circ_boxes(elements)
+    anchors = {"O": O, "A": A, "B": B}
+    perim_terms = [R_u, R_u, arc_len]
+    perim_note = "two radii and the arc"
+    for i, p in enumerate(pieces):
+        on = p["on"]
+        if on == "AB" and p["kind"] == "triangle":
+            if p["_mode"] == "inscribed":
+                elements.append(vc.line(A, B, id="lc"))
+                add(f'describe "chord AB is drawn — triangle OAB inside the '
+                    'sector"', "inferred", "the inscribed triangle")
+                if abs(chord_u - R_u) <= 0.005 * R_u:
+                    add("equal OA AB", "inferred", "the triangle is equilateral")
+                    add("equal OB AB", "inferred", "the triangle is equilateral")
+                    add('describe "triangle OAB is equilateral"', "inferred",
+                        "60 degrees at the centre")
+            else:
+                nx, ny = _circ_norm_out(A, B, O)
+                h = math.sqrt(p["_leg"] ** 2 - (chord_u / 2.0) ** 2) * _circ_upx(
+                    r_px, R_u)
+                mid = vc.lerp(A, B, 0.5)
+                apex = (mid[0] + nx * h, mid[1] + ny * h)
+                anchors["P"] = apex
+                if shaded:
+                    elements.insert(0, vc.polygon([A, apex, B], fill=vc.SHADE, stroke_width=0, id="filltriangle"))
+                elements.append(vc.line(A, apex, id="lap"))
+                elements.append(vc.line(B, apex, id="lbp"))
+                add('describe "an isosceles triangle is attached on chord AB '
+                    'outside the sector — the chord is not drawn and is not '
+                    'part of the outer perimeter"', "inferred", "the join")
+                add(f"equal AP BP", "inferred", "the attached triangle's legs")
+                perim_terms.remove(arc_len)
+                perim_terms.extend([p["_leg"], p["_leg"]])
+                perim_note = "two radii and the triangle's two free legs; the circular arc is internal"
+        else:
+            a_nm, b_nm = ("O", "A") if on == "OA" else ("O", "B")
+            a_pt, b_pt = O, (A if on == "OA" else B)
+            mid = vc.lerp(a_pt, b_pt, 0.5)
+            rr = r_px / 2.0
+            inside = G
+            nx, ny = _circ_norm_out(a_pt, b_pt, inside)
+            out_deg = math.degrees(math.atan2(ny, nx)) % 360.0
+            s0a, s1a = _circ_arc_outward(mid, rr, a_pt, b_pt, out_deg)
+            if shaded:
+                elements.insert(0, vc.polygon(vc.sampled_arc(mid, rr, s0a, s1a), fill=vc.SHADE, stroke_width=0, id=f"fillarc{i}"))
+            elements.append(vc.arc(mid, rr, s0a, s1a, id=f"a{i}"))
+            mn = "M" if on == "OA" else "N"
+            anchors[mn] = mid
+            add(f"arc centre {mn} from {a_nm} to {b_nm}", "inferred",
+                f"the semicircle attached on radius {on}")
+            add(f"on {mn} {on}", "inferred", "the centre is the radius' midpoint")
+            add(f'describe "a semicircle of diameter {R_u:g} {unit} is attached '
+                f'on radius {on} — the shared radius is not part of the outer '
+                'perimeter"', "inferred", "the join")
+            p["_ltarget"] = f"arc_{on.lower()}"
+            p["_c"], p["_r"], p["_mid"] = mid, rr, out_deg
+            perim_terms.remove(R_u)
+            perim_terms.append(math.pi * R_u / 2.0)
+            perim_note += (f"; the {on} radius is a shared join replaced by a "
+                           "semicircle arc")
+    for i, p in enumerate(pieces):
+        g = p.get("label")
+        if not g:
+            continue
+        if p["kind"] == "semicircle":
+            gk, gv = _circ_glyph(g, "piece arc", unit)
+            _circ_bind(gk, gv, math.pi * R_u / 2.0, "piece arc", unit)
+            if values == "stem" and gk == "num":
+                require_stem(stem, **{"piece arc label": gv})
+            at = _circ_seat_arc_label(elements, boxes, p["_c"], p["_r"], p["_mid"],
+                                 g, clr, gapl)
+            elements.append(vc.text(at, g, id=f"fla{i}"))
+            boxes.append(_text_box(g, at))
+    if letters:
+        for nm, pt, dg in (("A", A, s0), ("B", B, s1), ("O", O, s0 + th / 2)):
+            if nm == "O":
+                elements.append(_float_label("lbO", "O", pt))
+            else:
+                elements.append(_float_label(f"lb{nm}", nm, pt))
+    boxes = _circ_boxes(elements)
+    for k, (gk, gv, g) in gl.items():
+        if k in ("radius", "radius_b"):
+            a_, b_ = (O, A) if k == "radius" else (O, B)
+            away = vc.polar(O, r_px * 0.6, (s0 - 50.0) if k == "radius"
+                            else (s1 + 50.0))
+            el_ = _seat_side_label(_CIRC_KIND, elements, boxes, a_, b_, g, away,
+                                      clr, f"fl{k}")
+            elements.append(el_)
+            boxes.append(_text_box(g, el_["at"]))
+        elif k == "arc":
+            at = _circ_seat_arc_label(elements, boxes, O, r_px, s0 + th / 2.0, g,
+                                 clr, gapl)
+            elements.append(vc.text(at, g, id="flarc"))
+            boxes.append(_text_box(g, at))
+        else:
+            el_ = _angle_arc_label(_CIRC_KIND, elements, O, A, B, g, 1, 26.0, clr)
+            elements += el_
+            boxes = _circ_boxes(elements)
+    if values == "figure":
+        add('describe "the printed givens are figure content — the question asks '
+            'the student to read them"', "inferred", "read-the-figure mode")
+    if values == "stem":
+        add(f"angle A O B = {th:g}", "stem", "the sector's centre angle")
+    else:
+        add(f'describe "the sector centre angle is {th:g} degrees — figure '
+            'content"', "inferred", "the marked angle")
+    add("arc centre O from A to B", "inferred", "the sector's arc")
+    add("equal OA OB", "inferred", "two radii of the same sector")
+    if abs(th - 180.0) <= 1e-9:
+        add("on O AB", "inferred", "a semicircle — the radii are one diameter")
+    elif abs(th - 90.0) <= 1e-9:
+        add('describe "the sector is a quadrant"', "inferred", "90 degrees")
+    add('describe "a circular-composite sector figure"', "inferred",
+        "the figure's shape")
+    for k, (gk, gv, g) in gl.items():
+        tgt = {"radius": "OA", "radius_b": "OB", "arc": "arc_ab",
+               "angle": "AOB"}[k]
+        add(f'label "{g}" names {tgt}', evv, f"the {k}'s glyph")
+    if letters:
+        for nm in "OAB":
+            add(f'label "{nm}" names {nm}', "inferred", "a point letter")
+    if "P" in anchors:
+        add('describe "the attached triangle apex is anchor P — it is not '
+            'lettered"', "inferred", "an unlettered anchor")
+    sector_area = math.pi * R_u ** 2 * th / 360
+    union_area = sector_area
+    for p in pieces:
+        if p["kind"] == "semicircle":
+            union_area += math.pi * R_u ** 2 / 8
+        elif p.get("_mode") == "attach":
+            union_area = R_u ** 2 * math.sin(math.radians(th)) / 2 + chord_u * math.sqrt(p["_leg"] ** 2 - (chord_u / 2) ** 2) / 2
+    add(f"derive {_num_exact(sector_area)} + {_num_exact(union_area - sector_area)} = {_num_exact(union_area)}", evv, "union area: sector plus attached area outside its arc")
+    expr = " + ".join(_num_exact(t) for t in perim_terms)
+    add(f"derive {expr} = {_num_exact(sum(perim_terms))}", evv,
+        f"the outer perimeter — {perim_note}")
+    add("none tickMark parallelMark arrow dashed" +
+        ("" if shaded else " shaded"), "inferred", "the outline and labels only")
+    segs = ["OA", "OB"] + (["AB"] if any(p["kind"] == "triangle" and p.get("_mode") == "inscribed"
+            for p in pieces) else [])
+    if "P" in anchors:
+        segs += ["AP", "BP"]
+    return finish(kind=_CIRC_KIND, figure_id=figure_id, stem=stem,
+                     elements=elements, anchors=anchors, points=list(anchors),
+                     segments=segs, claims=claims, ask=ask,
+                     title=title or "A sector composite",
+                     description=description or (
+                         "A sector with a triangle or semicircle attached, "
+                         "with labelled givens."),
+                     scale=f"drawn to scale: {vc.r2(r_px):g} units = {R_u:g} "
+                           f"{unit}", medium=medium)
+
+
+def _circ_upx(r_px, R_u):
+    return r_px / R_u
+
+
+def _circ_build_cut_attach(figure_id, stem, ask, title, description, medium, unit,
+                      values, radius, cut, labels, shaded, r_px):
+    R_u = _circ_pos("radius", radius)
+    r_px = _circ_number(r_px) if r_px is not None else 130.0
+    if not 60.0 <= r_px <= 180.0:
+        raise TemplateError(f"{_CIRC_KIND}: r_px must be 60–180 units")
+    if cut not in ("left", "right"):
+        raise TemplateError(f"{_CIRC_KIND}: cut is 'left' or 'right' — the diameter "
+                            "half the semicircle is cut from")
+    labels = labels or {}
+    bad = set(labels) - {"radius", "diameter"}
+    if bad:
+        raise TemplateError(f"{_CIRC_KIND}: cut_attach labels are radius / diameter "
+                            "/ small_diameter")
+    gl = {k: _circ_glyph(g, k, unit) for k, g in labels.items()}
+    truths = {"radius": R_u, "diameter": 2.0 * R_u, "small_diameter": R_u}
+    if values == "stem":
+        chk = {"radius": R_u}
+        for k, (gk, gv) in gl.items():
+            if gk == "num":
+                _circ_bind(gk, gv, truths[k], k, unit)
+                chk[f"{k} label"] = gv
+        require_stem(stem, **chk)
+    else:
+        for k, (gk, gv) in gl.items():
+            if gk == "num":
+                _circ_bind(gk, gv, truths[k], k, unit)
+    O = (0.0, 0.0)
+    P1, P2 = (-r_px, 0.0), (r_px, 0.0)
+    Cc = (-r_px / 2.0, 0.0) if cut == "left" else (r_px / 2.0, 0.0)
+    Ca = (r_px / 2.0, 0.0) if cut == "left" else (-r_px / 2.0, 0.0)
+    rs = r_px / 2.0
+    pts = (vc.sampled_arc(O, r_px, 180.0, 360.0))
+    if cut == "left":
+        pts += vc.sampled_arc(Ca, rs, 0.0, 180.0)[1:]
+        pts += list(reversed(vc.sampled_arc(Cc, rs, 180.0, 360.0)))[1:]
+    else:
+        pts += list(reversed(vc.sampled_arc(Cc, rs, 180.0, 360.0)))[1:]
+        pts += vc.sampled_arc(Ca, rs, 0.0, 180.0)[1:]
+    elements = [vc.polygon(pts, fill=(vc.SHADE if shaded else None), id="plate"),
+                vc.line(P1, P2, id="ldia"),
+                vc.arc(O, r_px, 180.0, 360.0, id="abig")]
+    if cut == "left":
+        elements.append(vc.arc(Cc, rs, 180.0, 360.0, id="acut"))
+        elements.append(vc.arc(Ca, rs, 0.0, 180.0, id="aatt"))
+    else:
+        elements.append(vc.arc(Ca, rs, 0.0, 180.0, id="aatt"))
+        elements.append(vc.arc(Cc, rs, 180.0, 360.0, id="acut"))
+    T = (0.0, -r_px)
+    elements.append(vc.line(O, T, id="lrad"))
+    span = 2.0 * r_px + 160.0
+    clr, gapl = _circ_clr(span), _circ_gapl(span)
+    boxes = _circ_boxes(elements)
+    targets = {}
+    for k, g in labels.items():
+        if k == "radius":
+            el_ = _seat_side_label(_CIRC_KIND, elements, boxes, O, T, g,
+                                      (-r_px - 60.0, -r_px), clr, "flrad")
+            elements.append(el_)
+            boxes.append(_text_box(g, el_["at"]))
+            targets[k] = "OT"
+        elif k == "diameter":
+            el_ = _seat_side_label(_CIRC_KIND, elements, boxes, P1, P2, g,
+                                      (0.0, -r_px - 60.0), clr, "fldia")
+            elements.append(el_)
+            boxes.append(_text_box(g, el_["at"]))
+            targets[k] = "PQ"
+        else:
+            mid_deg = 90.0 if cut == "left" else 270.0
+            at = _circ_seat_arc_label(elements, boxes, Ca, rs, mid_deg, g, clr, gapl)
+            elements.append(vc.text(at, g, id="flsm"))
+            boxes.append(_text_box(g, at))
+            targets[k] = "arc_att"
+    anchors = {"O": O, "P": P1, "Q": P2, "T": T, "E": Cc, "F": Ca}
+    claims = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    evv = "stem" if values == "stem" else "inferred"
+    if values == "figure":
+        add('describe "the printed givens are figure content — the question asks '
+            'the student to read them"', "inferred", "read-the-figure mode")
+    add(f'describe "a semicircular plate of radius {R_u:g} {unit}: a semicircle '
+        f'of diameter {R_u:g} {unit} is cut from the {cut} half of its diameter '
+        'and attached below the other half"', "inferred", "the figure's shape")
+    add("arc centre O from P to Q", "inferred", "the plate's outer arc")
+    add("on O PQ", "inferred", "O is the diameter's midpoint")
+    add("arc centre E from P to O" if cut == "left" else
+        "arc centre E from O to Q", "inferred", "the cut semicircle")
+    add("arc centre F from O to Q" if cut == "left" else
+        "arc centre F from P to O", "inferred", "the attached semicircle")
+    add('describe "the diameter line is drawn for reading — the outer boundary '
+        'follows the three arcs"', "inferred", "the join")
+    for k, g in labels.items():
+        add(f'label "{g}" names {targets[k]}', evv, f"the {k}'s glyph")
+    original_area = math.pi * R_u ** 2 / 2
+    add(f"derive {_num_exact(original_area)} - {_num_exact(original_area / 4)} + {_num_exact(original_area / 4)} = {_num_exact(original_area)}", evv, "transfer conserves area: equal semicircle cut and attachment cancel")
+    terms = [math.pi * R_u, math.pi * R_u / 2.0, math.pi * R_u / 2.0]
+    expr = " + ".join(_num_exact(t) for t in terms)
+    add(f"derive {expr} = {_num_exact(sum(terms))}", evv,
+        "the outer perimeter — the big arc plus the cut and attached "
+        "semicircle arcs")
+    add("none tickMark parallelMark angleMark arrow dashed" +
+        ("" if shaded else " shaded"), "inferred", "the outline and labels only")
+    return finish(kind=_CIRC_KIND, figure_id=figure_id, stem=stem,
+                     elements=elements, anchors=anchors, points=list(anchors),
+                     segments=["OT", "PQ"], claims=claims, ask=ask,
+                     title=title or "A cut-and-attached semicircle",
+                     description=description or (
+                         "A semicircular plate with a semicircle cut from one "
+                         "half of the diameter and attached on the other."),
+                     scale=f"drawn to scale: {vc.r2(r_px):g} units = {R_u:g} "
+                           f"{unit}", medium=medium)
+
+
+def _circ_build_annulus(figure_id, stem, ask, title, description, medium, unit,
+                   values, outer, inner, shaded, r_px):
+    ok, ov = _circ_dim("outer", outer)
+    ik, iv = _circ_dim("inner", inner)
+    if ok != ik:
+        raise TemplateError(f"{_CIRC_KIND}: outer and inner must be both numeric or "
+                            "both symbolic — a number and a symbol cannot share "
+                            "a drawn proportion")
+    symbolic = ok == "sym"
+    if symbolic and values == "stem" and any(not re.search(rf"(?<![A-Za-z0-9]){re.escape(token)}(?![A-Za-z0-9])", stem) for token in (ov, iv)):
+        raise TemplateError(f"{_CIRC_KIND}: symbolic dimensions must be stated in the stem or use values='figure'")
+    if symbolic and ov[-1] == iv[-1] and int(ov[:-1] or 1) <= int(iv[:-1] or 1):
+        raise TemplateError(f"{_CIRC_KIND}: outer symbolic dimension must exceed inner when they share a variable")
+    if not symbolic and iv >= ov:
+        raise TemplateError(f"{_CIRC_KIND}: inner ({iv:g}) must be smaller than outer "
+                            f"({ov:g}) — a ring needs a real hole")
+    r_px = _circ_number(r_px) if r_px is not None else 160.0
+    if not 70.0 <= r_px <= 160.0:
+        raise TemplateError(f"{_CIRC_KIND}: r_px must be 70–160 units")
+    if symbolic:
+        R_px, r_i = r_px, r_px * 0.55
+    else:
+        R_px = r_px
+        r_i = r_px * iv / ov
+        if r_i < 18.0:
+            raise TemplateError(f"{_CIRC_KIND}: the inner circle draws under 18 units "
+                                "— raise r_px or the ratio is too thin")
+    if values == "stem" and not symbolic:
+        require_stem(stem, **{"outer radius": ov, "inner radius": iv})
+    O = (0.0, 0.0)
+    elements = [vc.circle(O, R_px, fill=(vc.SHADE if shaded else None), id="co"),
+                vc.circle(O, r_i, fill=vc.WHITE, id="ci")]
+    E = (R_px, 0.0)
+    F = vc.polar(O, r_i, 120.0)
+    G = vc.polar(O, R_px, 120.0)
+    elements.append(vc.line(O, E, id="lo"))
+    elements.append(vc.line(O, F, id="li"))
+    span = 2.0 * r_px + 160.0
+    clr, gapl = _circ_clr(span), _circ_gapl(span)
+    boxes = _circ_boxes(elements)
+    g_out = ov if symbolic else f"{ov:g} {unit}"
+    g_in = iv if symbolic else f"{iv:g} {unit}"
+    el_ = vc.text(_circ_seat_arc_label(elements, boxes, O, R_px, 0, g_out, clr, gapl),
+                  g_out, id="flo")
+    elements.append(el_)
+    boxes.append(_text_box(g_out, el_["at"]))
+    g_in = iv if symbolic else f"{iv:g}"
+    el_ = _seat_side_label(_CIRC_KIND, elements, boxes, O, F, g_in,
+                              vc.polar(O, R_px * 1.4, 180.0), clr, "fli")
+    elements.append(el_)
+    elements.append(_float_label("lbO", "O", O))
+    anchors = {"O": O, "E": E, "F": F, "G": G,
+               "H": (-R_px, 0.0), "I": vc.polar(O, r_i, 300)}
+    claims = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    evv = "stem" if values == "stem" else "inferred"
+    if values == "figure":
+        add('describe "the printed givens are figure content — the question asks '
+            'the student to read them"', "inferred", "read-the-figure mode")
+    add("circle centre O through E H", "inferred", "the outer circle")
+    add("circle centre O through F I", "inferred", "the inner circle")
+    add('describe "two concentric circles; the ring between them is shaded"'
+        if shaded else
+        'describe "two concentric circles — an annulus"', "inferred",
+        "the figure's shape")
+    add(f"on F OG", "inferred", "the inner-radius mark lies on the outer radius")
+    add(f'label "{g_out}" names OE', evv, "the outer radius' glyph")
+    add(f'label "{g_in}" names OF', evv, "the inner radius' glyph")
+    add('label "O" names O', "inferred", "the centre")
+    if symbolic:
+        add("derive 1 + 1 = 2", "inferred", "the annulus has two circular boundary components, one outer and one inner; symbolic area is pi times the difference of squared radii")
+        add(f'describe "the radii are symbolic ({g_out} and {g_in}) — drawn '
+            'sizes are representative, not a measured ratio"', "inferred",
+            "symbolic dimensions")
+    else:
+        add(f"derive {_num_exact(2 * math.pi * ov)} + {_num_exact(2 * math.pi * iv)} = {_num_exact(2 * math.pi * (ov + iv))}", evv, "annulus boundary includes outer and inner circumferences")
+        add(f"derive {_num_exact(math.pi * ov * ov)} - "
+            f"{_num_exact(math.pi * iv * iv)} = "
+            f"{_num_exact(math.pi * (ov * ov - iv * iv))}", evv,
+            "the ring's area — outer disc minus inner disc")
+    add("none tickMark parallelMark angleMark arrow dashed" +
+        ("" if shaded else " shaded"), "inferred", "the circles and labels only")
+    ambiguous = (["both radii are symbolic — the drawn 0.55 ratio is "
+                  "representative"] if symbolic else None)
+    return finish(kind=_CIRC_KIND, figure_id=figure_id, stem=stem,
+                     elements=elements, anchors=anchors, points=list(anchors),
+                     segments=["OE", "OF"], claims=claims, ask=ask,
+                     title=title or "An annulus",
+                     description=description or (
+                         "Two concentric circles with the ring between them "
+                         "shaded, radii marked from the centre."),
+                     scale=("symbolic — representative sizes" if symbolic else
+                            f"drawn to scale: {vc.r2(R_px):g} units = {ov:g} "
+                            f"{unit}"),
+                     ambiguous=ambiguous, medium=medium)
+
+
+def _circ_build_nested_square(figure_id, stem, ask, title, description, medium,
+                         unit, values, outer, inner, shaded, unit_px):
+    ok, ov = _circ_dim("outer", outer)
+    ik, iv = _circ_dim("inner", inner)
+    if ok != ik:
+        raise TemplateError(f"{_CIRC_KIND}: outer and inner sides must be both "
+                            "numeric or both symbolic")
+    symbolic = ok == "sym"
+    if symbolic and values == "stem" and any(not re.search(rf"(?<![A-Za-z0-9]){re.escape(token)}(?![A-Za-z0-9])", stem) for token in (ov, iv)):
+        raise TemplateError(f"{_CIRC_KIND}: symbolic dimensions must be stated in the stem or use values='figure'")
+    if symbolic and ov[-1] == iv[-1] and int(ov[:-1] or 1) <= int(iv[:-1] or 1):
+        raise TemplateError(f"{_CIRC_KIND}: outer symbolic dimension must exceed inner when they share a variable")
+    if not symbolic and iv >= ov:
+        raise TemplateError(f"{_CIRC_KIND}: inner side ({iv:g}) must be smaller than "
+                            f"outer ({ov:g})")
+    if symbolic:
+        s_o, s_i = 200.0, 110.0
+    else:
+        upx = _circ_number(unit_px) if unit_px is not None else \
+            220.0 / ov
+        if not 8.0 <= upx <= 240.0:
+            raise TemplateError(f"{_CIRC_KIND}: unit_px must keep the figure readable")
+        s_o, s_i = ov * upx, iv * upx
+        if s_i < 20.0:
+            raise TemplateError(f"{_CIRC_KIND}: the inner square draws under 20 "
+                                "units — raise unit_px")
+    if values == "stem" and not symbolic:
+        require_stem(stem, **{"outer side": ov, "inner side": iv})
+    h_o, h_i = s_o / 2.0, s_i / 2.0
+    Qo = [(-h_o, -h_o), (h_o, -h_o), (h_o, h_o), (-h_o, h_o)]
+    Qi = [(-h_i, -h_i), (h_i, -h_i), (h_i, h_i), (-h_i, h_i)]
+    elements = [vc.polygon(Qo, fill=(vc.SHADE if shaded else None), id="qo"),
+                vc.polygon(Qi, fill=(vc.WHITE if shaded else None), id="qi")]
+    span = s_o + 160.0
+    clr, gapl = _circ_clr(span), _circ_gapl(span)
+    boxes = _circ_boxes(elements)
+    g_out = ov if symbolic else f"{ov:g} {unit}"
+    g_in = iv if symbolic else f"{iv:g} {unit}"
+    el_ = _seat_side_label(_CIRC_KIND, elements, boxes, Qo[0], Qo[1], g_out,
+                              (0.0, -h_o - 80.0), clr, "flo")
+    elements.append(el_)
+    boxes.append(_text_box(g_out, el_["at"]))
+    el_ = _seat_side_label(_CIRC_KIND, elements, boxes, Qi[0], Qi[1], g_in,
+                              (0.0, 0.0), clr, "fli")
+    elements.append(el_)
+    anchors = {"P": Qo[0], "Q": Qo[1], "R": Qo[2], "S": Qo[3],
+               "W": Qi[0], "X": Qi[1], "Y": Qi[2], "Z": Qi[3]}
+    claims = []
+
+    def add(pred, ev, note=""):
+        claims.append((pred, ev, note))
+        return f"K{len(claims)}"
+
+    evv = "stem" if values == "stem" else "inferred"
+    if values == "figure":
+        add('describe "the printed givens are figure content — the question asks '
+            'the student to read them"', "inferred", "read-the-figure mode")
+    add('describe "a square inside a concentric larger square; the frame '
+        'between them is shaded"' if shaded else
+        'describe "a square inside a concentric larger square"', "inferred",
+        "the figure's shape")
+    for trip in (("S", "P", "Q"), ("P", "Q", "R"), ("Q", "R", "S"),
+                 ("R", "S", "P")):
+        add(f"right {trip[0]} {trip[1]} {trip[2]}", "inferred", "an outer corner")
+    add("equal PQ QR", "inferred", "the outer square's sides")
+    add("equal WX XY", "inferred", "the inner square's sides")
+    outer_claim = add(f'label "{g_out}" names PQ', evv, "the outer side's glyph")
+    inner_claim = add(f'label "{g_in}" names WX', evv, "the inner side's glyph")
+    if symbolic:
+        add("derive 4 + 4 = 8", "inferred", "the frame boundary has four outer and four inner sides; symbolic area is the difference of squared side expressions")
+        add(f'describe "the sides are symbolic ({g_out} and {g_in}) — drawn '
+            'sizes are representative, not a measured ratio"', "inferred",
+            "symbolic dimensions")
+    else:
+        add(f"derive {_num_exact(ov * ov)} - {_num_exact(iv * iv)} = "
+            f"{_num_exact(ov * ov - iv * iv)}", evv,
+            "the frame's area — outer square minus inner square")
+        add(f"derive 4 * {_num_exact(ov)} + 4 * {_num_exact(iv)} = "
+            f"{_num_exact(4 * ov + 4 * iv)}", evv,
+            "the shaded frame's boundary — both squares' perimeters")
+    add("none tickMark parallelMark angleMark arrow dashed" +
+        ("" if shaded else " shaded"), "inferred", "the squares and labels only")
+    ambiguous = ([f"{outer_claim}: symbolic outer expression; coefficient is not a measured length",
+                  f"{inner_claim}: symbolic inner expression; independent variables do not determine a ratio"]
+                 if symbolic else None)
+    return finish(kind=_CIRC_KIND, figure_id=figure_id, stem=stem,
+                     elements=elements, anchors=anchors, points=list(anchors),
+                     segments=["PQ", "WX"], claims=claims, ask=ask,
+                     title=title or "A square inside a square",
+                     description=description or (
+                         "A square inside a larger square, the frame between "
+                         "them shaded, with side glyphs."),
+                     scale=("symbolic — representative sizes" if symbolic else
+                            f"drawn to scale: {vc.r2(s_o / ov):g} units = "
+                            f"1 {unit}"),
+                     ambiguous=ambiguous, medium=medium)
+
+
+def build_circular_composite(*, figure_id, stem, ask=None, title=None,
+                             description=None, medium="english", shape,
+                             unit="cm", values="stem", length=None, width=None,
+                             radius=None, inner=None, outer=None, angle=None,
+                             base=None, height=None, leg=None, mode=None,
+                             pieces=None, labels=None, cut="left",
+                             letters=True, shaded=None, unit_px=None,
+                             r_px=None, start=None):
+    """One bounded circular-composite dispatcher. `shape` selects the profile;
+    all numeric givens are finite non-bool numbers checked against the stem in
+    "stem" mode, and every printed number binds its own true boundary."""
+    vc.reset_ids()
+    if not isinstance(shape, str):
+        raise TemplateError(f"{_CIRC_KIND}: shape must name a bounded profile")
+    if values not in ("stem", "figure"):
+        raise TemplateError(f"{_CIRC_KIND}: values must be 'stem' or 'figure'")
+    _circ_unit_check(unit)
+    if not isinstance(letters, bool):
+        raise TemplateError(f"{_CIRC_KIND}: letters is a bool")
+    if not isinstance(stem, str) or not stem.strip():
+        raise TemplateError(f"{_CIRC_KIND}: stem must be non-empty text")
+    if labels is not None and not isinstance(labels, dict):
+        raise TemplateError(f"{_CIRC_KIND}: labels must be a dict")
+    if shaded is not None and not isinstance(shaded, bool):
+        raise TemplateError(f"{_CIRC_KIND}: shaded must be a bool")
+    for key, value in (("length", length), ("width", width), ("radius", radius),
+                       ("angle", angle), ("base", base), ("height", height),
+                       ("leg", leg), ("unit_px", unit_px), ("r_px", r_px),
+                       ("start", start)):
+        if value is not None:
+            _circ_number(value)
+    pieces = _circ_check_pieces(pieces)
+    permitted = {"rect": {"length", "width", "unit_px"},
+                 "stadium": {"length", "width", "unit_px"},
+                 "triangle": {"base", "height", "leg", "unit_px"},
+                 "sector": {"angle", "radius", "start", "r_px"},
+                 "cut_attach": {"radius", "r_px"},
+                 "annulus": {"outer", "inner", "r_px"},
+                 "nested_square": {"outer", "inner", "unit_px"}}
+    supplied = {"length": length, "width": width, "radius": radius, "angle": angle,
+                "base": base, "height": height, "leg": leg, "unit_px": unit_px,
+                "r_px": r_px, "start": start, "outer": outer, "inner": inner}
+    if shape not in permitted or any(v is not None and k not in permitted[shape] for k, v in supplied.items()):
+        raise TemplateError(f"{_CIRC_KIND}: unknown profile or numeric arguments outside this profile's contract")
+    if shape not in ("rect", "triangle", "sector") and pieces:
+        raise TemplateError(f"{_CIRC_KIND}: pieces are not supported by {shape}")
+    if shape in ("annulus", "nested_square") and labels:
+        raise TemplateError(f"{_CIRC_KIND}: this profile prints its own dimension labels")
+    if shape in ("rect", "triangle", "sector") and not pieces:
+        raise TemplateError(f"{_CIRC_KIND}: a composite needs at least one piece; use the existing primitive builder")
+    if shape == "triangle" and ((mode == "right" and leg is not None) or
+                                 (mode != "right" and height is not None) or
+                                 (mode == "equilateral" and leg is not None)):
+        raise TemplateError(f"{_CIRC_KIND}: extra triangle dimensions would be ignored")
+    if shape == "rect":
+        if len(pieces) > 1:
+            raise TemplateError(f"{_CIRC_KIND}: rectangle supports one circular piece; multiple-piece overlap is not solved")
+        if pieces and pieces[0].get("kind") == "semicircle" and pieces[0].get("mode") == "cut":
+            side = pieces[0].get("on")
+            if side in _CIRC_SIDES:
+                diameter, depth = (length, width) if side in ("AB", "CD") else (width, length)
+                if _circ_pos("diameter", diameter) / 2 >= _circ_pos("depth", depth):
+                    raise TemplateError(f"{_CIRC_KIND}: semicircle cut reaches the opposite boundary")
+    if shape == "sector":
+        if len(pieces) > 1 or (angle is not None and angle > 180 and pieces):
+            raise TemplateError(f"{_CIRC_KIND}: sector pieces require a minor/semicircular sector and at most one piece")
+        for p in pieces:
+            if p.get("kind") == "triangle" and p.get("on") != "AB":
+                raise TemplateError(f"{_CIRC_KIND}: triangle incidence is chord AB only")
+    if shape == "triangle" and len(pieces) > 1:
+        raise TemplateError(f"{_CIRC_KIND}: one attached semicircle per triangle")
+    if values == "figure" and shape not in ("annulus", "nested_square"):
+        required = {"rect": {"AB": length, "DA": width},
+                    "stadium": {"length": length, "width": width},
+                    "triangle": {"base": base, "left": height if mode == "right" else leg if mode != "equilateral" else base},
+                    "sector": {"radius": radius, "angle": angle},
+                    "cut_attach": {"radius": radius}}.get(shape, {})
+        if pieces and shape in ("rect", "sector"):
+            if any(p.get("kind") != "semicircle" for p in pieces):
+                raise TemplateError(f"{_CIRC_KIND}: this profile has unprinted numeric givens; use values='stem'")
+        for key, value in required.items():
+            if key not in (labels or {}):
+                raise TemplateError(f"{_CIRC_KIND}: figure mode needs a numeric {key} label")
+            gk, gv = (_circ_glyph(labels[key], key, unit) if key != "angle" else
+                      ("num", float(labels[key][:-1])) if isinstance(labels[key], str) and _ANGLE_NUM.fullmatch(labels[key]) else ("sym", 0))
+            if gk != "num":
+                raise TemplateError(f"{_CIRC_KIND}: figure mode needs a numeric {key} label")
+            _circ_bind(gk, gv, _circ_pos(key, value), key, unit)
+    if shape == "rect":
+        return _circ_build_rect(figure_id, stem, ask, title, description, medium,
+                           unit, values, length, width, pieces, labels,
+                           bool(shaded), letters, unit_px)
+    if shape == "stadium":
+        return _circ_build_stadium(figure_id, stem, ask, title, description, medium,
+                              unit, values, length, width, labels,
+                              bool(shaded), unit_px)
+    if shape == "triangle":
+        return _circ_build_triangle(figure_id, stem, ask, title, description,
+                               medium, unit, values, mode or "isosceles", base, height,
+                               leg, pieces, labels, bool(shaded), unit_px,
+                               letters)
+    if shape == "sector":
+        return _circ_build_sector(figure_id, stem, ask, title, description, medium,
+                             unit, values, angle, radius, start, pieces,
+                             labels, bool(shaded), r_px, letters)
+    if shape == "cut_attach":
+        return _circ_build_cut_attach(figure_id, stem, ask, title, description,
+                                 medium, unit, values, radius, cut, labels,
+                                 bool(shaded), r_px)
+    if shape == "annulus":
+        return _circ_build_annulus(figure_id, stem, ask, title, description, medium,
+                              unit, values, outer, inner,
+                              True if shaded is None else bool(shaded), r_px)
+    if shape == "nested_square":
+        return _circ_build_nested_square(figure_id, stem, ask, title, description,
+                                    medium, unit, values, outer, inner,
+                                    True if shaded is None else bool(shaded),
+                                    unit_px)
+    raise TemplateError(f"{_CIRC_KIND}: shape {shape!r} is not one of rect, stadium, "
+                        "triangle, sector, cut_attach, annulus, nested_square")
+
+
 for _builder_name in (
         "right_triangle", "circle_angles", "triangle_parallel", "parallel_area",
         "solid", "function_graph", "inequality_line", "histogram", "tree_diagram",
         "pythagoras_squares", "ogive", "outcome_grid", "two_circle_tangents",
         "construction", "inscribed_circle", "venn_regions", "solid_composite",
-        "net", "marked_geometry", "pie_chart", "sector", "cartesian_plot"):
+        "net", "marked_geometry", "pie_chart", "sector", "cartesian_plot",
+        "fraction_tape", "area_model"):
     _name = "build_" + _builder_name
     globals()[_name] = _validate_numeric_inputs(globals()[_name])
+
+
+_scn_CAP = re.compile(r'[A-Z]')
+_scn_KINDS = ('elevation', 'depression')
+_scn_SIDES = ('left', 'right')
+
+
+def _scn_cap(letter, what, kind):
+    if not (isinstance(letter, str) and _scn_CAP.fullmatch(letter)):
+        raise TemplateError(f'{kind}: {what} {letter!r} must be a single capital letter')
+    return letter
+
+
+def _scn_fin(value, what, kind):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or \
+            not math.isfinite(float(value)):
+        raise TemplateError(f'{kind}: {what} must be a finite number — got {value!r}')
+    return float(value)
+
+
+def _scn_try_solve(rows, nvar, kind):
+    """(sol, 'ok'|'contra'|'under') — solve the linear system without committing
+    to which refusal fires; the caller decides the honest message."""
+    try:
+        return _scn_solve_linear(rows, nvar, kind), 'ok'
+    except TemplateError as e:
+        return None, ('contra' if 'contradict' in str(e) else 'under')
+
+
+def _scn_solve_linear(eqs, nvar, kind):
+    A = [list(map(float, c)) + [float(b)] for c, b in eqs]
+    m = len(A)
+    max_rhs = max((abs(r[nvar]) for r in A), default=1.0)
+    tol = 1e-6 * max(1.0, max_rhs)
+    row = 0
+    piv = []
+    for col in range(nvar):
+        if row >= m:
+            break
+        p = max(range(row, m), key=lambda r: abs(A[r][col]))
+        if abs(A[p][col]) < 1e-11:
+            continue
+        A[row], A[p] = A[p], A[row]
+        for r in range(m):
+            if r != row and abs(A[r][col]) > 1e-12:
+                f = A[r][col] / A[row][col]
+                for c in range(col, nvar + 1):
+                    A[r][c] -= f * A[row][c]
+        piv.append(col)
+        row += 1
+    for r in range(row, m):
+        if abs(A[r][nvar]) > tol:
+            raise TemplateError(
+                f'{kind}: the givens contradict each other — no geometry satisfies '
+                'every stated length, distance and angle at once')
+    if len(piv) < nvar:
+        raise TemplateError(
+            f'{kind}: the givens do not determine the scene — a length, distance or '
+            'angle is missing (or an equation duplicates another)')
+    sol = [0.0] * nvar
+    for i, col in enumerate(piv):
+        sol[col] = A[i][nvar] / A[i][col]
+    return sol
+
+
+def build_elevation_scene(*, figure_id, stem, post, sights, eyes=None,
+                          heights=None, distances=None, unknowns=None,
+                          labels='all', unit='m', values='stem', ask=None,
+                          title=None, description=None, medium='english'):
+    """A scale-diagram scene: a horizontal ground, one vertical post (foot, top),
+    optional eye points above ground points, and up to two sight lines whose
+    elevation/depression arcs are measured from the dashed horizontal datum at
+    the observer — never from the ground. `heights` key 'XY' declares Y is v
+    units directly ABOVE X (post 'FT', a ground-eye pair 'GE', or two eyes 'AB'
+    over one ground point); `distances` key 'XY' declares Y sits v units to the
+    RIGHT of X on the ground. `sights` = [{'from': eye-or-post-top-or-ground,
+    'to': post top/foot/a ground letter, 'angle': 31 | 'x',
+    'kind': 'elevation'|'depression', 'side': 'left'|'right'}] — 'kind'/'side'
+    are required for a numeric angle (they form the solved equation) and are
+    re-verified against the solved geometry. The givens must determine the
+    scene exactly: underdetermined or contradictory systems refuse."""
+    kind = 'elevation_scene'
+    vc.reset_ids()
+    if values not in ('stem', 'figure'):
+        raise TemplateError(f"{kind}: values must be 'stem' or 'figure'")
+    fig_mode = values == 'figure'
+    if not isinstance(unit, str) or not re.fullmatch(r'[A-Za-z]{1,5}', unit):
+        raise TemplateError(f'{kind}: unit must be 1–5 English letters')
+    if not (isinstance(post, (list, tuple)) and len(post) == 2):
+        raise TemplateError(f'{kind}: post is (foot_letter, top_letter)')
+    foot, top = (_scn_cap(p, 'post', kind) for p in post)
+    if foot == top:
+        raise TemplateError(f'{kind}: the post foot and top must differ')
+    eyes = dict(eyes or {})
+    if len(eyes) > 2:
+        raise TemplateError(f'{kind}: at most two observers')
+    for e_, g_ in eyes.items():
+        _scn_cap(e_, 'eye', kind)
+        _scn_cap(g_, 'ground point', kind)
+        if e_ in (foot, top):
+            raise TemplateError(f'{kind}: eye {e_!r} is a post letter — sight '
+                                   'from the post top by naming it directly')
+        if g_ in (foot, top) or g_ in eyes or g_ == e_:
+            raise TemplateError(f'{kind}: ground point {g_!r} collides with an '
+                                   'existing letter')
+    sights = list(sights or [])
+    if not 1 <= len(sights) <= 2:
+        raise TemplateError(f'{kind}: one or two sight lines')
+    grounds = {foot} | set(eyes.values())
+    specs = []
+    for i, s_ in enumerate(sights):
+        if not isinstance(s_, dict):
+            raise TemplateError(f'{kind}: sight {i} must be a dict')
+        fr, to = s_.get('from'), s_.get('to')
+        ang = s_.get('angle')
+        knd, side = s_.get('kind'), s_.get('side')
+        _scn_cap(fr, f'sight {i} observer', kind)
+        _scn_cap(to, f'sight {i} target', kind)
+        if fr == to:
+            raise TemplateError(f'{kind}: sight {i} sights its own point')
+        if fr not in (top,) and fr not in eyes and fr != foot:
+            grounds.add(fr)          # an observer standing on the ground
+        if to not in (foot, top):
+            if to in eyes:
+                raise TemplateError(f'{kind}: sight {i} targets eye {to} — targets '
+                                       'are the post top/foot or a ground point')
+            grounds.add(to)
+        num = None
+        if isinstance(ang, str):
+            kk, num, txt = _angle_text_kind(kind, ang, str(fr))
+            if kk == 'num':
+                raise TemplateError(f'{kind}: sight {i} angle must be a number or '
+                                       'a single unknown letter')
+            txt = ang.strip()
+        else:
+            num = _scn_fin(ang, f'sight {i} angle', kind)
+            if not 4.0 <= num <= 85.0:
+                raise TemplateError(f'{kind}: sight {i} angle {num:g}° is outside '
+                                       'the readable 4–85° range')
+            txt = f'{num:g}°'
+            if not fig_mode:
+                require_stem(stem, **{f'sight {i} angle': num})
+        if num is not None:
+            if knd not in _scn_KINDS or side not in _scn_SIDES:
+                raise TemplateError(
+                    f"{kind}: sight {i} with a numeric angle needs "
+                    "kind='elevation'|'depression' and side='left'|'right'")
+        else:
+            if knd is not None and knd not in _scn_KINDS:
+                raise TemplateError(f'{kind}: sight {i} kind is elevation|depression')
+            if side is not None and side not in _scn_SIDES:
+                raise TemplateError(f'{kind}: sight {i} side is left|right')
+        specs.append({'from': fr, 'to': to, 'num': num, 'txt': txt,
+                      'kind': knd, 'side': side})
+    heights = dict(heights or {})
+    distances = dict(distances or {})
+    unknowns = dict(unknowns or {})
+    for u_, g_ in unknowns.items():
+        if not (isinstance(u_, str) and len(u_) == 2 and
+                all(re.fullmatch(r'[A-Z]', c) for c in u_)):
+            raise TemplateError(f'{kind}: unknowns key {u_!r} must be two capitals')
+        if not (isinstance(g_, str) and re.fullmatch(r'[a-z]', g_)):
+            raise TemplateError(f'{kind}: unknown {u_} glyph must be one lowercase '
+                                   'letter')
+    if labels != 'all' and labels != 'none' and not isinstance(labels, (list, tuple)):
+        raise TemplateError(f"{kind}: labels is 'all', 'none' or a list of keys")
+
+    def _pair(key, what):
+        if not (isinstance(key, str) and len(key) == 2 and
+                all(re.fullmatch(r'[A-Z]', c) for c in key)):
+            raise TemplateError(f'{kind}: {what} key {key!r} must be two capitals')
+        return key[0], key[1]
+
+    # ---- the linear scene system ------------------------------------------
+    gvars = sorted(grounds - {foot})
+    evars = sorted(eyes)
+    order = ['H'] + [f'x:{g}' for g in gvars] + [f'e:{e}' for e in evars]
+    idx = {v: i for i, v in enumerate(order)}
+    nvar = len(order)
+    eqs = []
+
+    def yterm(L):                      # coefficients of the point's physical height
+        if L == top:
+            return {'H': 1.0}
+        if L in eyes:
+            return {f'e:{L}': 1.0}
+        return {}                      # foot or a ground letter: height 0
+
+    def xterm(L):                      # coefficients of the point's ground x
+        if L in (foot, top):
+            return {}
+        if L in eyes:
+            L = eyes[L]
+        return {} if L == foot else {f'x:{L}': 1.0}
+
+    def eq(terms, rhs, what):
+        row = [0.0] * nvar
+        for v_, c_ in terms.items():
+            row[idx[v_]] += c_
+        eqs.append((row, rhs, what))
+
+    h_pairs = []
+    for key, v_ in heights.items():
+        a_, b_ = _pair(key, 'heights')
+        v_ = _scn_fin(v_, f'heights[{key}]', kind)
+        if v_ <= 0:
+            raise TemplateError(f'{kind}: heights[{key}] must be positive')
+        if not fig_mode:
+            require_stem(stem, **{f'height {key}': v_})
+        if {a_, b_} == {foot, top}:
+            if (a_, b_) != (foot, top):
+                raise TemplateError(
+                    f"{kind}: heights key '{key}' puts {a_} below {b_} — the post "
+                    f"top is above its foot; write '{foot}{top}'")
+            eq({'H': 1.0}, v_, key)
+        elif a_ in grounds and b_ in eyes and eyes.get(b_) == a_:
+            eq({f'e:{b_}': 1.0}, v_, key)
+        elif a_ in eyes and b_ in eyes and eyes.get(a_) == eyes.get(b_):
+            eq({f'e:{b_}': 1.0, f'e:{a_}': -1.0}, v_, key)
+        else:
+            raise TemplateError(
+                f'{kind}: heights[{key}] is not a vertical pair in this scene — '
+                'use the post pair, a ground–eye pair, or two eyes over one point')
+        h_pairs.append((a_, b_, v_))
+    d_pairs = []
+    for key, v_ in distances.items():
+        a_, b_ = _pair(key, 'distances')
+        v_ = _scn_fin(v_, f'distances[{key}]', kind)
+        if v_ <= 0:
+            raise TemplateError(f'{kind}: distances[{key}] must be positive')
+        if not fig_mode:
+            require_stem(stem, **{f'distance {key}': v_})
+        if not (a_ in grounds and b_ in grounds):
+            raise TemplateError(
+                f'{kind}: distances[{key}] must join two ground points '
+                f'(ground points are {sorted(grounds)})')
+        t_ = {}
+        if b_ != foot:
+            t_[f'x:{b_}'] = 1.0
+        if a_ != foot:
+            t_[f'x:{a_}'] = -1.0
+        eq(t_, v_, key)
+        d_pairs.append((a_, b_, v_))
+    sight_eqs = []
+    for i, s_ in enumerate(specs):
+        if s_['num'] is None:
+            continue
+        k = math.tan(math.radians(s_['num']))
+        km = k * (1.0 if s_['kind'] == 'elevation' else -1.0) * \
+            (1.0 if s_['side'] == 'right' else -1.0)
+        t_ = dict(yterm(s_['to']))
+        for v_, c_ in yterm(s_['from']).items():
+            t_[v_] = t_.get(v_, 0.0) - c_
+        for v_, c_ in xterm(s_['to']).items():
+            t_[v_] = t_.get(v_, 0.0) - km * c_
+        for v_, c_ in xterm(s_['from']).items():
+            t_[v_] = t_.get(v_, 0.0) + km * c_
+        row = [0.0] * nvar
+        for v_, c_ in t_.items():
+            row[idx[v_]] += c_
+        sight_eqs.append((row, 0.0))
+
+    # the physical lengths/distances determine the scene when they can — a printed
+    # angle is verified against that solved geometry (±0.75°), so a rounded 53°
+    # never "contradicts" the true 53.13°. Sight equations only join the system
+    # when the lengths alone leave it underdetermined.
+    rows = [(r, b) for r, b, _w in eqs]
+    sol, st = _scn_try_solve(rows, nvar, kind)
+    if st == 'ok':
+        pass
+    elif st == 'contra':
+        _scn_solve_linear(rows, nvar, kind)           # raises the honest contradiction
+    else:
+        tried = False
+        combos = [list(range(len(sight_eqs)))] + [[i] for i in range(len(sight_eqs))]
+        for keep in combos:
+            if not keep:
+                continue
+            tried = True
+            sol, st = _scn_try_solve(rows + [sight_eqs[i] for i in keep], nvar, kind)
+            if st == 'ok':
+                break
+        if st == 'under' or not tried:
+            raise TemplateError(
+                f'{kind}: the givens do not determine the scene — a length, '
+                'distance or angle is missing (or an equation duplicates another)')
+        if st == 'contra':
+            raise TemplateError(
+                f'{kind}: the givens contradict each other — no geometry satisfies '
+                'every stated length, distance and angle at once')
+    val = {v: sol[i] for i, v in enumerate(order)}
+    H = val['H']
+    if H <= 0:
+        raise TemplateError(f'{kind}: the solved post height is {H:g} — not positive')
+    X = {foot: 0.0}
+    for g in gvars:
+        X[g] = val[f'x:{g}']
+    E = {}
+    for e in evars:
+        E[e] = val[f'e:{e}']
+        if E[e] <= 0:
+            raise TemplateError(
+                f'{kind}: eye {e} solved to height {E[e]:g} — an observer at ground '
+                'level is written as the ground letter itself, not an eyes entry')
+    gl = sorted(grounds, key=lambda g: X[g])
+    for a_, b_ in zip(gl, gl[1:]):
+        if abs(X[b_] - X[a_]) < 1e-9 * max(1.0, abs(X[b_]) + abs(X[a_])):
+            raise TemplateError(f'{kind}: ground points {a_} and {b_} solve to the '
+                                   'same spot — give them distinct names')
+
+    def py(L):                        # physical position, y UP
+        if L == top:
+            return (X[foot], H)
+        if L in eyes:
+            return (X[eyes[L]], E[L])
+        return (X[L], 0.0)
+
+    # re-verify every declared kind/side and angle against the solution
+    for i, s_ in enumerate(specs):
+        pf, pt_ = py(s_['from']), py(s_['to'])
+        dx, dy = pt_[0] - pf[0], pt_[1] - pf[1]
+        if abs(dx) < 1e-9 * max(1.0, abs(dy)):
+            raise TemplateError(f'{kind}: sight {i} is vertical — no elevation/'
+                                   'depression angle exists')
+        actual = math.degrees(math.atan2(abs(dy), abs(dx)))
+        if not 4.0 <= actual <= 85.0:
+            raise TemplateError(f'{kind}: sight {i} solves to {actual:.1f}° — '
+                                   'outside the readable 4–85° range')
+        a_kind = 'elevation' if dy > 0 else 'depression'
+        a_side = 'right' if dx > 0 else 'left'
+        if s_['num'] is not None and abs(actual - s_['num']) > 0.75:
+            raise TemplateError(f'{kind}: sight {i} prints {s_["num"]:g}° but the '
+                                   f'solved geometry gives {actual:.2f}°')
+        if s_['kind'] is not None and s_['kind'] != a_kind:
+            raise TemplateError(
+                f"{kind}: sight {i} declared '{s_['kind']}' but {s_['to']} is "
+                f"{a_kind} from {s_['from']} — fix the declaration")
+        if s_['side'] is not None and s_['side'] != a_side:
+            raise TemplateError(
+                f"{kind}: sight {i} declared side '{s_['side']}' but {s_['to']} is "
+                f"to the {a_side} of {s_['from']}")
+        s_['actual'], s_['a_kind'], s_['a_side'] = actual, a_kind, a_side
+
+    # ---- drawing -----------------------------------------------------------
+    w_phys = max(X.values()) - min(X.values())
+    h_phys = max(H, max(E.values(), default=0.0))
+    k = 250.0 / max(w_phys, h_phys, 1e-9)
+
+    def cv(L):
+        p = py(L)
+        return (p[0] * k, -p[1] * k)
+
+    P = {}
+    for g in sorted(grounds):
+        P[g] = (X[g] * k, 0.0)
+    for e in evars:
+        P[e] = (X[eyes[e]] * k, -E[e] * k)
+    P[top] = (X[foot] * k, -H * k)
+
+    elements = []
+    x_min, x_max = min(X.values()) * k, max(X.values()) * k
+    elements.append(vc.line((x_min - 30.0, 0.0), (x_max + 30.0, 0.0), id='ground'))
+    elements.append(vc.line(P[foot], P[top], id='post'))
+    # right-angle marks at the post foot and under each drawn eye-height segment
+    def _gdir(g):
+        others = sorted((x for x in grounds if x != g), key=lambda x: abs(X[x] - X[g]))
+        return (P[g][0] + (30.0 if X[others[0]] > X[g] else -30.0), P[g][1])
+    elements += vc.right_angle_mark(P[foot], P[top], _gdir(foot), r=13)
+    by_ground = {}
+    for e in evars:
+        by_ground.setdefault(eyes[e], []).append(e)
+    for g, el_ in by_ground.items():
+        topmost = max(el_, key=lambda e: E[e])
+        elements.append(vc.line(P[g], P[topmost], id=f'eye{g}'))
+        elements += vc.right_angle_mark(P[g], P[topmost], _gdir(g), r=11)
+    eye_pts = set(evars) | {top}
+    for i, s_ in enumerate(specs):
+        fr, to = s_['from'], s_['to']
+        s_['datum'] = fr in eye_pts
+        elements.append(vc.line(P[fr], P[to], id=f'sight{i}',
+                                   dashed=fr in eye_pts))
+    # one dashed datum through each observing eye, spanning its targets' side(s)
+    for e in sorted(eye_pts):
+        ts = [s_['to'] for s_ in specs if s_['from'] == e]
+        if not ts:
+            continue
+        xs = [P[e][0]] + [P[t][0] for t in ts]
+        elements.append(vc.line((min(xs) - 22.0, P[e][1]),
+                                   (max(xs) + 22.0, P[e][1]),
+                                   id=f'datum{e}', dashed=True))
+    for nm in sorted(P):
+        elements.append({'id': f'pt{nm}', 'type': 'point', 'at': vc.P(P[nm]),
+                         'r': 3.5})
+
+    boxes = []
+    clr = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0,
+                              max(w_phys, h_phys) * k + 140.0)
+    # angle arcs owned by the datum at the observer. Each sight's datum end is
+    # a REAL anchor with an unused single-capital name — the claim grammar's
+    # `angle P Q R` and `parallel PQ RS` take single capitals only, so a
+    # synthetic `G1`-style anchor could never be audited
+    used_caps = set(P)
+    for i, s_ in enumerate(specs):
+        fr = s_['from']
+        m = 1.0 if s_['a_side'] == 'right' else -1.0
+        # the datum arm spans the sight's own length — the angle label's walk is
+        # capped by the SHORTER arm, so a stub arm would starve it
+        dp = (P[fr][0] + m * (vc.dist(P[fr], P[s_['to']]) + 30.0), P[fr][1])
+        anch = next(c for c in 'HJKMNQRUVWXYZ' if c not in used_caps)
+        used_caps.add(anch)
+        P[anch] = (P[s_['to']][0], P[fr][1])
+        els_ = _angle_arc_label(kind, elements, P[fr], dp, P[s_['to']],
+                                   s_['txt'], arcs=1, r0=26.0, clr=clr)
+        elements += els_
+        s_['lab_at'] = tuple(els_[-1]['at'])
+        s_['lab_anchor'] = anch
+        P[anch + 'L'] = s_['lab_at']
+    # printed length/distance and unknown labels
+    def _print_keys():
+        if labels == 'all':
+            return list(heights) + list(distances)
+        if labels == 'none':
+            return []
+        out = []
+        for key in labels:
+            _pair(key, 'labels')
+            if key not in heights and key not in distances:
+                raise TemplateError(f'{kind}: labels names {key!r} — not a given '
+                                       'heights/distances key')
+            out.append(key)
+        return out
+
+    def _seg_pts(key):
+        a_, b_ = _pair(key, 'label')
+        if a_ not in P or b_ not in P:
+            raise TemplateError(f'{kind}: label {key!r} — point not in the scene')
+        if abs(P[a_][0] - P[b_][0]) > 1e-6 and abs(P[a_][1] - P[b_][1]) > 1e-6:
+            raise TemplateError(f'{kind}: label {key!r} — {a_}{b_} is neither a '
+                                   'vertical nor a ground segment here')
+        return a_, b_
+
+    printed = {}
+    centre_x = (x_min + x_max) / 2.0
+    for key in _print_keys():
+        a_, b_ = _seg_pts(key)
+        v_ = heights.get(key, distances.get(key))
+        glyph = f'{v_:g} {unit}'
+        mid_x = (P[a_][0] + P[b_][0]) / 2
+        if abs(P[a_][0] - P[b_][0]) < 1e-6:      # vertical: seat on the outer side
+            away = (P[a_][0] + (1.0 if mid_x > centre_x else -1.0) * 100.0,
+                    P[a_][1] - 10.0)
+        else:                                   # ground: seat below the baseline
+            away = (mid_x, 200.0)
+        el = _seat_side_label(kind, elements, boxes, P[a_], P[b_], glyph,
+                                 away, clr, f'lbl{key}')
+        elements.append(el)
+        boxes.append(label_boxes([el], FS)[0][1:])
+        printed[key] = (glyph, a_, b_)
+    for key, g_ in unknowns.items():
+        a_, b_ = _seg_pts(key)
+        mid_x = (P[a_][0] + P[b_][0]) / 2
+        if abs(P[a_][0] - P[b_][0]) < 1e-6:
+            away = (P[a_][0] + (1.0 if mid_x > centre_x else -1.0) * 100.0,
+                    P[a_][1] - 10.0)
+        else:
+            away = (mid_x, 200.0)
+        el = _seat_side_label(kind, elements, boxes, P[a_], P[b_], g_,
+                                 away, clr, f'unk{key}')
+        elements.append(el)
+        boxes.append(label_boxes([el], FS)[0][1:])
+        printed[key] = (g_, a_, b_)
+    for nm in sorted(set(grounds) | set(evars) | {top}):
+        elements.append(_float_label(f'lb{nm}', nm, P[nm]))
+
+    # ---- claims -------------------------------------------------------------
+    claims = []
+
+    def add(pred, ev, note=''):
+        claims.append((pred, ev, note))
+        return f'K{len(claims)}'
+
+    nearest = min((g for g in grounds if g != foot),
+                  key=lambda g: abs(X[g] - X[foot]), default=None)
+    if nearest:
+        add(f'right {nearest} {foot} {top}', 'inferred',
+            'the post stands perpendicular to the ground')
+    for g, el_ in by_ground.items():
+        topmost = max(el_, key=lambda e: E[e])
+        other = min((x for x in grounds if x != g),
+                    key=lambda x: abs(X[x] - X[g]))
+        add(f'right {other} {g} {topmost}', 'inferred',
+            f'{g}{topmost} is vertical to the ground')
+    for i, s_ in enumerate(specs):
+        anch = s_['lab_anchor']
+        if s_['num'] is not None:
+            add(f"angle {anch} {s_['from']} {s_['to']} = {s_['num']:g}",
+                'inferred' if fig_mode else 'stem',
+                f"the printed {s_['txt']} at {s_['from']} — measured from the "
+                'horizontal datum, never the ground')
+        else:
+            add(f'describe "the {s_["a_kind"]} angle at {s_["from"]} is marked '
+                f'{s_["txt"]} — the unknown"', 'inferred', 'a letter label')
+        add(f'label "{s_["txt"]}" names angle{s_["txt"]}', 'inferred',
+            f"the angle label at {s_['from']}")
+        if s_['datum'] and nearest:
+            add(f'parallel {s_["from"]}{anch} {foot}{nearest}', 'inferred',
+                'the dashed datum through the observer is parallel to the ground')
+    for key, (glyph, a_, b_) in printed.items():
+        numeric = key in heights or key in distances
+        add(f'label "{glyph}" names {a_}{b_}',
+            'stem' if (numeric and not fig_mode) else 'inferred',
+            f'the printed {glyph} on {a_}{b_}' if numeric else
+            f'the unknown {glyph} on {a_}{b_}')
+    for g in gl[1:-1]:
+        add(f'on {g} {gl[0]}{gl[-1]}', 'inferred',
+            f'{g} lies on the baseline {gl[0]}{gl[-1]}')
+    for nm in sorted(set(grounds) | set(evars) | {top}):
+        add(f'label "{nm}" names {nm}', 'inferred', 'a point letter')
+    if any(s_['datum'] for s_ in specs):
+        add('describe "each elevation/depression arc is owned by the dashed '
+            'horizontal datum through its observer — no ground angle is marked"',
+            'inferred', 'the datum convention')
+    if any(s_['datum'] for s_ in specs):
+        add('describe "dashed lines are sight lines and the eye-level datum"',
+            'inferred', 'the dashed ink')
+    if len(by_ground) and any(len(v) > 1 for v in by_ground.values()):
+        g_, el_ = next((g, v) for g, v in by_ground.items() if len(v) > 1)
+        hi = max(el_, key=lambda e: E[e])
+        lo = min(el_, key=lambda e: E[e])
+        add(f'collinear {g_} {lo} {hi}', 'inferred',
+            'two observers share one vertical above ' + g_)
+    # exact arithmetic derivations on solved ground positions
+    derived = False
+    if len(gl) >= 3:
+        for j in range(1, len(gl) - 1):
+            a_, b_, c_ = gl[0], gl[j], gl[-1]
+            d1 = X[b_] - X[a_]
+            d2 = X[c_] - X[b_]
+            if abs(d1 + d2 - (X[c_] - X[a_])) < 1e-9 * max(1.0, abs(X[c_])):
+                add(f'derive {_num_exact(d1)} + {_num_exact(d2)} = '
+                    f'{_num_exact(d1 + d2)}', 'inferred',
+                    f'{a_}{c_} is the sum of {a_}{b_} and {b_}{c_} (solved)')
+                derived = True
+                break
+    if not derived and specs and specs[0]['num'] is not None:
+        # a constructed set needs one derive claim — the complement of a marked
+        # sight angle is honest arithmetic on stem numbers alone
+        add(f'derive 90 - {_num_exact(specs[0]["num"])} = '
+            f'{_num_exact(90 - specs[0]["num"])}', 'inferred',
+            'the marked sight angle and its complement sum to a right angle')
+        derived = True
+    if not derived:
+        # An unknown sight angle has no numeric complement to cite. Square a
+        # supplied length instead: the first term of the scene's Pythagoras
+        # calculation, backed by an actual given rather than a drawn angle.
+        given = (h_pairs + d_pairs)[0][2]
+        add(f'derive {_num_exact(given)} * {_num_exact(given)} = '
+            f'{_num_exact(given * given)}', 'inferred',
+            'the square of a supplied scene length for Pythagoras')
+    absent = ['tickMark', 'parallelMark', 'arrow', 'shaded']
+    add('none ' + ' '.join(absent), 'inferred',
+        'posts, ground, datum and sight lines only')
+    if fig_mode:
+        add('describe "printed lengths, distances and angles are figure content — '
+            'the student reads them off the figure"', 'inferred',
+            'the read-the-figure mode (values=figure)')
+    segs = [f'{foot}{top}']
+    for g, el_ in by_ground.items():
+        segs.append(f"{g}{max(el_, key=lambda e: E[e])}")
+    for i, s_ in enumerate(specs):
+        segs.append(f"{s_['from']}{s_['to']}")
+    for key, (_g, a_, b_) in printed.items():
+        if f'{a_}{b_}' not in segs:
+            segs.append(f'{a_}{b_}')
+    # points are [A-Z]\d* claim names only — the `…L` label anchors stay anchor-side
+    pts = [nm for nm in sorted(P) if re.fullmatch(r'[A-Z]', nm)]
+    pts += [nm for nm in sorted(P) if re.fullmatch(r'[A-Z]\d+', nm)]
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                     anchors=dict(P), points=pts, segments=segs, claims=claims,
+                     ask=ask,
+                     title=title or f'Elevation scene on post {foot}{top}',
+                     description=description or (
+                         f'A scale diagram: vertical {foot}{top} on level ground '
+                         'with sight lines and a horizontal datum through the '
+                         'observer.'),
+                     scale='true geometry — heights and ground distances are drawn '
+                     'in one physical scale; angles measured from the horizontal '
+                     'datum at each observer',
+                     medium=medium)
+
+
+def _scn_seat_text(kind, elements, boxes, anchors, near, txt, id_, prefer=None,
+               free=()):
+    """A deterministic seat for a drawn text — the counterpart of a floater for
+    anchors ringed by dots/strokes where the 8-direction sweep starves. `near`
+    is the spot the text belongs to (a point's anchor, a segment's midpoint);
+    `anchors` is every named anchor — the label centre must beat every rival by
+    3.5 units. Sweeps 12 directions (least-crowded or `prefer` first) × 15
+    distances; a candidate wins only if its box clears every stroke by 9.5
+    units and every seated label by 4 units — finish()'s rendered-px
+    pre-flight (which measures label boxes as part of the canvas extent)
+    re-checks edge clearance and stays the final word."""
+    # `free` names anchors this text legitimately crowds — a segment label may
+    # sit nearer its own endpoints than the centre point it annotates
+    skip = set(free)
+    others = {o: xy for o, xy in anchors.items()
+              if o not in skip and
+              math.hypot(xy[0] - near[0], xy[1] - near[1]) > 1e-9}
+    p = tuple(near)
+    strokes = stroke_segments(elements)
+    # no edge check here: _fit_extent includes label boxes, so a seat that
+    # sticks out of the stroke bbox simply widens the canvas along with its
+    # margin — finish()'s rendered-px pre-flight stays the final word
+    if prefer is None:
+        mx = sum(o[0] for o in others.values()) / max(1, len(others))
+        my = sum(o[1] for o in others.values()) / max(1, len(others))
+        base = math.degrees(math.atan2(p[1] - my, p[0] - mx))
+    else:
+        base = prefer
+    dirs = sorted(range(-180, 180, 30),
+                  key=lambda a: abs(((base - a) + 180) % 360 - 180))
+    for d in (14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 56, 62, 70, 82, 96):
+        for deg in dirs:
+            ux, uy = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+            cx, cy = p[0] + ux * d, p[1] + uy * d
+            el = vc.text((cx, cy), txt, id=id_)
+            box = label_boxes([el], FS)[0][1:]
+            if strokes and min(_seg_rect_dist(a, b, box) - w / 2
+                               for a, b, w in strokes) < 11.0:
+                continue
+            if any(_rect_gap(box, pb) < 4.0 for pb in boxes):
+                continue
+            own = math.hypot(cx - p[0], cy - p[1])
+            if any(math.hypot(cx - o[0], cy - o[1]) - own < 3.5
+                   for o in others.values()):
+                continue
+            boxes.append(box)
+            return el
+    raise TemplateError(
+        f'{kind}: the text {txt!r} has no clear seat — spread the geometry')
+
+
+def _scn_seat_letter(kind, elements, boxes, anchors, nm, clr):
+    """Seat the single-capital letter `nm` at its anchor via _scn_seat_text."""
+    return _scn_seat_text(kind, elements, boxes, anchors, tuple(anchors[nm]), nm,
+                      f'lb{nm}')
+
+
+def _scn_seat_angle_label(kind, elements, boxes, v, a_, b_, txt, r0, clr, far):
+    """Fallback for an angle label whose bisector lies ON a stroke (e.g. the angle
+    at a circle's centre between the shared-chord ends — its bisector is the
+    centre line itself). Walks angular offsets inside the wedge until the label
+    box clears every stroke, then draws the matching fixed-radius arc. Returns
+    the elements to append (arc + label)."""
+    ua = vc.unit(v, a_)
+    ub = vc.unit(v, b_)
+    bx, by = ua[0] + ub[0], ua[1] + ub[1]
+    if math.hypot(bx, by) < 1e-9:
+        raise TemplateError(f'{kind}: the angle arms are opposite — no bisector')
+    bx, by = bx / math.hypot(bx, by), by / math.hypot(bx, by)
+    half_wedge = math.degrees(math.acos(
+        max(-1.0, min(1.0, ua[0] * ub[0] + ua[1] * ub[1])))) / 2.0
+    strokes = stroke_segments(elements)
+    for rr in (r0, 20.0, 16.0):
+        arc_ = vc.angle_label(v, a_, b_, r=rr, arcs=1)
+        strokes_r = strokes + stroke_segments(arc_)
+        # interior deltas only — visual-check's arc rule requires the label's
+        # polar angle to sit inside its own arc's span. When the other circle's
+        # rim bisects the wedge, the honest seat is beyond BOTH rims inside the
+        # wedge's cone, so the distance sweep reaches well past the arms
+        for d_ in _arange(34.0, max(36.0, 3.2 * far), 3.0):
+            for delta in (0.0, 8.0, -8.0, 14.0, -14.0, 20.0, -20.0,
+                          26.0, -26.0, 32.0, -32.0):
+                if abs(delta) >= half_wedge - 4.0:
+                    continue
+                ca, sa = math.cos(math.radians(delta)), math.sin(math.radians(delta))
+                ux, uy = bx * ca - by * sa, bx * sa + by * ca
+                el_ = vc.text((v[0] + ux * d_, v[1] + uy * d_), txt)
+                box = label_boxes([el_], FS)[0][1:]
+                if min(_seg_rect_dist(p, q, box) - w / 2
+                       for p, q, w in strokes_r) < 9.5:
+                    continue
+                if any(_rect_gap(box, pb) < 6.0 for pb in boxes):
+                    continue
+                boxes.append(box)
+                return arc_ + [el_]
+    # last resort: hand the label to finish()'s own floater solver, anchored
+    # just off the vertex along the bisector — it places at the true render
+    # scale or raises an honest refusal
+    # last resort: hand the label to finish()'s own floater solver, anchored
+    # INSIDE the arc's span beyond the rims — the arc rule rejects a label
+    # whose polar angle falls outside its own span
+    arc_ = vc.angle_label(v, a_, b_, r=r0, arcs=1)
+    edge_ = half_wedge * 0.6
+    ca, sa = math.cos(math.radians(edge_)), math.sin(math.radians(edge_))
+    ux, uy = bx * ca - by * sa, bx * sa + by * ca
+    near = (v[0] + ux * 2.6 * far, v[1] + uy * 2.6 * far)
+    return arc_ + [_float_label('lbf', txt, near)]
+
+
+def build_two_circle_geometry(*, figure_id, stem, r1, r2, d,
+                              centres=('A', 'B'), shared_chord=('P', 'Q'),
+                              foot=_UNSET, rim=None, joins=None,
+                              on_segment=None, angles=None,
+                              unit='cm', values='stem', ask=None,
+                              title=None, description=None,
+                              medium='english'):
+    """Two circles whose centres are `d` apart — the shared-chord / touch geometry of
+    L27/L30, fully computed from r1, r2, d. `centres` = the two centre letters
+    (circle 1 left, circle 2 right). The centre line A–B is drawn; when the circles
+    intersect, `shared_chord` letters the two computed intersection points and `foot`
+    letters the chord's foot on the centre line (right-angle mark + bisector claims);
+    `foot=None` drops the foot (default 'M' on an intersecting pair only — an
+    explicit foot letter on a touch pair refuses). External/internal touch gives
+    one shared point — `shared_chord=(P,Q)` collapses to a single tangent point
+    named by its first letter. `rim` = {letter: {'circle': 1|2, 'deg': layout degrees}} — named rim
+    points by POLAR degrees on their circle's canvas (0° = east, y down); they are
+    computed points, never caller coordinates. `joins` = ['PQ', 'AP', ...] chords/
+    secants/radii drawn between named points. `on_segment` = {letter: ('XY', t)}
+    places an interior point on a drawn join (0 < t < 1). `angles` = [{'at': V,
+    'arms': ('X', 'Y'), 'label': '60°'|'θ'}] — a numeric glyph must equal the
+    computed angle XVY within 0.75° and be a stem number. r1/r2/d are physical
+    lengths — stem-checked unless values='figure', which prints them on the figure.
+    Separate (d > r1+r2), contained (d < |r1−r2|) or concentric layouts refuse —
+    this template is for the intersecting/touching cases only."""
+    kind = 'two_circle_geometry'
+    vc.reset_ids()
+    if values not in ('stem', 'figure'):
+        raise TemplateError(f"{kind}: values must be 'stem' or 'figure'")
+    fig_mode = values == 'figure'
+    if not (isinstance(unit, str) and re.fullmatch(r'[A-Za-z]{1,5}', unit)):
+        raise TemplateError(f'{kind}: unit must be 1–5 English letters')
+    r1 = _scn_fin(r1, 'r1', kind)
+    r2 = _scn_fin(r2, 'r2', kind)
+    d = _scn_fin(d, 'centre distance d', kind)
+    if r1 <= 0 or r2 <= 0 or d <= 0:
+        raise TemplateError(f'{kind}: r1, r2 and d must be positive — got '
+                               f'{r1:g}, {r2:g}, {d:g}')
+    if not fig_mode:
+        require_stem(stem, r1=r1, r2=r2, d=d)
+    if d < 1e-9:
+        raise TemplateError(f'{kind}: the centres coincide — a concentric pair '
+                               'has no centre line to lay a chord on')
+    sum_r, diff_r = r1 + r2, abs(r1 - r2)
+    rel_tol = 1e-6 * max(sum_r, d)
+    if abs(d - sum_r) <= rel_tol:
+        relation = 'external'
+    elif abs(d - diff_r) <= rel_tol:
+        relation = 'internal'
+    elif diff_r < d < sum_r:
+        relation = 'intersect'
+    elif d > sum_r:
+        raise TemplateError(
+            f'{kind}: d={d:g} > r1+r2={sum_r:g} — the circles are separate; this '
+            'template composes intersecting/touching pairs (a disjoint membership '
+            'figure is two_circles_points)')
+    else:
+        raise TemplateError(
+            f'{kind}: d={d:g} < |r1−r2|={diff_r:g} — one circle contains the '
+            'other without touching; there is no shared chord')
+    # ---- computed geometry (physical units, y UP; canvas flips later) ---------
+    c1, c2 = (0.0, 0.0), (d, 0.0)
+    if relation == 'intersect':
+        x = (d * d + r1 * r1 - r2 * r2) / (2.0 * d)
+        h2 = r1 * r1 - x * x
+        if h2 <= 0:
+            raise TemplateError(f'{kind}: the intersection half-chord is not '
+                                   'real — check r1, r2, d')
+        h = math.sqrt(h2)
+        if h < 0.12 * max(r1, r2):
+            raise TemplateError(
+                f'{kind}: the shared chord is {2 * h:g} long against radii '
+                f'{r1:g}/{r2:g} — too thin to read; widen the givens')
+        chord_pts = [(x, h), (x, -h)]          # P above the centre line, Q below
+        foot_xy = (x, 0.0)
+    else:
+        # one shared point on the centre line
+        if relation == 'external':
+            x = r1
+        else:                                 # internal: the larger rim touches
+            x = r1 if r1 > r2 else -r1
+        chord_pts = [(x, 0.0)]
+        foot_xy = None
+    for value, what in ((centres, 'centres'), (shared_chord, 'shared_chord')):
+        if not isinstance(value, (list, tuple)) or len(value) != 2:
+            raise TemplateError(f'{kind}: {what} must be a pair of capital letters')
+    ca, cb = (_scn_cap(c, 'centre', kind) for c in centres)
+    if ca == cb:
+        raise TemplateError(f'{kind}: the two centres need distinct letters')
+    pl, ql = (_scn_cap(c, 'shared chord', kind) for c in shared_chord)
+    if pl == ql or {pl, ql} & {ca, cb}:
+        raise TemplateError(f'{kind}: chord ends and centres need distinct letters')
+    if foot is _UNSET:
+        foot = 'M' if relation == 'intersect' else None
+    elif foot is not None:
+        foot = _scn_cap(foot, 'chord foot', kind)
+        if foot in (ca, cb, pl, ql):
+            raise TemplateError(f"{kind}: foot letter {foot!r} collides")
+        if relation != 'intersect':
+            raise TemplateError(f'{kind}: foot applies to intersecting pairs '
+                                f'only — got foot={foot!r} on a {relation} pair')
+    if foot is not None and relation == 'intersect' and \
+            (abs(x) <= rel_tol or abs(x - d) <= rel_tol):
+        raise TemplateError(
+            f'{kind}: the shared chord passes through centre '
+            f"{ca if abs(x) <= rel_tol else cb} — its foot IS that centre; "
+            'pass foot=None for a diameter chord')
+    used = {ca, cb, pl, ql} | ({foot} if foot else set())
+
+    rim = dict(rim or {})
+    rim_deg = {}
+    for nm, spec in rim.items():
+        _scn_cap(nm, 'rim point', kind)
+        if nm in used:
+            raise TemplateError(f'{kind}: rim point {nm!r} collides with a '
+                                   'declared letter')
+        used.add(nm)
+        if not isinstance(spec, dict) or spec.get('circle') not in (1, 2):
+            raise TemplateError(f"{kind}: rim {nm} needs 'circle': 1 or 2")
+        deg = _scn_fin(spec.get('deg'), f'rim {nm} deg', kind)
+        rim_deg[nm] = (spec['circle'], deg)
+
+    # physical positions of every declared point
+    phys = {ca: c1, cb: c2}
+    if relation == 'intersect':
+        phys[pl], phys[ql] = chord_pts[0], chord_pts[1]
+    else:
+        phys[pl] = chord_pts[0]               # ql is unused for a touch pair
+    if foot is not None and relation == 'intersect':
+        phys[foot] = foot_xy
+    for nm, (ci, deg) in rim_deg.items():
+        c, r = (c1, r1) if ci == 1 else (c2, r2)
+        phys[nm] = (c[0] + r * math.cos(math.radians(deg)),
+                    c[1] + r * math.sin(math.radians(deg)))
+    # rim points must not sit on top of the computed or each other's points
+    seen = list(phys.items())
+    for i, (n1, p1) in enumerate(seen):
+        for n2, p2 in seen[i + 1:]:
+            if math.hypot(p1[0] - p2[0], p1[1] - p2[1]) < 0.12 * max(r1, r2, d):
+                raise TemplateError(
+                    f'{kind}: {n1} and {n2} land on the same spot — pick other '
+                    'letters/degrees')
+
+    joins = list(joins or [])
+    specs_j = []
+    for j_ in joins:
+        if not (isinstance(j_, str) and re.fullmatch(r'[A-Z]{2}', j_)):
+            raise TemplateError(f'{kind}: join {j_!r} must be two capitals')
+        a_, b_ = j_[0], j_[1]
+        if a_ not in phys or b_ not in phys:
+            raise TemplateError(f'{kind}: join {j_} names an unknown point')
+        if math.hypot(phys[a_][0] - phys[b_][0],
+                      phys[a_][1] - phys[b_][1]) < 1e-9:
+            raise TemplateError(f'{kind}: join {j_} has zero length')
+        specs_j.append(j_)
+
+    on_segment = dict(on_segment or {})
+    # a join an interior point rides on must be DRAWN — the centre line and the
+    # shared chord count as drawn segments too
+    drawn_segs = {f'{ca}{cb}', f'{cb}{ca}'}
+    if relation == 'intersect':
+        drawn_segs |= {f'{pl}{ql}', f'{ql}{pl}'}
+    drawn_segs |= set(specs_j) | {j[::-1] for j in specs_j}
+    for nm, spec in on_segment.items():
+        _scn_cap(nm, 'on-segment point', kind)
+        if nm in used:
+            raise TemplateError(f'{kind}: on-segment point {nm!r} collides')
+        used.add(nm)
+        if not (isinstance(spec, (list, tuple)) and len(spec) == 2 and
+                isinstance(spec[0], str) and re.fullmatch(r'[A-Z]{2}', spec[0])):
+            raise TemplateError(f"{kind}: on_segment {nm} is ('XY', t) with a "
+                                   'two-capital join name')
+        jk, t = spec[0], _scn_fin(spec[1], f'on_segment {nm} t', kind)
+        if not 0.0 < t < 1.0:
+            raise TemplateError(f'{kind}: on_segment {nm} t must be in (0,1)')
+        if jk not in drawn_segs:
+            raise TemplateError(f'{kind}: on_segment {nm} rides {jk} — draw '
+                                   'that join first')
+        a_, b_ = jk[0], jk[1]
+        phys[nm] = (phys[a_][0] + t * (phys[b_][0] - phys[a_][0]),
+                    phys[a_][1] + t * (phys[b_][1] - phys[a_][1]))
+        on_segment[nm] = (jk, t)
+    # interior points must not land on another named point either
+    for nm in on_segment:
+        for n2, p2 in phys.items():
+            if n2 != nm and math.hypot(phys[nm][0] - p2[0],
+                                       phys[nm][1] - p2[1]) < 0.12 * max(r1, r2, d):
+                raise TemplateError(
+                    f'{kind}: {nm} and {n2} land on the same spot')
+
+    angles = list(angles or [])
+    specs_a = []
+    for i, s_ in enumerate(angles):
+        if not isinstance(s_, dict):
+            raise TemplateError(f'{kind}: angle {i} must be a dict')
+        v = _scn_cap(s_.get('at'), f'angle {i} vertex', kind)
+        arms = s_.get('arms')
+        if not (isinstance(arms, (list, tuple)) and len(arms) == 2):
+            raise TemplateError(f"{kind}: angle {i} needs arms: ('X','Y')")
+        a_, b_ = (_scn_cap(c, f'angle {i} arm', kind) for c in arms)
+        for g in (v, a_, b_):
+            if g not in phys:
+                raise TemplateError(f'{kind}: angle {i} names unknown point {g}')
+        kk, num, txt = _angle_text_kind(kind, s_.get('label'), v)
+        if kk == 'num' and not fig_mode:
+            require_stem(stem, **{f'angle {i} label': num})
+        # re-validate the numeric glyph against the computed anchors
+        actual = math.degrees(math.atan2(phys[a_][1] - phys[v][1],
+                                         phys[a_][0] - phys[v][0]) -
+                              math.atan2(phys[b_][1] - phys[v][1],
+                                         phys[b_][0] - phys[v][0]))
+        actual = abs((actual + 180.0) % 360.0 - 180.0)
+        if actual < 3.0:
+            raise TemplateError(f'{kind}: angle {i} at {v} is {actual:.1f}° — '
+                                   'the arms are too close to mark')
+        if kk == 'num' and abs(actual - num) > 0.75:
+            raise TemplateError(f'{kind}: angle {i} prints {num:g}° but the '
+                                   f'computed geometry gives {actual:.2f}°')
+        specs_a.append({'v': v, 'a': a_, 'b': b_, 'num': num, 'txt': txt,
+                        'actual': actual})
+
+    # ---- drawing (physical → canvas, y flipped) ------------------------------
+    xs = [p[0] for p in phys.values()] + [c1[0] - r1, c1[0] + r1,
+                                        c2[0] - r2, c2[0] + r2]
+    ys = [p[1] for p in phys.values()] + [-r1, r1, -r2, r2]
+    span = max(max(xs) - min(xs), max(ys) - min(ys), 1e-9)
+    k = 240.0 / span
+
+    def cv(p):
+        return (p[0] * k, -p[1] * k)
+
+    P = {nm: cv(p) for nm, p in phys.items()}
+    C1, C2 = cv(c1), cv(c2)
+    elements = [vc.circle(C1, r1 * k, id='c1'),
+                vc.circle(C2, r2 * k, id='c2'),
+                vc.line(C1, C2, id='centres', dashed=True)]
+    if relation == 'intersect':
+        elements.append(vc.line(P[pl], P[ql], id='chord'))
+        if foot is not None:
+            elements += vc.right_angle_mark(P[foot], P[ca], P[pl], r=11)
+    for j_ in specs_j:
+        elements.append(vc.line(P[j_[0]], P[j_[1]], id=f'j{j_}'))
+    for nm in sorted(P):
+        elements.append({'id': f'pt{nm}', 'type': 'point', 'at': vc.P(P[nm]),
+                         'r': 3.5})
+
+    boxes = []
+    clr = _clearance_units(STROKE_PX + SLACK_STROKE + 1.0,
+                              span * k + 120.0)
+    # figure-mode honesty: the radii and centre distance print on their segments
+    printed = {}
+    if fig_mode:
+        # real spokes to print the radii on — OUTWARD rim points so the label
+        # seats outside the crowded lens; R1/R2 are computed anchors, not caller
+        # coordinates
+        spokes = {}
+        for nm, (ci, _deg) in rim_deg.items():
+            spokes.setdefault(ca if ci == 1 else cb, nm)
+        for cen, ci, sgn in ((ca, 1, -1.0), (cb, 2, 1.0)):
+            if cen in spokes:
+                # a declared rim point doubles as the spoke end — the radius
+                # line itself is still drawn so the printed label sits on ink
+                rn = spokes[cen]
+                elements.append(vc.line(P[cen], P[rn], id=f'sp{cen}'))
+                continue
+            # a real single-capital anchor — `AR1`-style names are not valid
+            # segments in the claim grammar (two single capitals only)
+            rn = next(c for c in 'HJKMNQRUVWXYZ' if c not in P)
+            c_p = C1 if ci == 1 else C2
+            r_p = (r1 if ci == 1 else r2) * k
+            P[rn] = (c_p[0] + sgn * r_p, c_p[1])
+            elements.append(vc.line(c_p, P[rn], id=f'sp{cen}'))
+            spokes[cen] = rn
+        for (cen, rp), val in zip(((ca, spokes[ca]), (cb, spokes[cb])),
+                                  (r1, r2)):
+            glyph = f'{val:g} {unit}'
+            mid = ((P[cen][0] + P[rp][0]) / 2, (P[cen][1] + P[rp][1]) / 2)
+            # prefer the spoke's outward direction — the radius label exits the
+            # circle rather than squeezing the lens
+            deg = math.degrees(math.atan2(P[rp][1] - P[cen][1],
+                                        P[rp][0] - P[cen][0]))
+            el = _scn_seat_text(kind, elements, boxes, P, mid, glyph,
+                            f'lblr{cen}', prefer=deg, free=(cen, rp))
+            elements.append(el)
+            printed[f'{cen}{rp}'] = (glyph, cen, rp)
+        glyph = f'{d:g} {unit}'
+        mid = ((P[ca][0] + P[cb][0]) / 2, (P[ca][1] + P[cb][1]) / 2)
+        el = _scn_seat_text(kind, elements, boxes, P, mid, glyph, 'lbld',
+                        prefer=90.0, free=(ca, cb))
+        elements.append(el)
+        printed[f'{ca}{cb}'] = (glyph, ca, cb)
+
+    # letters go down FIRST (their boxes feed the angle label's clearance), then
+    # the angle arcs — each a computed seat, never a caller coordinate. The chord
+    # foot sits at the crossing of two drawn lines inside the lens — when no
+    # honest seat exists the foot keeps its mark/claims but drops the letter
+    # (declared as a departure), never a silently misplaced glyph.
+    unlettered_foot = False
+    for nm in sorted(P):
+        if re.fullmatch(r'[A-Z]', nm):
+            try:
+                elements.append(_scn_seat_letter(kind, elements, boxes, P, nm, clr))
+            except TemplateError:
+                if foot is not None and nm == foot:
+                    unlettered_foot = True
+                else:
+                    raise
+    for i, s_ in enumerate(specs_a):
+        v, a_, b_ = P[s_['v']], P[s_['a']], P[s_['b']]
+        try:
+            els_ = _angle_arc_label(kind, elements, v, a_, b_, s_['txt'],
+                                       arcs=1, r0=26.0, clr=clr)
+        except TemplateError:
+            els_ = _scn_seat_angle_label(kind, elements, boxes, v, a_, b_,
+                                     s_['txt'], r0=26.0, clr=clr,
+                                     far=0.85 * min(vc.dist(v, a_),
+                                                    vc.dist(v, b_)))
+        elements += els_
+        # no synthetic label anchor is registered: the coverage check requires
+        # every declared anchor to sit on ink, and the label claim names the
+        # mark (`angle<txt>`), not a phantom point
+
+    # ---- claims -------------------------------------------------------------
+    claims = []
+
+    def add(pred, ev, note=''):
+        claims.append((pred, ev, note))
+        return f'K{len(claims)}'
+
+    on1 = [pl, ql] if relation == 'intersect' else [pl]
+    on1 += [nm for nm, (ci, _d) in rim_deg.items() if ci == 1]
+    on2 = [pl, ql] if relation == 'intersect' else [pl]
+    on2 += [nm for nm, (ci, _d) in rim_deg.items() if ci == 2]
+    _circle_claim(add, ca, r1 * k, on1[:3])
+    _circle_claim(add, cb, r2 * k, on2[:3])
+    if relation == 'intersect':
+        add(f'equal {ca}{pl} {ca}{ql}', 'inferred',
+            'both chord ends are on circle 1 — radii')
+        add(f'equal {cb}{pl} {cb}{ql}', 'inferred',
+            'both chord ends are on circle 2 — radii')
+        if foot is not None:
+            add(f'right {ca} {foot} {pl}', 'inferred',
+                'the common chord meets the centre line at right angles')
+            add(f'collinear {ca} {foot} {cb}', 'inferred',
+                'the chord foot lies on the centre line')
+            add(f'equal {pl}{foot} {foot}{ql}', 'inferred',
+                'the centre line bisects the shared chord')
+    # the constructed-set audit requires one derive claim — the touch band is
+    # the honest arithmetic every layout carries: |r1−r2| ≤ d ≤ r1+r2
+    hi_, lo_ = max(r1, r2), min(r1, r2)
+    add(f'derive {_num_exact(hi_)} + {_num_exact(lo_)} = '
+        f'{_num_exact(hi_ + lo_)}', 'inferred',
+        'the external-touch bound on the centre distance')
+    add(f'derive {_num_exact(hi_)} - {_num_exact(lo_)} = '
+        f'{_num_exact(hi_ - lo_)}', 'inferred',
+        'the internal-touch bound on the centre distance')
+    if relation != 'intersect':
+        way = 'externally' if relation == 'external' else 'internally'
+        add(f'on {pl} {ca}{cb}' if relation == 'external' else
+            f'collinear {ca} {cb} {pl}', 'inferred',
+            f'the circles touch {way} at {pl} on the centre line')
+    for nm, (jk, _t) in on_segment.items():
+        add(f'on {nm} {jk}', 'inferred', f'{nm} is interior to the join {jk}')
+    for i, s_ in enumerate(specs_a):
+        if s_['num'] is not None:
+            add(f"angle {s_['a']} {s_['v']} {s_['b']} = {s_['num']:g}",
+                'inferred' if fig_mode else 'stem',
+                f"the printed {s_['txt']} at {s_['v']}")
+        else:
+            add(f'describe "the angle at {s_["v"]} between {s_["a"]} and '
+                f'{s_["b"]} is marked {s_["txt"]} — the unknown"', 'inferred',
+                'a letter label')
+        add(f'label "{s_["txt"]}" names angle{s_["txt"]}', 'inferred',
+            f"the angle label at {s_['v']}")
+    for key, (glyph, a_, b_) in printed.items():
+        add(f'label "{glyph}" names {a_}{b_}', 'inferred',
+            f'the printed {glyph} on {a_}{b_} (values=figure)')
+    for nm in sorted(phys):
+        if nm == foot and unlettered_foot:
+            add(f'describe "{nm} marks where the shared chord meets the centre '
+                'line — the junction is too tight to letter honestly"',
+                'inferred', 'the unlettered foot')
+            continue
+        add(f'label "{nm}" names {nm}', 'inferred', 'a point letter')
+    if fig_mode:
+        # auto spoke endpoints are lettered like any other rim point
+        for nm in sorted({spokes[ca], spokes[cb]} - set(phys)):
+            add(f'label "{nm}" names {nm}', 'inferred', 'a point letter')
+    if fig_mode:
+        add('describe "printed radii and the centre distance are figure content '
+            '— the student reads them off the figure"', 'inferred',
+            'the read-the-figure mode (values=figure)')
+    add('none tickMark arrow shaded', 'inferred',
+        'circles, centre line, chord and joins only')
+    segs = [f'{ca}{cb}']
+    if relation == 'intersect':
+        segs.append(f'{pl}{ql}')
+        if foot is not None:
+            segs += [f'{foot}{pl}', f'{foot}{ql}']
+    for j_ in specs_j:
+        if j_ not in segs:
+            segs.append(j_)
+    for nm, (jk, _t) in on_segment.items():
+        if jk not in segs:
+            segs.append(jk)
+    for key, (_g, a_, b_) in printed.items():
+        if f'{a_}{b_}' not in segs:
+            segs.append(f'{a_}{b_}')
+    pts = [nm for nm in sorted(P) if re.fullmatch(r'[A-Z]', nm)]
+    pts += [nm for nm in sorted(P) if re.fullmatch(r'[A-Z]\d+', nm)]
+    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                     anchors=dict(P), points=pts, segments=segs, claims=claims,
+                     ask=ask,
+                     title=title or f'Two circles {ca}{cb} with a shared chord',
+                     description=description or (
+                         'Two circles cross; their centres join with a dashed '
+                         'line and the shared chord stands across it.'),
+                     scale='true geometry — r1, r2 and the centre distance are '
+                     'drawn in one physical scale',
+                     departures=([f'the foot {foot} keeps its right-angle mark '
+                                  'and claims but is not lettered — no seat '
+                                  'clears the crossing']
+                                 if unlettered_foot else None),
+                     medium=medium)
 
 
 BUILDERS = {fn.__name__[6:]: fn for fn in
@@ -13164,7 +18892,11 @@ BUILDERS = {fn.__name__[6:]: fn for fn in
              build_ogive, build_outcome_grid, build_two_circle_tangents,
              build_construction, build_inscribed_circle, build_venn_regions,
              build_solid_composite, build_net, build_marked_geometry,
-             build_pie_chart, build_sector, build_cartesian_plot)}
+             build_pie_chart, build_sector, build_cartesian_plot,
+             build_motion_states, build_slat_frame, build_clock_face,
+             build_pairing_arcs, build_paired_geometry,
+             build_fraction_tape, build_area_model,
+             build_circular_composite, build_elevation_scene, build_two_circle_geometry)}
 
 CATALOGUE = """
 template            stem-checked numbers                          inputs
@@ -13202,9 +18934,11 @@ histogram           bounds + freqs when values="stem"; step, v_max   bounds=[b0�
 tree_diagram        every numerator/denominator                              stages=[stage1, stage2|{outcome:[(o,p)]}] — branches sum to 1, fraction labels "a/b"
 pythagoras_squares  every numeric side                                       names, right, up, legs={"AB":3|"x"}, unit, labels={side:False}, grid (integer sides only), leg_px?, mirror
 ogive               bounds + cum_freqs when values="stem"; step, v_max         bounds=[b0…bn], cum_freqs (len n+1, non-decreasing), step, v_max, values="stem"|"figure", guide={"y","name"}, x_title, y_title
-outcome_grid        none — the marked cells are figure content                rows, cols (2–8 header tokens each), marks="all"|[[col,row]…], outline={"cols":[c0,c1],"rows":[r0,r1]}, cell
+outcome_grid        none — the marked cells are figure content                rows, cols (2–8 header tokens each), marks="all"|[[col,row]…], outline={"cols":[c0,c1],"rows":[r0,r1]}, events=[{"cells":[[c,r]…],"style":oval|box|circle,"label","arrow"}] — true cell-set contours (diagonal capsule, multi-region; an oval that would swallow a non-member refuses), cell
+fraction_tape       numerals inside printed labels when values="stem"          panels=[{"parts","shaded","label"?,"braces"=[{"span":[i0,i1],"label","side"}]}] — aligned same-length strips (equivalents, improper wholes) | tank={"parts","filled","label"?,"level_label"?} — vertical water level
+area_model          purely numeric label tokens when values="stem"             col_labels=[a,b], row_labels=[c,d], cells=[[…],[…]] KaTeX, names="ABCD" — symbolic 2×2 algebra partition, not to scale
 two_circle_tangents r1, r2, d                                                r1, r2, d (centre distance), mode="direct" (d>|r1−r2|)|"transverse" (d>r1+r2) — contacts, radii and right marks computed
-construction        length | angle | angles (per step)                       step=perp_bisector|angle_bisector|perp_at|perp_from|circumcircle|incircle|excircle|tangent_at|tangents_from, length, angle, angles={A,B,C}, base_px?, r_px?, at_deg?, op?, stage="completed"|"setup" — dashed compass arcs drawn (setup draws the givens only)
+construction        length | angle | angles (per step)                       step=perp_bisector|angle_bisector|perp_at|perp_from|circumcircle|incircle|excircle|tangent_at|tangents_from|triangle_sss|triangle_sas|triangle_asa|triangle_aas|parallel_through, length, angle, angles, sides={AB,BC,CA} (SSS), {AB,CA}+angles={A} (SAS), {AB}+angles={A,B} (ASA) or {A,C}/{B,C} (triangle_aas derives missing base angle), {AB}+offset+method=corresponding|alternate|rhombus (parallel), base_px?, r_px?, at_deg?, op?, stage="completed"|"setup" — dashed compass arcs drawn (setup draws the givens only)
 inscribed_circle    angles + numeric tangent labels unless values="figure"    angles={A,B,C}, labels={"AF":"4 cm"|"x"…}, base_px?, values="stem"|"figure" — figure-mode angles are layout choices; only printed tangent lengths are read
 venn_regions        numeric region tokens unless values="figure"                   sets 1–3 (1 set = a disc + complement in the frame), layout="overlap"|"chain"|"nested"|"disjoint", regions like venn_sets, universal="U"|None, shade=[region keys incl. ""], r — non-standard layouts and region shading (venn_sets stays the standard builder)
 solid_composite     numeric dims unless values="figure"                      shape=sphere_in_cylinder|cone_vessel, dims per shape, unit, scale_px?, values="stem"|"figure" — hidden edges dashed
@@ -13233,6 +18967,33 @@ cartesian_plot      ranges + explicit steps + every boundary/vertex/point coord 
                     dashed axis-aligned — empty region, off-plane boundary, sliver and curved
                     boundaries all refuse; span_px?, values="stem"|"figure"
 venn_regions        (addition) 1 set allowed — one disc in the universal frame, region "" = the complement, shade=[""] works
+solid               (extension) shape="half_cylinder" dims={radius|diameter, length}; triangular_prism gains profile=right|isosceles|scalene, optional six uppercase names, altitude=True, open_top=True (apex-down trough); all dims positive numeric, values="stem"|"figure"
+net                 (extension) shape="triangular_prism" profile + dims as the solid; shape="cylinder" dims={radius,height} — canonical three-band net / tangent circle ends, dashed fold edges
+motion_states       point: distance; post: length; bridge: length+bridge; optional elapsed (all stem-checked, metres/seconds)   profile=point|post|bridge — dashed ghost S / solid T states on one computed track; supplied train displacement refuses
+dot_pattern         (extension) kind="rings": stages (1–4 rings), first, increment — stem-checked counts or values="figure" figure-reading; exact drawn dots per ring, radii are layout choices
+slat_frame          first, increment, last, slat_width (all stem-checked) — contiguous arithmetic slats, staircase top; last must be exactly reachable
+clock_face          hour (1–12), minute (0–59; 0 must still be stated) — twelve hour ticks are apparatus convention; hour hand advances with minutes
+pairing_arcs        first, increment, terms (even 2–8, all stem-checked) — term row, nested pairing curves, computed pair sums
+paired_geometry     every stated numeric side/angle/label and correspondence scale when values="stem"
+                    shapes=[{shape, names, sides|angles|diagonal, place:{to+anchor|hinge|glue, rotate, flip}}] 1–4 scaffolds
+                    (triangle|parallelogram|rectangle|rhombus|trapezium|quadrilateral|kite|bowtie),
+                    correspond=[{tri,to,scale|"congruent"}], collinear, joins, div, medians, altitudes,
+                    intersect, extend, diagonals, arcs/angle_labels or marks, rights, parallel, ticks,
+                    labels, values="stem"|"figure", unit, base_px?
+                    — placement re-verified on merged coordinates; SSA, impossible incidence, glue
+                    stretch, false marks and duplicate printed angle glyphs all refuse
+circular_composite  numeric givens per shape when values="stem"; printed numeric
+                    labels bind their own boundary
+                    shape=rect|stadium|triangle|sector|cut_attach|annulus|nested_square,
+                    length, width, radius, outer, inner, angle, base, height, leg,
+                    mode=right|isosceles|equilateral, pieces=[{on|corner, kind, mode,
+                    angle, align, radius, label}], labels={side|arc: "N unit"|"x"},
+                    unit, values="stem"|"figure", letters, shaded, unit_px, r_px, start
+                    — one bounded piece per profile; shared joins never count in the
+                    perimeter; symbolic dims one variable with optional coefficient;
+                    multi-piece, reaching cuts and unknown profile args refuse
+elevation_scene     every numeric given unless values="figure"                post=(F,T), sights=[{from,to,angle,kind,side}] (1–2), eyes={E:ground}, heights, distances, unknowns, labels, unit — solved horizontal datum belongs to observer; underdetermined/contradictory givens refuse
+two_circle_geometry r1, r2, d; numeric angle labels unless values="figure"      centres, shared_chord, foot, rim={L:{circle,deg}}, joins, on_segment, angles — computed touch/intersect topology and chord foot; separate/contained/thin chords refuse
 """.strip()
 
 SELF_TEST = [
@@ -13506,6 +19267,29 @@ SELF_TEST = [
              "(a) Name the direct common tangents.",
      "ask": [["a", "the tangents"]],
      "r1": 3, "r2": 2, "d": 8, "mode": "direct"},
+    *[{"template": "construction", "figure_id": f"selftest-new{tag}-{stage}",
+       "stem": {"sss": "AB is 8 units, BC is 7 units and CA is 6 units.",
+                "sas": "AB is 8 units, CA is 6 units and angle BAC is 60 degrees.",
+                "asa": "AB is 8 units; angles BAC and ABC are 60 and 45 degrees.",
+                "parallel": "AB is 8 units and C is 4 units above AB."}[tag] + " Identify the construction.",
+       "ask": [["a", "the construction"]], "step": step, "stage": stage, **params}
+      for tag, step, params in (
+          ("sss", "triangle_sss", {"sides": {"AB": 8, "BC": 7, "CA": 6}}),
+          ("sas", "triangle_sas", {"sides": {"AB": 8, "CA": 6}, "angles": {"A": 60}}),
+          ("asa", "triangle_asa", {"sides": {"AB": 8}, "angles": {"A": 60, "B": 45}}),
+          ("parallel", "parallel_through", {"sides": {"AB": 8}, "offset": 4}))
+      for stage in ("setup", "completed")],
+    *[{"template": "construction", "figure_id": f"selftest-conv2-{tag}",
+       "stem": stem, "step": step, "ask": [["a", "the construction"]], **params}
+      for tag, stem, step, params in (
+          ("aas", "AB is 8 units; angles BAC and ACB are 60 and 75 degrees.",
+           "triangle_aas", {"sides": {"AB": 8}, "angles": {"A": 60, "C": 75}}),
+          ("aas-b", "AB is 8 units; angles ABC and ACB are 45 and 75 degrees.",
+           "triangle_aas", {"sides": {"AB": 8}, "angles": {"B": 45, "C": 75}}),
+          ("alternate", "AB is 8 units and C is 4 units above AB.",
+           "parallel_through", {"sides": {"AB": 8}, "offset": 4, "method": "alternate"}),
+          ("rhombus", "AB is 8 units and C is 4 units above AB.",
+           "parallel_through", {"sides": {"AB": 8}, "offset": 4, "method": "rhombus"}))],
     {"template": "construction", "figure_id": "selftest-cbis",
      "stem": "Segment AB is 8 cm long. Construct its perpendicular bisector "
              "with compass arcs. (a) Name the equal halves.",
@@ -13765,13 +19549,275 @@ SELF_TEST += [dict(template="solid", figure_id="selftest-prism-height",
                    dims={"base": 4, "height": 8, "length": 6})]
 
 
+_SOLIDS_STEM = "A synthetic object has lengths 4, 5, 6, 7, 8, 10 and 11 cm."
+SELF_TEST += [
+    dict(template="solid", figure_id="selftest-halfcyl-d", stem=_SOLIDS_STEM,
+         ask=[["a", "the volume"]], shape="half_cylinder",
+         dims={"diameter": 8, "length": 11}),
+    dict(template="solid", figure_id="selftest-halfcyl-r", stem=_SOLIDS_STEM,
+         ask=[["a", "the volume"]], shape="half_cylinder",
+         dims={"radius": 4, "length": 11}),
+    dict(template="solid", figure_id="selftest-prism-right", stem=_SOLIDS_STEM,
+         ask=[["a", "the volume"]], shape="triangular_prism", profile="right",
+         dims={"base": 6, "height": 8, "length": 11}),
+    dict(template="solid", figure_id="selftest-prism-hyp", stem=_SOLIDS_STEM,
+         ask=[["a", "the volume"]], shape="triangular_prism", profile="right",
+         dims={"base": 6, "right": 10, "length": 11}),
+    dict(template="solid", figure_id="selftest-prism-iso", stem=_SOLIDS_STEM,
+         ask=[["a", "the volume"]], shape="triangular_prism", profile="isosceles",
+         dims={"base": 6, "left": 5, "length": 11}, altitude=True),
+    dict(template="solid", figure_id="selftest-prism-scalene", stem=_SOLIDS_STEM,
+         ask=[["a", "the volume"]], shape="triangular_prism", profile="scalene",
+         dims={"base": 7, "left": 5, "right": 6, "length": 11}),
+    dict(template="solid", figure_id="selftest-prism-trough", stem=_SOLIDS_STEM,
+         ask=[["a", "the capacity"]], shape="triangular_prism", profile="isosceles",
+         open_top=True, dims={"base": 6, "left": 5, "length": 11}),
+    dict(template="net", figure_id="selftest-net-right", stem=_SOLIDS_STEM,
+         ask=[["a", "the faces"]], shape="triangular_prism", profile="right",
+         dims={"base": 6, "height": 8, "length": 11}),
+    dict(template="net", figure_id="selftest-net-scalene", stem=_SOLIDS_STEM,
+         ask=[["a", "the faces"]], shape="triangular_prism", profile="scalene",
+         dims={"base": 7, "left": 5, "right": 6, "length": 11}),
+    dict(template="net", figure_id="selftest-net-cylinder", stem=_SOLIDS_STEM,
+         ask=[["a", "the faces"]], shape="cylinder",
+         dims={"radius": 4, "height": 11}),
+    dict(template="net", figure_id="selftest-net-repeat", stem=_SOLIDS_STEM,
+         ask=[["a", "the faces"]], shape="triangular_prism", profile="right",
+         dims={"base": 6, "height": 8, "length": 6}),
+]
+
+SELF_TEST += [
+    dict(template="motion_states", figure_id="selftest-motion-point",
+         stem="A particle moves 18 m in 6 s.", ask=[["a", "the speed"]],
+         distance=18, elapsed=6),
+    dict(template="motion_states", figure_id="selftest-motion-post",
+         stem="A train is 48 m long and takes 8 s to pass a post.",
+         ask=[["a", "the speed"]], profile="post", length=48, elapsed=8),
+    dict(template="motion_states", figure_id="selftest-motion-bridge",
+         stem="A train is 40 m long. The bridge is 80 m long; passage takes 9 s.",
+         ask=[["a", "the speed"]], profile="bridge", length=40, bridge=80, elapsed=9),
+    dict(template="dot_pattern", figure_id="selftest-dots-rings",
+         stem="The 3 rings start with 6 bulbs and increase by 4 bulbs each ring.",
+         ask=[["a", "the next count"]], kind="rings", stages=3, first=6, increment=4),
+    dict(template="dot_pattern", figure_id="selftest-dots-rings-fig",
+         stem="Count the bulbs in each ring and describe the pattern.",
+         ask=[["a", "the counts"]], kind="rings", stages=3, first=7, increment=4,
+         values="figure"),
+    dict(template="slat_frame", figure_id="selftest-slats",
+         stem="The first slat is 80 cm, the increment is 8 cm, and the last is "
+              "160 cm. Each slat is 8 cm wide.",
+         ask=[["a", "the slat count"]], first=80, increment=8, last=160, slat_width=8),
+    dict(template="clock_face", figure_id="selftest-clock-420",
+         stem="The clock shows hour 4 and minute 20.", ask=[["a", "the time"]],
+         hour=4, minute=20),
+    dict(template="clock_face", figure_id="selftest-clock-300",
+         stem="The clock shows hour 3 and minute 0.", ask=[["a", "the time"]],
+         hour=3, minute=0),
+    dict(template="pairing_arcs", figure_id="selftest-pairing",
+         stem="An arithmetic sequence has first term 4, common difference 2 and "
+              "8 terms.", ask=[["a", "the pair sums"]],
+         first=4, increment=2, terms=8),
+]
+
+SELF_TEST += [
+    dict(template="paired_geometry", figure_id="selftest-paired-sss",
+         stem="Triangle ABC has sides 8 cm, 7 cm and 5 cm and triangle PQR has "
+              "sides 7 cm, 8 cm and 5 cm. (a) Are they congruent?",
+         ask=[["a", "congruence"]],
+         shapes=[{"shape": "triangle", "names": "ABC",
+                  "sides": {"AB": 8, "BC": 7, "CA": 5}},
+                 {"shape": "triangle", "names": "PQR",
+                  "sides": {"PQ": 7, "QR": 8, "RP": 5},
+                  "place": {"to": [300, 0], "anchor": "P", "flip": True}}],
+         correspond=[{"tri": "ABC", "to": "RQP", "scale": "congruent"}],
+         ticks={"AB": 1, "RQ": 1, "BC": 2, "QP": 2, "CA": 3, "PR": 3}),
+    dict(template="paired_geometry", figure_id="selftest-paired-scale2",
+         stem="Triangle ABC has sides 3 cm, 4 cm and 5 cm; triangle DEF is "
+              "drawn at scale 2 with sides 6 cm, 8 cm and 10 cm. (a) Show the "
+              "scale factor is 2.",
+         ask=[["a", "the factor"]],
+         shapes=[{"shape": "triangle", "names": "ABC",
+                  "sides": {"AB": 3, "BC": 4, "CA": 5}},
+                 {"shape": "triangle", "names": "DEF",
+                  "sides": {"DE": 6, "EF": 8, "FD": 10},
+                  "place": {"to": [260, 0], "anchor": "D"}}],
+         correspond=[{"tri": "ABC", "to": "DEF", "scale": 2}]),
+    dict(template="paired_geometry", figure_id="selftest-paired-glue",
+         stem="Triangles ABC and DCB share the base BC of 6 cm; AB = 5 cm, "
+              "DC = 5 cm. (a) Name the equal sides.",
+         ask=[["a", "the equal sides"]],
+         shapes=[{"shape": "triangle", "names": "ABC",
+                  "sides": {"AB": 5, "BC": 6, "CA": 6}},
+                 {"shape": "triangle", "names": "DCB",
+                  "sides": {"DC": 5, "CB": 6, "DB": 6},
+                  "place": {"glue": {"C": "C", "B": "B"}, "flip": True}}],
+         ticks={"AB": 1, "DC": 1}),
+    dict(template="paired_geometry", figure_id="selftest-paired-hinge",
+         stem="Triangles ABC and DEF share the vertex A; AB = 5 cm, BC = 6 cm, "
+              "CA = 7 cm; DE = 5 cm, EF = 6 cm, FD = 7 cm. (a) Compare them.",
+         ask=[["a", "the comparison"]],
+         shapes=[{"shape": "triangle", "names": "ABC",
+                  "sides": {"AB": 5, "BC": 6, "CA": 7}},
+                 {"shape": "triangle", "names": "DEF",
+                  "sides": {"DE": 5, "EF": 6, "FD": 7},
+                  "place": {"hinge": {"D": "A"}, "rotate": 140, "flip": True}}]),
+    dict(template="paired_geometry", figure_id="selftest-paired-parallelograms",
+         stem="Parallelograms ABCD and ABEF share side AB of 6 cm; AD = 4 cm, "
+              "AF = 5 cm, the angle at A is 60 degrees. (a) Compare them.",
+         ask=[["a", "compare"]],
+         shapes=[{"shape": "parallelogram", "names": "ABCD",
+                  "sides": {"AB": 6, "AD": 4}, "angles": {"A": 60}},
+                 {"shape": "parallelogram", "names": "ABEF",
+                  "sides": {"AB": 6, "AF": 5}, "angles": {"A": 60},
+                  "place": {"glue": {"A": "A", "B": "B"}, "flip": True}}],
+         parallel=[["AB", "CD", "FE"], ["AD", "BC"], ["AF", "BE"]],
+         ticks={"AD": 1, "BC": 1, "AF": 2, "BE": 2}),
+    dict(template="paired_geometry", figure_id="selftest-paired-quad",
+         stem="Quadrilateral ABCD has AB = 5 cm, BC = 6 cm, CD = 4 cm, "
+              "DA = 7 cm and diagonal AC = 8 cm. (a) Find its perimeter.",
+         ask=[["a", "the perimeter"]],
+         shapes=[{"shape": "quadrilateral", "names": "ABCD",
+                  "sides": {"AB": 5, "BC": 6, "CD": 4, "DA": 7},
+                  "diagonal": {"AC": 8}}],
+         labels={"AB": "5 cm", "BC": "6 cm"}),
+    dict(template="paired_geometry", figure_id="selftest-paired-kite",
+         stem="Kite ABCD has AB = AD = 5 cm, CB = CD = 8 cm and diagonal "
+              "AC = 9 cm. (a) Name its axis of symmetry.",
+         ask=[["a", "the axis"]],
+         shapes=[{"shape": "kite", "names": "ABCD",
+                  "sides": {"AB": 5, "BC": 8}, "diagonal": {"AC": 9}}],
+         ticks={"AB": 1, "AD": 1, "CB": 2, "CD": 2}),
+    dict(template="paired_geometry", figure_id="selftest-paired-bowtie",
+         stem="Lines AB and CD cross at X; the angle at A is 70 degrees, at "
+              "D is 35 degrees and at C is 55 degrees. (a) Find the angle at B.",
+         ask=[["a", "angle B"]],
+         shapes=[{"shape": "bowtie", "names": "ABCD", "cross": "X",
+                  "angles": {"A": 70, "D": 35, "C": 55}}],
+         marks=[{"at": "A", "arms": ["B", "X"], "arcs": 1, "label": "70°"},
+                {"at": "D", "arms": ["C", "X"], "arcs": 2, "label": "35°"},
+                {"at": "C", "arms": ["D", "X"], "arcs": 3, "label": "55°"}]),
+    dict(template="paired_geometry", figure_id="selftest-paired-feet",
+         stem="Parallelogram ABCD has AB = 8 cm, AD = 5 cm and the angle at "
+              "A is 60 degrees. L and M are the feet of the perpendiculars "
+              "from B and D to diagonal AC. (a) Compare BL and DM.",
+         ask=[["a", "the feet"]],
+         shapes=[{"shape": "parallelogram", "names": "ABCD",
+                  "sides": {"AB": 8, "AD": 5}, "angles": {"A": 60}}],
+         diagonals=[True], altitudes={"L": ["B", "AC"], "M": ["D", "AC"]}),
+]
+
+
+_CIRC_STEM = ("Lengths 2, 5, 6, 7, 8, 10 cm; angle 90 degrees. Symbolic "
+              "dimensions r, s, 5a and 2x. Find the boundary or shaded area.")
+SELF_TEST += [
+    {"template": "outcome_grid", "figure_id": "selftest-ogrid3",
+     "stem": "A coin is tossed twice; the grid shows every ordered outcome. "
+             "(a) Count the event's outcomes.",
+     "ask": [["a", "the count"]],
+     "rows": ["H", "T"], "cols": ["1", "2", "3", "4"], "marks": "all",
+     "values": "figure",
+     "events": [{"cells": [[0, 0], [0, 1]], "style": "oval", "label": "A"},
+                {"cells": [[1, 0], [3, 0]], "style": "box", "label": "B",
+                 "arrow": False},
+                {"cells": [[1, 1]], "style": "circle", "label": "C"}]},
+    {"template": "fraction_tape", "figure_id": "selftest-tape",
+     "stem": "Three strips show that 1/2, 2/4 and 4/8 are the same share. "
+             "(a) Write the equivalent fractions.",
+     "ask": [["a", "the fractions"]],
+     "panels": [{"parts": 2, "shaded": 1, "label": "1/2"},
+                {"parts": 4, "shaded": 2, "label": "2/4"},
+                {"parts": 8, "shaded": 4, "label": "4/8",
+                 "braces": [{"span": [0, 3], "label": "4/8"}]}]},
+    {"template": "fraction_tape", "figure_id": "selftest-tank",
+     "stem": "A 350 litre tank is 3/8 full. (a) How much water is in it?",
+     "ask": [["a", "the volume"]],
+     "tank": {"parts": 8, "filled": 3, "label": "350 L",
+              "level_label": "3/8"}},
+    {"template": "area_model", "figure_id": "selftest-area",
+     "stem": "The rectangle shows (3x + 2)(2x + 3) = 6x^2 + 9x + 4x + 6. "
+             "(a) Give the simplified product.",
+     "ask": [["a", "the product"]],
+     "col_labels": ["3x", "2"], "row_labels": ["2x", "3"],
+     "cells": [["6x^2", "4x"], ["9x", "6"]]},
+]
+SELF_TEST += [
+    dict(template="circular_composite", figure_id="selftest-circ-rect-attach",
+         stem=_CIRC_STEM, ask=[["a", "the perimeter"]], shape="rect",
+         length=10, width=6,
+         pieces=[dict(on="BC", kind="semicircle")]),
+    dict(template="circular_composite", figure_id="selftest-circ-rect-cut",
+         stem=_CIRC_STEM, ask=[["a", "the perimeter"]], shape="rect",
+         length=10, width=6,
+         pieces=[dict(on="BC", kind="semicircle", mode="cut")]),
+    dict(template="circular_composite", figure_id="selftest-circ-rect-corner",
+         stem=_CIRC_STEM, ask=[["a", "the perimeter"]], shape="rect",
+         length=10, width=6,
+         pieces=[dict(corner="B", kind="sector", mode="cut", radius=2)]),
+    dict(template="circular_composite", figure_id="selftest-circ-rect-sector",
+         stem=_CIRC_STEM, ask=[["a", "the perimeter"]], shape="rect",
+         length=10, width=6,
+         pieces=[dict(on="BC", kind="sector", angle=90)]),
+    dict(template="circular_composite", figure_id="selftest-circ-stadium",
+         stem=_CIRC_STEM, ask=[["a", "the perimeter"]], shape="stadium",
+         length=10, width=6,
+         labels={"length": "10 cm", "width": "6 cm"}),
+    dict(template="circular_composite", figure_id="selftest-circ-stadium-fig",
+         stem="Read the marked figure.", ask=[["a", "the perimeter"]],
+         shape="stadium", length=10, width=6, values="figure",
+         labels={"length": "10 cm", "width": "6 cm"}),
+    dict(template="circular_composite", figure_id="selftest-circ-tri-right",
+         stem=_CIRC_STEM, ask=[["a", "the area"]], shape="triangle",
+         mode="right", base=6, height=8,
+         pieces=[dict(on="base", kind="semicircle")]),
+    dict(template="circular_composite", figure_id="selftest-circ-tri-iso",
+         stem=_CIRC_STEM, ask=[["a", "the area"]], shape="triangle",
+         base=6, leg=5, pieces=[dict(on="base", kind="semicircle")]),
+    dict(template="circular_composite", figure_id="selftest-circ-tri-eq",
+         stem=_CIRC_STEM, ask=[["a", "the area"]], shape="triangle",
+         mode="equilateral", base=6,
+         pieces=[dict(on="base", kind="semicircle")]),
+    dict(template="circular_composite", figure_id="selftest-circ-sec-insc",
+         stem=_CIRC_STEM, ask=[["a", "the perimeter"]], shape="sector",
+         angle=90, radius=7, pieces=[dict(on="AB", kind="triangle")]),
+    dict(template="circular_composite", figure_id="selftest-circ-sec-att",
+         stem=_CIRC_STEM, ask=[["a", "the perimeter"]], shape="sector",
+         angle=90, radius=7,
+         pieces=[dict(on="AB", kind="triangle", mode="attach", leg=8)],
+         shaded=True),
+    dict(template="circular_composite", figure_id="selftest-circ-sec-semi",
+         stem=_CIRC_STEM, ask=[["a", "the perimeter"]], shape="sector",
+         angle=90, radius=7, pieces=[dict(on="OA", kind="semicircle")]),
+    dict(template="circular_composite", figure_id="selftest-circ-cutattach",
+         stem=_CIRC_STEM, ask=[["a", "the perimeter"]], shape="cut_attach",
+         radius=7, shaded=True),
+    dict(template="circular_composite", figure_id="selftest-circ-annulus",
+         stem=_CIRC_STEM, ask=[["a", "the ring area"]], shape="annulus",
+         outer=10, inner=5),
+    dict(template="circular_composite", figure_id="selftest-circ-annulus-sym",
+         stem=_CIRC_STEM, ask=[["a", "the ring area"]], shape="annulus",
+         outer="r", inner="s"),
+    dict(template="circular_composite", figure_id="selftest-circ-annulus-fig",
+         stem="Read the marked figure.", ask=[["a", "the ring area"]],
+         shape="annulus", outer=10, inner=5, values="figure"),
+    dict(template="circular_composite", figure_id="selftest-circ-square",
+         stem=_CIRC_STEM, ask=[["a", "the frame area"]], shape="nested_square",
+         outer=10, inner=5),
+    dict(template="circular_composite", figure_id="selftest-circ-square-sym",
+         stem=_CIRC_STEM, ask=[["a", "the frame area"]], shape="nested_square",
+         outer="5a", inner="2x"),
+]
+
+
+SELF_TEST += [{'template': 'elevation_scene', 'figure_id': 'selftest-elev', 'stem': 'A post FT stands on level ground. It is 8 m tall. An observer at G is 6 m from the foot and sees the top at an angle of elevation 53°.', 'ask': [['a', 'the angle of elevation']], 'post': ('F', 'T'), 'sights': [{'from': 'G', 'to': 'T', 'angle': 53, 'kind': 'elevation', 'side': 'left'}], 'heights': {'FT': 8}, 'distances': {'FG': 6}}, {'template': 'elevation_scene', 'figure_id': 'selftest-elev-eye', 'stem': "A post FT is 8 m tall. An observer's eye E is 1.6 m above ground point G, 6 m from the foot; the angle of elevation of the top is 47°.", 'ask': [['a', 'the angle of elevation']], 'post': ('F', 'T'), 'eyes': {'E': 'G'}, 'sights': [{'from': 'E', 'to': 'T', 'angle': 47, 'kind': 'elevation', 'side': 'left'}], 'heights': {'FT': 8, 'GE': 1.6}, 'distances': {'FG': 6}}, {'template': 'two_circle_geometry', 'figure_id': 'selftest-2cgeo', 'stem': 'Two circles of radii 5 cm and 4 cm have centres 6 cm apart. The circles intersect at P and Q; the centre line meets PQ at M.', 'ask': [['a', 'the shared chord']], 'r1': 5, 'r2': 4, 'd': 6}, {'template': 'two_circle_geometry', 'figure_id': 'selftest-2cgeo-touch', 'stem': 'Two circles of radii 5 cm and 3 cm have centres 8 cm apart.', 'ask': [['a', 'the touching point']], 'r1': 5, 'r2': 3, 'd': 8}, {'template': 'two_circle_geometry', 'figure_id': 'selftest-2cgeo-angle', 'stem': 'Radii 5 4, centres 6. Angle PAQ is 83.', 'ask': [['a', 'the angle PAQ']], 'r1': 5, 'r2': 4, 'd': 6, 'angles': [{'at': 'A', 'arms': ('P', 'Q'), 'label': '83°'}]}]
+
+
 READING_SELF_TEST = [dict(next(s for s in SELF_TEST if s["template"] == kind),
                           figure_id=f"selftest-figure-{kind}-mode", values="figure")
                      for kind in ("right_triangle", "circle_angles", "triangle_parallel",
                                   "parallel_area", "solid", "function_graph", "inequality_line",
                                   "histogram", "tree_diagram", "pythagoras_squares", "ogive",
                                   "outcome_grid", "marked_geometry", "pie_chart", "sector",
-                                  "cartesian_plot")]
+                                  "cartesian_plot", "elevation_scene", "two_circle_geometry")]
 
 
 def _self_test() -> int:
@@ -13799,7 +19845,8 @@ def _self_test() -> int:
                 print("\n".join("         " + l for l in r.stdout.splitlines() if "FAIL" in l))
     for kind in (*[s["template"] for s in READING_SELF_TEST],
                  "inscribed_circle", "venn_regions", "solid_composite", "net",
-                 "construction", "two_circle_tangents"):
+                 "construction", "two_circle_tangents",
+                 "fraction_tape", "area_model", "circular_composite"):
         spec = next(s for s in SELF_TEST if s["template"] == kind)
         args = {k: v for k, v in spec.items() if k != "template"}
         args.update({"stage": "invalid"} if kind == "construction" else
@@ -13811,6 +19858,100 @@ def _self_test() -> int:
             print(f"  PASS  {kind:<16} refusal spec")
         else:
             print(f"  FAIL  {kind:<16} refusal spec unexpectedly accepted")
+            bad += 1
+    for params in (
+            dict(step="triangle_sss", sides={"AB": 8, "BC": 4, "CA": 4}),
+            dict(step="triangle_sas", sides={"AB": 8, "CA": 6}, angles={"A": True}),
+            dict(step="triangle_asa", sides={"AB": 8}, angles={"A": 90, "B": 90}),
+            dict(step="parallel_through", sides={"AB": 8}, offset=0),
+            dict(step="triangle_aas", sides={"AB": 8}, angles=None),
+            dict(step="triangle_aas", sides={"AB": 8}, angles={"A": 90, "C": 90}),
+            dict(step="parallel_through", sides={"AB": 8}, offset=4, method="unknown"),
+            dict(step="perp_bisector", length=8, sides={"AB": 8}),
+            dict(step="perp_bisector", length=8, offset=4),
+            dict(step="triangle_sss", sides={"AB": 8, "BC": 7, "CA": 6}, r_px=110),
+            dict(step="triangle_sss", sides={"AB": 8, "BC": 7, "CA": 6}, at_deg=90),
+            dict(step="triangle_sss", sides={"AB": 8, "BC": 7, "CA": 6}, op=2)):
+        try:
+            build_construction(figure_id="synthetic-refusal1", stem="8 4 6 90", **params)
+        except TemplateError:
+            print(f"  PASS  {params['step']:<16} construction refusal")
+        else:
+            print(f"  FAIL  {params['step']:<16} construction refusal unexpectedly accepted")
+            bad += 1
+    for label_, fn, kw in (
+            ("ogrid non-member oval", build_outcome_grid,
+             dict(figure_id="synthetic-ref1", stem="Read the grid.",
+                  rows=["H", "T", "H"], cols=["1", "2", "3"], marks="all",
+                  values="figure",
+                  events=[{"cells": [[c, r] for c in range(3) for r in range(3)
+                                    if (c, r) != (1, 1)],
+                           "style": "oval", "label": "A"}])),
+            ("ogrid duplicate contour", build_outcome_grid,
+             dict(figure_id="synthetic-ref2", stem="Read the grid.",
+                  rows=["H", "T"], cols=["1", "2"], marks="all",
+                  values="figure",
+                  events=[{"cells": [[0, 0]], "style": "circle", "label": "A"},
+                          {"cells": [[0, 0]], "style": "circle", "label": "B"}])),
+            ("ogrid circle multi-cell", build_outcome_grid,
+             dict(figure_id="synthetic-ref3", stem="Read the grid.",
+                  rows=["H", "T"], cols=["1", "2"], marks="all",
+                  values="figure",
+                  events=[{"cells": [[0, 0], [0, 1]], "style": "circle"}])),
+            ("ogrid notched box", build_outcome_grid,
+             dict(figure_id="synthetic-ref4", stem="Read the grid.",
+                  rows=["H", "T"], cols=["1", "2", "3"], marks="all",
+                  values="figure",
+                  events=[{"cells": [[0, 0], [1, 0], [0, 1]], "style": "box"}])),
+            ("ogrid bool mark", build_outcome_grid,
+             dict(figure_id="synthetic-ref5", stem="Read the grid.",
+                  rows=["H", "T"], cols=["1", "2"], marks=[[False, 0]])),
+            ("tape panels+tank", build_fraction_tape,
+             dict(figure_id="synthetic-ref6", stem="Strips.",
+                  panels=[{"parts": 2, "shaded": 1}],
+                  tank={"parts": 2, "filled": 1})),
+            ("tape brace no span", build_fraction_tape,
+             dict(figure_id="synthetic-ref7", stem="Strips show 1/4.",
+                  panels=[{"parts": 4, "shaded": 1,
+                           "braces": [{"label": "1/4"}]}])),
+            ("tape unstated numeral", build_fraction_tape,
+             dict(figure_id="synthetic-ref8", stem="Two strips.",
+                  panels=[{"parts": 2, "shaded": 1, "label": "3/4"}])),
+            ("area names repeat", build_area_model,
+             dict(figure_id="synthetic-ref9", stem="The rectangle shows (x + 2)(x + 5).",
+                  col_labels=["x", "2"], row_labels=["x", "5"],
+                  cells=[["x^2", "2x"], ["5x", "10"]], names="ABCA")),
+            ("area unstated numeral", build_area_model,
+             dict(figure_id="synthetic-ref10", stem="The rectangle shows a product.",
+                  col_labels=["x", "7"], row_labels=["x", "5"],
+                  cells=[["x^2", "7x"], ["5x", "35"]])),
+            ("circ rect no piece", build_circular_composite,
+             dict(figure_id="synthetic-ref11", stem=_CIRC_STEM, shape="rect",
+                  length=10, width=6)),
+            ("circ cut reaches far side", build_circular_composite,
+             dict(figure_id="synthetic-ref12", stem="Lengths 4 and 10 cm.",
+                  shape="rect", length=4, width=10,
+                  pieces=[dict(on="BC", kind="semicircle", mode="cut")])),
+            ("circ rect multi-piece", build_circular_composite,
+             dict(figure_id="synthetic-ref13", stem=_CIRC_STEM, shape="rect",
+                  length=10, width=6,
+                  pieces=[dict(on="BC", kind="semicircle"),
+                          dict(on="DA", kind="semicircle")])),
+            ("circ figure-mode unlabelled", build_circular_composite,
+             dict(figure_id="synthetic-ref14", stem="Read the figure.",
+                  shape="stadium", length=10, width=6, values="figure")),
+            ("circ bad numeric", build_circular_composite,
+             dict(figure_id="synthetic-ref15", stem=_CIRC_STEM, shape="stadium",
+                  length=True, width=6)),
+            ("circ annulus inner>=outer", build_circular_composite,
+             dict(figure_id="synthetic-ref16", stem=_CIRC_STEM, shape="annulus",
+                  outer=5, inner=10))):
+        try:
+            fn(**kw)
+        except TemplateError:
+            print(f"  PASS  {label_:<30} refusal")
+        else:
+            print(f"  FAIL  {label_:<30} refusal unexpectedly accepted")
             bad += 1
     print("\n⚠️ Each figure's render is checked separately — run vdd-check.mjs on the outputs "
           "before trusting them.")
