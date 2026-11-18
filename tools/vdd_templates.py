@@ -37,6 +37,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -50,6 +51,7 @@ XY = tuple[float, float]
 SINHALA = re.compile(r"[඀-෿]")
 STEM_NUM = re.compile(r"\d+(?:\.\d+)?")            # audit-claim-set's own stem regex
 FIG_ID = re.compile(r"[A-Za-z0-9._-]+")
+MEDIUMS = ("sinhala", "english", "tamil")          # the platform's question media
 
 FS = 18.0                    # renderer default font size (DiagramRenderer DEFAULT_FONT_SIZE)
 MARGIN = 12.0                # canvas margin around ALL ink, canvas units
@@ -148,6 +150,8 @@ class Built:
 # ────────────────────────────────────────────────────────────────────────────────
 def stem_numbers(stem: str) -> list[float]:
     """The numbers a stem states — the SAME regex `audit-claim-set.py` runs over `stem:`."""
+    if not isinstance(stem, str) or not stem.strip():
+        raise TemplateError("stem must be a non-empty string")
     return [float(x) for x in STEM_NUM.findall(stem)]
 
 
@@ -711,6 +715,39 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
 
     `elements`/`anchors` are never mutated — the caller may reuse the same lists across
     retried finish() calls even after a raise."""
+    # ── shared metadata gates (audit finding M): typed refusals on the fields every
+    # builder passes through here in the shared finish path, and on `stem` itself in
+    # stem_numbers() — a malformed stem/medium/ask must never reach a claim set.
+    # Valid inputs are untouched; only bad ones refuse.
+    if not isinstance(stem, str) or not stem.strip():
+        raise TemplateError("a constructed figure needs a `stem` — it is the only ground truth")
+    if not isinstance(figure_id, str) or not figure_id.strip():
+        raise TemplateError(f"figure_id {figure_id!r} must be a non-empty string")
+    for _nm, _v in (("title", title), ("description", description)):
+        if _v is not None and (not isinstance(_v, str) or not _v.strip()):
+            raise TemplateError(f"{kind}: {_nm} must be non-empty text when given")
+    if not isinstance(medium, str) or medium.strip().lower() not in MEDIUMS:
+        raise TemplateError(f"{kind}: medium {medium!r} is not one of {sorted(MEDIUMS)}")
+    if ask is not None:
+        if not isinstance(ask, (list, tuple)) or not ask:
+            raise TemplateError(f"{kind}: ask must be a non-empty list of (part ref, text) "
+                                "pairs — an empty ask leaves the figure unbound to a part")
+        _refs: list[str] = []
+        for _pair in ask:
+            if not isinstance(_pair, (list, tuple)) or len(_pair) != 2:
+                raise TemplateError(f"{kind}: each ask entry is a (ref, text) pair — "
+                                    f"got {_pair!r}")
+            _ref, _text = _pair
+            if not isinstance(_ref, str) or not re.fullmatch(r"[A-Za-z0-9]+", _ref):
+                raise TemplateError(f"{kind}: ask ref {_ref!r} is a short part id "
+                                    "(letters/digits)")
+            if not isinstance(_text, str) or not _text.strip():
+                raise TemplateError(f"{kind}: ask {_ref!r} needs non-empty text")
+            _check_free_text(_text, what="ask text")
+            _refs.append(_ref)
+        if len(set(_refs)) != len(_refs):
+            raise TemplateError(f"{kind}: ask part refs repeat — {_refs}")
+
     def finite_geometry(value):
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             _finite_number(value)
@@ -960,10 +997,14 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
 # helpers
 # ────────────────────────────────────────────────────────────────────────────────
 def _arange(a: float, b: float, step: float):
-    v = a
-    while v < b:
-        yield v
-        v += step
+    """Exact decimal index arithmetic — a float `v += step` accumulator drifts off the
+    lattice (0.2+0.2+… gives 0.6000000000000001) and can drop a boundary tick or split
+    a decimal id; `a + i*step` in Decimal stays on the inputs' own decimal grid."""
+    da, db, ds = Decimal(str(a)), Decimal(str(b)), Decimal(str(step))
+    i = 0
+    while da + i * ds < db:
+        yield float(da + i * ds)
+        i += 1
 
 
 def _rect_gap(a, b) -> float:
@@ -1310,12 +1351,16 @@ def build_grid_polygon(*, figure_id, stem, ask=None, title=None, description=Non
                        vertex_labels=False, shade=True, axis=None):
     vc.reset_ids()
     require_stem(stem, cell=cell)
+    for _nm, _v in (("cols", cols), ("rows", rows)):
+        if _v is not None and (isinstance(_v, bool) or not isinstance(_v, int) or _v < 1):
+            raise TemplateError(f"grid_polygon: {_nm} must be a whole number ≥ 1 — "
+                                f"got {_v!r}")
     verts = [tuple(map(float, v)) for v in vertices]
     if len(verts) < 3:
         raise TemplateError("grid_polygon: need at least 3 vertices")
     for i, (x, y) in enumerate(verts):
         if abs(x - round(x)) > 1e-9 or abs(y - round(y)) > 1e-9:
-            raise TemplateError(f"grid_polygon: vertex {v} is off the grid lattice")
+            raise TemplateError(f"grid_polygon: vertex {(x, y)} is off the grid lattice")
         nx, ny = verts[(i + 1) % len(verts)]
         if not (abs(x - nx) < 1e-9 or abs(y - ny) < 1e-9):
             raise TemplateError(
@@ -1424,6 +1469,10 @@ def build_grid_polygon(*, figure_id, stem, ask=None, title=None, description=Non
 def build_shaded_grid(*, figure_id, stem, ask=None, title=None, description=None, medium="english",
                       cols, rows, full=(), half=(), cell_px=40.0):
     vc.reset_ids()
+    for _nm, _v in (("cols", cols), ("rows", rows)):
+        if isinstance(_v, bool) or not isinstance(_v, int) or _v < 1:
+            raise TemplateError(f"shaded_grid: {_nm} must be a whole number ≥ 1 — "
+                                f"got {_v!r}")
     nums = stem_numbers(stem)
     if not (_has_stem(nums, cols) and _has_stem(nums, rows) or _has_stem(nums, cols * rows)):
         raise TemplateError(
@@ -1433,6 +1482,9 @@ def build_shaded_grid(*, figure_id, stem, ask=None, title=None, description=None
     half = [tuple(h) for h in half]
     cells = set(full) | {(c, r) for c, r, _ in half}
     for c, r in cells:
+        if isinstance(c, bool) or isinstance(r, bool) or \
+                not isinstance(c, int) or not isinstance(r, int):
+            raise TemplateError(f"shaded_grid: cell ({c},{r}) — cell indexes are whole numbers")
         if not (0 <= c < cols and 0 <= r < rows):
             raise TemplateError(f"shaded_grid: cell ({c},{r}) is outside a {cols}x{rows} grid")
     if len(cells) != len(full) + len(half):
@@ -1513,6 +1565,7 @@ def build_rays_from_point(*, figure_id, stem, ask=None, title=None, description=
                 raise TemplateError(f"rays_from_point: bearing {b!r} is not a compass point")
             bearings[name] = COMPASS[b.upper()]
         else:
+            _finite_number(b)                          # bool/string/nonfinite bearings refuse
             require_stem(stem, **{f"bearing {name}": float(b)})
             bearings[name] = float(b) - 90.0          # numeric bearings are clockwise from N
     if len(bearings) < 2:
@@ -1824,7 +1877,7 @@ def build_pictograph(*, figure_id, stem, ask=None, title=None, description=None,
         for tok in re.findall(r"\d+(?:\.\d+)?", str(label)):
             require_stem(stem, **{f"row label {label!r}": float(tok)})
     for label, count in rows:
-        if not isinstance(count, (int, float)) or count <= 0:
+        if not isinstance(count, (int, float)) or isinstance(count, bool) or count <= 0:
             raise TemplateError(f"pictograph: row {label!r} count {count} is not positive")
         sym = count / per_symbol
         if abs(sym - round(sym)) > 1e-9 and not (per_symbol % 2 == 0 and
@@ -1876,7 +1929,7 @@ def build_pictograph(*, figure_id, stem, ask=None, title=None, description=None,
         sym = count / per_symbol
         add(f'describe "row {label} shows {sym:g} symbols — {count:g} items at '
             f'{per_symbol:g} per symbol"', "inferred", "the row's count reads off the symbols")
-        add(f'label "{label}" names row{ri + 1}', "stem", "the row label")
+        add(f'label "{label}" names row{ri}', "stem", "the row label")
     add(f'label "= {per_symbol:g}" names key', "stem", "the key row under the separator")
     add(f"derive {per_symbol:g} / 2 = {per_symbol / 2:g}", "stem",
         "a half symbol stands for half the key value")
@@ -1904,6 +1957,9 @@ def build_rectangle_points(*, figure_id, stem, ask=None, title=None, description
                            extra_segments=(), masks=None, base_px=208.0):
     vc.reset_ids()
     nums = stem_numbers(stem)
+    if (length is None) != (width is None):
+        raise TemplateError("rectangle_points: pass length AND width, or neither — "
+                            "one dimension alone cannot set the aspect")
     if length is not None and width is not None:
         require_stem(stem, length=length, width=width)
         ar = length / width
@@ -2019,10 +2075,12 @@ def build_house_pentagon(*, figure_id, stem, ask=None, title=None, description=N
     labels = labels or {}
     nums = stem_numbers(stem)
     sides = {"AB": AB, "BC": BC, "CP": CP, "PD": PD, "DA": DA}
-    texts = {k: labels.get(k, f"{v:g} {unit}") for k, v in sides.items()}
     for k, v in sides.items():
+        _finite_number(v)                    # bool/string/nonfinite/oversized refused first
         if v <= 0:
             raise TemplateError(f"house_pentagon: side {k}={v} must be positive")
+    texts = {k: labels.get(k, f"{v:g} {unit}") for k, v in sides.items()}
+    for k, v in sides.items():
         for tok in re.findall(r"\d+(?:\.\d+)?", texts[k]):
             if abs(float(tok) - v) > 1e-9:
                 raise TemplateError(
@@ -2254,6 +2312,8 @@ def build_dot_pattern(*, figure_id, stem, ask=None, title=None, description=None
         raise TemplateError("dot_pattern: first, increment and values apply to kind='rings' only")
     if kind not in ("triangle", "square", "rectangle"):
         raise TemplateError(f"dot_pattern: kind {kind!r} — one of triangle, square, rectangle")
+    if isinstance(stages, bool):
+        raise TemplateError("dot_pattern: stages must be a whole number in 1..8, not a bool")
     if not (isinstance(stages, int) and 1 <= stages <= 8):
         raise TemplateError("dot_pattern: stages must be a whole number in 1..8")
     nums = stem_numbers(stem)
@@ -2758,7 +2818,8 @@ def build_abacus(*, figure_id, stem, ask=None, title=None, description=None,
         raise TemplateError("abacus: beads must be a list parallel to place_values")
     seen_v = set()
     for v in place_values:
-        if not isinstance(v, (int, float)) or isinstance(v, bool) or v <= 0:
+        _finite_number(v)                    # NaN/inf/oversized refused before printing
+        if v <= 0:
             raise TemplateError(f"abacus: place value {v!r} must be a positive number")
         if v in seen_v:
             raise TemplateError(f"abacus: place value {v:g} is repeated — two rods would "
@@ -5024,14 +5085,14 @@ def _triangle_marks_once(*, figure_id, stem, ask, title, description, medium, an
 
     tk = {}
     for s, c_ in (ticks or {}).items():
-        if c_ not in (1, 2, 3):
+        if isinstance(c_, bool) or c_ not in (1, 2, 3):
             raise TemplateError(f"{kind}: side {s} tick count must be 1, 2 or 3")
         tk[side_key(s)] = c_
     ar = {}
     for v, c_ in (arcs or {}).items():
         if v not in names:
             raise TemplateError(f"{kind}: arc vertex {v!r} is not one of {names}")
-        if c_ not in (1, 2, 3):
+        if isinstance(c_, bool) or c_ not in (1, 2, 3):
             raise TemplateError(f"{kind}: arc count at {v} must be 1, 2 or 3")
         ar[v] = c_
     if right is not None:
@@ -8364,7 +8425,11 @@ def build_inequality_line(*, figure_id, stem, ask=None, title=None,
         if not isinstance(interval, dict):
             raise TemplateError(f"{kind}: interval is a dict")
         a_, b_ = interval.get("a"), interval.get("b")
-        oa, ob = bool(interval.get("open_a")), bool(interval.get("open_b"))
+        oa, ob = interval.get("open_a", False), interval.get("open_b", False)
+        if not isinstance(oa, bool) or not isinstance(ob, bool):
+            raise TemplateError(f"{kind}: interval open_a/open_b must be true/false "
+                                f"flags — got {interval.get('open_a')!r}/"
+                                f"{interval.get('open_b')!r}")
         if not isinstance(a_, (int, float)) or isinstance(a_, bool):
             raise TemplateError(f"{kind}: interval['a'] must be a number")
         a_ = float(a_)
@@ -8543,8 +8608,15 @@ def build_histogram(*, figure_id, stem, ask=None, title=None, description=None,
                      step=step, v_max=v_max)
     else:
         require_stem(stem, step=step, v_max=v_max)
-    for h_ in hts:
-        if abs(h_ % (step / 2)) > 1e-9:
+    # exact decimal lattice check — `h % (step/2)` on binary floats wrongly refuses
+    # valid half-step decimals (0.3 at step 0.2) and accepts drifted values
+    _d_widths = [Decimal(str(bs[i + 1])) - Decimal(str(bs[i]))
+                 for i in range(len(bs) - 1)]
+    _d_ref = min(_d_widths)
+    _half_step = Decimal(str(step)) / 2
+    for f_, w_ in zip(fs_, _d_widths):
+        d_h = Decimal(str(f_)) * _d_ref / w_ if adjusted else Decimal(str(f_))
+        if d_h % _half_step != 0:
             raise TemplateError(f"{kind}: every drawn height must be a multiple of "
                                 f"step/2 ({step / 2:g}) for the reads claim")
     upx_v = 46.0
@@ -8556,15 +8628,31 @@ def build_histogram(*, figure_id, stem, ask=None, title=None, description=None,
     elements: list[dict] = [
         vc.line((-16, 0), (W + 40, 0), id="axX"),
         vc.line((0, 14), (0, -v_max * upy - 30), id="axY")]
+    # axis numerals: `int(j*10)` ids can collide for a step below 0.1 — a
+    # duplicate-suffix keeps the historical ids wherever they were unique and
+    # disambiguates only the colliding ones (byte-identical on all valid outputs)
+    _id_used: set = set()
+
+    def _tick_id(prefix: str, j: float) -> str:
+        base = f"{prefix}{int(j * 10)}"
+        if base not in _id_used:
+            _id_used.add(base)
+            return base
+        k = 1
+        while f"{base}_{k}" in _id_used:
+            k += 1
+        _id_used.add(f"{base}_{k}")
+        return f"{base}_{k}"
+
     for j in _arange(0, v_max + step / 2, step):
         y = Y(j)
-        elements.append(vc.line((0, y), (W, y), id=f"gh{int(j * 10)}", width=0.6))
+        elements.append(vc.line((0, y), (W, y), id=_tick_id("gh", j), width=0.6))
         elements[-1]["stroke"] = {"width": 0.6, "color": "#d1d5db"}
-        elements.append(vc.line((-4, y), (4, y), id=f"ty{int(j * 10)}", width=1.2))
+        elements.append(vc.line((-4, y), (4, y), id=_tick_id("ty", j), width=1.2))
         shared_zero = j == 0 and bs[0] == 0
         elements.append(vc.text(((-26, 28) if shared_zero else
                                  (-36 if j == 0 else -24, y)), f"{j:g}",
-                                id=f"ny{int(j * 10)}", size=15,
+                                id=_tick_id("ny", j), size=15,
                                 align="middle" if shared_zero else "end"))
     P = {"O": (0.0, 0.0), "X": (W, 0.0), "Y": (0.0, Y(v_max))}
     num_gap = _clearance_units(4.0, W + 80)
@@ -9063,8 +9151,8 @@ def build_ogive(*, figure_id, stem, ask=None, title=None, description=None,
     for i in range(len(cs) - 1):
         if cs[i + 1] < cs[i] - 1e-9:
             raise TemplateError(f"{kind}: cumulative frequencies cannot decrease")
-    if not 0 <= cs[-1] <= float(v_max):
-        raise TemplateError(f"{kind}: the last cumulative frequency must be in "
+    if any(c_ < -1e-9 for c_ in cs) or not 0 <= cs[-1] <= float(v_max):
+        raise TemplateError(f"{kind}: every cumulative frequency must be in "
                             f"[0, {v_max}]")
     if values == "stem":
         require_stem(stem, **{f"edge{i}": bounds[i] for i in range(len(bounds))})
@@ -9072,8 +9160,11 @@ def build_ogive(*, figure_id, stem, ask=None, title=None, description=None,
                      step=step, v_max=v_max)
     else:
         require_stem(stem, step=step, v_max=v_max)
+    # exact decimal lattice check — `c % (step/2)` on binary floats wrongly refuses
+    # valid half-step decimals (0.3 at step 0.2)
+    _half_step = Decimal(str(step)) / 2
     for c_ in cs:
-        if abs(c_ % (step / 2)) > 1e-9:
+        if Decimal(str(c_)) % _half_step != 0:
             raise TemplateError(f"{kind}: every cumulative frequency must be a "
                                 f"multiple of step/2 ({step / 2:g}) for the reads claim")
     gd = None
@@ -9087,6 +9178,11 @@ def build_ogive(*, figure_id, stem, ask=None, title=None, description=None,
         nm = str(guide.get("name", "M"))
         if not re.fullmatch(r"[A-Z]", nm):
             raise TemplateError(f"{kind}: the guide name is one capital letter")
+        # generated anchors are O/X/Y plus the E<i>/V<i> namespaces — a bare E or V
+        # guide letter reads ambiguous next to them
+        if nm in {"O", "X", "Y", "E", "V"}:
+            raise TemplateError(f"{kind}: the guide name {nm!r} collides with an "
+                                "existing anchor — pick another letter")
         if gv <= cs[0]:
             gx = bs[0]
         else:
@@ -9105,15 +9201,28 @@ def build_ogive(*, figure_id, stem, ask=None, title=None, description=None,
     elements: list[dict] = [
         vc.line((-16, 0), (W + 40, 0), id="axX"),
         vc.line((0, 14), (0, -v_max * upy - 30), id="axY")]
+    _id_used: set = set()                       # see histogram — collision-safe tick ids
+
+    def _tick_id(prefix: str, j: float) -> str:
+        base = f"{prefix}{int(j * 10)}"
+        if base not in _id_used:
+            _id_used.add(base)
+            return base
+        k = 1
+        while f"{base}_{k}" in _id_used:
+            k += 1
+        _id_used.add(f"{base}_{k}")
+        return f"{base}_{k}"
+
     for j in _arange(0, v_max + step / 2, step):
         y = Y(j)
-        elements.append(vc.line((0, y), (W, y), id=f"gh{int(j * 10)}", width=0.6))
+        elements.append(vc.line((0, y), (W, y), id=_tick_id("gh", j), width=0.6))
         elements[-1]["stroke"] = {"width": 0.6, "color": "#d1d5db"}
-        elements.append(vc.line((-4, y), (4, y), id=f"ty{int(j * 10)}", width=1.2))
+        elements.append(vc.line((-4, y), (4, y), id=_tick_id("ty", j), width=1.2))
         shared_zero = j == 0 and bs[0] == 0
         elements.append(vc.text(((-26, 28) if shared_zero else
                                  (-40 if j == 0 else -24, y)), f"{j:g}",
-                                id=f"ny{int(j * 10)}", size=15,
+                                id=_tick_id("ny", j), size=15,
                                 align="middle" if shared_zero else "end"))
     P: dict[str, XY] = {"O": (0.0, 0.0), "X": (W, 0.0), "Y": (0.0, Y(v_max))}
     for i, b_ in enumerate(bs):
@@ -12480,11 +12589,29 @@ def _marked_geometry_once(*, figure_id, stem, ask, title, description, medium, s
                 elements += vc.angle_label(P[v_], P[m_["arms"][0]], P[m_["arms"][1]],
                                            r=r0, arcs=m_["arcs"],
                                            reflex=bool(m_.get("reflex")))
-                anchor_ = (P[v_][0] + bx_ * (r0 + 3.0 * m_["arcs"] + 4.0),
-                           P[v_][1] + by_ * (r0 + 3.0 * m_["arcs"] + 4.0))
-                elements.append(_float_label(f"al{v_}", m_["txt"], anchor_))
-                P[f"{v_}1"] = anchor_
-                m_["floated"] = True
+                # the wedge interior seats nothing — keep the arc at r0 and walk
+                # the label out along the bisector until a FIXED seat clears every
+                # stroke (paired_geometry's approach): the exported anchor is the
+                # seated glyph's own `at`, never a float seed that finish() then
+                # relocates — a `_float_label` here left the claim anchor ~36 units
+                # from where the glyph landed. Refuse when nothing seats.
+                seated = False
+                strokes_now = stroke_segments(elements)
+                far_ = max(60.0, 2.4 * min(vc.dist(P[v_], P[m_["arms"][0]]),
+                                         vc.dist(P[v_], P[m_["arms"][1]])))
+                for d_ in _arange(30.0, far_, 2.0):
+                    el_ = vc.text((P[v_][0] + bx_ * d_, P[v_][1] + by_ * d_),
+                                  m_["txt"], id=f"al{v_}")
+                    box_ = label_boxes([el_], FS)[0][1:]
+                    if min(_seg_rect_dist(p_, q_, box_) - w_ / 2
+                           for p_, q_, w_ in strokes_now) >= clr:
+                        elements.append(el_)
+                        P[f"{v_}1"] = tuple(el_["at"])
+                        m_["floated"] = True
+                        seated = True
+                        break
+                if not seated:
+                    raise
                 continue
             elements += els_
             P[f"{v_}1"] = tuple(els_[-1]["at"])
@@ -13085,6 +13212,23 @@ def build_sector(*, figure_id, stem, ask=None, title=None, description=None,
         for k_, v_ in numeric.items():
             chk[f"{k_} label {labs[k_]!r}"] = v_
         require_stem(stem, **chk)
+    else:
+        # values="figure" — a given the reader cannot see printed cannot be read
+        # off the drawing: every numeric given needs a numeric label on its own
+        # boundary (a 180° sector needs no angle label — the diameter reads itself).
+        printed = set(numeric)
+        missing = []
+        if not printed & {"radius", "radius_b"}:
+            missing.append("radius")
+        if "angle" not in printed and th != 180.0:
+            missing.append("angle")
+        if annular and not printed & {"radial", "radial_b", "inner_arc"}:
+            missing.append("inner")
+        if missing:
+            raise TemplateError(
+                f"{kind}: values='figure' leaves {', '.join(missing)} unprinted — a "
+                "reader could not take it off the drawing; label it or use "
+                "values='stem'")
     glyphs = ["O", "A", "B"] + (["C", "D"] if annular else []) + list(labs.values())
     _check_label_texts([], glyphs, medium)
     _distinct_glyphs(kind, glyphs)
@@ -14021,10 +14165,14 @@ _SHAPES = ("triangle",) + _QUAD4 + _NEW4 + ("bowtie",)
 
 
 def _fnum(kind, what, v, positive=False):
-    if not isinstance(v, (int, float)) or isinstance(v, bool) or \
-            not math.isfinite(v):
+    if not isinstance(v, (int, float)) or isinstance(v, bool):
         raise TemplateError(f"{kind}: {what} must be a finite number — got {v!r}")
-    v = float(v)
+    try:
+        v = float(v)                    # math.isfinite(10**400) itself overflows
+    except (OverflowError, ValueError) as exc:
+        raise TemplateError(f"{kind}: {what} must be a finite number — got {v!r}") from exc
+    if not math.isfinite(v):
+        raise TemplateError(f"{kind}: {what} must be a finite number — got {v!r}")
     if positive and v <= 0:
         raise TemplateError(f"{kind}: {what} must be positive — got {v:g}")
     return v
@@ -16080,8 +16228,10 @@ def _validate_numeric_inputs(fn):
     from functools import wraps
     import inspect
     signature = inspect.signature(fn)
-    numeric = set("angles points bounds freqs cum_freqs curve curves x_range y_range dots upper lower ticks arcs legs_px leg_px angle at_deg extra_base".split())
-    positive = set("scale_px unit_px base_px r_px cell_px gap step v_max r radius base tri_height length height cell r1 r2 d op inner".split())
+    numeric = set("angles points bounds freqs cum_freqs curve curves x_range y_range dots upper lower ticks arcs legs_px leg_px angle at_deg extra_base "
+                  "vertices place_values beads v0 v1 parts_per_unit n_in n_out direction".split())
+    positive = set("scale_px unit_px base_px r_px cell_px gap step v_max r radius base tri_height length height cell r1 r2 d op inner "
+                   "per_symbol ray_len arc_r dot_r bead_r ring_gap cell_w row_h overlap depth_angle depth_scale width R dx dy".split())
     symbolic = set("dims sides legs radius base tri_height".split())
 
     def check(value, allow_letters=False):
@@ -16121,7 +16271,20 @@ def _validate_numeric_inputs(fn):
                 continue
             if name == "step" and fn.__name__ == "build_construction":
                 continue
-            if name == "angles" and fn.__name__ in ("build_right_triangle", "build_circle_angles"):
+            if name == "angles" and fn.__name__ in ("build_right_triangle", "build_circle_angles",
+                                                    "build_rays_from_point"):
+                continue
+            # the membership figures' `points` dicts hold placement specs with
+            # strings/bools ({"where": "in", "label": …}), not bare coordinates —
+            # their inner gates own that schema (nested() still finite-checks every
+            # numeric leaf, e.g. a pinned deg)
+            if name == "points" and fn.__name__ in ("build_circle_points",
+                                                    "build_two_circles_points"):
+                continue
+            # venn_sets' drawn-radius override has its own gate that names the
+            # real bound ("a number of at least 50 units") and already covers
+            # bools, strings and NaN — refusing earlier would hide that reason
+            if name == "r" and fn.__name__ == "build_venn_sets":
                 continue
             if name in positive or name in ("angle", "at_deg"):
                 if not (name in symbolic and isinstance(value, str) and _RT_SIDE_VAL.fullmatch(value)):
@@ -17779,7 +17942,14 @@ for _builder_name in (
         "pythagoras_squares", "ogive", "outcome_grid", "two_circle_tangents",
         "construction", "inscribed_circle", "venn_regions", "solid_composite",
         "net", "marked_geometry", "pie_chart", "sector", "cartesian_plot",
-        "fraction_tape", "area_model"):
+        "fraction_tape", "area_model",
+        # the pre-G9 legacy families — the same early original-value gate
+        "grid_polygon", "shaded_grid", "rays_from_point", "number_line",
+        "pictograph", "rectangle_points", "house_pentagon", "cuboid",
+        "dot_pattern", "circle_points", "two_circles_points", "circles_in_circle",
+        "abacus", "sorting_rings", "shape_row", "coordinate_plane",
+        "parallel_lines", "bar_chart", "symmetry_grid", "labelled_composite",
+        "triangle_marks", "venn_sets", "circle_parts"):
     _name = "build_" + _builder_name
     globals()[_name] = _validate_numeric_inputs(globals()[_name])
 
@@ -18919,6 +19089,12 @@ from vdd_g9_solids import (build_open_cuboid_net, build_cuboid_water,
 from vdd_g9_geometry import (build_marked_lines, build_locus_scene,
                              build_polygon_angles)
 from vdd_g9_area import build_algebra_area, build_mapping_arrows
+from vdd_g6_families import (build_tally_chart, build_balance_scale,
+                             build_cube_net)
+from vdd_g7_families import (build_vertical_scale, build_factor_tree,
+                             build_cube_array)
+from vdd_g8_families import (build_stem_leaf, build_tessellation,
+                             build_bearing_map)
 
 
 BUILDERS = {fn.__name__[6:]: fn for fn in
@@ -18946,7 +19122,10 @@ BUILDERS = {fn.__name__[6:]: fn for fn in
              build_polygon_spinner, build_die_faces,
              build_open_cuboid_net, build_cuboid_water, build_regular_polyhedron,
              build_marked_lines, build_locus_scene, build_polygon_angles,
-             build_algebra_area, build_mapping_arrows)}
+             build_algebra_area, build_mapping_arrows,
+             build_tally_chart, build_balance_scale, build_cube_net,
+             build_vertical_scale, build_factor_tree, build_cube_array,
+             build_stem_leaf, build_tessellation, build_bearing_map)}
 
 CATALOGUE = """
 template            stem-checked numbers                          inputs
@@ -19060,6 +19239,15 @@ locus_scene         radius, distance, length in stem mode          kind=circle|p
 polygon_angles      n; numeric angle labels in stem mode           n 3–8 regular, show=interior|triangulation|centre|exterior, labels?, exterior_labels?, fan?, ticks — interior labels must equal (n−2)·180/n, exterior 360/n ±0.5°
 algebra_area        purely numeric tokens in stem mode             style=rectangle|corner_cut|frame, latex edge/area labels (top/side/area | outer_*/inner_*/cut_w/cut_h/mode/corner | gap_top/gap_side), square, shaded — symbolic, never to scale; dissection refuses
 mapping_arrows      numeric tokens in stem mode                    left=[…], right=[…] equal length 1–4 (numerals or short latex), heads=[h1,h2]? — parallel rightward arrows; crossing or backward mappings refuse
+tally_chart         every count in stem mode                       rows=[(label,count)] 1–6, counts 0–30 whole — groups of five as 4 uprights + a diagonal
+balance_scale       numeric masses in stem mode                    left/right 1–4 items (letter, "?", or mass), state=level|left_down|right_down, unit — totals must agree with the tilt
+cube_net            dims in stem mode                              shape=cube|cuboid|tetrahedron, dims={edge}|{length,width,height}, unit, labels per face, scale_px — canonical cross/strip nets, dashed fold edges, one physical scale
+vertical_scale      bounds, step, reading in stem mode             v_min, v_max (ints ±10000), step (2–10 Decimal intervals), level on a half-step, pointer=fluid|marker, unit
+factor_tree         n and every split value in stem mode           n, splits={parent:(a,b)} depth ≤4, leaves ≤8 — products validated, primes end the tree; caller names, never places
+cube_array          numeric dims in stem mode                      stacks={(c,r):h} heightmap ≤5×4, h 1–4, total ≤64 — hidden cubes are declared in a describe, never silently dropped
+stem_leaf           data values in stem mode                       data 3–24 ints <1000, ≤8 rows, ≤8 leaves/row, key=(stem,leaf)?, ordered=True — sorted stems with a "s | l means n" key line
+tessellation        rows, cols in stem mode                      tile=square|triangle|hexagon, patch ≤36 (sq) / ≤24, cell (canvas scale — not stem-checked), shade=[indices ≤12], vertex="V" (needs cell ≥46/70/42, triangle ≥3×3) — single regular tiles only; semi-regular/Escher mixes refuse
+bearing_map         every bearing (stem-only)                      centres={A:(x,y),B:(x,y)} +y north, bearings={A:deg,B:deg} 0–360 — the fix is the computed ray intersection; parallel/diverging rays refuse; >180 draws a reflex arc with honest describe
 """.strip()
 
 SELF_TEST = [
@@ -20316,6 +20504,49 @@ SELF_TEST += [
  'description': 'Triangle ABC with genuine compass traces and dashed intermediate rays at 60 and '
                 '30 degrees at A.',
  'ask': [['a', 'the construction shown']]},
+]
+
+
+SELF_TEST += [
+    # G6/G7/G8 readiness families (tools/vdd_g{6,7,8}_families.py) — synthetic
+    # stems only, matching tests/test_g{6,7,8}_families.py.
+    dict(template="tally_chart", figure_id="selftest-g6-tally",
+         stem="A tally table shows 12 cars and 8 bikes.",
+         rows=[("Cars", 12), ("Bikes", 8)],
+         ask=[["a", "the total count"]]),
+    dict(template="balance_scale", figure_id="selftest-g6-balance",
+         stem="A pan holds 5 kg and 2 kg against 7 kg.",
+         left=[5, 2], right=[7], state="level", unit="kg",
+         ask=[["a", "the balance state"]]),
+    dict(template="cube_net", figure_id="selftest-g6-net",
+         stem="A box is 4 cm by 3 cm by 2 cm.",
+         shape="cuboid", dims={"length": 4, "width": 3, "height": 2},
+         unit="cm", labels=["A", "B", "C", "D", "E", "F"], scale_px=44,
+         ask=[["a", "the net shown"]]),
+    dict(template="vertical_scale", figure_id="selftest-g7-scale",
+         stem="A thermometer reads from -10 to 40 in steps of 10; the level is 20.",
+         v_min=-10, v_max=40, step=10, level=20,
+         ask=[["a", "the marked level"]]),
+    dict(template="factor_tree", figure_id="selftest-g7-tree",
+         stem="Split 60 into 6 and 10, then 6 into 2 and 3, and 10 into 2 and 5.",
+         n=60, splits={60: (6, 10), 6: (2, 3), 10: (2, 5)},
+         ask=[["a", "the prime leaves"]]),
+    dict(template="cube_array", figure_id="selftest-g7-cubes",
+         stem="Unit cubes have edge 1; stack heights are 2 and 3.",
+         stacks={(0, 0): 2, (1, 0): 3, (0, 1): 2, (1, 1): 3},
+         ask=[["a", "the cube count"]]),
+    dict(template="stem_leaf", figure_id="selftest-g8-stemleaf",
+         stem="The data are 23, 25, 31, 31, 37, 42, 45, 45 and 47.",
+         data=[37, 25, 45, 31, 23, 42, 45, 47, 31],
+         ask=[["a", "the stem-and-leaf plot"]]),
+    dict(template="tessellation", figure_id="selftest-g8-tess",
+         stem="A pattern uses square tiles in 3 rows and 4 columns.",
+         tile="square", rows=3, cols=4, cell=50, shade=[0, 6], vertex="V",
+         ask=[["a", "the tiling shown"]]),
+    dict(template="bearing_map", figure_id="selftest-g8-bearing",
+         stem="From A the bearing of T is 050; from B it is 310.",
+         centres={"A": (0, 0), "B": (6, 0)}, bearings={"A": 50, "B": 310},
+         ask=[["a", "the target fix"]]),
 ]
 
 

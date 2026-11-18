@@ -480,7 +480,9 @@ class Refusals(unittest.TestCase):
                                 ask=[["a", "the cups each day"]],
                                 per_symbol=4, rows=[["Mon", 8], ["Tue", 10]],
                                 medium="sinhala")
-        self.assertIn('label "Mon" names row1', b.claims)
+        # G6-8 hardening (approved golden change): row label claims used to
+        # target `row{ri+1}` while the emitted ids are `row{ri}` — Mon is row 0
+        self.assertIn('label "Mon" names row0', b.claims)
         r = audit(b.claims, tempfile.mkdtemp())
         self.assertEqual(r.returncode, 0, r.stdout)
 
@@ -3244,7 +3246,9 @@ class ByteIdentity(unittest.TestCase):
         # G11 round-2 — regenerated: the ineq visual fix shortened half-unit ticks
         # (±7 → ±6) so filled dots read distinctly from tick strokes
         "selftest-line": "564cf22a3ac9526813999daac96689f57c50ce096dcea0ffb2bc3b480d3d4b70",
-        "selftest-pict": "c39c157a1f4fcbedcad1e30515b71184db67d234930e96ec51d7c515245ccdd3",
+        # G6-8 hardening (approved golden change): pictograph row-label claims now
+        # target the emitted ids row{ri} instead of the off-by-one row{ri+1}
+        "selftest-pict": "c1b68f30878560f9aad2fb17606fb38567d4b688ffd21d7fcafe2c2a608f29fd",
         "selftest-rays": "606bb0917cb0316a0b89f910ccc14c2c4305a9ca065af4f42b4d49f65b4a59ab",
         "selftest-rect": "18af540590a9ef7abc046ad8c7700a13d149195b7781dc9f3d6dac5ad0cbea0a",
         "selftest-shade": "208fef9855980d20d4b8ba21d3af491e46c6174029102596dec707439cea88e2",
@@ -3489,6 +3493,19 @@ class ByteIdentity(unittest.TestCase):
         # disjoint fixture IDs hash one artifact trio
         "selftest-g9-con-asa15": "4e648c78e743a302b452753d341cb92aa256d569dbcf097f30241e46f48272bd",
         "selftest-g9-con-sas15": "b01109745429cb74f3ef1d7bd9fcc0eaa34da8f9db4816efac729749137cb936",
+        # G6/G7/G8 readiness families (first-pin goldens, 2026-11-18; net/stemleaf/tess/bearing/balance
+        # re-pinned after the fresh-eyes critic fixes — collision-free net anchors,
+        # wider key-glyph clearance, measured vertex sectors, parallelMark in bearing `none`,
+# wider beam + deeper pans so real pans clear the fulcrum).
+        "selftest-g6-tally": "bc87c40fde69faf7d4140136569815c65ea215a748dc635541f42d8913ab2bda",
+        "selftest-g6-balance": "093cb7566025c0de24e93f302f7ef86bcd7c4a8f537c811007bb7383d53000bf",
+        "selftest-g6-net": "aab057b6404efcee686ea9cd12c059724927267c41d77c9635979e43ebfcb3f7",
+        "selftest-g7-scale": "78cbb32cac9c06141c1e6434b28eac05ec25a449c32a01e88fd3d0bd2edc1467",
+        "selftest-g7-tree": "c8bc1e4f3b1929d1619a7569db3bd6ac275daec9acb0b5ac11d37ac25834ea9d",
+        "selftest-g7-cubes": "a5311ae5e270881a19067697f14308ecd1f37346562baa0d2245a0458fb12aba",
+        "selftest-g8-stemleaf": "1ca80072f21d8db2245e99a6d2376c15547ec34dd098d781441f31f8aace57c3",
+        "selftest-g8-tess": "85015a15adb4d44f0a7474b5014976ad83ce034f8c613459b13d7b959c42c1df",
+        "selftest-g8-bearing": "75b07bd8a7bebba0a1df96949be3aac9b588c52997f2fab36f2cd28bb5803603",
     }
 
     def test_self_test_outputs_unchanged(self):
@@ -3849,10 +3866,13 @@ class G10ContractTests(unittest.TestCase):
                 angle=60, radius=7, labels={"radius": "9 cm"})
 
     def test_sector_figure_mode(self):
+        # G6-8 hardening (audit P1): figure mode needs every numeric given
+        # printed on its own boundary — an unlabelled angle is unreadable, so
+        # the angle label is required (a 180° diameter is the only exception).
         b = vt.build_sector(
             figure_id="g10-secfig", stem="Read the marked figure.",
             values="figure", angle=60, radius=7,
-            labels={"radius": "7 cm"})
+            labels={"radius": "7 cm", "angle": "60°"})
         self.assertIn("inferred", b.claims)
 
     def test_sector_labels_type_guard(self):
