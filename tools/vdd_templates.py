@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""vdd_templates.py — the thirty-three figure TEMPLATES of the vibhaga-qgen plugin.
+"""vdd_templates.py — the seventy-one figure TEMPLATES of the vibhaga-qgen plugin.
 
 A template turns a question's STEM NUMBERS into a finished figure — a VDD document, an
 anchors sidecar and a `channel: constructed` claim set — in one `Built` object:
@@ -42,6 +42,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import vdd_cookbook as vc                          # noqa: E402
+
+if __name__ == "__main__":
+    sys.modules["vdd_templates"] = sys.modules["__main__"]
 
 XY = tuple[float, float]
 SINHALA = re.compile(r"[඀-෿]")
@@ -10107,7 +10110,8 @@ def build_construction(*, figure_id, stem, ask=None, title=None, description=Non
     SAS angles={A}, ASA angles={A,B}, AAS angles={A,C} or {B,C} (derives the
     missing base angle). Parallel takes sides={AB}, offset>0 and method
     corresponding (default), alternate, or rhombus. Inapplicable kwargs refuse.
-    Constructible angles: 30,45,60,75,90,105,120,135,150 degrees only.
+    Constructible angles: 15,30,45,60,75,90,105,120,135,150 degrees only
+    (15 is the taught bisect-the-30 chain; 165 stays refused — never taught).
     Numeric givens remain stem-only. `length` (segment steps) and `angle` / `angles` (angle and
     triangle steps) are stem numbers; `base_px`, `r_px`, `at_deg`, `op` (the
     external point's distance in radii) are canvas choices declared inferred.
@@ -10215,10 +10219,10 @@ def build_construction(*, figure_id, stem, ask=None, title=None, description=Non
                 aa[missing] = derived_angle[1]
             else:
                 aa = given
-            constructible = (30, 45, 60, 75, 90, 105, 120, 135, 150)
+            constructible = (15, 30, 45, 60, 75, 90, 105, 120, 135, 150)
             base_angles = (aa["A"], aa["B"]) if step in ("triangle_asa", "triangle_aas") else (aa["A"],)
             if any(v not in constructible for v in base_angles):
-                raise TemplateError("construction: only taught compass angles in 15-degree steps from 30 to 150, excluding 165")
+                raise TemplateError("construction: only taught compass angles in 15-degree steps from 15 to 150, excluding 165")
             if step == "triangle_asa" and sum(aa.values()) >= 180:
                 raise TemplateError("construction: base angles must sum to less than 180")
         elif angles is not None:
@@ -10307,6 +10311,28 @@ def build_construction(*, figure_id, stem, ask=None, title=None, description=Non
                 arc_at(o, radius, q)
                 arc_at(p, radius, q)
 
+            if theta == 15:
+                first = len(elements)
+                sixty(60)
+                bisect(0, 60)
+                bisect(0, 30)
+                seen = set()
+                unique = []
+                for element in elements[first:]:
+                    key = json.dumps({k: v for k, v in element.items() if k != "id"}, sort_keys=True)
+                    if key not in seen:
+                        unique.append(element)
+                        seen.add(key)
+                elements[first:] = unique
+                vertex, names = ("A", ("D", "E")) if direction == 0 else ("B", ("F", "G"))
+                for t, name in zip((60, 30), names):
+                    reach = radius if t == 60 else radius * math.sqrt(3)
+                    tip = vc.polar(o, reach, direction + sign * t)
+                    P[name] = tip
+                    elements.append(vc.line(o, tip, id=f"work{vertex}{t}", dashed=True))
+                    segs.append(vertex + name)
+                add(f'describe "dashed rays {vertex}{names[0]} and {vertex}{names[1]} are the intermediate 60-degree and 30-degree rays of the double bisection"', "inferred", "the equilateral intersection and the first equal-radius arc crossing determine the intermediate rays")
+                return
             if theta in (30, 60, 75):
                 sixty(60)
             if theta in (105, 120, 150):
@@ -10316,10 +10342,12 @@ def build_construction(*, figure_id, stem, ask=None, title=None, description=Non
                 meet = vc.polar(o, radius * math.sqrt(3), direction + sign * 90)
                 arc_at(o, radius, p); arc_at(o, radius, q)
                 arc_at(p, 2 * radius, meet); arc_at(q, 2 * radius, meet)
-            pair = {30: (0, 60), 45: (0, 90), 75: (60, 90),
+            pair = {15: (0, 30), 30: (0, 60), 45: (0, 90), 75: (60, 90),
                     105: (90, 120), 135: (90, 180), 150: (120, 180)}
             if theta in pair:
                 bisect(*pair[theta])
+            if theta not in (15, 30, 45, 60, 75, 90, 105, 120, 135, 150):
+                raise TemplateError("construction: angle work supports only the taught constructible angles")
 
         if step == "parallel_through":
             dot("C", C)
@@ -10394,6 +10422,8 @@ def build_construction(*, figure_id, stem, ask=None, title=None, description=Non
                 else:
                     angle_work(B, 180, aa["B"], 42)
                 add('describe "equilateral-circle intersections and perpendicular or angle-bisector compass arcs construct the given rays"', "inferred", "the apex lies on the constructed rays")
+            if any(aa.get(k) == 15 for k in ("A", "B")):
+                add('describe "the 15-degree ray is reached by bisecting the constructed 60-degree angle and bisecting the resulting 30-degree angle again"', "inferred", "the taught double-bisection chain")
             for k, v in lengths.items():
                 edge = "AC" if k == "CA" else k
                 add(f'describe "constructed {edge} has length {_num_exact(v)} units"', "inferred", "physical-to-canvas scale is uniform")
@@ -18878,6 +18908,19 @@ def build_two_circle_geometry(*, figure_id, stem, r1, r2, d,
                      medium=medium)
 
 
+from vdd_g9_apparatus import (build_calculator_keys,
+                              build_graduated_vessel)
+from vdd_g9_binary import build_place_value_frame
+from vdd_g9_models import (build_matchstick_pattern,
+                           build_sequence_jumps, build_fraction_disc,
+                           build_polygon_spinner, build_die_faces)
+from vdd_g9_solids import (build_open_cuboid_net, build_cuboid_water,
+                           build_regular_polyhedron)
+from vdd_g9_geometry import (build_marked_lines, build_locus_scene,
+                             build_polygon_angles)
+from vdd_g9_area import build_algebra_area, build_mapping_arrows
+
+
 BUILDERS = {fn.__name__[6:]: fn for fn in
             (build_grid_polygon, build_shaded_grid, build_rays_from_point, build_number_line,
              build_pictograph, build_rectangle_points, build_house_pentagon, build_cuboid,
@@ -18896,7 +18939,14 @@ BUILDERS = {fn.__name__[6:]: fn for fn in
              build_motion_states, build_slat_frame, build_clock_face,
              build_pairing_arcs, build_paired_geometry,
              build_fraction_tape, build_area_model,
-             build_circular_composite, build_elevation_scene, build_two_circle_geometry)}
+             build_circular_composite, build_elevation_scene, build_two_circle_geometry,
+             build_calculator_keys, build_graduated_vessel,
+             build_place_value_frame,
+             build_matchstick_pattern, build_sequence_jumps, build_fraction_disc,
+             build_polygon_spinner, build_die_faces,
+             build_open_cuboid_net, build_cuboid_water, build_regular_polyhedron,
+             build_marked_lines, build_locus_scene, build_polygon_angles,
+             build_algebra_area, build_mapping_arrows)}
 
 CATALOGUE = """
 template            stem-checked numbers                          inputs
@@ -18994,6 +19044,22 @@ circular_composite  numeric givens per shape when values="stem"; printed numeric
                     multi-piece, reaching cuts and unknown profile args refuse
 elevation_scene     every numeric given unless values="figure"                post=(F,T), sights=[{from,to,angle,kind,side}] (1–2), eyes={E:ground}, heights, distances, unknowns, labels, unit — solved horizontal datum belongs to observer; underdetermined/contradictory givens refuse
 two_circle_geometry r1, r2, d; numeric angle labels unless values="figure"      centres, shared_chord, foot, rim={L:{circle,deg}}, joins, on_segment, angles — computed touch/intersect topology and chord foot; separate/contained/thin chords refuse
+calculator_keys     every operand unless values="figure"            keys=[ON|AC, tokens…, "="] 3–24 (digits, + − × ÷ x² √ ( ) %, SHIFT+= is the percent key), result?, evaluation="scientific"|"immediate" (digits + − × ÷ only) — boxed key cards in a wrapped arrow flow; the displayed result is computed, never asserted by the caller
+graduated_vessel    capacity, step, reading unless values="figure"  capacity, step (2–10 whole divisions), reading on a half-step ≤ capacity, unit="ml"|"cm³"|"l"
+place_value_frame   base + the represented total Σd·bᵉ in stem mode base 2–10, digits 1–8 each < base, no leading 0; style="digits" (arrows? per digit → merged bᵉ = v header) | "rods" (bead_r?, show_value, arrows refused) — column arithmetic, carries, division ladders and multi-frame sums refuse
+matchstick_pattern  stages in stem mode                            stages 1–4, kind="diamond_chain" — stage k draws 4k+(k−1) sticks; counts claimed via stage/derive or figure content
+sequence_jumps      first, difference and every printed term       first, difference (nonzero ints), terms 2–7 — +d/−d arcs under a term row
+fraction_disc       sectors + shaded per panel in stem mode        panels=[[sectors,shaded]…] 1–3 discs, sectors 2–12, shaded ≤ sectors (improper pairs allowed)
+polygon_spinner     n + numeric outcome glyphs in stem mode        n ∈ {5,6,8} equal sectors resting flat, outcomes=[n tokens clockwise from the bottom], pointer arrow — repeated glyphs share one claim
+die_faces           the face count in stem mode                    faces=[pip counts 1–6 in order] 1–6 faces, canonical pip layout, one or two rows — pip counts stay figure content
+open_cuboid_net     length, width, height in stem mode             open-top net: base + four folded-out walls, dashed fold edges, one true scale — a dimension under 10% of the largest refuses
+cuboid_water        length, width, height, depth in stem mode      partly filled tank, waterline computed at depth/height (depth strictly inside); depth edges oblique like cuboid — foreshortening declared contested
+regular_polyhedron  edge when given in stem mode                   shape=tetrahedron|octahedron, edge? — exact vertices through one fixed orthographic rotation, genuinely hidden edges dashed; projected lengths never claimed equal
+marked_lines        length, numeric labels/marks in stem mode      profile=rays|point_on_line|cross|transversal|divided + rays/lines/transversal/segment/divisions/equal/marks — computed crossings and division points; a numeric angle mark must equal the drawn angle, a length label restates its sub-segment share ±0.5%
+locus_scene         radius, distance, length in stem mode          kind=circle|perp_bisector|parallel_offset|angle_bisector + samples={P:deg|s|(side,t)} — computed midpoint, bisector, feet and right-angle squares; direction degs and unit_px are canvas choices
+polygon_angles      n; numeric angle labels in stem mode           n 3–8 regular, show=interior|triangulation|centre|exterior, labels?, exterior_labels?, fan?, ticks — interior labels must equal (n−2)·180/n, exterior 360/n ±0.5°
+algebra_area        purely numeric tokens in stem mode             style=rectangle|corner_cut|frame, latex edge/area labels (top/side/area | outer_*/inner_*/cut_w/cut_h/mode/corner | gap_top/gap_side), square, shaded — symbolic, never to scale; dissection refuses
+mapping_arrows      numeric tokens in stem mode                    left=[…], right=[…] equal length 1–4 (numerals or short latex), heads=[h1,h2]? — parallel rightward arrows; crossing or backward mappings refuse
 """.strip()
 
 SELF_TEST = [
@@ -19809,6 +19875,448 @@ SELF_TEST += [
 
 
 SELF_TEST += [{'template': 'elevation_scene', 'figure_id': 'selftest-elev', 'stem': 'A post FT stands on level ground. It is 8 m tall. An observer at G is 6 m from the foot and sees the top at an angle of elevation 53°.', 'ask': [['a', 'the angle of elevation']], 'post': ('F', 'T'), 'sights': [{'from': 'G', 'to': 'T', 'angle': 53, 'kind': 'elevation', 'side': 'left'}], 'heights': {'FT': 8}, 'distances': {'FG': 6}}, {'template': 'elevation_scene', 'figure_id': 'selftest-elev-eye', 'stem': "A post FT is 8 m tall. An observer's eye E is 1.6 m above ground point G, 6 m from the foot; the angle of elevation of the top is 47°.", 'ask': [['a', 'the angle of elevation']], 'post': ('F', 'T'), 'eyes': {'E': 'G'}, 'sights': [{'from': 'E', 'to': 'T', 'angle': 47, 'kind': 'elevation', 'side': 'left'}], 'heights': {'FT': 8, 'GE': 1.6}, 'distances': {'FG': 6}}, {'template': 'two_circle_geometry', 'figure_id': 'selftest-2cgeo', 'stem': 'Two circles of radii 5 cm and 4 cm have centres 6 cm apart. The circles intersect at P and Q; the centre line meets PQ at M.', 'ask': [['a', 'the shared chord']], 'r1': 5, 'r2': 4, 'd': 6}, {'template': 'two_circle_geometry', 'figure_id': 'selftest-2cgeo-touch', 'stem': 'Two circles of radii 5 cm and 3 cm have centres 8 cm apart.', 'ask': [['a', 'the touching point']], 'r1': 5, 'r2': 3, 'd': 8}, {'template': 'two_circle_geometry', 'figure_id': 'selftest-2cgeo-angle', 'stem': 'Radii 5 4, centres 6. Angle PAQ is 83.', 'ask': [['a', 'the angle PAQ']], 'r1': 5, 'r2': 4, 'd': 6, 'angles': [{'at': 'A', 'arms': ('P', 'Q'), 'label': '83°'}]}]
+
+
+SELF_TEST += [
+    {'template': 'graduated_vessel',
+ 'figure_id': 'selftest-g9-vessel-80',
+ 'stem': 'The vessel scale holds 80 ml with divisions of 20 ml. Read the liquid volume.',
+ 'capacity': 80,
+ 'step': 20,
+ 'reading': 30,
+ 'values': 'figure',
+ 'ask': [['a', 'the liquid volume']]},
+    {'template': 'calculator_keys',
+ 'figure_id': 'selftest-g9-calc-square17',
+ 'stem': 'Use the shown keys to square 17. State the display after the final key.',
+ 'keys': ['ON', 17, 'x²', '='],
+ 'ask': [['a', 'the final display']]},
+    {'template': 'calculator_keys',
+ 'figure_id': 'selftest-g9-calc-pct320',
+ 'stem': 'Use operands 320 and 15 to calculate a percentage.',
+ 'keys': ['ON', 320, '×', 15, 'SHIFT', '=', '='],
+ 'result': 48,
+ 'ask': [['a', 'the percentage shown']]},
+    {'template': 'calculator_keys',
+ 'figure_id': 'selftest-g9-calc-pct312',
+ 'stem': 'Use operands 3 and 12 to form a percentage.',
+ 'keys': ['AC', 3, '÷', 12, 'SHIFT', '=', '='],
+ 'result': 25,
+ 'ask': [['a', 'the percentage shown']]},
+    {'template': 'calculator_keys',
+ 'figure_id': 'selftest-g9-calc-rootsum',
+ 'stem': 'Evaluate the root of the sum of squares of 6 and 8.',
+ 'keys': ['ON', '√', '(', 6, 'x²', '+', 8, 'x²', ')', '='],
+ 'result': 10,
+ 'ask': [['a', 'the final display']]},
+    {'template': 'calculator_keys',
+ 'figure_id': 'selftest-g9-calc-imm',
+ 'stem': 'Use operands 60, 8 and 4 on an immediate calculator.',
+ 'keys': ['ON', 60, '+', 8, '÷', 4, '='],
+ 'result': 17,
+ 'evaluation': 'immediate',
+ 'ask': [['a', 'the final display']]},
+    {'template': 'calculator_keys',
+ 'figure_id': 'selftest-g9-calc-dec',
+ 'stem': 'Use operands 2.4 and 1.5.',
+ 'keys': ['ON', 2.4, '×', 1.5, '='],
+ 'result': 3.6,
+ 'ask': [['a', 'the final display']]},
+    {'template': 'graduated_vessel',
+ 'figure_id': 'selftest-g9-vessel-100',
+ 'stem': 'A scale holds 100 ml with divisions of 10 ml. Read the volume.',
+ 'capacity': 100,
+ 'step': 10,
+ 'reading': 35,
+ 'values': 'figure',
+ 'ask': [['a', 'the liquid volume']]},
+    {'template': 'graduated_vessel',
+ 'figure_id': 'selftest-g9-vessel-litre',
+ 'stem': 'A scale holds 0.7 l with divisions of 0.1 l. Read the volume.',
+ 'capacity': 0.7,
+ 'step': 0.1,
+ 'reading': 0.35,
+ 'values': 'figure',
+ 'unit': 'l',
+ 'ask': [['a', 'the liquid volume']]},
+    {'template': 'open_cuboid_net',
+ 'figure_id': 'selftest-g9-net-open',
+ 'stem': 'The card shows a net that folds into an open cuboid 5 cm long, 2 cm wide and 1 cm high. '
+         'Find the total area of card used.',
+ 'length': 5,
+ 'width': 2,
+ 'height': 1,
+ 'ask': [['a', 'the total area of the card']]},
+    {'template': 'cuboid_water',
+ 'figure_id': 'selftest-g9-water-30',
+ 'stem': 'Synthetic reservoir: length = 30 cm; width = 10 cm; height = 12 cm. '
+         'The liquid depth is 7 cm. Calculate the liquid volume.',
+ 'length': 30,
+ 'width': 10,
+ 'height': 12,
+ 'depth': 7,
+ 'ask': [['a', 'the volume of water']]},
+    {'template': 'cuboid_water',
+ 'figure_id': 'selftest-g9-water-fig',
+ 'stem': 'The figure shows a rectangular tank partly filled with water. Read the water depth from '
+         'the figure.',
+ 'length': 8,
+ 'width': 5,
+ 'height': 6,
+ 'depth': 2.4,
+ 'values': 'figure',
+ 'ask': [['a', 'the depth of the water']]},
+    {'template': 'regular_polyhedron',
+ 'figure_id': 'selftest-g9-poly-tetra',
+ 'stem': 'A regular tetrahedron has edge length 4 cm. How many faces, edges and vertices does it '
+         'have?',
+ 'shape': 'tetrahedron',
+ 'edge': 4,
+ 'ask': [['a', 'the numbers of faces, edges and vertices']]},
+    {'template': 'regular_polyhedron',
+ 'figure_id': 'selftest-g9-poly-octa',
+ 'stem': 'The figure shows a regular solid. Name the solid and count its edges.',
+ 'shape': 'octahedron',
+ 'edge': None,
+ 'ask': [['a', 'the name of the solid and its edge count']]},
+    {'template': 'marked_lines',
+ 'figure_id': 'selftest-g9-ml-div',
+ 'stem': 'PQ is 12 cm; M is its midpoint, so PM and MQ are each 6 cm.',
+ 'profile': 'divided',
+ 'segment': ['P', 'Q'],
+ 'rays': {'P': 0},
+ 'divisions': {'M': 0.5},
+ 'equal': [['PM', 'MQ']],
+ 'length': 12,
+ 'unit': 'cm',
+ 'labels': {'PM': '6 cm', 'MQ': '6 cm'},
+ 'ask': [['a', 'the stated facts of the divided line']]},
+    {'template': 'marked_lines',
+ 'figure_id': 'selftest-g9-ml-pol',
+ 'stem': 'COD is a straight line; OE and OF are two more rays from O.',
+ 'profile': 'point_on_line',
+ 'vertex': 'O',
+ 'rays': {'C': 180, 'D': 0, 'E': -50, 'F': -110},
+ 'marks': [{'arms': ['E', 'F'], 'arcs': 2, 'label': 'x'}],
+ 'ask': [['a', 'the angle x']]},
+    {'template': 'marked_lines',
+ 'figure_id': 'selftest-g9-ml-cross',
+ 'stem': 'Lines AB and CD intersect at O.',
+ 'profile': 'cross',
+ 'vertex': 'O',
+ 'lines': {'AB': 20, 'CD': 120},
+ 'draw_length': 120,
+ 'marks': [{'arms': ['A', 'C'], 'arcs': 1, 'label': 'x'}, {'arms': ['B', 'D'], 'arcs': 1}],
+ 'ask': [['a', 'the angle x']]},
+    {'template': 'marked_lines',
+ 'figure_id': 'selftest-g9-ml-trans',
+ 'stem': 'PQ is a transversal of the parallel lines AB and CD, meeting them at E and F.',
+ 'profile': 'transversal',
+ 'lines': {'AB': 0, 'CD': 0},
+ 'transversal': {'PQ': 70},
+ 'crossings': ['E', 'F'],
+ 'marks': [{'at': 'E', 'arms': ['A', 'P'], 'arcs': 2, 'label': 'x'},
+           {'at': 'F', 'arms': ['D', 'Q'], 'arcs': 2}],
+ 'ask': [['a', 'the angle x']]},
+    {'template': 'locus_scene',
+ 'figure_id': 'selftest-g9-ls-circle',
+ 'stem': 'The locus of points 3 cm from O; P and Q are each 3 cm from O.',
+ 'kind': 'circle',
+ 'radius': 3,
+ 'unit': 'cm',
+ 'samples': {'P': -30, 'Q': 140},
+ 'ask': [['a', 'the distance of P from O']]},
+    {'template': 'locus_scene',
+ 'figure_id': 'selftest-g9-ls-perp',
+ 'stem': 'AB is 8 cm; P lies on the perpendicular bisector of AB.',
+ 'kind': 'perp_bisector',
+ 'segment': ['A', 'B'],
+ 'length': 8,
+ 'unit': 'cm',
+ 'samples': {'P': 0.6},
+ 'ask': [['a', 'the equal distances']]},
+    {'template': 'locus_scene',
+ 'figure_id': 'selftest-g9-ls-offset',
+ 'stem': 'P is 2 cm from line AB, on the locus of points 2 cm from it.',
+ 'kind': 'parallel_offset',
+ 'segment': ['A', 'B'],
+ 'distance': 2,
+ 'unit': 'cm',
+ 'samples': {'P': [1, 0.5]},
+ 'ask': [['a', 'the distance of P from AB']]},
+    {'template': 'locus_scene',
+ 'figure_id': 'selftest-g9-ls-bis',
+ 'stem': 'The angle at V is 60 degrees; its bisector makes two 30 degree halves.',
+ 'kind': 'angle_bisector',
+ 'arms': {'A': -80, 'B': -20},
+ 'samples': {'P': 0.5},
+ 'ask': [['a', 'the equal distances']]},
+    {'template': 'polygon_angles',
+ 'figure_id': 'selftest-g9-pa-int',
+ 'stem': 'A regular polygon has 5 sides.',
+ 'n': 5,
+ 'show': 'interior',
+ 'ask': [['a', 'each interior angle']]},
+    {'template': 'polygon_angles',
+ 'figure_id': 'selftest-g9-pa-tri',
+ 'stem': 'A regular polygon has 6 sides.',
+ 'n': 6,
+ 'show': 'triangulation',
+ 'ask': [['a', 'the interior angle sum']]},
+    {'template': 'polygon_angles',
+ 'figure_id': 'selftest-g9-pa-ctr',
+ 'stem': 'A regular polygon has 6 sides.',
+ 'n': 6,
+ 'show': 'centre',
+ 'ask': [['a', 'each centre angle']]},
+    {'template': 'polygon_angles',
+ 'figure_id': 'selftest-g9-pa-ext',
+ 'stem': 'A regular polygon has 5 sides; each exterior angle is 72 degrees.',
+ 'n': 5,
+ 'show': 'exterior',
+ 'exterior_labels': {'A': 72},
+ 'ask': [['a', 'each exterior angle']]},
+    {'figure_id': 'selftest-g9mod1',
+ 'stem': 'A matchstick pattern of diamonds is shown for stages 1 to 4. How many sticks does each '
+         'stage need?',
+ 'stages': 4,
+ 'values': 'stem',
+ 'ask': [['a', 'the stick count of each stage']],
+ 'template': 'matchstick_pattern'},
+    {'figure_id': 'selftest-g9mod2',
+ 'stem': 'Count the matchsticks in each stage of the diamond chain.',
+ 'stages': 3,
+ 'values': 'figure',
+ 'ask': [['a', 'the stick count the student counts off the figure']],
+ 'template': 'matchstick_pattern'},
+    {'figure_id': 'selftest-g9mod3',
+ 'stem': 'The sequence 3, 7, 11, 15, 19 has a common difference of +4. Write the next term.',
+ 'first': 3,
+ 'difference': 4,
+ 'terms': 5,
+ 'values': 'stem',
+ 'ask': [['a', 'the next term']],
+ 'template': 'sequence_jumps'},
+    {'figure_id': 'selftest-g9mod4',
+ 'stem': 'The sequence 17, 12, 7, 2 decreases by -5 each step. Write the next term.',
+ 'first': 17,
+ 'difference': -5,
+ 'terms': 4,
+ 'values': 'stem',
+ 'ask': [['a', 'the next term']],
+ 'template': 'sequence_jumps'},
+    {'figure_id': 'selftest-g9mod5',
+ 'stem': 'Write the next term of the number pattern shown.',
+ 'first': 5,
+ 'difference': 3,
+ 'terms': 5,
+ 'values': 'figure',
+ 'ask': [['a', 'the next term']],
+ 'template': 'sequence_jumps'},
+    {'figure_id': 'selftest-g9mod6',
+ 'stem': 'A circle is divided into 5 equal sectors and 3 are shaded. Write the shaded fraction.',
+ 'panels': [[5, 3]],
+ 'values': 'stem',
+ 'ask': [['a', 'the shaded fraction']],
+ 'template': 'fraction_disc'},
+    {'figure_id': 'selftest-g9mod7',
+ 'stem': 'Two equal circles are each divided into 8 equal sectors; 8 of the first and 3 of the '
+         'second are shaded. Write the mixed number shown.',
+ 'panels': [[8, 8], [8, 3]],
+ 'values': 'stem',
+ 'ask': [['a', 'the mixed number']],
+ 'template': 'fraction_disc'},
+    {'figure_id': 'selftest-g9mod8',
+ 'stem': 'What fraction of the circle is shaded?',
+ 'panels': [[6, 2]],
+ 'values': 'figure',
+ 'ask': [['a', 'the shaded fraction']],
+ 'template': 'fraction_disc'},
+    {'figure_id': 'selftest-g9mod9',
+ 'stem': 'A pentagonal spinner has 5 equal regions with printed outcomes 1, 2, 3, 4, 5. List the sample space.',
+ 'n': 5,
+ 'outcomes': [3, 4, 5, 1, 2],
+ 'values': 'stem',
+ 'ask': [['a', 'the sample space']],
+ 'template': 'polygon_spinner'},
+    {'figure_id': 'selftest-g9mod10',
+ 'stem': 'A hexagonal spinner has 6 equal regions with printed outcomes 1, 2, 3, 4, 5, 6. List the sample '
+         'space.',
+ 'n': 6,
+ 'outcomes': [4, 5, 6, 1, 2, 3],
+ 'values': 'stem',
+ 'ask': [['a', 'the sample space']],
+ 'template': 'polygon_spinner'},
+    {'figure_id': 'selftest-g9mod11',
+ 'stem': 'An octagonal spinner is spun once. List the possible results.',
+ 'n': 8,
+ 'outcomes': [1, 2, 3, 4, 5, 6, 7, 8],
+ 'values': 'figure',
+ 'ask': [['a', 'the sample space']],
+ 'template': 'polygon_spinner'},
+    {'figure_id': 'selftest-g9mod12',
+ 'stem': 'A 6-sector spinner is lettered around its sectors. Which letters can come up?',
+ 'n': 6,
+ 'outcomes': ['R', 'B', 'G', 'R', 'Y', 'B'],
+ 'values': 'figure',
+ 'ask': [['a', 'the possible letters']],
+ 'template': 'polygon_spinner'},
+    {'figure_id': 'selftest-g9mod13',
+ 'stem': 'A fair die has 6 faces. List the possible outcomes of one roll.',
+ 'faces': [1, 2, 3, 4, 5, 6],
+ 'values': 'stem',
+ 'ask': [['a', 'the possible outcomes']],
+ 'template': 'die_faces'},
+    {'figure_id': 'selftest-g9mod14',
+ 'stem': 'Three die faces are shown. Count the pips on each.',
+ 'faces': [2, 4, 6],
+ 'values': 'figure',
+ 'ask': [['a', 'the pip count of each face']],
+ 'template': 'die_faces'},
+    {'template': 'algebra_area',
+ 'figure_id': 'selftest-g9-area1',
+ 'stem': 'A square garden has side x. Write its area.',
+ 'style': 'rectangle',
+ 'square': True,
+ 'top': 'x',
+ 'side': 'x',
+ 'area': 'x^{2}',
+ 'ask': [['a', 'the area of the square']]},
+    {'template': 'algebra_area',
+ 'figure_id': 'selftest-g9-area2',
+ 'stem': 'A garden plot is x metres long and 2 metres wide. Find its area.',
+ 'style': 'rectangle',
+ 'top': 'x',
+ 'side': '2',
+ 'area': '2x',
+ 'ask': [['a', 'the area of the plot']]},
+    {'template': 'algebra_area',
+ 'figure_id': 'selftest-g9-area3',
+ 'stem': 'Synthetic tile: both initial dimensions are x. Trim 2 from its right edge and '
+         '3 from its lower edge. Verify the retained dimensions x-2 and x-3.',
+ 'style': 'corner_cut',
+ 'mode': 'strips',
+ 'outer_top': 'x',
+ 'outer_side': 'x',
+ 'cut_w': '2',
+ 'cut_h': '3',
+ 'inner_top': 'x-2',
+ 'inner_side': 'x-3',
+ 'ask': [['a', 'the area that remains']]},
+    {'template': 'algebra_area',
+ 'figure_id': 'selftest-g9-area4',
+ 'stem': 'A square of side a has a square of side b dashed off at one corner. Write the remaining '
+         'area.',
+ 'style': 'corner_cut',
+ 'mode': 'corner',
+ 'square': True,
+ 'outer_top': 'a',
+ 'outer_side': 'a',
+ 'cut_w': 'b',
+ 'cut_h': 'b',
+ 'corner': 'tr',
+ 'ask': [['a', 'the shaded area']]},
+    {'template': 'algebra_area',
+ 'figure_id': 'selftest-g9-area5',
+ 'stem': 'A picture frame is x+8 long and x+5 wide with an x+2 by x+1 opening. Find the area of '
+         'the border.',
+ 'style': 'frame',
+ 'outer_top': 'x+8',
+ 'outer_side': 'x+5',
+ 'inner_top': 'x+2',
+ 'inner_side': 'x+1',
+ 'W': 160.0,
+ 'H': 120.0,
+ 'frac': 0.4,
+ 'ask': [['a', 'the border area']]},
+    {'template': 'mapping_arrows',
+ 'figure_id': 'selftest-g9-area6',
+ 'stem': '5 pens cost 75 rupees. Find the price x of 8 pens.',
+ 'left': ['5', '8'],
+ 'right': ['75', 'x'],
+ 'heads': ['n', 'Rs'],
+ 'ask': [['a', 'the price x']]},
+    {'template': 'mapping_arrows',
+ 'figure_id': 'selftest-g9-area7',
+ 'stem': 'A trader buys goods for 100 rupees and sells them for 115 rupees. What is the selling '
+         'price x for goods bought at 500 rupees?',
+ 'left': ['100', '500'],
+ 'right': ['115', 'x'],
+ 'heads': ['C', 'S'],
+ 'ask': [['a', 'the selling price x']]},
+    {'template': 'mapping_arrows',
+ 'figure_id': 'selftest-g9-area8',
+ 'stem': 'If a : b = u : v, show the mapping.',
+ 'left': ['a', 'b'],
+ 'right': ['u', 'v'],
+ 'ask': [['a', 'the value of v']]},
+    {'template': 'mapping_arrows',
+ 'figure_id': 'selftest-g9-area9',
+ 'stem': 'What does the mapping show?',
+ 'left': ['5', '8'],
+ 'right': ['480', 'x'],
+ 'values': 'figure',
+ 'heads': ['kg', 'Rs'],
+ 'ask': [['a', 'the unknown price']]},
+    {'template': 'place_value_frame',
+ 'figure_id': 'selftest-g9-pvf-rods',
+ 'stem': 'A display shows the number 13 in base 2.',
+ 'style': 'rods',
+ 'base': 2,
+ 'digits': [1, 1, 0, 1],
+ 'ask': [['a', 'the binary number shown']]},
+    {'template': 'place_value_frame',
+ 'figure_id': 'selftest-g9-pvf-map',
+ 'stem': 'A display shows the number 13 in base 2.',
+ 'style': 'digits',
+ 'base': 2,
+ 'digits': [1, 1, 0, 1],
+ 'ask': [['a', 'the value of each digit']]},
+    {'template': 'place_value_frame',
+ 'figure_id': 'selftest-g9-pvf-base5',
+ 'stem': 'What number in base 5 does the frame show?',
+ 'style': 'digits',
+ 'base': 5,
+ 'digits': [4, 0],
+ 'values': 'figure',
+ 'ask': [['a', 'the number shown']]},
+    {'template': 'construction',
+ 'figure_id': 'selftest-g9-con-b15asa',
+ 'step': 'triangle_asa',
+ 'stage': 'completed',
+ 'base_px': 300,
+ 'sides': {'AB': 8},
+ 'angles': {'A': 105, 'B': 15},
+ 'stem': 'AB is 8 units; the angles at A and B are 105 and 15 degrees.',
+ 'title': 'A completed compass construction',
+ 'description': 'Triangle ABC with genuine compass traces and dashed intermediate rays at 60 and '
+                '30 degrees at B.',
+ 'ask': [['a', 'the construction shown']]},
+    {'template': 'construction',
+ 'figure_id': 'selftest-g9-con-asa15',
+ 'step': 'triangle_asa',
+ 'stage': 'completed',
+ 'base_px': 300,
+ 'sides': {'AB': 8},
+ 'angles': {'A': 15, 'B': 105},
+ 'stem': 'AB is 8 units; the angles at A and B are 15 and 105 degrees.',
+ 'title': 'A completed compass construction',
+ 'description': 'Triangle ABC with genuine compass traces and dashed intermediate rays at 60 and '
+                '30 degrees at A.',
+ 'ask': [['a', 'the construction shown']]},
+    {'template': 'construction',
+ 'figure_id': 'selftest-g9-con-sas15',
+ 'step': 'triangle_sas',
+ 'stage': 'completed',
+ 'base_px': 300,
+ 'sides': {'AB': 8, 'CA': 12},
+ 'angles': {'A': 15},
+ 'stem': 'AB is 8 units and CA is 12 units; the angle at A is 15 degrees.',
+ 'title': 'A completed compass construction',
+ 'description': 'Triangle ABC with genuine compass traces and dashed intermediate rays at 60 and '
+                '30 degrees at A.',
+ 'ask': [['a', 'the construction shown']]},
+]
 
 
 READING_SELF_TEST = [dict(next(s for s in SELF_TEST if s["template"] == kind),
