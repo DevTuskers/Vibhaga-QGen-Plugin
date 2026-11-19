@@ -7819,13 +7819,27 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
         return {"radius": 3.0, "height": 5.0, "base": 4.0, "length": 7.0,
                 "slant": 4.0}[d]
     # an unlabelled numeric slant still fixes the true height: cone h = sqrt(l²-r²),
-    # square pyramid h = sqrt(s²-(a/2)²) — draw it so the solid keeps honest proportions
-    if "height" not in num and isinstance(val.get("slant"), (int, float)):
-        _foot = val.get("radius") if shape == "cone" else val.get("base")
+    # square pyramid h = sqrt(s²-(a/2)²) — draw it so the solid keeps honest proportions;
+    # a slant that cannot reach past the foot, or one that disagrees with a stated
+    # height, is refused rather than drawn as a contradiction
+    if isinstance(val.get("slant"), (int, float)):
+        _fdim = "radius" if shape == "cone" else "base"
+        _foot = num.get(_fdim)
         _foot = float(_foot) / (1 if shape == "cone" else 2) \
             if isinstance(_foot, (int, float)) else None
-        if _foot is not None and val["slant"] > _foot:
-            num["height"] = math.sqrt(val["slant"] ** 2 - _foot ** 2)
+        if _foot is not None and val["slant"] <= _foot:
+            raise TemplateError(
+                f"{kind}: slant {val['slant']:g} cannot be <= the "
+                f"{_fdim if shape == 'cone' else 'half-base'} {_foot:g}")
+        if _foot is not None:
+            _implied = math.sqrt(val["slant"] ** 2 - _foot ** 2)
+            if "height" in num and abs(num["height"] - _implied) > max(
+                    0.5, val["slant"] * 0.02):
+                raise TemplateError(
+                    f"{kind}: height {num['height']:g} and slant {val['slant']:g} "
+                    f"disagree — the slant implies height {_implied:g}")
+            if "height" not in num:
+                num["height"] = _implied
     if num:
         big = max(px(d, 1) for d in val)
         k *= 90.0 / big if big > 3 else 22.0
