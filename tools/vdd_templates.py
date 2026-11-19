@@ -7956,8 +7956,6 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
         else:
             anchor_pt = vc.lerp(a_, b2, 0.5)
             P[f"{dname[0].upper()}1"] = anchor_pt
-            if shape == "cone" and dname == "height":
-                anchor_pt = (anchor_pt[0], b2[1] + 26.0)
         elements.append(_float_label(f"lb{dname}", glyph, anchor_pt, gap=8,
                                      size=13.0))
 
