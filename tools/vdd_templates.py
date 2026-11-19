@@ -7776,12 +7776,28 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
     if not isinstance(dims, dict):
         raise TemplateError(f"{kind}: dims is a dict of the shape's dimension slots")
     need = _SOLID_DIMS[shape]
-    if set(dims) - set(need):
-        raise TemplateError(f"{kind}: {shape} takes dims {need} — got {sorted(dims)}")
+    # cone and square_pyramid also take an optional `slant` slot — a dashed leader
+    # along a slant generator/face edge, printed like any other dim; `height` is
+    # then optional (a question giving the slant height should not print a height
+    # the stem never states)
+    slanted = shape in ("cone", "square_pyramid")
+    allowed = set(need) | ({"slant"} if slanted else set())
+    if set(dims) - allowed:
+        raise TemplateError(f"{kind}: {shape} takes dims {tuple(sorted(allowed))} — got {sorted(dims)}")
+    if slanted and "slant" in dims:
+        required = tuple(d for d in need if d != "height")
+    else:
+        required = need
+    if slanted and "height" not in dims and "slant" not in dims:
+        raise TemplateError(f"{kind}: {shape} needs a height or a slant dimension")
     val: dict[str, object] = {}
-    for d in need:
+    for d in (*need, "slant"):
+        if d not in allowed:
+            continue
         if d not in dims:
-            raise TemplateError(f"{kind}: dims needs {d}")
+            if d in required:
+                raise TemplateError(f"{kind}: dims needs {d}")
+            continue
         v_ = dims[d]
         if isinstance(v_, bool) or not isinstance(v_, (int, float, str)):
             raise TemplateError(f"{kind}: {d} must be a number or a lowercase letter")
@@ -7800,7 +7816,16 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
     def px(d, default):
         if d in num:
             return num[d]
-        return {"radius": 3.0, "height": 5.0, "base": 4.0, "length": 7.0}[d]
+        return {"radius": 3.0, "height": 5.0, "base": 4.0, "length": 7.0,
+                "slant": 4.0}[d]
+    # an unlabelled numeric slant still fixes the true height: cone h = sqrt(l²-r²),
+    # square pyramid h = sqrt(s²-(a/2)²) — draw it so the solid keeps honest proportions
+    if "height" not in num and isinstance(val.get("slant"), (int, float)):
+        _foot = val.get("radius") if shape == "cone" else val.get("base")
+        _foot = float(_foot) / (1 if shape == "cone" else 2) \
+            if isinstance(_foot, (int, float)) else None
+        if _foot is not None and val["slant"] > _foot:
+            num["height"] = math.sqrt(val["slant"] ** 2 - _foot ** 2)
     if num:
         big = max(px(d, 1) for d in val)
         k *= 90.0 / big if big > 3 else 22.0
@@ -7848,12 +7873,16 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
                                     dashed=True))
         elements.append(vc.line((cx - rx_, by_), (cx, apex), id="slL"))
         elements.append(vc.line((cx + rx_, by_), (cx, apex), id="slR"))
-        elements.append(vc.line((cx + rx_ + 16, apex), (cx + rx_ + 44, apex),
-                                id="hgtT", width=1.0))
-        elements.append(vc.line((cx + rx_ + 16, by_), (cx + rx_ + 44, by_),
-                                id="hgtB", width=1.0))
-        leaders.append(((cx + rx_ + 30, apex), (cx + rx_ + 30, by_), "height"))
+        if "height" in val:
+            elements.append(vc.line((cx + rx_ + 16, apex), (cx + rx_ + 44, apex),
+                                    id="hgtT", width=1.0))
+            elements.append(vc.line((cx + rx_ + 16, by_), (cx + rx_ + 44, by_),
+                                    id="hgtB", width=1.0))
+            leaders.append(((cx + rx_ + 30, apex), (cx + rx_ + 30, by_), "height"))
         leaders.append(((cx, by_), (cx + rx_, by_), "radius"))
+        if "slant" in val:
+            leaders.append(((cx, apex),
+                            (cx + rx_ * 0.66, by_ + ry_ * 0.75), "slant"))
         hidden.append("the base rim's back half")
         hidden = ["the base rim's back half"]
     elif shape == "square_pyramid":
@@ -7865,8 +7894,12 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
         apex = (0.0, apex_y)
         for i, p in enumerate(F):
             elements.append(vc.line(apex, p, id=f"sl{i}", dashed=(i >= 2)))
-        leaders.append(((0.0, base_y - hw2 * 1.2), apex, "height"))
+        if "height" in val:
+            leaders.append(((0.0, base_y - hw2 * 1.2), apex, "height"))
         leaders.append((F[0], F[1], "base"))
+        if "slant" in val:
+            # the face's slant height: apex to the front base edge's midpoint
+            leaders.append((apex, vc.lerp(F[0], F[1], 0.5), "slant"))
         hidden.append("the back slant edges")
     else:
         tb = [(0.0, -h_), (-b_ / 2, 0.0), (b_ / 2, 0.0)]
@@ -7895,7 +7928,7 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
         if dname == "radius" and shape in ("cone", "cylinder"):
             P[f"{dname[0].upper()}1"] = vc.lerp(a_, b2, 0.55)
             anchor_pt = (vc.lerp(a_, b2, 0.55)[0],
-                         vc.lerp(a_, b2, 0.55)[1] + (ry_ + 14.0))
+                         vc.lerp(a_, b2, 0.55)[1] + (ry_ + 4.0))
         elif dname == "radius":
             ux_, uy_ = vc.unit(a_, b2)
             anchor_pt = (b2[0] + ux_ * 10.0, b2[1] + uy_ * 10.0)
@@ -7905,7 +7938,8 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
             P[f"{dname[0].upper()}1"] = anchor_pt
             if shape == "cone" and dname == "height":
                 anchor_pt = (anchor_pt[0], b2[1] + 26.0)
-        elements.append(_float_label(f"lb{dname}", glyph, anchor_pt, gap=8))
+        elements.append(_float_label(f"lb{dname}", glyph, anchor_pt, gap=8,
+                                     size=13.0))
 
     claims: list[tuple[str, str, str]] = []
 
@@ -7915,7 +7949,7 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
 
     add(f'describe "a {shape.replace("_", " ")} is drawn, with hidden edges shown '
         'dashed"', "inferred", "the solid")
-    for d in need:
+    for d in val:
         v_ = val[d]
         glyph = f"{v_:g} {unit}" if isinstance(v_, (int, float)) else str(v_)
         tgt = f"{d[0].upper()}1"
@@ -7931,7 +7965,7 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
         add(f"derive 2 * {num['radius']:g} = {_num_exact(2 * num['radius'])}",
             "inferred", "the diameter is twice the radius")
     else:
-        d0 = need[0]
+        d0 = next(iter(val))
         v0 = val[d0]
         if isinstance(v0, (int, float)):
             add(f"derive {v0:g} * 1 = {_num_exact(v0)}", "inferred",
@@ -7947,7 +7981,7 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
                   ask=ask, title=title or f"A {shape.replace('_', ' ')}",
                   description=description or (
                       f"A {shape.replace('_', ' ')} with its "
-                      + ", ".join(need) + " marked."),
+                      + ", ".join(val) + " marked."),
                   scale=("front-face numeric base and altitude to scale; length is obliquely foreshortened; letter dims representative"
                          if shape == "triangular_prism" else
                          "proportions to scale where numeric; letter dims are representative"),
