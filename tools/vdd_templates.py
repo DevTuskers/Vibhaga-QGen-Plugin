@@ -7947,6 +7947,12 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
             ux_, uy_ = vc.unit(a_, b2)
             anchor_pt = (b2[0] + ux_ * 10.0, b2[1] + uy_ * 10.0)
             P[f"{dname[0].upper()}1"] = b2
+        elif dname == "slant" and shape == "square_pyramid":
+            # the face's interior has no clear label room on squat pyramids —
+            # seat the label just outside the apex, where the leader starts;
+            # the apex lies on the outline so outside placements win
+            P[f"{dname[0].upper()}1"] = a_
+            anchor_pt = a_
         else:
             anchor_pt = vc.lerp(a_, b2, 0.5)
             P[f"{dname[0].upper()}1"] = anchor_pt
