@@ -123,19 +123,36 @@ def main(argv=None) -> int:
                     f"— use '{info.get('use')}'")
         if not en_text:
             continue
-        for term, entry in (dictionary.get("terms") or {}).items():
-            if not en_pattern(term).search(strip_markup(en_text)):
+        en_plain = strip_markup(en_text)
+        terms = dictionary.get("terms") or {}
+        spans = {t: [m.span() for m in en_pattern(t).finditer(en_plain)]
+                 for t in terms}
+        spans = {t: s for t, s in spans.items() if s}
+        for term, hits in spans.items():
+            # a term matched only inside a longer dictionary term's match is
+            # not a use of the shorter term ("square" inside "square root")
+            hits = [h for h in hits
+                    if not any(len(other) > len(term) and os <= h[0] <= h[1] <= oe
+                               for other, ohs in spans.items()
+                               for os, oe in ohs)]
+            if not hits:
                 continue
+            entry = terms[term]
             grades = entry.get("grades") or {}
             wanted = {g: v for g, v in grades.items()
                       if grade is None or int(g) == int(grade)}
             if not wanted:  # term exists but not taught at this grade
                 continue
             accepted = []
+            formats = []
             for g, v in wanted.items():
-                accepted.append(v["si"])
-                accepted.extend(v.get("alt") or [])
-            if any(term_present(a, plain_si) for a in accepted):
+                if v.get("format"):
+                    formats.append(v["format"])
+                else:
+                    accepted.append(v["si"])
+                    accepted.extend(v.get("alt") or [])
+            if any(term_present(a, plain_si) for a in accepted) or \
+                    any(re.search(f, plain_si) for f in formats):
                 continue
             # near-miss spelling of any accepted headword?
             miss = None
@@ -149,7 +166,9 @@ def main(argv=None) -> int:
                     f"{field_id}: '{term}' rendered '{miss[0]}' — dictionary "
                     f"spelling is '{miss[1]}'")
             else:
-                shown = " / ".join(dict.fromkeys(accepted))
+                shown = " / ".join(dict.fromkeys(accepted)) or \
+                    " / ".join(dict.fromkeys(v["si"] for v in wanted.values()
+                                           if v.get("format")))
                 findings.append(
                     f"{field_id}: English term '{term}' present but the Sinhala "
                     f"does not use the dictionary rendering '{shown}'")

@@ -108,6 +108,38 @@ questions:
         self.assertEqual(rc, 1)
         self.assertIn("central angle", out)
 
+    def test_bearing_format_entry_accepted(self):
+        doc = """\
+questions:
+  - n: 1
+    stem: "The bearing of P from O is given by the figure. Write it."
+    stem_si: "රූපයෙන් O සිට P හි දිශාව දැක්වේ. O සිට P උ 50° නැ දිශාවෙන් පිහිටා ඇත."
+"""
+        rc, out = run_tool(doc, "--grade", "8")
+        self.assertEqual(rc, 0, out)
+
+    def test_bearing_format_missing_flagged(self):
+        doc = """\
+questions:
+  - n: 1
+    stem: "Write the bearing of P from O."
+    stem_si: "O සිට P හි පිහිටීම ලියන්න."
+"""
+        rc, out = run_tool(doc, "--grade", "8")
+        self.assertEqual(rc, 1)
+        self.assertIn("bearing", out)
+
+    def test_longer_term_match_suppresses_shorter(self):
+        # "square root" must not demand the shape term වර්ගය/සමචතුරස්‍රය too
+        doc = """\
+questions:
+  - n: 1
+    stem: "Find the square root of $144$."
+    stem_si: "$144$ හි වර්ගමූලය සොයන්න."
+"""
+        rc, out = run_tool(doc, "--grade", "8")
+        self.assertEqual(rc, 0, out)
+
     def test_term_present_tolerates_inflection(self):
         self.assertTrue(mod.term_present("කවකටුව", "කවකටුවෙන් අඳින්න"))
         self.assertTrue(mod.term_present("සරල රේඛාව", "සරල රේඛාවේ ලක්ෂ්‍ය"))

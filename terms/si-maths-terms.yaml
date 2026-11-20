@@ -4043,6 +4043,7 @@ terms:
   bearing:
     grades:
       8:
+        format: '[උද]\s*\d+\s*°\s*[නැබ]'
         note: taught as format 'උ <deg>° නැ' / 'ද <deg>° නැ' — no single-word term; N/S/E/W letters are උ/ද/නැ/බ
         si: උ 30° නැ / ද 40° නැ (quadrant bearing format)
         sources:
