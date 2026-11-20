@@ -140,6 +140,29 @@ questions:
         rc, out = run_tool(doc, "--grade", "8")
         self.assertEqual(rc, 0, out)
 
+    def test_suppression_needs_taught_longer_term(self):
+        # "right angle" has no G8 entry, so at grade 8 it must not suppress
+        # "angle" (කෝණය): a si text with no angle word still fails
+        doc = """\
+questions:
+  - n: 1
+    stem: "Mark the right angle at B."
+    stem_si: "B දී ලකුණු කරන්න."
+"""
+        rc, out = run_tool(doc, "--grade", "8")
+        self.assertEqual(rc, 1)
+        self.assertIn("angle", out)
+
+    def test_truncated_east_bearing_flagged(self):
+        doc = """\
+questions:
+  - n: 1
+    stem: "Write the bearing of P from O."
+    stem_si: "O සිට P උ 50° න දිශාවෙන් පිහිටා ඇත."
+"""
+        rc, out = run_tool(doc, "--grade", "8")
+        self.assertEqual(rc, 1, out)
+
     def test_term_present_tolerates_inflection(self):
         self.assertTrue(mod.term_present("කවකටුව", "කවකටුවෙන් අඳින්න"))
         self.assertTrue(mod.term_present("සරල රේඛාව", "සරල රේඛාවේ ලක්ෂ්‍ය"))
