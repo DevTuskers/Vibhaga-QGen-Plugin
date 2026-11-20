@@ -128,16 +128,13 @@ def main(argv=None) -> int:
         spans = {t: [m.span() for m in en_pattern(t).finditer(en_plain)]
                  for t in terms}
         spans = {t: s for t, s in spans.items() if s}
-        # only a term taught at this grade can suppress a shorter term
-        active = {t for t, entry in terms.items() if t in spans and
-                  any(grade is None or int(g) == int(grade)
-                      for g in (entry.get("grades") or {}))}
         for term, hits in spans.items():
-            # a term matched only inside a longer ACTIVE term's match is not a
-            # use of the shorter term ("square" inside "square root")
+            # a term matched only inside a longer dictionary term's match is a
+            # use of the compound, not the shorter word — whether the compound
+            # is taught at this grade or not ("north" inside "north-east";
+            # "square" inside "square root")
             hits = [h for h in hits
                     if not any(len(other) > len(term) and
-                               other in active and
                                os <= h[0] <= h[1] <= oe
                                for other, ohs in spans.items()
                                for os, oe in ohs)]

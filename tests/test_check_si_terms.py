@@ -140,9 +140,10 @@ questions:
         rc, out = run_tool(doc, "--grade", "8")
         self.assertEqual(rc, 0, out)
 
-    def test_suppression_needs_taught_longer_term(self):
-        # "right angle" has no G8 entry, so at grade 8 it must not suppress
-        # "angle" (කෝණය): a si text with no angle word still fails
+    def test_untaught_compound_still_suppresses_inner_word(self):
+        # "right angle" has no G8 entry; at grade 8 neither the compound nor
+        # the "angle" inside it is checked — the lexeme, not grade-activity,
+        # decides suppression (un-taught terms are scope-card territory)
         doc = """\
 questions:
   - n: 1
@@ -150,8 +151,19 @@ questions:
     stem_si: "B දී ලකුණු කරන්න."
 """
         rc, out = run_tool(doc, "--grade", "8")
-        self.assertEqual(rc, 1)
-        self.assertIn("angle", out)
+        self.assertEqual(rc, 0, out)
+
+    def test_compound_suppresses_inner_word_other_grade(self):
+        # "north-east" is G6-only; at G8 it suppresses "north", so the correct
+        # compound rendering ඊසාන (which contains no උතුර) passes
+        doc = """\
+questions:
+  - n: 1
+    stem: "Draw a line in the north-east direction."
+    stem_si: "ඊසාන දිශාවට රේඛාවක් අඳින්න."
+"""
+        rc, out = run_tool(doc, "--grade", "8")
+        self.assertEqual(rc, 0, out)
 
     def test_truncated_east_bearing_flagged(self):
         doc = """\
