@@ -6,7 +6,7 @@
    "sort_order": 0,
    "is_multipart": false,
    "question_text": "A cuboid face measures $5\\,\\text{cm}$ by $2\\,\\text{cm}$. Find its area.",
-   "question_text_sinhala": "පැතිකඩ මතුපිටක් $5\\,\\text{cm}$ සහ $2\\,\\text{cm}$ වේ. එහි වර්ගඵලය සොයන්න.",
+   "question_text_sinhala": "ඝනකාභයක මුහුණතක් $5\\,\\text{cm}$ සහ $2\\,\\text{cm}$ වේ. එහි වර්ගඵලය සොයන්න.",
    "difficulty_band": "easy",
    "lesson_ids": [
     "00000000-0000-4000-8000-000000000007"
@@ -69,7 +69,7 @@
        "label": "i",
        "sort_order": 0,
        "text": "Find the side of each square.",
-       "text_sinhala": "එක් වර්ගයක පැතිකඩ දිග සොයන්න.",
+       "text_sinhala": "එක් වර්ගයක පාදයේ දිග සොයන්න.",
        "diagram_dsl": null,
        "sub_answer": {
         "sub_answer_id": "dba4b631-4810-50e3-aecf-16567087a149",
