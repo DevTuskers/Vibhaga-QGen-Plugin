@@ -9,7 +9,7 @@ questions:
   - n: 1
     lessons: [L07]
     stem: "A cuboid face measures $5\\,\\text{cm}$ by $2\\,\\text{cm}$. Find its area."
-    stem_si: "පැතිකඩ මතුපිටක් $5\\,\\text{cm}$ සහ $2\\,\\text{cm}$ වේ. එහි වර්ගඵලය සොයන්න."
+    stem_si: "ඝනකාභයක මුහුණතක් $5\\,\\text{cm}$ සහ $2\\,\\text{cm}$ වේ. එහි වර්ගඵලය සොයන්න."
     approach: "Area $=$ length $\\times$ width.\n\n- $5 \\times 2$"
     approach_si: "වර්ගඵලය $=$ දිග $\\times$ පළල.\n\n- $5 \\times 2$"
     final: "$10\\,\\text{cm}^2$"
@@ -32,7 +32,7 @@ questions:
         parts:
           - label: i
             text: "Find the side of each square."
-            text_si: "එක් වර්ගයක පැතිකඩ දිග සොයන්න."
+            text_si: "එක් වර්ගයක පාදයේ දිග සොයන්න."
             approach: "$10/2$"
             approach_si: "$10/2$"
             final: "$5\\,\\text{cm}$"

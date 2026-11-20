@@ -3286,8 +3286,9 @@ class ByteIdentity(unittest.TestCase):
         # G11 round-2 — regenerated after the visual-initial label fixes moved
         # cone/cyl leader labels, graph/fline axis numerals, ineq tick numerals,
         # hist axis numerals, tree terminal labels and psq edge labels
-        "selftest-cone": "a490496b456628d8c15d32cd5660ee256bc1fc97079f779f45f9d7e7e54cb8b7",
-        "selftest-cyl": "3ab4e84732546ab80b89658aa195285c7f20a6be3823080feaf43b9faf3797fc",
+        # cone/cyl re-pinned after the slant-dim + smaller dim-label changes (#59)
+        "selftest-cone": "2d37bc1d6d662551841f1d824383665e87932621cd33eb5dd7b1d43d3d80a11e",
+        "selftest-cyl": "520c52bf194f99545ecd056ba54049ccb4f5d43bd1593de5b60924224242e564",
         "selftest-graph": "9e706817cc3f452789a66a5cbe20416bdeb13c096a7b28f0426d6429694e2cf0",
         "selftest-fline": "23a9b1b569769a5af7b7d1e2e9e9a5a30d8bf461c632a243949a7aceb7b91db8",
         "selftest-ineq": "43bf626ad2c9a79bc062b3a496e54ab33d1202b0720410cea9416d324d887feb",
@@ -3335,7 +3336,8 @@ class ByteIdentity(unittest.TestCase):
         "selftest-hist-5-figure": "2d7abd2061b5e8530a618f3f7ad656bb4d9bd86573852835aa0fadefcb7b95e1",
         "selftest-hist--5-stem": "136ee5a2bb10a0143e98d8543a8bb3d98724c92a17783182ee014a9a190fa54d",
         "selftest-hist--5-figure": "8731b5b8d556444b1dbf6bd4fed29e1d86c26c74f04daeb729027d07773b91ea",
-        "selftest-prism-height": "122a1a81b93462417c84fa88c02dcb08d28b7456ec4bd368b25b19c791cc48b2",
+        # prism-height re-pinned for the #59 solid label changes (no slant — base prism)
+        "selftest-prism-height": "e52fe3a3dfd4782df34e7a280cc144330a794aab05bff25f6910f8f7fe49695b",
         # G10 gaps 1-2 — generated when pie_chart (incl. the spinner mode) and the
         # standalone sector / annular-sector templates landed
         "selftest-pie": "b59c4975513f626234b9dbe8cab5c56c6e8f3eb504468dc4548eefbd9ce1375c",
