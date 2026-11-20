@@ -3286,6 +3286,7 @@ class ByteIdentity(unittest.TestCase):
         # G11 round-2 — regenerated after the visual-initial label fixes moved
         # cone/cyl leader labels, graph/fline axis numerals, ineq tick numerals,
         # hist axis numerals, tree terminal labels and psq edge labels
+        # cone/cyl re-pinned after the slant-dim + smaller dim-label changes (#59)
         "selftest-cone": "2d37bc1d6d662551841f1d824383665e87932621cd33eb5dd7b1d43d3d80a11e",
         "selftest-cyl": "520c52bf194f99545ecd056ba54049ccb4f5d43bd1593de5b60924224242e564",
         "selftest-graph": "9e706817cc3f452789a66a5cbe20416bdeb13c096a7b28f0426d6429694e2cf0",
@@ -3335,6 +3336,7 @@ class ByteIdentity(unittest.TestCase):
         "selftest-hist-5-figure": "2d7abd2061b5e8530a618f3f7ad656bb4d9bd86573852835aa0fadefcb7b95e1",
         "selftest-hist--5-stem": "136ee5a2bb10a0143e98d8543a8bb3d98724c92a17783182ee014a9a190fa54d",
         "selftest-hist--5-figure": "8731b5b8d556444b1dbf6bd4fed29e1d86c26c74f04daeb729027d07773b91ea",
+        # prism-height re-pinned for the #59 solid label changes (no slant — base prism)
         "selftest-prism-height": "e52fe3a3dfd4782df34e7a280cc144330a794aab05bff25f6910f8f7fe49695b",
         # G10 gaps 1-2 — generated when pie_chart (incl. the spinner mode) and the
         # standalone sector / annular-sector templates landed
