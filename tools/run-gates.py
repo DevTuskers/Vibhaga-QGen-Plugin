@@ -13,7 +13,9 @@ This tool ONLY chains the existing tools as subprocesses with their own flags �
 forked or re-implemented and no gate is lowered:
 
   build:  0. si-style.py content.yaml — warning-only, never blocks the build
-          0a. unit-notation.py content.yaml — blocking Sinhala unit-notation check
+          0a. check-si-terms.py content.yaml — blocking: every Sinhala maths term
+             must match the corpus-cited dictionary terms/si-maths-terms.yaml
+          0b. unit-notation.py content.yaml — blocking Sinhala unit-notation check
           1. vdd_templates.py build specs/figures.json → figures/ (skipped when the file is
              absent or [] — every figure is then hand-drawn)
           2. per figure id — ids from specs/figures.json ∪ the basenames of every file in
@@ -265,6 +267,15 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
         log(style_out.rstrip())
     if rc:
         log(f"si-style: non-blocking stage exited {rc}")
+    terms_argv = [sys.executable, str(TOOLS / "check-si-terms.py"), str(content)]
+    if args.grade is not None:
+        terms_argv += ["--grade", str(args.grade)]
+    rc, terms_out = runner(terms_argv)
+    gates["si-terms"] = rc
+    if terms_out.strip():
+        log(terms_out.rstrip())
+    if rc:
+        return fail(gates, run, "si-terms", rc, terms_out)
     rc, unit_out = runner([sys.executable, str(TOOLS / "unit-notation.py"), str(content)])
     gates["unit-notation"] = rc
     if unit_out.strip():

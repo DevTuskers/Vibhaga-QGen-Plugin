@@ -177,7 +177,8 @@ class BuildTest(unittest.TestCase):
             self.assertFalse(any("visual-check" in c for c in joined))
             gates = json.loads((run / "gates.json").read_text())
             self.assertEqual(gates, {
-                "si-style": 0, "unit-notation": 0, "templates": 0, "audit:Q1": 1,
+                "si-style": 0, "si-terms": 0, "unit-notation": 0, "templates": 0,
+                "audit:Q1": 1,
             })
 
     def test_unit_notation_failure_stops_build_and_records_gate(self):
@@ -194,11 +195,13 @@ class BuildTest(unittest.TestCase):
             self.assertIn("stage unit-notation: exit 1 — stopping", out.getvalue())
             commands = [" ".join(call) for call in stub.calls]
             self.assertLess(next(i for i, c in enumerate(commands) if "si-style.py" in c),
+                            next(i for i, c in enumerate(commands) if "check-si-terms.py" in c))
+            self.assertLess(next(i for i, c in enumerate(commands) if "check-si-terms.py" in c),
                             next(i for i, c in enumerate(commands) if "unit-notation.py" in c))
             self.assertFalse(any("vdd_templates.py" in c for c in commands))
             self.assertFalse(any("build-staged.py" in c for c in commands))
             self.assertEqual(json.loads((run / "gates.json").read_text()),
-                             {"si-style": 0, "unit-notation": 1})
+                             {"si-style": 0, "si-terms": 0, "unit-notation": 1})
 
     def test_precritic_skipped_without_cards(self):
         with tempfile.TemporaryDirectory() as td:
