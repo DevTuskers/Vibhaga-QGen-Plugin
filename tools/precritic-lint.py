@@ -52,6 +52,12 @@ Checks:
       cards' worked-example excerpts and exercise items. ≥0.6 → WARN naming the row or card item,
       never its text — the same task with new numbers is a duplicate (decision 0001: no embeddings).
 
+  (g) FAIL — Sinhala text inside KaTeX `\\text{}` (D7 / S4 §0.4, S8 §0.8). Prose and maths
+      are separate nodes; Sinhala belongs in prose outside `$…$`, never in `\\text{}`.
+
+  (h) FAIL — `approach` or `approach_si` opening with an announcement prefix ('Answer:' /
+      'පිළිතුර:') (S8 §4.1: the approach teaches the method; it is not an answer key).
+
 Output: one FAIL/WARN line each, then `precritic-lint: F fail(s) · W warn(s)`.
 Exit 1 on any FAIL, else 0 — warns never block, same contract as validate.
 """
@@ -171,6 +177,30 @@ def field_texts(q: dict):
             for k in ("text", "approach", "final"):
                 if isinstance(p.get(k), str) and p[k].strip():
                     yield pid, p[k]
+            yield from walk(p.get("parts"), pid)
+
+    yield from walk(q.get("parts"), qn)
+
+
+def all_student_fields(q: dict):
+    """Yield (field_path, text) for every student-facing string field on q and its parts
+    (stem, stem_si, text, text_si, approach, approach_si, final, final_si)."""
+    qn = f"Q{q.get('n')}"
+    for k in ("stem", "stem_si", "approach", "approach_si", "final", "final_si"):
+        val = q.get(k)
+        if isinstance(val, str) and val.strip():
+            yield f"{qn}.{k}", val
+
+    def walk(parts, prefix):
+        for p in parts or []:
+            if not isinstance(p, dict):
+                continue
+            lbl = p.get("label")
+            pid = f"{prefix}.{lbl}" if lbl else prefix
+            for k in ("text", "text_si", "approach", "approach_si", "final", "final_si"):
+                val = p.get(k)
+                if isinstance(val, str) and val.strip():
+                    yield f"{pid}.{k}", val
             yield from walk(p.get("parts"), pid)
 
     yield from walk(q.get("parts"), qn)
@@ -507,6 +537,26 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
             if problem:
                 fails += 1
                 log(f"  FAIL {where}: {problem}")
+
+    # (g) Sinhala text inside KaTeX \text{} is forbidden (D7 / S4 §0.4, S8 §0.8).
+    # Prose and maths are separate nodes; Sinhala belongs in prose outside $…$, never in \text{}.
+    TEXT_SINHALA = re.compile(r"\\text\{[^}]*[\u0D80-\u0DFF]")
+    for q in questions:
+        for where, val in all_student_fields(q):
+            if TEXT_SINHALA.search(val):
+                fails += 1
+                log(f"  FAIL {where}: Sinhala text inside KaTeX \\text{{}} — prose and maths "
+                    f"are separate nodes (D7, S4 §0.4, S8 §0.8)")
+
+    # (h) approach / approach_si opening with announcement prefix ('Answer:' / 'පිළිතුර:').
+    # S8 §4.1: The approach teaches the method. It is not an answer key.
+    ANNOUNCEMENT_PREFIX = re.compile(r"^\s*(?:Answer|Solution|පිළිතුර|විසඳුම)\s*[:\-–—]")
+    for q in questions:
+        for where, val in all_student_fields(q):
+            if where.endswith((".approach", ".approach_si")) and ANNOUNCEMENT_PREFIX.search(val):
+                fails += 1
+                log(f"  FAIL {where}: approach opens with an announcement prefix ('Answer:' / 'පිළිතුර:') "
+                    f"— teach the method, do not announce (S8 §4.1)")
 
     # (e) duplicate fingerprint — digits masked, Jaccard vs existing rows and bound card items
     for path in getattr(args, "existing", []) or []:

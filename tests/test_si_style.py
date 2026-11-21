@@ -53,6 +53,16 @@ class SinhalaStyleTests(unittest.TestCase):
         self.assertNotIn("Latin word 'mouse'", findings_clean)
         self.assertNotIn("Latin word 'CPU'", findings_clean)
 
+    def test_sinhala_inside_text_command_warned(self):
+        text = r"$$\text{කේතුවේ පරිමාව} = \frac{1}{3} \pi r^2 h$$"
+        findings = si_style.field_warnings(text)
+        self.assertTrue(any(r"Sinhala text inside KaTeX \text{}" in f for f in findings))
+
+    def test_announcement_prefix_warned(self):
+        text = "පිළිතුර: $h = 6\\text{ cm}$"
+        findings = si_style.field_warnings(text)
+        self.assertTrue(any("opens with announcement 'පිළිතුර:'" in f for f in findings))
+
     def test_main_names_question_and_part_and_never_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = Path(tmp)

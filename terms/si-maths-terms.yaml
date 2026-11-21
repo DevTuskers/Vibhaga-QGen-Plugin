@@ -32,6 +32,10 @@ banned:
   බොහෝ දුරට සිදු වන:
     en: likely event
     use: 'three-class phrasing — see phrases: probability event classes'
+  ප්‍රතිලෝම ප්‍රමේයය:
+    en: converse theorem
+    note: converse of a theorem is විලෝමය; ප්‍රතිලෝමය is inverse
+    use: විලෝම ප්‍රමේයය
   සංකේත ප්‍රස්තාරය:
     en: pictograph
     use: චිත්‍ර ප්‍රස්තාරය
@@ -4670,6 +4674,31 @@ terms:
         sources:
         - maths/grade-11/lessons/09-Percentages.md
         - maths/grade-11/scope-cards/09-Percentages.yaml
+  cone:
+    grades:
+      7:
+        alt:
+        - කේතු
+        si: කේතුව
+        sources:
+        - maths/grade-07/lessons/25-Solids.md
+        - maths/grade-07/scope-cards/25-Solids.yaml
+      8:
+        alt:
+        - කේතු
+        si: කේතුව
+        sources:
+        - maths/grade-08/lessons/06-Solids.md
+        - maths/grade-08/scope-cards/06-Solids.yaml
+      11:
+        alt:
+        - කේතු
+        si: කේතුව
+        sources:
+        - maths/grade-11/lessons/04-Surface-Area-of-Solids.md
+        - maths/grade-11/lessons/05-Volume-of-Solids.md
+        - maths/grade-11/scope-cards/04-Surface-Area-of-Solids.yaml
+        - maths/grade-11/scope-cards/05-Volume-of-Solids.yaml
   concave polygon:
     grades:
       7:
@@ -4802,6 +4831,24 @@ terms:
         sources:
         - maths/grade-10/lessons/25-Frequency-Distributions.md
         - maths/grade-10/scope-cards/25-Frequency-Distributions.yaml
+  converse:
+    grades:
+      11:
+        alt:
+        - විලෝම
+        si: විලෝමය
+        sources:
+        - maths/grade-11/lessons/11-Mid-point-Theorem.md
+        - maths/grade-11/lessons/17-Pythagoras-Theorem.md
+        - maths/grade-11/scope-cards/11-Mid-point-Theorem.yaml
+        - maths/grade-11/scope-cards/17-Pythagoras-Theorem.yaml
+  converse of the mid-point theorem:
+    grades:
+      11:
+        si: මධ්‍ය ලක්ෂ්‍ය ප්‍රමේයයේ විලෝමය
+        sources:
+        - maths/grade-11/lessons/11-Mid-point-Theorem.md
+        - maths/grade-11/scope-cards/11-Mid-point-Theorem.yaml
   convex polygon:
     grades:
       7:
@@ -5012,6 +5059,24 @@ terms:
         - maths/grade-06/lessons/17-Solids.md
         - maths/grade-06/scope-cards/01-Circles.yaml
         - maths/grade-06/scope-cards/17-Solids.yaml
+  curved surface area:
+    grades:
+      10:
+        alt:
+        - වක්‍ර පෘෂ්ඨයේ වර්ගඵලය
+        - වක්‍ර පෘෂ්ඨ කොටසේ වර්ගඵලය
+        si: වක්‍ර පෘෂ්ඨ වර්ගඵලය
+        sources:
+        - maths/grade-10/lessons/28-Surface-Area-and-Volume.md
+        - maths/grade-10/scope-cards/28-Surface-Area-and-Volume.yaml
+      11:
+        alt:
+        - වක්‍ර පෘෂ්ඨයේ වර්ගඵලය
+        - වක්‍ර පෘෂ්ඨ කොටසේ වර්ගඵලය
+        si: වක්‍ර පෘෂ්ඨ වර්ගඵලය
+        sources:
+        - maths/grade-11/lessons/04-Surface-Area-of-Solids.md
+        - maths/grade-11/scope-cards/04-Surface-Area-of-Solids.yaml
   customs duty:
     grades:
       10:
@@ -5075,6 +5140,38 @@ terms:
         - maths/grade-08/scope-cards/18-Percentages.yaml
         - maths/grade-08/scope-cards/27-Data-Representation-and-Interpretation.yaml
         - maths/grade-08/scope-cards/30-Tessellation.yaml
+  cylinder:
+    grades:
+      7:
+        alt:
+        - සිලින්ඩර
+        si: සිලින්ඩරය
+        sources:
+        - maths/grade-07/lessons/25-Solids.md
+        - maths/grade-07/scope-cards/25-Solids.yaml
+      8:
+        alt:
+        - සිලින්ඩර
+        si: සිලින්ඩරය
+        sources:
+        - maths/grade-08/lessons/06-Solids.md
+        - maths/grade-08/scope-cards/06-Solids.yaml
+      10:
+        alt:
+        - සිලින්ඩර
+        si: සිලින්ඩරය
+        sources:
+        - maths/grade-10/lessons/28-Surface-Area-and-Volume.md
+        - maths/grade-10/scope-cards/28-Surface-Area-and-Volume.yaml
+      11:
+        alt:
+        - සිලින්ඩර
+        si: සිලින්ඩරය
+        sources:
+        - maths/grade-11/lessons/04-Surface-Area-of-Solids.md
+        - maths/grade-11/lessons/05-Volume-of-Solids.md
+        - maths/grade-11/scope-cards/04-Surface-Area-of-Solids.yaml
+        - maths/grade-11/scope-cards/05-Volume-of-Solids.yaml
   decade:
     grades:
       7:
@@ -6334,6 +6431,18 @@ terms:
         - maths/grade-07/scope-cards/09-Angles.yaml
         - maths/grade-07/scope-cards/14-Rectilinear-Plane-Figures.yaml
         - maths/grade-07/scope-cards/21-Ratios.yaml
+  hemisphere:
+    grades:
+      11:
+        alt:
+        - අර්ධ ගෝල
+        - අර්ධගෝලය
+        si: අර්ධ ගෝලය
+        sources:
+        - maths/grade-11/lessons/04-Surface-Area-of-Solids.md
+        - maths/grade-11/lessons/05-Volume-of-Solids.md
+        - maths/grade-11/scope-cards/04-Surface-Area-of-Solids.yaml
+        - maths/grade-11/scope-cards/05-Volume-of-Solids.yaml
   histogram:
     grades:
       11:
@@ -8804,6 +8913,24 @@ terms:
         - maths/grade-06/lessons/14-Types-of-Numbers-and-Number-Patterns.md
         - maths/grade-06/scope-cards/11-Factors-and-Multiples.yaml
         - maths/grade-06/scope-cards/14-Types-of-Numbers-and-Number-Patterns.yaml
+  prism:
+    grades:
+      8:
+        alt:
+        - ප්‍රිස්ම
+        si: ප්‍රිස්මය
+        sources:
+        - maths/grade-08/lessons/06-Solids.md
+        - maths/grade-08/scope-cards/06-Solids.yaml
+      11:
+        alt:
+        - ප්‍රිස්ම
+        si: ප්‍රිස්මය
+        sources:
+        - maths/grade-11/lessons/04-Surface-Area-of-Solids.md
+        - maths/grade-11/lessons/05-Volume-of-Solids.md
+        - maths/grade-11/scope-cards/04-Surface-Area-of-Solids.yaml
+        - maths/grade-11/scope-cards/05-Volume-of-Solids.yaml
   probability:
     grades:
       8:
@@ -10572,6 +10699,13 @@ terms:
         - maths/grade-11/lessons/17-Pythagoras-Theorem.md
         - maths/grade-11/scope-cards/04-Surface-Area-of-Solids.yaml
         - maths/grade-11/scope-cards/05-Volume-of-Solids.yaml
+  slant height:
+    grades:
+      11:
+        si: ඇල උස
+        sources:
+        - maths/grade-11/lessons/04-Surface-Area-of-Solids.md
+        - maths/grade-11/scope-cards/04-Surface-Area-of-Solids.yaml
   solid:
     grades:
       6:
@@ -10690,6 +10824,17 @@ terms:
         sources:
         - maths/grade-06/lessons/08-Directions.md
         - maths/grade-06/scope-cards/08-Directions.yaml
+  sphere:
+    grades:
+      11:
+        alt:
+        - ගෝල
+        si: ගෝලය
+        sources:
+        - maths/grade-11/lessons/04-Surface-Area-of-Solids.md
+        - maths/grade-11/lessons/05-Volume-of-Solids.md
+        - maths/grade-11/scope-cards/04-Surface-Area-of-Solids.yaml
+        - maths/grade-11/scope-cards/05-Volume-of-Solids.yaml
   square:
     grades:
       6:
@@ -11730,6 +11875,22 @@ terms:
         - maths/grade-11/scope-cards/21-Cyclic-Quadrilaterals.yaml
         - maths/grade-11/scope-cards/22-Tangents.yaml
         - maths/grade-11/scope-cards/24-Sets.yaml
+  total surface area:
+    grades:
+      10:
+        alt:
+        - මුළු පෘෂ්ඨයේ වර්ගඵලය
+        si: මුළු පෘෂ්ඨ වර්ගඵලය
+        sources:
+        - maths/grade-10/lessons/28-Surface-Area-and-Volume.md
+        - maths/grade-10/scope-cards/28-Surface-Area-and-Volume.yaml
+      11:
+        alt:
+        - මුළු පෘෂ්ඨයේ වර්ගඵලය
+        si: මුළු පෘෂ්ඨ වර්ගඵලය
+        sources:
+        - maths/grade-11/lessons/04-Surface-Area-of-Solids.md
+        - maths/grade-11/scope-cards/04-Surface-Area-of-Solids.yaml
   trapezium:
     grades:
       6:

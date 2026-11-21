@@ -25,6 +25,8 @@ COMMON_IT_TERMS = {
 }
 LATIN = re.compile(r"\b[A-Za-z]+\b")
 PASSIVE = re.compile(r"(?:කරනු|දෙනු|ලබනු|දක්වනු)\s+ලැබේ")
+TEXT_SINHALA = re.compile(r"\\text\{[^}]*[\u0D80-\u0DFF]")
+ANNOUNCEMENT_PREFIX = re.compile(r"^\s*(?:පිළිතුර|විසඳුම)\s*[:\-–—]")
 
 
 def strip_markup(text: str) -> str:
@@ -56,6 +58,10 @@ def field_warnings(text: str) -> list[str]:
     for term, suggestion in ARCHAIC_IT_TERMS.items():
         if term in plain:
             warnings.append(f"archaic/unnatural IT term {term!r} (recommended: {suggestion})")
+    if TEXT_SINHALA.search(text):
+        warnings.append(r"Sinhala text inside KaTeX \text{}")
+    if ANNOUNCEMENT_PREFIX.search(text):
+        warnings.append("opens with announcement 'පිළිතුර:'")
     return warnings
 
 

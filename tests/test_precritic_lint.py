@@ -633,6 +633,42 @@ class PrecriticLintTest(unittest.TestCase):
             self.assertNotIn("Shade 3 of 5 cells", r.stdout)
 
     # ---- usage ---------------------------------------------------------------
+    def test_sinhala_in_text_command_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run(tmp)
+            # Inject Sinhala inside \text{} in content.yaml
+            content_path = run / "content.yaml"
+            import yaml
+            data = yaml.safe_load(content_path.read_text(encoding="utf-8"))
+            data["questions"][0]["stem_si"] = r"වර්ගඵලය $\text{වර්ගඵලය} = 10\text{ cm}^2$ වේ."
+            content_path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+            r = lint(run, tmp, "--card", "L07=07")
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn(r"Sinhala text inside KaTeX \text{}", r.stdout)
+
+    def test_approach_announcement_prefix_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run(tmp, approach="The method is to divide.", final="$5$")
+            content_path = run / "content.yaml"
+            import yaml
+            data = yaml.safe_load(content_path.read_text(encoding="utf-8"))
+            # Sinhala approach starting with announcement prefix
+            data["questions"][0]["approach_si"] = "පිළිතුර: $x = 5$"
+            content_path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+            r = lint(run, tmp, "--card", "L07=07")
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("approach opens with an announcement prefix", r.stdout)
+
+            # English approach starting with announcement prefix
+            data["questions"][0]["approach_si"] = "බෙදීමෙන් පිළිතුර ලැබේ."
+            data["questions"][0]["approach"] = "Answer: $x = 5$"
+            content_path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+            r = lint(run, tmp, "--card", "L07=07")
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("approach opens with an announcement prefix", r.stdout)
+
     def test_bad_card_spec_and_missing_card_die(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
