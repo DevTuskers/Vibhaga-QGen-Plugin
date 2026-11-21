@@ -452,6 +452,78 @@ questions:
         self.assertEqual(rc, 1)
         self.assertIn("මනියි", out)
 
+    def test_g8_non_frontier_translation_and_banned_mt_terms_enforced(self):
+        # Banned translation calques from non-frontier models must be caught
+        banned_non_frontier = [
+            ("කුරුසු ලක්ෂ්‍යය", "කවකටු චාප වල කුරුසු ලක්ෂ්‍යය P ලෙස නම් කරන්න."),
+            ("කුරුසු වේ", "චාප දෙක A හිදී කුරුසු වේ."),
+            ("රුස්සාවි රෝදය", "ළමුන් රුස්සාවි රෝදයක නැඟී ගමන් කරයි."),
+            ("බඳිනු නැත", "පළමු සහ දෙවන පියවර එකිනෙකාට බඳිනු නැත."),
+            ("සම්පාත", "ත්‍රිකෝණ දෙක සම්පාත බව පෙන්වන්න."),
+        ]
+        for term, sample in banned_non_frontier:
+            doc = f"""\
+questions:
+  - n: 1
+    stem_si: "{sample}"
+"""
+            rc, out = run_tool(doc, "--grade", "8")
+            self.assertEqual(rc, 1, f"Failed to flag banned term: {term}")
+            self.assertIn(term.replace("\u200d", ""), out.replace("\u200d", ""))
+
+        # Grade 8 curriculum math terms enforced:
+        # Good doc passes with all standard Grade 8 terms and inflections
+        good_g8 = """\
+questions:
+  - n: 1
+    stem: "Construct a triangle with side lengths $5$ cm and $6$ cm. The two triangles are congruent."
+    stem_si: "පාදවල දිග $5$ cm සහ $6$ cm වන ත්‍රිකෝණයක් නිර්මාණය කරන්න. ත්‍රිකෝණ දෙක අංගසම වේ."
+  - n: 2
+    stem: "Find the central angle of a sector in a wheel having 12 spokes."
+    stem_si: "ගරාදි 12ක් සහිත රෝදයක කේන්ද්‍රික ඛණ්ඩයක කේන්ද්‍රික කෝණය සොයන්න."
+  - n: 3
+    stem: "Mark the crossing point of the two arcs as point P."
+    stem_si: "චාප දෙකෙහි ඡේදන ලක්ෂ්‍යය P ලක්ෂ්‍යය ලෙස ලකුණු කරන්න."
+  - n: 4
+    stem: "Calculate the straight-line distance between the two points."
+    stem_si: "ලක්ෂ්‍ය දෙක අතර සරල රේඛීය දුර ගණනය කරන්න."
+"""
+        rc, out = run_tool(good_g8, "--grade", "8")
+        self.assertEqual(rc, 0, out)
+
+        # Missing 'congruent' dictionary rendering (අංගසම) is caught
+        bad_congruent = """\
+questions:
+  - n: 1
+    stem: "The two triangles are congruent."
+    stem_si: "ත්‍රිකෝණ දෙක එක හා සමාන වේ."
+"""
+        rc, out = run_tool(bad_congruent, "--grade", "8")
+        self.assertEqual(rc, 1)
+        self.assertIn("congruent", out)
+
+        # Missing 'spoke' dictionary rendering (ගරාදිය) is caught
+        bad_spoke = """\
+questions:
+  - n: 1
+    stem: "The wheel has 8 spokes."
+    stem_si: "රෝදයේ කූරු 8ක් ඇත."
+"""
+        rc, out = run_tool(bad_spoke, "--grade", "8")
+        self.assertEqual(rc, 1)
+        self.assertIn("spoke", out)
+
+        # Missing 'crossing point' dictionary rendering (ඡේදන ලක්ෂ්‍යය) is caught
+        bad_crossing = """\
+questions:
+  - n: 1
+    stem: "Label the crossing point."
+    stem_si: "හමුවන තැන ලකුණු කරන්න."
+"""
+        rc, out = run_tool(bad_crossing, "--grade", "8")
+        self.assertEqual(rc, 1)
+        self.assertIn("crossing point", out)
+
 
 
 if __name__ == "__main__":

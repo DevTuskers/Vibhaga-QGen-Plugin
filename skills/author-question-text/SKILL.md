@@ -74,6 +74,15 @@ or a copied side — §0.6).
    "software") even within the Sinhala version. Do NOT use awkward, artificial, or antiquated direct Sinhala
    translations (e.g. for mouse, never use "මූසිකය"; for software, hardware, cursor, RAM, CPU, file, folder,
    button, key, etc., use the English terms that students actually learn and use in IT practice and standard exam convention).
+10. **Sinhala mathematical terminology and translation calque traps:**
+   When translating or authoring Sinhala question stems and parts, you must strictly follow Sri Lankan school curriculum terminology (`terms/si-maths-terms.yaml`). Non-frontier or generic machine translation models frequently produce catastrophic calques and mistranslations:
+   - **Intersection / crossing:** "crossing point" in compass construction / loci is strictly `ඡේදන ලක්ෂ්‍යය`, NEVER `කුරුසු ලක්ෂ්‍යය` ("crucifix point"). "Arcs cross/intersect" is `චාප ඡේදනය වේ`, NEVER `කුරුසු වේ`.
+   - **Angles & circles:** "central angle" / "centre angle" is `කේන්ද්‍රික කෝණය` (Grades 6–8) or `කේන්ද්‍ර කෝණය` (Grades 9–11). "Sector" is `කේන්ද්‍රික ඛණ්ඩය` (NEVER `අංශ`). "Spoke" of a wheel is `ගරාදිය` (NEVER `කොටස`).
+   - **Congruence vs coincidence:** geometric figures that are "congruent" are `අංගසම` (NEVER `සම්පාත`, which means coincident/overlapping).
+   - **Independence:** "independent" steps or events are `එකිනෙකින් ස්වායත්ත වේ` / `ස්වාධීන වේ` (NEVER literal calques like `එකිනෙකාට බඳිනු නැත`).
+   - **Real-world entities:** Ferris wheel is `රස්සියානු රෝදය (Ferris wheel)` (NEVER `රුස්සාවි රෝදය`). Vesak pandal is `වෙසක් තොරණක්` (NEVER `වෙසක් කූඩුවක්` which is a lantern).
+   - **Statistics:** "median" is the noun `මධ්‍යස්ථය` (NEVER the adjective `මධ්‍යස්ථ`).
+   - **Bearings & units:** Quadrant bearings in Sinhala text must be formatted as `උ 30° නැ` or `ද 45° බ` using plain degree symbols `°` in text (do NOT bury the degree symbol inside `$…$` LaTeX math mode in Sinhala text, or markup strippers will strip the angle).
 
 ---
 

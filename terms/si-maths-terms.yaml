@@ -167,6 +167,26 @@ banned:
     en: measures (e.g. measures 3.5 cm)
     note: machine-translation calque of intransitive 'measures X cm' into active verb මනියි — use දිග/උස X කි / මිනුම X වේ
     use: දිග/උස X කි / මිනුම X වේ
+  කුරුසු ලක්ෂ්‍යය:
+    en: crossing point (compass construction) / intersection point
+    note: machine-translation calque of 'crossing point' to crucifix point — curriculum strictly uses ඡේදන ලක්ෂ්‍යය / ඡේදන ලක්ෂ්‍ය
+    use: ඡේදන ලක්ෂ්‍යය / ඡේදන ලක්ෂ්‍ය
+  කුරුසු වේ:
+    en: cross / intersect
+    note: machine-translation calque of 'arcs cross' into crucifix — curriculum strictly uses ඡේදනය වේ
+    use: ඡේදනය වේ
+  රුස්සාවි රෝදය:
+    en: Ferris wheel
+    note: machine-translation hallucination for Ferris wheel — use රස්සියානු රෝදය (Ferris wheel)
+    use: රස්සියානු රෝදය (Ferris wheel)
+  බඳිනු නැත:
+    en: are independent (steps)
+    note: machine-translation calque for 'independent' steps/events — use එකිනෙකින් ස්වායත්ත වේ / ස්වාධීන වේ
+    use: එකිනෙකින් ස්වායත්ත වේ / ස්වාධීන වේ
+  සම්පාත:
+    en: congruent (calque / mistranslation)
+    note: සම්පාත means coincident (geometric figures occupying the identical location); geometric congruency is strictly අංගසම / අංගසම වේ
+    use: අංගසම / අංගසම වේ
 needs_review:
 - en: three-figure bearing
   grades:
@@ -4454,6 +4474,20 @@ terms:
         - maths/grade-08/lessons/28-Scale-Diagrams.md
         - maths/grade-08/scope-cards/24-Location-of-a-Place.yaml
         - maths/grade-08/scope-cards/28-Scale-Diagrams.yaml
+  center angle:
+    grades:
+      8:
+        si: කේන්ද්‍රික කෝණය
+        alt:
+        - කේන්ද්‍රික කෝණ
+        sources:
+        - maths/grade-08/lessons/23-Circle.md
+      10:
+        si: කේන්ද්‍ර කෝණය
+        alt:
+        - කේන්ද්‍රික කෝණය
+        sources:
+        - maths/grade-10/lessons/30-Angles-in-a-Circle.md
   central angle:
     grades:
       8:
@@ -4537,6 +4571,20 @@ terms:
         - maths/grade-09/scope-cards/18-Circumference-of-a-Circle.yaml
         - maths/grade-09/scope-cards/19-Pythagoras-Relationship.yaml
         - maths/grade-09/scope-cards/23-Area.yaml
+  centre angle:
+    grades:
+      8:
+        si: කේන්ද්‍රික කෝණය
+        alt:
+        - කේන්ද්‍රික කෝණ
+        sources:
+        - maths/grade-08/lessons/23-Circle.md
+      10:
+        si: කේන්ද්‍ර කෝණය
+        alt:
+        - කේන්ද්‍රික කෝණය
+        sources:
+        - maths/grade-10/lessons/30-Angles-in-a-Circle.md
   centre of rotation:
     grades:
       8:
@@ -4978,6 +5026,23 @@ terms:
         sources:
         - maths/grade-10/lessons/05-Congruency.md
         - maths/grade-10/scope-cards/05-Congruency.yaml
+  congruent:
+    grades:
+      8:
+        si: අංගසම
+        alt:
+        - අංගසම වේ
+        - අංගසමයි
+        sources:
+        - maths/grade-08/lessons/12-Triangles.md
+        - maths/grade-08/lessons/26-Triangle-Constructions.md
+      10:
+        si: අංගසම
+        alt:
+        - අංගසම වේ
+        - අංගසමයි
+        sources:
+        - maths/grade-10/lessons/05-Congruency.md
   congruent plane figure:
     grades:
       10:
@@ -5237,6 +5302,38 @@ terms:
         sources:
         - maths/grade-11/lessons/01-Real-Numbers.md
         - maths/grade-11/scope-cards/01-Real-Numbers.yaml
+  crossing point:
+    grades:
+      8:
+        si: ඡේදන ලක්ෂ්‍යය
+        alt:
+        - ඡේදන ලක්ෂ්‍ය
+        - ඡේදන ලක්ෂ්‍යයන්
+        sources:
+        - maths/grade-08/lessons/26-Triangle-Constructions.md
+      9:
+        si: ඡේදන ලක්ෂ්‍යය
+        alt:
+        - ඡේදන ලක්ෂ්‍ය
+        - ඡේදන ලක්ෂ්‍යයන්
+        sources:
+        - maths/grade-09/lessons/13-Loci-and-Constructions.md
+  crossing points:
+    grades:
+      8:
+        si: ඡේදන ලක්ෂ්‍ය
+        alt:
+        - ඡේදන ලක්ෂ්‍යය
+        - ඡේදන ලක්ෂ්‍යයන්
+        sources:
+        - maths/grade-08/lessons/26-Triangle-Constructions.md
+      9:
+        si: ඡේදන ලක්ෂ්‍ය
+        alt:
+        - ඡේදන ලක්ෂ්‍යය
+        - ඡේදන ලක්ෂ්‍යයන්
+        sources:
+        - maths/grade-09/lessons/13-Loci-and-Constructions.md
   cube:
     grades:
       6:
@@ -7189,6 +7286,38 @@ terms:
         - maths/grade-09/scope-cards/19-Pythagoras-Relationship.yaml
         - maths/grade-09/scope-cards/20-Graphs.yaml
         - maths/grade-09/scope-cards/22-Sets.yaml
+  intersection point:
+    grades:
+      8:
+        si: ඡේදන ලක්ෂ්‍යය
+        alt:
+        - ඡේදන ලක්ෂ්‍ය
+        - ඡේදන ලක්ෂ්‍යයන්
+        sources:
+        - maths/grade-08/lessons/26-Triangle-Constructions.md
+      9:
+        si: ඡේදන ලක්ෂ්‍යය
+        alt:
+        - ඡේදන ලක්ෂ්‍ය
+        - ඡේදන ලක්ෂ්‍යයන්
+        sources:
+        - maths/grade-09/lessons/13-Loci-and-Constructions.md
+  intersection points:
+    grades:
+      8:
+        si: ඡේදන ලක්ෂ්‍ය
+        alt:
+        - ඡේදන ලක්ෂ්‍යය
+        - ඡේදන ලක්ෂ්‍යයන්
+        sources:
+        - maths/grade-08/lessons/26-Triangle-Constructions.md
+      9:
+        si: ඡේදන ලක්ෂ්‍ය
+        alt:
+        - ඡේදන ලක්ෂ්‍යය
+        - ඡේදන ලක්ෂ්‍යයන්
+        sources:
+        - maths/grade-09/lessons/13-Loci-and-Constructions.md
   inverse proportion:
     grades:
       10:
@@ -10648,6 +10777,12 @@ terms:
     grades:
       8:
         si: කේන්ද්‍රික ඛණ්ඩය
+        alt:
+        - කේන්ද්‍රික ඛණ්ඩ
+        - කේන්ද්‍රික ඛණ්ඩයක
+        - කේන්ද්‍රික ඛණ්ඩයේ
+        - කේන්ද්‍රික ඛණ්ඩයක්
+        - කේන්ද්‍රික ඛණ්ඩවල
         sources:
         - maths/grade-08/lessons/23-Circle.md
         - maths/grade-08/lessons/30-Tessellation.md
@@ -10655,6 +10790,12 @@ terms:
         - maths/grade-08/scope-cards/30-Tessellation.yaml
       10:
         si: කේන්ද්‍රික ඛණ්ඩය
+        alt:
+        - කේන්ද්‍රික ඛණ්ඩ
+        - කේන්ද්‍රික ඛණ්ඩයක
+        - කේන්ද්‍රික ඛණ්ඩයේ
+        - කේන්ද්‍රික ඛණ්ඩයක්
+        - කේන්ද්‍රික ඛණ්ඩවල
         sources:
         - maths/grade-10/lessons/01-Perimeter.md
         - maths/grade-10/lessons/06-Area.md
@@ -10886,6 +11027,11 @@ terms:
         - පැත්ත
         - පැත්තේ
         - පැත්තෙහි
+        - පාද
+        - පාදවල
+        - පාදයන්
+        - පාදයන්හි
+        - පාදයේ
         sources:
         - maths/grade-08/lessons/02-Perimeter.md
         - maths/grade-08/lessons/10-Indices.md
@@ -10907,6 +11053,11 @@ terms:
         - පැත්ත
         - පැත්තේ
         - පැත්තෙහි
+        - පාද
+        - පාදවල
+        - පාදයන්
+        - පාදයන්හි
+        - පාදයේ
         sources:
         - maths/grade-09/lessons/16-Angles-of-a-Triangle.md
       10:
@@ -10915,6 +11066,11 @@ terms:
         - පැත්ත
         - පැත්තේ
         - පැත්තෙහි
+        - පාද
+        - පාදවල
+        - පාදයන්
+        - පාදයන්හි
+        - පාදයේ
         sources:
         - maths/grade-10/lessons/08-Triangles.md
         - maths/grade-10/lessons/26-Chords-of-a-Circle.md
@@ -11347,6 +11503,25 @@ terms:
         - maths/grade-11/lessons/05-Volume-of-Solids.md
         - maths/grade-11/scope-cards/04-Surface-Area-of-Solids.yaml
         - maths/grade-11/scope-cards/05-Volume-of-Solids.yaml
+  spoke:
+    grades:
+      8:
+        si: ගරාදිය
+        alt:
+        - ගරාදි
+        - ගරාදියක්
+        - ගරාදියේ
+        sources:
+        - maths/grade-08/lessons/23-Circle.md
+  spokes:
+    grades:
+      8:
+        si: ගරාදි
+        alt:
+        - ගරාදිය
+        - ගරාදිවල
+        sources:
+        - maths/grade-08/lessons/23-Circle.md
   square:
     grades:
       6:
@@ -11612,6 +11787,26 @@ terms:
         sources:
         - maths/grade-08/lessons/27-Data-Representation-and-Interpretation.md
         - maths/grade-08/scope-cards/27-Data-Representation-and-Interpretation.yaml
+  straight line distance:
+    grades:
+      8:
+        si: සරල රේඛීය දුර
+        alt:
+        - සරල රේඛීය දුරක්
+        - සරල රේඛීය දුරයි
+        sources:
+        - maths/grade-08/lessons/24-Location-of-a-Place.md
+        - maths/grade-08/lessons/28-Scale-Diagrams.md
+  straight-line distance:
+    grades:
+      8:
+        si: සරල රේඛීය දුර
+        alt:
+        - සරල රේඛීය දුරක්
+        - සරල රේඛීය දුරයි
+        sources:
+        - maths/grade-08/lessons/24-Location-of-a-Place.md
+        - maths/grade-08/lessons/28-Scale-Diagrams.md
   straight angle:
     grades:
       6:
