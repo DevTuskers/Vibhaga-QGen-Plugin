@@ -63,6 +63,17 @@ class SinhalaStyleTests(unittest.TestCase):
         findings = si_style.field_warnings(text)
         self.assertTrue(any("opens with announcement 'පිළිතුර:'" in f for f in findings))
 
+    def test_passive_constructions_flagged(self):
+        for sample in [
+            "කම්බිය නමනු ලැබේ.",
+            "ආකෘතියක් සාදනු ලැබේ.",
+            "අගය ගනු ලැබේ.",
+            "තහඩුව කපනු ලැබුණි.",
+            "බලයක් යොදනු ලබයි.",
+        ]:
+            findings = si_style.field_warnings(sample)
+            self.assertIn("passive construction", findings, f"Failed to flag passive in: {sample}")
+
     def test_main_names_question_and_part_and_never_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = Path(tmp)

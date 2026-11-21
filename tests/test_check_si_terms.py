@@ -232,6 +232,78 @@ questions:
         self.assertEqual(rc, 1)
         self.assertIn("ප්රතිලෝම ප්රමේයය", out.replace("\u200d", ""))
 
+    def test_new_banned_mt_artifacts_flagged(self):
+        banned_samples = [
+            ("තිඹිරි ඉරි", "තිඹිරි ඉරි වලින් අඳින්න."),
+            ("තීන්සිලි", "තීන්සිලි 12ක් භාවිතා කර ඇත."),
+            ("පරෙක", "වහලයේ පරෙක දිග ගණනය කරන්න."),
+            ("පාත්තුම්", "පාත්තුම් ගල් අල්ලා ඇත."),
+            ("කැබලය", "කැබලය මගින් සම්බන්ධ කර ඇත."),
+            ("කෝණ සමභාජක", "කෝණ සමභාජකය අඳින්න."),
+            ("කෝණ සමභාජනය", "කෝණ සමභාජනය කරන්න."),
+            ("බහුස්‍රය", "සවිධි බහුස්‍රයක කෝණ සොයන්න."),
+            ("ලෙඛනය", "ලෝහ ලෙඛනයක් භාවිතා කරන්න."),
+            ("සමභාජක", "රේඛා සමභාජකය අඳින්න."),
+            ("සමභාජනය", "රේඛාව සමභාජනය කරන්න."),
+        ]
+        for term, sample in banned_samples:
+            doc = f"""\
+questions:
+  - n: 1
+    stem_si: "{sample}"
+"""
+            rc, out = run_tool(doc, "--grade", "9")
+            self.assertEqual(rc, 1, f"Failed to flag banned term: {term}")
+            self.assertIn(term.replace("\u200d", ""), out.replace("\u200d", ""))
+
+    def test_g9_geometry_and_polygon_terms_enforced(self):
+        # Good doc using standard curriculum terms passes at Grade 9
+        good_g9 = """\
+questions:
+  - n: 1
+    stem: "Calculate the arc length subtending a central angle of $60°$ in a circle of radius $7$ cm."
+    stem_si: "අරය $7$ cm වූ වෘත්තයක $60°$ ක කේන්ද්‍රික කෝණයක් ආපාතනය කරන චාප දිග ගණනය කරන්න."
+  - n: 2
+    stem: "Each interior angle of a regular polygon is $120°$. Find the sum of interior angles."
+    stem_si: "සවිධි බහු අස්‍රයක එක් අභ්‍යන්තර කෝණයක් $120°$ කි. අභ්‍යන්තර කෝණවල ඓක්‍යය සොයන්න."
+  - n: 3
+    stem: "The figure shows a rectangle where each corner is a right angle."
+    stem_si: "රූපයේ දැක්වෙන්නේ එක් එක් මුල්ල ඍජු කෝණයක් වන ඍජුකෝණාස්‍රයකි."
+"""
+        rc, out = run_tool(good_g9, "--grade", "9")
+        self.assertEqual(rc, 0, out)
+
+        # Missing standard terms at Grade 9 are caught
+        bad_central = """\
+questions:
+  - n: 1
+    stem: "Find the central angle of the sector."
+    stem_si: "කේන්ද්‍රික ඛණ්ඩයේ මැද කෝණය සොයන්න."
+"""
+        rc, out = run_tool(bad_central, "--grade", "9")
+        self.assertEqual(rc, 1)
+        self.assertIn("central angle", out)
+
+        bad_polygon = """\
+questions:
+  - n: 1
+    stem: "A regular polygon has 8 sides."
+    stem_si: "සමාන පැති ඇති රූපයක පැති 8ක් ඇත."
+"""
+        rc, out = run_tool(bad_polygon, "--grade", "9")
+        self.assertEqual(rc, 1)
+        self.assertIn("regular polygon", out)
+
+        bad_sum = """\
+questions:
+  - n: 1
+    stem: "Find the sum of interior angles."
+    stem_si: "ඇතුළත කෝණ එකතු කරන්න."
+"""
+        rc, out = run_tool(bad_sum, "--grade", "9")
+        self.assertEqual(rc, 1)
+        self.assertIn("sum of interior angles", out)
+
 
 if __name__ == "__main__":
     unittest.main()
