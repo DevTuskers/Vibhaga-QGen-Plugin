@@ -365,6 +365,94 @@ questions:
         self.assertEqual(rc, 1)
         self.assertIn("subtends", out)
 
+    def test_g10_chords_scale_and_banned_mt_terms_enforced(self):
+        good_g10 = """\
+questions:
+  - n: 1
+    stem: "The perpendicular from the centre bisects the chord."
+    stem_si: "කේන්ද්‍රයේ සිට ජ්‍යාවට අඳින ලද ලම්බයෙන් ජ්‍යාව සමච්ඡේදනය වේ."
+  - n: 2
+    stem: "Chords equidistant from the centre are equal in length."
+    stem_si: "කේන්ද්‍රයේ සිට සමාන දුරින් පිහිටි ජ්‍යා දිගින් සමාන වේ."
+  - n: 3
+    stem: "A rope of length $16$ cm is tied across."
+    stem_si: "$16$ cm දිගැති කඹයක් හරහා බැඳ ඇත."
+  - n: 4
+    stem: "Construct a scale drawing of the field."
+    stem_si: "ක්ෂේත්‍රයේ පරිමාණ රූපයක් නිර්මාණය කරන්න."
+  - n: 5
+    stem: "The angle in a semicircle is a right angle."
+    stem_si: "අර්ධ වෘත්තයක කෝණය සෘජුකෝණයකි."
+  - n: 6
+    stem: "The chord subtends a central angle."
+    stem_si: "ජ්‍යාය කේන්ද්‍රික කෝණයක් ආපාතනය කරයි."
+"""
+        rc, out = run_tool(good_g10, "--grade", "10")
+        self.assertEqual(rc, 0, out)
+
+        # Banned සමහාරක fails
+        bad_samaharaka = """\
+questions:
+  - n: 1
+    stem: "The line bisects the chord."
+    stem_si: "රේඛාවෙන් ජ්‍යාව සමහාරක කරයි."
+"""
+        rc, out = run_tool(bad_samaharaka, "--grade", "10")
+        self.assertEqual(rc, 1)
+        self.assertIn("සමහාරක", out)
+
+        # Banned රජි fails
+        bad_raji = """\
+questions:
+  - n: 1
+    stem: "A rope is attached to the pole."
+    stem_si: "කණුවට රජියක් සවි කර ඇත."
+"""
+        rc, out = run_tool(bad_raji, "--grade", "10")
+        self.assertEqual(rc, 1)
+        self.assertIn("රජි", out)
+
+        # Banned ungrammatical participles ඇඳන / ඇඳූ fail
+        bad_drawn1 = """\
+questions:
+  - n: 1
+    stem_si: "කේන්ද්‍රයෙන් ඇඳන ලම්බකය."
+"""
+        rc, out = run_tool(bad_drawn1, "--grade", "10")
+        self.assertEqual(rc, 1)
+        self.assertIn("ඇඳන", out)
+
+        bad_drawn2 = """\
+questions:
+  - n: 1
+    stem_si: "කේන්ද්‍රයෙන් ඇඳූ ලම්බකය."
+"""
+        rc, out = run_tool(bad_drawn2, "--grade", "10")
+        self.assertEqual(rc, 1)
+        self.assertIn("ඇඳූ", out)
+
+        # Banned පරිමාණ සටහන fails
+        bad_scale = """\
+questions:
+  - n: 1
+    stem: "Draw a scale drawing."
+    stem_si: "පරිමාණ සටහනක් අඳින්න."
+"""
+        rc, out = run_tool(bad_scale, "--grade", "10")
+        self.assertEqual(rc, 1)
+        self.assertIn("පරිමාණ සටහන", out)
+
+        # Banned මනියි fails
+        bad_maniyi = """\
+questions:
+  - n: 1
+    stem_si: "AB පාදය 5 cm මනියි."
+"""
+        rc, out = run_tool(bad_maniyi, "--grade", "10")
+        self.assertEqual(rc, 1)
+        self.assertIn("මනියි", out)
+
+
 
 if __name__ == "__main__":
     unittest.main()

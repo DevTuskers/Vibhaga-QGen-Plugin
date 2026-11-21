@@ -143,6 +143,30 @@ banned:
     en: marker states (examiner/marker)
     note: machine-translation literal mistranslation of human marker into physical mark — use නිරීක්ෂකයෙකු ප්‍රකාශ කරයි / පරීක්ෂකයෙකු ප්‍රකාශ කරයි
     use: නිරීක්ෂකයෙකු ප්‍රකාශ කරයි / පරීක්ෂකයෙකු ප්‍රකාශ කරයි
+  සමහාරක:
+    en: bisector / bisect (calque)
+    note: machine-translation hallucination for bisector/bisect — curriculum strictly uses සමච්ඡේදක / සමච්ඡේදනය
+    use: සමච්ඡේදක / සමච්ඡේදනය / සමච්ඡේදනය කරයි
+  රජි:
+    en: rope / ropes
+    note: machine-translation hallucination for rope — use කඹය / කඹ / ලණුව
+    use: කඹය / කඹ / ලණුව
+  ඇඳන:
+    en: drawn (perpendicular drawn)
+    note: machine-translation ungrammatical participle for drawn — use අඳින ලද / ඇඳි
+    use: අඳින ලද / ඇඳි
+  ඇඳූ:
+    en: drawn (perpendicular drawn)
+    note: machine-translation ungrammatical participle for drawn — use අඳින ලද / ඇඳි
+    use: අඳින ලද / ඇඳි
+  පරිමාණ සටහන:
+    en: scale drawing
+    note: machine-translation calque for scale drawing — curriculum strictly uses පරිමාණ රූපය
+    use: පරිමාණ රූපය
+  මනියි:
+    en: measures (e.g. measures 3.5 cm)
+    note: machine-translation calque of intransitive 'measures X cm' into active verb මනියි — use දිග/උස X කි / මිනුම X වේ
+    use: දිග/උස X කි / මිනුම X වේ
 needs_review:
 - en: three-figure bearing
   grades:
@@ -3780,6 +3804,8 @@ terms:
     grades:
       10:
         si: අර්ධ වෘත්තයේ කෝණය
+        alt:
+        - අර්ධ වෘත්තයක කෝණය
         sources:
         - maths/grade-10/lessons/01-Perimeter.md
         - maths/grade-10/lessons/06-Area.md
@@ -4335,14 +4361,50 @@ terms:
         - maths/grade-11/lessons/22-Tangents.md
         - maths/grade-11/scope-cards/06-Binomial-Expressions.yaml
         - maths/grade-11/scope-cards/25-Probability.yaml
+  bisect:
+    grades:
+      10:
+        si: සමච්ඡේදනය කරයි
+        alt:
+        - සමච්ඡේදනය කරනු ලබයි
+        - සමච්ඡේදනය වේ
+        sources:
+        - maths/grade-10/lessons/26-Chords-of-a-Circle.md
+      11:
+        si: සමච්ඡේදනය කරයි
+        alt:
+        - සමච්ඡේදනය කරනු ලබයි
+        - සමච්ඡේදනය වේ
+        sources:
+        - maths/grade-11/lessons/11-Mid-point-Theorem.md
   bisected:
     grades:
+      10:
+        si: සමච්ඡේදනය වේ
+        sources:
+        - maths/grade-10/lessons/26-Chords-of-a-Circle.md
       11:
         si: සමච්ඡේදනය වේ
         sources:
         - maths/grade-11/lessons/11-Mid-point-Theorem.md
         - maths/grade-11/lessons/22-Tangents.md
         - maths/grade-11/scope-cards/11-Mid-point-Theorem.yaml
+  bisects:
+    grades:
+      10:
+        si: සමච්ඡේදනය කරයි
+        alt:
+        - සමච්ඡේදනය කරනු ලබයි
+        - සමච්ඡේදනය වේ
+        sources:
+        - maths/grade-10/lessons/26-Chords-of-a-Circle.md
+      11:
+        si: සමච්ඡේදනය කරයි
+        alt:
+        - සමච්ඡේදනය කරනු ලබයි
+        - සමච්ඡේදනය වේ
+        sources:
+        - maths/grade-11/lessons/11-Mid-point-Theorem.md
   brackets:
     grades:
       7:
@@ -4409,6 +4471,9 @@ terms:
         - maths/grade-09/scope-cards/18-Circumference-of-a-Circle.yaml
       10:
         si: කේන්ද්‍ර කෝණය
+        alt:
+        - කේන්ද්‍රික කෝණය
+        - කේන්ද්‍රික කෝණ
         sources:
         - maths/grade-10/lessons/01-Perimeter.md
         - maths/grade-10/lessons/05-Congruency.md
@@ -5761,6 +5826,16 @@ terms:
         - maths/grade-10/lessons/29-Probability.md
         - maths/grade-10/scope-cards/14-Equations.yaml
         - maths/grade-10/scope-cards/29-Probability.yaml
+  equidistant:
+    grades:
+      10:
+        si: සමාන දුරින් පිහිටි
+        alt:
+        - සමාන දුරින් පිහිටයි
+        - සමාන දුරක පිහිටි
+        - සමාන දුරකින් පිහිටි
+        sources:
+        - maths/grade-10/lessons/26-Chords-of-a-Circle.md
   equation:
     grades:
       7:
@@ -10075,6 +10150,8 @@ terms:
       6:
         alt:
         - සෘජු කෝණය
+        - සෘජුකෝණය
+        - ඍජුකෝණය
         si: ඍජු කෝණය
         sources:
         - maths/grade-06/lessons/07-Angles.md
@@ -10092,6 +10169,8 @@ terms:
       7:
         alt:
         - සෘජු කෝණය
+        - සෘජුකෝණය
+        - ඍජුකෝණය
         si: ඍජු කෝණය
         sources:
         - maths/grade-07/lessons/01-Bilateral-Symmetry.md
@@ -10124,6 +10203,8 @@ terms:
       9:
         alt:
         - සෘජු කෝණය
+        - සෘජුකෝණය
+        - ඍජුකෝණය
         si: ඍජු කෝණය
         sources:
         - maths/grade-09/lessons/08-Angles-Related-to-Straight-Lines-and-Parallel-Lines.md
@@ -10133,6 +10214,8 @@ terms:
       10:
         alt:
         - සෘජු කෝණය
+        - සෘජුකෝණය
+        - ඍජුකෝණය
         si: ඍජු කෝණය
         sources:
         - maths/grade-10/lessons/08-Triangles.md
@@ -10140,6 +10223,8 @@ terms:
       11:
         alt:
         - සෘජු කෝණය
+        - සෘජුකෝණය
+        - ඍජුකෝණය
         si: ඍජු කෝණය
         sources:
         - maths/grade-11/lessons/17-Pythagoras-Theorem.md
@@ -10298,6 +10383,26 @@ terms:
         - maths/grade-07/scope-cards/25-Solids.yaml
         - maths/grade-07/scope-cards/27-Scale-Diagrams.yaml
         - maths/grade-07/scope-cards/28-Tessellation.yaml
+  rope:
+    grades:
+      10:
+        si: කඹය
+        alt:
+        - කඹ
+        - ලණුව
+        - ලණු
+        sources:
+        - maths/grade-10/lessons/26-Chords-of-a-Circle.md
+  ropes:
+    grades:
+      10:
+        si: කඹ
+        alt:
+        - කඹය
+        - ලණුව
+        - ලණු
+        sources:
+        - maths/grade-10/lessons/26-Chords-of-a-Circle.md
   rotational symmetry:
     grades:
       8:
@@ -10373,6 +10478,8 @@ terms:
     grades:
       7:
         si: පරිමාණ රූපය
+        alt:
+        - පරිමාණ රූප
         sources:
         - maths/grade-07/lessons/09-Angles.md
         - maths/grade-07/lessons/19-Volume.md
@@ -10384,6 +10491,8 @@ terms:
         - maths/grade-07/scope-cards/29-Likelihood-of-an-Event-Occurring.yaml
       8:
         si: පරිමාණ රූපය
+        alt:
+        - පරිමාණ රූප
         sources:
         - maths/grade-08/lessons/22-Volume-and-Capacity.md
         - maths/grade-08/lessons/24-Location-of-a-Place.md
@@ -10398,6 +10507,8 @@ terms:
         - maths/grade-08/scope-cards/30-Tessellation.yaml
       9:
         si: පරිමාණ රූපය
+        alt:
+        - පරිමාණ රූප
         sources:
         - maths/grade-09/lessons/09-Liquid-Measurements.md
         - maths/grade-09/lessons/10-Direct-Proportion.md
@@ -10413,6 +10524,8 @@ terms:
         - maths/grade-09/scope-cards/27-Scale-Diagrams.yaml
       10:
         si: පරිමාණ රූපය
+        alt:
+        - පරිමාණ රූප
         sources:
         - maths/grade-10/lessons/03-Fractions.md
         - maths/grade-10/lessons/09-Inverse-Proportions.md
@@ -10429,6 +10542,32 @@ terms:
         - maths/grade-10/scope-cards/22-Formulae.yaml
         - maths/grade-10/scope-cards/28-Surface-Area-and-Volume.yaml
         - maths/grade-10/scope-cards/31-Scale-Diagrams.yaml
+  scale drawing:
+    grades:
+      7:
+        si: පරිමාණ රූපය
+        alt:
+        - පරිමාණ රූප
+        sources:
+        - maths/grade-07/lessons/27-Scale-Diagrams.md
+      8:
+        si: පරිමාණ රූපය
+        alt:
+        - පරිමාණ රූප
+        sources:
+        - maths/grade-08/lessons/28-Scale-Diagrams.md
+      9:
+        si: පරිමාණ රූපය
+        alt:
+        - පරිමාණ රූප
+        sources:
+        - maths/grade-09/lessons/27-Scale-Diagrams.md
+      10:
+        si: පරිමාණ රූපය
+        alt:
+        - පරිමාණ රූප
+        sources:
+        - maths/grade-10/lessons/31-Scale-Diagrams.md
   scalene triangle:
     grades:
       7:
@@ -10706,6 +10845,10 @@ terms:
     grades:
       6:
         si: පාදය
+        alt:
+        - පැත්ත
+        - පැත්තේ
+        - පැත්තෙහි
         sources:
         - maths/grade-06/lessons/12-Rectilinear-Plane-Figures.md
         - maths/grade-06/lessons/15-Length.md
@@ -10715,6 +10858,10 @@ terms:
         - maths/grade-06/scope-cards/24-Indices.yaml
       7:
         si: පාදය
+        alt:
+        - පැත්ත
+        - පැත්තේ
+        - පැත්තෙහි
         sources:
         - maths/grade-07/lessons/05-Indices.md
         - maths/grade-07/lessons/07-Parallel-Straight-Lines.md
@@ -10735,6 +10882,10 @@ terms:
         - maths/grade-07/scope-cards/24-Construction-of-Rectilinear-Plane-Figures.yaml
       8:
         si: පාදය
+        alt:
+        - පැත්ත
+        - පැත්තේ
+        - පැත්තෙහි
         sources:
         - maths/grade-08/lessons/02-Perimeter.md
         - maths/grade-08/lessons/10-Indices.md
@@ -10750,6 +10901,23 @@ terms:
         - maths/grade-08/scope-cards/25-Number-Line-and-Cartesian-Plane.yaml
         - maths/grade-08/scope-cards/26-Triangle-Constructions.yaml
         - maths/grade-08/scope-cards/28-Scale-Diagrams.yaml
+      9:
+        si: පාදය
+        alt:
+        - පැත්ත
+        - පැත්තේ
+        - පැත්තෙහි
+        sources:
+        - maths/grade-09/lessons/16-Angles-of-a-Triangle.md
+      10:
+        si: පාදය
+        alt:
+        - පැත්ත
+        - පැත්තේ
+        - පැත්තෙහි
+        sources:
+        - maths/grade-10/lessons/08-Triangles.md
+        - maths/grade-10/lessons/26-Chords-of-a-Circle.md
   similar triangles:
     grades:
       11:
