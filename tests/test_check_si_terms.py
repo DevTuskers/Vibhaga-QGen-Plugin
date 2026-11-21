@@ -188,6 +188,50 @@ questions:
         self.assertIn("Q1.stem_si", ids)
         self.assertIn("Q1.question_text_sinhala", ids)
 
+    def test_g11_solid_geometry_terms_enforced(self):
+        # Cone mistranslated as 'කෝනය' (angle) must fail at Grade 11
+        bad_cone = """\
+questions:
+  - n: 1
+    stem: "A cone has base radius 7 cm and height 12 cm."
+    stem_si: "කෝනයක ආධාරක අරය 7 cm සහ උස 12 cm වේ."
+"""
+        rc, out = run_tool(bad_cone, "--grade", "11")
+        self.assertEqual(rc, 1)
+        self.assertIn("English term 'cone' present but the Sinhala does not use the dictionary rendering", out)
+        self.assertIn("කේතුව", out)
+
+        # Cone correctly translated as 'කේතුව' passes
+        good_cone = """\
+questions:
+  - n: 1
+    stem: "A cone has base radius 7 cm and slant height 12 cm."
+    stem_si: "කේතුවක ආධාරක අරය 7 cm සහ ඇල උස 12 cm වේ."
+"""
+        rc, out = run_tool(good_cone, "--grade", "11")
+        self.assertEqual(rc, 0, out)
+
+        # Slant height mistranslated as perpendicular height 'ලම්බ උස' fails
+        bad_slant = """\
+questions:
+  - n: 1
+    stem: "A solid cone has a slant height of 10 cm."
+    stem_si: "ඝන කේතුවක ලම්බ උස 10 cm වේ."
+"""
+        rc, out = run_tool(bad_slant, "--grade", "11")
+        self.assertEqual(rc, 1)
+        self.assertIn("English term 'slant height' present but the Sinhala does not use the dictionary rendering 'ඇල උස'", out)
+
+        # Banned 'ප්‍රතිලෝම ප්‍රමේයය' is caught
+        bad_converse = """\
+questions:
+  - n: 1
+    stem_si: "මධ්‍ය ලක්ෂ්‍ය ප්‍රමේයයේ ප්‍රතිලෝම ප්‍රමේයය ප්‍රකාශ කරන්න."
+"""
+        rc, out = run_tool(bad_converse, "--grade", "11")
+        self.assertEqual(rc, 1)
+        self.assertIn("ප්රතිලෝම ප්රමේයය", out.replace("\u200d", ""))
+
 
 if __name__ == "__main__":
     unittest.main()
