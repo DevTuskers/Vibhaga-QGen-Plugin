@@ -87,13 +87,68 @@ banned:
     en: bisect
     note: machine-translation/calque artifact — curriculum uses සමච්ඡේදනය
     use: සමච්ඡේදනය
+  කෑලිය:
+    en: plot (piece of land)
+    note: colloquial slang calque for land plot — use බිම් කොටස / ඉඩම් කොටස
+    use: බිම් කොටස / ඉඩම් කොටස
+  දෙකොළය:
+    en: deck (observation deck)
+    note: machine-translation phonetic/calque hallucination for deck — use නිරීක්ෂණ කුටිය / නිරීක්ෂණ මැදිරිය / නිරීක්ෂණ තට්ටුව
+    use: නිරීක්ෂණ කුටිය / නිරීක්ෂණ මැදිරිය / නිරීක්ෂණ තට්ටුව
+  දෙකොළයක:
+    en: in a deck
+    note: machine-translation phonetic/calque hallucination for deck — use නිරීක්ෂණ කුටියක / නිරීක්ෂණ මැදිරියක
+    use: නිරීක්ෂණ කුටියක / නිරීක්ෂණ මැදිරියක
+  නිව් උතුරට:
+    en: due north
+    note: machine translation phonetically calquing 'due' as 'new' (නිව්) — use කෙළින්ම උතුරට / උතුරු දෙසට
+    use: කෙළින්ම උතුරට / උතුරු දෙසට
+  නිව් උතුරින්:
+    en: due north
+    note: machine translation phonetically calquing 'due' as 'new' (නිව්) — use කෙළින්ම උතුරින් / උතුරු දෙසින්
+    use: කෙළින්ම උතුරින් / උතුරු දෙසින්
+  නිව් දකුණින්:
+    en: due south
+    note: machine translation phonetically calquing 'due' as 'new' (නිව්) — use කෙළින්ම දකුණින් / දකුණු දෙසින්
+    use: කෙළින්ම දකුණින් / දකුණු දෙසින්
+  නිව් දිශාවෙන්:
+    en: due (direction)
+    note: machine translation phonetically calquing 'due' as 'new' (නිව්) — use කෙළින්ම / දෙසින්
+    use: කෙළින්ම / දෙසින්
+  නිව් නැගෙනහිරින්:
+    en: due east
+    note: machine translation phonetically calquing 'due' as 'new' (නිව්) — use කෙළින්ම නැගෙනහිරින් / නැගෙනහිර දෙසින්
+    use: කෙළින්ම නැගෙනහිරින් / නැගෙනහිර දෙසින්
+  නිව් බටහිරින්:
+    en: due west
+    note: machine translation phonetically calquing 'due' as 'new' (නිව්) — use කෙළින්ම බටහිරින් / බටහිර දෙසින්
+    use: කෙළින්ම බටහිරින් / බටහිර දෙසින්
+  භූමිකාරයා:
+    en: groundsman
+    note: machine-translation literal/pejorative translation of groundsman — use ක්‍රීඩා පිටි භාරකරු / භූමි භාරකරු
+    use: ක්‍රීඩා පිටි භාරකරු / භූමි භාරකරු
+  භූමි කෑලි:
+    en: land plots
+    note: colloquial slang calque for land plots — use බිම් කොටස් / ඉඩම් කොටස්
+    use: බිම් කොටස් / ඉඩම් කොටස්
+  ජ්‍යා රේඛාව:
+    en: chord line
+    note: in Sri Lankan geometry curriculum the term is simply ජ්‍යාය (accusative ජ්‍යාව), never ජ්‍යා රේඛාව
+    use: ජ්‍යාය / ජ්‍යායක් / ජ්‍යාව
+  සලකුණක් පවසයි:
+    en: marker claims (examiner/marker)
+    note: machine-translation literal mistranslation of human marker (examiner) into physical mark (සලකුණ) — use නිරීක්ෂකයෙකු පවසයි / පරීක්ෂකයෙකු පවසයි
+    use: නිරීක්ෂකයෙකු පවසයි / පරීක්ෂකයෙකු පවසයි
+  සලකුණක් ප්‍රකාශ කරයි:
+    en: marker states (examiner/marker)
+    note: machine-translation literal mistranslation of human marker into physical mark — use නිරීක්ෂකයෙකු ප්‍රකාශ කරයි / පරීක්ෂකයෙකු ප්‍රකාශ කරයි
+    use: නිරීක්ෂකයෙකු ප්‍රකාශ කරයි / පරීක්ෂකයෙකු ප්‍රකාශ කරයි
 needs_review:
 - en: three-figure bearing
   grades:
   - 8
   - 9
-  - 10
-  why: Explicitly not_taught in G8 L24, G9 L27, G10 L31 — but an author wanting a bearing word has no corpus source. Rule before use.
+  why: Explicitly not_taught in G8 L24, G9 L27 (taught in G10 L31 and G11 L18 using දිගංශය) — an author wanting a bearing word at G8-G9 has no corpus source. Rule before use.
 - en: quadrant (Cartesian)
   grades:
   - 7
@@ -3590,6 +3645,16 @@ terms:
         - maths/grade-06/lessons/19-Constructing-Algebraic-Expressions-and-Substitution.md
         - maths/grade-06/scope-cards/18-Algebraic-Symbols.yaml
         - maths/grade-06/scope-cards/19-Constructing-Algebraic-Expressions-and-Substitution.yaml
+  alternate segment theorem:
+    grades:
+      11:
+        alt:
+        - ඒකාන්තර වෘත්ත ඛණ්ඩයේ කෝණ ආශ්‍රිත ප්‍රමේයය
+        - ඒකාන්තර වෘත්ත ඛණ්ඩ ප්‍රමේයය
+        si: ඒකාන්තර වෘත්ත ඛණ්ඩ ප්‍රමේයය
+        sources:
+        - maths/grade-11/lessons/22-Tangents.md
+        - maths/grade-11/scope-cards/22-Tangents.yaml
   altitude (of a triangle):
     grades:
       8:
@@ -4148,6 +4213,44 @@ terms:
         - maths/grade-08/scope-cards/19-Sets.yaml
         - maths/grade-08/scope-cards/20-Area.yaml
         - maths/grade-08/scope-cards/21-Time.yaml
+      10:
+        alt:
+        - දිගංශයකින්
+        - දිගංශයේ
+        - දිගංශ
+        si: දිගංශය
+        sources:
+        - maths/grade-10/lessons/31-Scale-Diagrams.md
+        - maths/grade-10/scope-cards/31-Scale-Diagrams.yaml
+      11:
+        alt:
+        - දිගංශයකින්
+        - දිගංශයේ
+        - දිගංශ
+        si: දිගංශය
+        sources:
+        - maths/grade-11/lessons/18-Trigonometry.md
+        - maths/grade-11/scope-cards/18-Trigonometry.yaml
+  bearings:
+    grades:
+      10:
+        alt:
+        - දිගංශ
+        - දිගංශයන්
+        - දිගංශයකින්
+        - දිගංශයේ
+        si: දිගංශ
+        sources:
+        - maths/grade-10/lessons/31-Scale-Diagrams.md
+      11:
+        alt:
+        - දිගංශ
+        - දිගංශයන්
+        - දිගංශයකින්
+        - දිගංශයේ
+        si: දිගංශ
+        sources:
+        - maths/grade-11/lessons/18-Trigonometry.md
         - maths/grade-08/scope-cards/22-Volume-and-Capacity.yaml
         - maths/grade-08/scope-cards/24-Location-of-a-Place.yaml
         - maths/grade-08/scope-cards/25-Number-Line-and-Cartesian-Plane.yaml
@@ -4413,6 +4516,9 @@ terms:
   chord:
     grades:
       8:
+        alt:
+        - ජ්‍යාව
+        - ජ්‍යා
         si: ජ්‍යාය
         sources:
         - maths/grade-08/lessons/10-Indices.md
@@ -4426,6 +4532,9 @@ terms:
         - maths/grade-08/scope-cards/23-Circle.yaml
         - maths/grade-08/scope-cards/30-Tessellation.yaml
       10:
+        alt:
+        - ජ්‍යාව
+        - ජ්‍යා
         si: ජ්‍යාය
         sources:
         - maths/grade-10/lessons/05-Congruency.md
@@ -4439,6 +4548,9 @@ terms:
         - maths/grade-10/scope-cards/27-Constructions.yaml
         - maths/grade-10/scope-cards/30-Angles-in-a-Circle.yaml
       11:
+        alt:
+        - ජ්‍යාව
+        - ජ්‍යා
         si: ජ්‍යාය
         sources:
         - maths/grade-11/lessons/08-Area-of-Plane-Figures-Between-Parallel-Lines.md
@@ -4452,6 +4564,29 @@ terms:
         - maths/grade-11/scope-cards/17-Pythagoras-Theorem.yaml
         - maths/grade-11/scope-cards/21-Cyclic-Quadrilaterals.yaml
         - maths/grade-11/scope-cards/22-Tangents.yaml
+  chords:
+    grades:
+      8:
+        alt:
+        - ජ්‍යා
+        - ජ්‍යාවන්
+        si: ජ්‍යා
+        sources:
+        - maths/grade-08/lessons/23-Circle.md
+      10:
+        alt:
+        - ජ්‍යා
+        - ජ්‍යාවන්
+        si: ජ්‍යා
+        sources:
+        - maths/grade-10/lessons/26-Chords-of-a-Circle.md
+      11:
+        alt:
+        - ජ්‍යා
+        - ජ්‍යාවන්
+        si: ජ්‍යා
+        sources:
+        - maths/grade-11/lessons/22-Tangents.md
   circle:
     grades:
       6:
@@ -7240,6 +7375,44 @@ terms:
         - maths/grade-08/scope-cards/12-Triangles.yaml
         - maths/grade-08/scope-cards/20-Area.yaml
         - maths/grade-08/scope-cards/21-Time.yaml
+      10:
+        alt:
+        - දිගංශයකින්
+        - දිගංශයේ
+        - දිගංශ
+        si: දිගංශය
+        sources:
+        - maths/grade-10/lessons/31-Scale-Diagrams.md
+        - maths/grade-10/scope-cards/31-Scale-Diagrams.yaml
+      11:
+        alt:
+        - දිගංශයකින්
+        - දිගංශයේ
+        - දිගංශ
+        si: දිගංශය
+        sources:
+        - maths/grade-11/lessons/18-Trigonometry.md
+        - maths/grade-11/scope-cards/18-Trigonometry.yaml
+  bearings:
+    grades:
+      10:
+        alt:
+        - දිගංශ
+        - දිගංශයන්
+        - දිගංශයකින්
+        - දිගංශයේ
+        si: දිගංශ
+        sources:
+        - maths/grade-10/lessons/31-Scale-Diagrams.md
+      11:
+        alt:
+        - දිගංශ
+        - දිගංශයන්
+        - දිගංශයකින්
+        - දිගංශයේ
+        si: දිගංශ
+        sources:
+        - maths/grade-11/lessons/18-Trigonometry.md
         - maths/grade-08/scope-cards/23-Circle.yaml
         - maths/grade-08/scope-cards/24-Location-of-a-Place.yaml
         - maths/grade-08/scope-cards/25-Number-Line-and-Cartesian-Plane.yaml
@@ -7543,6 +7716,17 @@ terms:
         - maths/grade-11/scope-cards/11-Mid-point-Theorem.yaml
         - maths/grade-11/scope-cards/15-Data-Representation-and-Interpretation.yaml
         - maths/grade-11/scope-cards/17-Pythagoras-Theorem.yaml
+  midpoint theorem:
+    grades:
+      11:
+        alt:
+        - මධ්‍ය ලක්ෂ්‍ය ප්‍රමේයයේ
+        si: මධ්‍ය ලක්ෂ්‍ය ප්‍රමේයය
+        sources:
+        - maths/grade-11/lessons/08-Area-of-Plane-Figures-Between-Parallel-Lines.md
+        - maths/grade-11/lessons/11-Mid-point-Theorem.md
+        - maths/grade-11/lessons/14-Equiangular-Triangles.md
+        - maths/grade-11/scope-cards/11-Mid-point-Theorem.yaml
         - maths/grade-11/scope-cards/18-Trigonometry.yaml
   midday:
     grades:
@@ -7742,6 +7926,44 @@ terms:
         - maths/grade-08/scope-cards/19-Sets.yaml
         - maths/grade-08/scope-cards/20-Area.yaml
         - maths/grade-08/scope-cards/21-Time.yaml
+      10:
+        alt:
+        - දිගංශයකින්
+        - දිගංශයේ
+        - දිගංශ
+        si: දිගංශය
+        sources:
+        - maths/grade-10/lessons/31-Scale-Diagrams.md
+        - maths/grade-10/scope-cards/31-Scale-Diagrams.yaml
+      11:
+        alt:
+        - දිගංශයකින්
+        - දිගංශයේ
+        - දිගංශ
+        si: දිගංශය
+        sources:
+        - maths/grade-11/lessons/18-Trigonometry.md
+        - maths/grade-11/scope-cards/18-Trigonometry.yaml
+  bearings:
+    grades:
+      10:
+        alt:
+        - දිගංශ
+        - දිගංශයන්
+        - දිගංශයකින්
+        - දිගංශයේ
+        si: දිගංශ
+        sources:
+        - maths/grade-10/lessons/31-Scale-Diagrams.md
+      11:
+        alt:
+        - දිගංශ
+        - දිගංශයන්
+        - දිගංශයකින්
+        - දිගංශයේ
+        si: දිගංශ
+        sources:
+        - maths/grade-11/lessons/18-Trigonometry.md
         - maths/grade-08/scope-cards/24-Location-of-a-Place.yaml
         - maths/grade-08/scope-cards/25-Number-Line-and-Cartesian-Plane.yaml
         - maths/grade-08/scope-cards/27-Data-Representation-and-Interpretation.yaml
@@ -11555,6 +11777,84 @@ terms:
         - maths/grade-09/scope-cards/08-Angles-Related-to-Straight-Lines-and-Parallel-Lines.yaml
         - maths/grade-09/scope-cards/16-Angles-of-a-Triangle.yaml
         - maths/grade-09/scope-cards/25-Angles-of-Polygons.yaml
+  subtend:
+    grades:
+      10:
+        alt:
+        - ආපාතනය කරන
+        - ආපාතනය කරයි
+        - ආපාතනය කරනු ලබන
+        - ආපාතික
+        - යටත් කෙරෙන
+        - යටත් කරන
+        si: ආපාතනය
+        sources:
+        - maths/grade-10/lessons/26-Chords-of-a-Circle.md
+        - maths/grade-10/lessons/30-Angles-in-a-Circle.md
+      11:
+        alt:
+        - ආපාතනය කරන
+        - ආපාතනය කරයි
+        - ආපාතනය කරනු ලබන
+        - ආපාතික
+        - යටත් කෙරෙන
+        - යටත් කරන
+        si: ආපාතනය
+        sources:
+        - maths/grade-11/lessons/21-Cyclic-Quadrilaterals.md
+        - maths/grade-11/lessons/22-Tangents.md
+  subtended:
+    grades:
+      10:
+        alt:
+        - ආපාතනය කරන
+        - ආපාතනය කරන ලද
+        - ආපාතනය කරනු ලබන
+        - ආපාතික
+        - යටත් කෙරෙන
+        - යටත් කළ
+        si: ආපාතනය කළ
+        sources:
+        - maths/grade-10/lessons/26-Chords-of-a-Circle.md
+        - maths/grade-10/lessons/30-Angles-in-a-Circle.md
+      11:
+        alt:
+        - ආපාතනය කරන
+        - ආපාතනය කරන ලද
+        - ආපාතනය කරනු ලබන
+        - ආපාතික
+        - යටත් කෙරෙන
+        - යටත් කළ
+        si: ආපාතනය කළ
+        sources:
+        - maths/grade-11/lessons/21-Cyclic-Quadrilaterals.md
+        - maths/grade-11/lessons/22-Tangents.md
+  subtends:
+    grades:
+      10:
+        alt:
+        - ආපාතනය කරන
+        - ආපාතනය කරයි
+        - ආපාතනය කරනු ලබන
+        - ආපාතික
+        - යටත් කෙරෙන
+        - යටත් කරයි
+        si: ආපාතනය කරයි
+        sources:
+        - maths/grade-10/lessons/26-Chords-of-a-Circle.md
+        - maths/grade-10/lessons/30-Angles-in-a-Circle.md
+      11:
+        alt:
+        - ආපාතනය කරන
+        - ආපාතනය කරයි
+        - ආපාතනය කරනු ලබන
+        - ආපාතික
+        - යටත් කෙරෙන
+        - යටත් කරයි
+        si: ආපාතනය කරයි
+        sources:
+        - maths/grade-11/lessons/21-Cyclic-Quadrilaterals.md
+        - maths/grade-11/lessons/22-Tangents.md
   sum of interior angles:
     grades:
       8:
@@ -12344,6 +12644,44 @@ terms:
         - maths/grade-08/scope-cards/19-Sets.yaml
         - maths/grade-08/scope-cards/20-Area.yaml
         - maths/grade-08/scope-cards/21-Time.yaml
+      10:
+        alt:
+        - දිගංශයකින්
+        - දිගංශයේ
+        - දිගංශ
+        si: දිගංශය
+        sources:
+        - maths/grade-10/lessons/31-Scale-Diagrams.md
+        - maths/grade-10/scope-cards/31-Scale-Diagrams.yaml
+      11:
+        alt:
+        - දිගංශයකින්
+        - දිගංශයේ
+        - දිගංශ
+        si: දිගංශය
+        sources:
+        - maths/grade-11/lessons/18-Trigonometry.md
+        - maths/grade-11/scope-cards/18-Trigonometry.yaml
+  bearings:
+    grades:
+      10:
+        alt:
+        - දිගංශ
+        - දිගංශයන්
+        - දිගංශයකින්
+        - දිගංශයේ
+        si: දිගංශ
+        sources:
+        - maths/grade-10/lessons/31-Scale-Diagrams.md
+      11:
+        alt:
+        - දිගංශ
+        - දිගංශයන්
+        - දිගංශයකින්
+        - දිගංශයේ
+        si: දිගංශ
+        sources:
+        - maths/grade-11/lessons/18-Trigonometry.md
         - maths/grade-08/scope-cards/22-Volume-and-Capacity.yaml
         - maths/grade-08/scope-cards/25-Number-Line-and-Cartesian-Plane.yaml
   unit area:
@@ -12385,6 +12723,44 @@ terms:
         - maths/grade-08/scope-cards/19-Sets.yaml
         - maths/grade-08/scope-cards/20-Area.yaml
         - maths/grade-08/scope-cards/21-Time.yaml
+      10:
+        alt:
+        - දිගංශයකින්
+        - දිගංශයේ
+        - දිගංශ
+        si: දිගංශය
+        sources:
+        - maths/grade-10/lessons/31-Scale-Diagrams.md
+        - maths/grade-10/scope-cards/31-Scale-Diagrams.yaml
+      11:
+        alt:
+        - දිගංශයකින්
+        - දිගංශයේ
+        - දිගංශ
+        si: දිගංශය
+        sources:
+        - maths/grade-11/lessons/18-Trigonometry.md
+        - maths/grade-11/scope-cards/18-Trigonometry.yaml
+  bearings:
+    grades:
+      10:
+        alt:
+        - දිගංශ
+        - දිගංශයන්
+        - දිගංශයකින්
+        - දිගංශයේ
+        si: දිගංශ
+        sources:
+        - maths/grade-10/lessons/31-Scale-Diagrams.md
+      11:
+        alt:
+        - දිගංශ
+        - දිගංශයන්
+        - දිගංශයකින්
+        - දිගංශයේ
+        si: දිගංශ
+        sources:
+        - maths/grade-11/lessons/18-Trigonometry.md
         - maths/grade-08/scope-cards/22-Volume-and-Capacity.yaml
         - maths/grade-08/scope-cards/25-Number-Line-and-Cartesian-Plane.yaml
   unit fraction:
@@ -12477,6 +12853,44 @@ terms:
         - maths/grade-08/scope-cards/19-Sets.yaml
         - maths/grade-08/scope-cards/20-Area.yaml
         - maths/grade-08/scope-cards/21-Time.yaml
+      10:
+        alt:
+        - දිගංශයකින්
+        - දිගංශයේ
+        - දිගංශ
+        si: දිගංශය
+        sources:
+        - maths/grade-10/lessons/31-Scale-Diagrams.md
+        - maths/grade-10/scope-cards/31-Scale-Diagrams.yaml
+      11:
+        alt:
+        - දිගංශයකින්
+        - දිගංශයේ
+        - දිගංශ
+        si: දිගංශය
+        sources:
+        - maths/grade-11/lessons/18-Trigonometry.md
+        - maths/grade-11/scope-cards/18-Trigonometry.yaml
+  bearings:
+    grades:
+      10:
+        alt:
+        - දිගංශ
+        - දිගංශයන්
+        - දිගංශයකින්
+        - දිගංශයේ
+        si: දිගංශ
+        sources:
+        - maths/grade-10/lessons/31-Scale-Diagrams.md
+      11:
+        alt:
+        - දිගංශ
+        - දිගංශයන්
+        - දිගංශයකින්
+        - දිගංශයේ
+        si: දිගංශ
+        sources:
+        - maths/grade-11/lessons/18-Trigonometry.md
         - maths/grade-08/scope-cards/22-Volume-and-Capacity.yaml
         - maths/grade-08/scope-cards/25-Number-Line-and-Cartesian-Plane.yaml
       10:

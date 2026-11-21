@@ -245,6 +245,15 @@ questions:
             ("ලෙඛනය", "ලෝහ ලෙඛනයක් භාවිතා කරන්න."),
             ("සමභාජක", "රේඛා සමභාජකය අඳින්න."),
             ("සමභාජනය", "රේඛාව සමභාජනය කරන්න."),
+            ("නිව් උතුරට", "නැව නිව් උතුරට යාත්‍රා කරයි."),
+            ("නිව් නැගෙනහිරින්", "A පිහිටියේ B ට නිව් නැගෙනහිරින් ය."),
+            ("දෙකොළය", "නිරීක්ෂකයා දෙකොළය මත සිටී."),
+            ("භූමිකාරයා", "භූමිකාරයා තණකොළ කපයි."),
+            ("කෑලිය", "ඉඩමෙන් එක් කෑලියක් විකුණන ලදී."),
+            ("භූමි කෑලි", "භූමි කෑලි කිහිපයකට වෙන් කර ඇත."),
+            ("ජ්‍යා රේඛාව", "වෘත්තයේ ජ්‍යා රේඛාව අඳින්න."),
+            ("සලකුණක් පවසයි", "සලකුණක් පවසයි කෝණය 60 බව."),
+            ("සලකුණක් ප්‍රකාශ කරයි", "සලකුණක් ප්‍රකාශ කරයි මෙම දිග 5 cm බව."),
         ]
         for term, sample in banned_samples:
             doc = f"""\
@@ -303,6 +312,58 @@ questions:
         rc, out = run_tool(bad_sum, "--grade", "9")
         self.assertEqual(rc, 1)
         self.assertIn("sum of interior angles", out)
+
+    def test_g11_circle_and_bearing_terms_enforced(self):
+        good_g11 = """\
+questions:
+  - n: 1
+    stem: "A chord subtends an angle of $60°$ at the centre."
+    stem_si: "ජ්‍යායක් මඟින් කේන්ද්‍රයේ $60°$ ක කෝණයක් ආපාතනය කරයි."
+  - n: 2
+    stem: "State the alternate segment theorem."
+    stem_si: "ඒකාන්තර වෘත්ත ඛණ්ඩ ප්‍රමේයය ප්‍රකාශ කරන්න."
+  - n: 3
+    stem: "The bearing of B from A is $220°$."
+    stem_si: "A සිට B හි දිගංශය $220°$ කි."
+  - n: 4
+    stem: "State the midpoint theorem."
+    stem_si: "මධ්‍ය ලක්ෂ්‍ය ප්‍රමේයය ප්‍රකාශ කරන්න."
+"""
+        rc, out = run_tool(good_g11, "--grade", "11")
+        self.assertEqual(rc, 0, out)
+
+        # Chord mistranslated as chord line fails
+        bad_chord = """\
+questions:
+  - n: 1
+    stem: "Draw a chord in the circle."
+    stem_si: "වෘත්තයේ ජ්‍යා රේඛාව අඳින්න."
+"""
+        rc, out = run_tool(bad_chord, "--grade", "11")
+        self.assertEqual(rc, 1)
+        self.assertIn("ජ්‍යා රේඛාව".replace("\u200d", ""), out.replace("\u200d", ""))
+
+        # Bearing at G11 using banned දිශාංකය fails
+        bad_bearing = """\
+questions:
+  - n: 1
+    stem: "The bearing of P is $045°$."
+    stem_si: "P හි දිශාංකය $045°$ වේ."
+"""
+        rc, out = run_tool(bad_bearing, "--grade", "11")
+        self.assertEqual(rc, 1)
+        self.assertIn("දිශාංකය", out)
+
+        # Subtends mistranslated without standard math terms fails
+        bad_subtends = """\
+questions:
+  - n: 1
+    stem: "The arc subtends an angle of $40°$."
+    stem_si: "චාපය මඟින් $40°$ ක කෝණයක් සාදයි."
+"""
+        rc, out = run_tool(bad_subtends, "--grade", "11")
+        self.assertEqual(rc, 1)
+        self.assertIn("subtends", out)
 
 
 if __name__ == "__main__":
