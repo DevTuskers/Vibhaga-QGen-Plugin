@@ -24,7 +24,7 @@ COMMON_IT_TERMS = {
     "button", "buttons", "usb", "wifi", "internet", "web",
 }
 LATIN = re.compile(r"\b[A-Za-z]+\b")
-PASSIVE = re.compile(r"(?:කරනු|දෙනු|ලබනු|දක්වනු)\s+ලැබේ")
+PASSIVE = re.compile(r"[\u0D80-\u0DFA]+නු\s+(?:ලැබේ|ලබයි|ලැබිණි|ලැබුණි)")
 TEXT_SINHALA = re.compile(r"\\text\{[^}]*[\u0D80-\u0DFF]")
 ANNOUNCEMENT_PREFIX = re.compile(r"^\s*(?:පිළිතුර|විසඳුම)\s*[:\-–—]")
 

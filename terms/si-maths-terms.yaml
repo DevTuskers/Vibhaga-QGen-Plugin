@@ -10,6 +10,10 @@ banned:
     en: compass
     note: machine-translation artifact — the G8 textbook uses කවකටුව
     use: කවකටුව
+  කැබලය:
+    en: cable
+    note: machine-translation artifact/typo for cable — use කේබලය
+    use: කේබලය
   කේන්ද්‍රීය:
     en: central (adj.)
     note: කේන්ද්‍රීය is a calque of 'central'; corpus uses කේන්ද්‍රික
@@ -18,6 +22,26 @@ banned:
     en: central angle
     note: කේන්ද්‍රීය is a calque of 'central'; corpus uses කේන්ද්‍රික
     use: කේන්ද්‍රික කෝණය
+  කෝණ සමභාජක:
+    en: angle bisector
+    note: machine-translation/calque artifact — curriculum uses කෝණ සමච්ඡේදක
+    use: කෝණ සමච්ඡේදක
+  කෝණ සමභාජකය:
+    en: angle bisector
+    note: machine-translation/calque artifact — curriculum uses කෝණ සමච්ඡේදකය
+    use: කෝණ සමච්ඡේදකය
+  කෝණ සමභාජනය:
+    en: bisect angle
+    note: machine-translation/calque artifact — curriculum uses කෝණ සමච්ඡේදනය
+    use: කෝණ සමච්ඡේදනය
+  තිඹිරි ඉරි:
+    en: dashed lines
+    note: machine-translation hallucination — use කඩ ඉරි
+    use: කඩ ඉරි
+  තීන්සිලි:
+    en: matchsticks
+    note: machine-translation hallucination — use ගිනිකූරු
+    use: ගිනිකූරු / ගිනිකූරු කැබලි
   දිශාංකය:
     en: bearing
     note: calque of 'bearing'; G8 teaches the letter+degree format, not this word
@@ -29,6 +53,18 @@ banned:
   නිශ්චිත සිදුවීම:
     en: certain event
     use: ස්ථිරවම සිදු වන සිදුවීම (G8) / ස්ථීරවම සිදුවන සිද්ධිය (G7)
+  පරෙක:
+    en: rafters
+    note: machine-translation hallucination — use පරාල
+    use: පරාල / පරාලය
+  පාත්තුම්:
+    en: paving
+    note: machine-translation artifact — use ඇතුරුම් / ගෙබිම් ඇතුරුම්
+    use: ඇතුරුම් / ගෙබිම් ඇතුරුම්
+  බහුස්‍රය:
+    en: polygon
+    note: typographical MT error missing 'අ' — use බහු අස්‍රය
+    use: බහු අස්‍රය
   බොහෝ දුරට සිදු වන:
     en: likely event
     use: 'three-class phrasing — see phrases: probability event classes'
@@ -36,9 +72,21 @@ banned:
     en: converse theorem
     note: converse of a theorem is විලෝමය; ප්‍රතිලෝමය is inverse
     use: විලෝම ප්‍රමේයය
+  ලෙඛනය:
+    en: sheet (material)
+    note: machine-translation artifact translating sheet (metal/cardboard) into document/text; use තහඩුව or කොළය
+    use: තහඩුව / තහඩු කැබැල්ල / කොළය
   සංකේත ප්‍රස්තාරය:
     en: pictograph
     use: චිත්‍ර ප්‍රස්තාරය
+  සමභාජක:
+    en: bisector
+    note: machine-translation/calque artifact — curriculum uses සමච්ඡේදක
+    use: සමච්ඡේදක
+  සමභාජනය:
+    en: bisect
+    note: machine-translation/calque artifact — curriculum uses සමච්ඡේදනය
+    use: සමච්ඡේදනය
 needs_review:
 - en: three-figure bearing
   grades:
@@ -3768,6 +3816,9 @@ terms:
   arc:
     grades:
       8:
+        alt:
+        - චාපය
+        - චාප
         si: වෘත්ත චාපය
         sources:
         - maths/grade-08/lessons/14-Fractions-II.md
@@ -3786,6 +3837,14 @@ terms:
         - maths/grade-08/scope-cards/27-Data-Representation-and-Interpretation.yaml
         - maths/grade-08/scope-cards/29-Probability.yaml
         - maths/grade-08/scope-cards/30-Tessellation.yaml
+      9:
+        alt:
+        - චාපය
+        - චාප
+        si: වෘත්ත චාපය
+        sources:
+        - maths/grade-09/lessons/18-Circumference-of-a-Circle.md
+        - maths/grade-09/scope-cards/18-Circumference-of-a-Circle.yaml
   area:
     grades:
       6:
@@ -4239,6 +4298,12 @@ terms:
         - maths/grade-08/lessons/30-Tessellation.md
         - maths/grade-08/scope-cards/23-Circle.yaml
         - maths/grade-08/scope-cards/30-Tessellation.yaml
+      9:
+        si: කේන්ද්‍රික කෝණය
+        sources:
+        - maths/grade-09/lessons/18-Circumference-of-a-Circle.md
+        - maths/grade-09/scope-cards/08-Angles-Related-to-Straight-Lines-and-Parallel-Lines.yaml
+        - maths/grade-09/scope-cards/18-Circumference-of-a-Circle.yaml
       10:
         si: කේන්ද්‍ර කෝණය
         sources:
@@ -9453,6 +9518,31 @@ terms:
         - maths/grade-08/scope-cards/15-Decimals.yaml
         - maths/grade-08/scope-cards/20-Area.yaml
         - maths/grade-08/scope-cards/28-Scale-Diagrams.yaml
+      9:
+        alt:
+        - සෘජුකෝණාස්‍රය
+        si: ඍජුකෝණාස්‍රය
+        sources:
+        - maths/grade-09/lessons/23-Area.md
+        - maths/grade-09/lessons/27-Scale-Diagrams.md
+        - maths/grade-09/scope-cards/23-Area.yaml
+        - maths/grade-09/scope-cards/27-Scale-Diagrams.yaml
+      10:
+        alt:
+        - සෘජුකෝණාස්‍රය
+        si: ඍජුකෝණාස්‍රය
+        sources:
+        - maths/grade-10/lessons/02-Perimeter.md
+        - maths/grade-10/lessons/08-Area.md
+        - maths/grade-10/scope-cards/02-Perimeter.yaml
+        - maths/grade-10/scope-cards/08-Area.yaml
+      11:
+        alt:
+        - සෘජුකෝණාස්‍රය
+        si: ඍජුකෝණාස්‍රය
+        sources:
+        - maths/grade-11/lessons/02-Area-of-Surfaces.md
+        - maths/grade-11/scope-cards/02-Area-of-Surfaces.yaml
   rectangular lamina:
     grades:
       7:
@@ -9686,6 +9776,11 @@ terms:
         - maths/grade-08/scope-cards/26-Triangle-Constructions.yaml
         - maths/grade-08/scope-cards/29-Probability.yaml
         - maths/grade-08/scope-cards/30-Tessellation.yaml
+      9:
+        si: සවිධි බහු අස්‍රය
+        sources:
+        - maths/grade-09/lessons/25-Angles-of-Polygons.md
+        - maths/grade-09/scope-cards/25-Angles-of-Polygons.yaml
   regular tetrahedron:
     grades:
       6:
@@ -9756,6 +9851,8 @@ terms:
   right angle:
     grades:
       6:
+        alt:
+        - සෘජු කෝණය
         si: ඍජු කෝණය
         sources:
         - maths/grade-06/lessons/07-Angles.md
@@ -9771,6 +9868,8 @@ terms:
         - maths/grade-06/scope-cards/21-Ratio.yaml
         - maths/grade-06/scope-cards/25-Area.yaml
       7:
+        alt:
+        - සෘජු කෝණය
         si: ඍජු කෝණය
         sources:
         - maths/grade-07/lessons/01-Bilateral-Symmetry.md
@@ -9800,6 +9899,29 @@ terms:
         - maths/grade-07/scope-cards/25-Solids.yaml
         - maths/grade-07/scope-cards/27-Scale-Diagrams.yaml
         - maths/grade-07/scope-cards/28-Tessellation.yaml
+      9:
+        alt:
+        - සෘජු කෝණය
+        si: ඍජු කෝණය
+        sources:
+        - maths/grade-09/lessons/08-Angles-Related-to-Straight-Lines-and-Parallel-Lines.md
+        - maths/grade-09/lessons/16-Angles-of-a-Triangle.md
+        - maths/grade-09/scope-cards/08-Angles-Related-to-Straight-Lines-and-Parallel-Lines.yaml
+        - maths/grade-09/scope-cards/16-Angles-of-a-Triangle.yaml
+      10:
+        alt:
+        - සෘජු කෝණය
+        si: ඍජු කෝණය
+        sources:
+        - maths/grade-10/lessons/08-Triangles.md
+        - maths/grade-10/scope-cards/08-Triangles.yaml
+      11:
+        alt:
+        - සෘජු කෝණය
+        si: ඍජු කෝණය
+        sources:
+        - maths/grade-11/lessons/17-Pythagoras-Theorem.md
+        - maths/grade-11/scope-cards/17-Pythagoras-Theorem.yaml
   right circular cone:
     grades:
       11:
@@ -11431,6 +11553,20 @@ terms:
         - maths/grade-09/lessons/25-Angles-of-Polygons.md
         - maths/grade-09/scope-cards/03-Number-Patterns.yaml
         - maths/grade-09/scope-cards/08-Angles-Related-to-Straight-Lines-and-Parallel-Lines.yaml
+        - maths/grade-09/scope-cards/16-Angles-of-a-Triangle.yaml
+        - maths/grade-09/scope-cards/25-Angles-of-Polygons.yaml
+  sum of interior angles:
+    grades:
+      8:
+        si: අභ්‍යන්තර කෝණවල ඓක්‍යය
+        sources:
+        - maths/grade-08/lessons/12-Triangles.md
+        - maths/grade-08/scope-cards/12-Triangles.yaml
+      9:
+        si: අභ්‍යන්තර කෝණවල ඓක්‍යය
+        sources:
+        - maths/grade-09/lessons/16-Angles-of-a-Triangle.md
+        - maths/grade-09/lessons/25-Angles-of-Polygons.md
         - maths/grade-09/scope-cards/16-Angles-of-a-Triangle.yaml
         - maths/grade-09/scope-cards/25-Angles-of-Polygons.yaml
   sum of interior angles of a triangle:
