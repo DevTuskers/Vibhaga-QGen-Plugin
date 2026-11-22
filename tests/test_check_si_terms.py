@@ -581,14 +581,17 @@ questions:
             "center": "centre", "radii": "radius", "vertices": "vertex",
             "triangles": "triangle", "angles": "angle", "circles": "circle",
             "chords": "chord", "sectors": "sector", "fractions": "fraction",
-            "sets": "set", "edges": "edge", "solid faces": "face",
+            "edges": "edge", "solid faces": "face",
             "x axis": "x-axis", "average": "mean", "slope": "gradient",
             "percent": "percentage", "compound interest": "compound interest (වැල්)",
-            "pie graph": "pie chart", "trapezoid": "trapezium", "prime": "prime number",
+            "pie graph": "pie chart", "trapezoid": "trapezium",
             "LCM": "least common multiple", "HCF": "highest common factor",
             "GCD": "highest common factor", "angle bisectors": "angle bisector",
             "perpendicular bisectors": "perpendicular bisector",
         }
+        # ambiguous bare words ("prime factorisation", "sets aside") stay unaliased
+        for ambiguous in ("prime", "sets"):
+            self.assertNotIn(ambiguous, terms)
         for alias, target in required.items():
             with self.subTest(alias=alias):
                 self.assertEqual(terms[alias]["note"], "alias of " + target)

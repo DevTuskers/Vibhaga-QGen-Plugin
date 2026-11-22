@@ -13800,26 +13800,6 @@ terms:
         sources:
         - maths/grade-11/lessons/10-Share-Market.md
         - maths/grade-11/scope-cards/10-Share-Market.yaml
-  prime:
-    grades:
-      6:
-        si: ප්‍රථමක සංඛ්‍යා
-        sources:
-        - maths/grade-06/lessons/14-Types-of-Numbers-and-Number-Patterns.md
-        - maths/grade-06/scope-cards/14-Types-of-Numbers-and-Number-Patterns.yaml
-      7:
-        si: ප්‍රථමක සංඛ්‍යා
-        sources:
-        - maths/grade-07/lessons/02-Sets.md
-      8:
-        si: ප්‍රථමක සංඛ්‍යා
-        sources:
-        - maths/grade-08/lessons/01-Number-Patterns.md
-      9:
-        si: ප්‍රථමක සංඛ්‍යා
-        sources:
-        - maths/grade-09/lessons/22-Sets.md
-    note: alias of prime number
   prime factor:
     grades:
       7:
@@ -16765,63 +16745,6 @@ terms:
         si: ජනන ස්වරූපය
         sources:
         - maths/grade-10/lessons/17-Sets.md
-  sets:
-    grades:
-      7:
-        alt:
-        - කුලක
-        si: කුලකය
-        sources:
-        - maths/grade-07/lessons/02-Sets.md
-        - maths/grade-07/lessons/08-Directed-Numbers.md
-        - maths/grade-07/lessons/09-Angles.md
-        - maths/grade-07/lessons/29-Likelihood-of-an-Event-Occurring.md
-        - maths/grade-07/scope-cards/02-Sets.yaml
-        - maths/grade-07/scope-cards/09-Angles.yaml
-      8:
-        alt:
-        - කුලක
-        si: කුලකය
-        sources:
-        - maths/grade-08/lessons/01-Number-Patterns.md
-        - maths/grade-08/lessons/19-Sets.md
-        - maths/grade-08/lessons/20-Area.md
-        - maths/grade-08/lessons/25-Number-Line-and-Cartesian-Plane.md
-        - maths/grade-08/scope-cards/19-Sets.yaml
-        - maths/grade-08/scope-cards/25-Number-Line-and-Cartesian-Plane.yaml
-      9:
-        alt:
-        - කුලක
-        si: කුලකය
-        sources:
-        - maths/grade-09/lessons/13-Loci-and-Constructions.md
-        - maths/grade-09/lessons/22-Sets.md
-        - maths/grade-09/lessons/24-Probability.md
-        - maths/grade-09/scope-cards/13-Loci-and-Constructions.yaml
-        - maths/grade-09/scope-cards/22-Sets.yaml
-        - maths/grade-09/scope-cards/24-Probability.yaml
-      10:
-        alt:
-        - කුලක
-        si: කුලකය
-        sources:
-        - maths/grade-10/lessons/17-Sets.md
-        - maths/grade-10/lessons/24-Algebraic-Inequalities.md
-        - maths/grade-10/lessons/29-Probability.md
-        - maths/grade-10/scope-cards/17-Sets.yaml
-        - maths/grade-10/scope-cards/24-Algebraic-Inequalities.yaml
-      11:
-        alt:
-        - කුලක
-        si: කුලකය
-        sources:
-        - maths/grade-11/lessons/01-Real-Numbers.md
-        - maths/grade-11/lessons/04-Surface-Area-of-Solids.md
-        - maths/grade-11/lessons/24-Sets.md
-        - maths/grade-11/lessons/25-Probability.md
-        - maths/grade-11/scope-cards/01-Real-Numbers.yaml
-        - maths/grade-11/scope-cards/24-Sets.yaml
-    note: alias of set
   sets of positive integers:
     grades:
       11:
