@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import functools
 import re
 import sys
 from pathlib import Path
@@ -41,8 +42,9 @@ def strip_markup(text: str) -> str:
     return norm(LATEX.sub(" ", text).replace("`", " "))
 
 
+@functools.lru_cache(maxsize=None)
 def en_pattern(term: str) -> re.Pattern:
-    return re.compile(r"(?<![A-Za-z])" + re.escape(term) + r"(?![A-Za-z])", re.I)
+    return re.compile(r"(?<![A-Za-z])(?<!non-)" + re.escape(term) + r"(?![A-Za-z])", re.I)
 
 
 def si_tokens(text: str):

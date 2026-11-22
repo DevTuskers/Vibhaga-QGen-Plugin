@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 TOOL = Path(__file__).resolve().parents[1] / "tools" / "check-si-terms.py"
 SPEC = importlib.util.spec_from_file_location("check_si_terms_test", TOOL)
 mod = importlib.util.module_from_spec(SPEC)
@@ -141,13 +143,13 @@ questions:
         self.assertEqual(rc, 0, out)
 
     def test_untaught_compound_still_suppresses_inner_word(self):
-        # "right angle" has no G8 entry; at grade 8 neither the compound nor
+        # "angle of elevation" has no G8 entry; neither the compound nor
         # the "angle" inside it is checked — the lexeme, not grade-activity,
         # decides suppression (un-taught terms are scope-card territory)
         doc = """\
 questions:
   - n: 1
-    stem: "Mark the right angle at B."
+    stem: "Mark the angle of elevation at B."
     stem_si: "B දී ලකුණු කරන්න."
 """
         rc, out = run_tool(doc, "--grade", "8")
@@ -321,7 +323,7 @@ questions:
     stem_si: "ජ්‍යායක් මඟින් කේන්ද්‍රයේ $60°$ ක කෝණයක් ආපාතනය කරයි."
   - n: 2
     stem: "State the alternate segment theorem."
-    stem_si: "ඒකාන්තර වෘත්ත ඛණ්ඩ ප්‍රමේයය ප්‍රකාශ කරන්න."
+    stem_si: "ඒකාන්තර වෘත්ත ඛණ්ඩයේ කෝණ ආශ්‍රිත ප්‍රමේයය ප්‍රකාශ කරන්න."
   - n: 3
     stem: "The bearing of B from A is $220°$."
     stem_si: "A සිට B හි දිගංශය $220°$ කි."
@@ -373,7 +375,7 @@ questions:
     stem_si: "කේන්ද්‍රයේ සිට ජ්‍යාවට අඳින ලද ලම්බයෙන් ජ්‍යාව සමච්ඡේදනය වේ."
   - n: 2
     stem: "Chords equidistant from the centre are equal in length."
-    stem_si: "කේන්ද්‍රයේ සිට සමාන දුරින් පිහිටි ජ්‍යා දිගින් සමාන වේ."
+    stem_si: "කේන්ද්‍රයේ සිට සමදුරින් පිහිටි ජ්‍යා දිගින් සමාන වේ."
   - n: 3
     stem: "A rope of length $16$ cm is tied across."
     stem_si: "$16$ cm දිගැති කඹයක් හරහා බැඳ ඇත."
@@ -382,10 +384,10 @@ questions:
     stem_si: "ක්ෂේත්‍රයේ පරිමාණ රූපයක් නිර්මාණය කරන්න."
   - n: 5
     stem: "The angle in a semicircle is a right angle."
-    stem_si: "අර්ධ වෘත්තයක කෝණය සෘජුකෝණයකි."
+    stem_si: "අර්ධ වෘත්තයේ කෝණය සෘජුකෝණයකි."
   - n: 6
     stem: "The chord subtends a central angle."
-    stem_si: "ජ්‍යාය කේන්ද්‍රික කෝණයක් ආපාතනය කරයි."
+    stem_si: "ජ්‍යාය කේන්ද්‍රික කෝණයක් ආපාතනය කරන බව දැක්වේ."
 """
         rc, out = run_tool(good_g10, "--grade", "10")
         self.assertEqual(rc, 0, out)
@@ -498,18 +500,31 @@ questions:
     stem: "The two triangles are congruent."
     stem_si: "ත්‍රිකෝණ දෙක එක හා සමාන වේ."
 """
-        rc, out = run_tool(bad_congruent, "--grade", "8")
+        good_congruent = bad_congruent.replace("එක හා සමාන වේ", "අංගසම වේ")
+        rc, out = run_tool(good_congruent, "--grade", "10")
+        self.assertEqual(rc, 0, out)
+        rc, out = run_tool(bad_congruent, "--grade", "10")
         self.assertEqual(rc, 1)
         self.assertIn("congruent", out)
 
-        # Missing 'spoke' dictionary rendering (ගරාදිය) is caught
+        # The wheel caption supplies the Grade 7 plural ගරාදි.
+        good_spoke = """\
+questions:
+  - n: 1
+    stem: "The wheel has 8 spokes."
+    stem_si: "රෝදයේ ගරාදි 8ක් ඇත."
+"""
+        rc, out = run_tool(good_spoke, "--grade", "7")
+        self.assertEqual(rc, 0, out)
+
+        # Missing 'spoke' dictionary rendering (ගරාදි) is caught
         bad_spoke = """\
 questions:
   - n: 1
     stem: "The wheel has 8 spokes."
     stem_si: "රෝදයේ කූරු 8ක් ඇත."
 """
-        rc, out = run_tool(bad_spoke, "--grade", "8")
+        rc, out = run_tool(bad_spoke, "--grade", "7")
         self.assertEqual(rc, 1)
         self.assertIn("spoke", out)
 
@@ -523,6 +538,153 @@ questions:
         rc, out = run_tool(bad_crossing, "--grade", "8")
         self.assertEqual(rc, 1)
         self.assertIn("crossing point", out)
+
+    def test_attested_right_angle_spacing_variants(self):
+        for grade in (9, 10, 11):
+            for si in ("ඍජුකෝණය", "ඍජු කෝණය"):
+                with self.subTest(grade=grade, si=si):
+                    doc = f'questions:\n  - n: 1\n    stem: "A right angle."\n    stem_si: "{si}"\n'
+                    rc, out = run_tool(doc, "--grade", str(grade))
+                    self.assertEqual(rc, 0, out)
+
+    def test_resolved_review_terms_enforced(self):
+        cases = [
+            ("heptagon", 7, "සප්තාස්‍රය"),
+            ("octagon", 7, "අෂ්ටාස්‍රය"),
+            ("decagon", 7, "දසාස්‍රය"),
+            ("compasses", 7, "කවකටුව"),
+            ("compasses", 8, "කවකටුව"),
+            ("pair of compasses", 7, "කවකටුව"),
+            ("pair of compasses", 8, "කවකටුව"),
+            ("set square", 7, "විහිත චතුරස්‍රය"),
+            ("standard form", 9, "විද්‍යාත්මක අංකනය"),
+            ("y-intercept", 9, "අන්තඃඛණ්ඩය"),
+            ("y-intercept", 10, "අන්තඃඛණ්ඩය"),
+            ("tree diagram", 10, "රුක් සටහන"),
+            ("tree diagram", 10, "රුක්සටහන්"),
+            ("outcome table", 10, "කොටු දැල"),
+            ("quadrant (of a pie chart)", 10, "හතරෙන් පංගුවේ කේන්ද්‍රික ඛණ්ඩය"),
+        ]
+        for term, grade, si in cases:
+            with self.subTest(term=term, grade=grade, si=si):
+                doc = f'questions:\n  - n: 1\n    stem: "{term}"\n    stem_si: "{si}"\n'
+                rc, out = run_tool(doc, "--grade", str(grade))
+                self.assertEqual(rc, 0, out)
+                rc, out = run_tool(doc.replace(si, "කෝණය"), "--grade", str(grade))
+                self.assertEqual(rc, 1, out)
+                self.assertIn(term, out)
+
+    def test_lookup_aliases_copy_cited_target_grades(self):
+        terms = yaml.safe_load(mod.DICT_PATH.read_text(encoding="utf-8"))["terms"]
+        required = {
+            "rectangular prism": "cuboid", "rectangular box": "cuboid",
+            "center": "centre", "radii": "radius", "vertices": "vertex",
+            "triangles": "triangle", "angles": "angle", "circles": "circle",
+            "chords": "chord", "sectors": "sector", "fractions": "fraction",
+            "edges": "edge", "solid faces": "face",
+            "x axis": "x-axis", "average": "mean", "slope": "gradient",
+            "percent": "percentage", "compound interest": "compound interest (වැල්)",
+            "pie graph": "pie chart", "trapezoid": "trapezium",
+            "LCM": "least common multiple", "HCF": "highest common factor",
+            "GCD": "highest common factor", "angle bisectors": "angle bisector",
+            "perpendicular bisectors": "perpendicular bisector",
+        }
+        # ambiguous bare words ("prime factorisation", "sets aside") stay unaliased
+        for ambiguous in ("prime", "sets"):
+            self.assertNotIn(ambiguous, terms)
+        for alias, target in required.items():
+            with self.subTest(alias=alias):
+                self.assertEqual(terms[alias]["note"], "alias of " + target)
+        for alias, entry in terms.items():
+            note = entry.get("note", "")
+            if not note.startswith("alias of "):
+                continue
+            target = terms[note[len("alias of "):]]["grades"]
+            if alias in {"three-figure bearing", "three-figure bearings",
+                         "three figure bearing", "three figure bearings"}:
+                target = {g: e for g, e in target.items() if g in (10, 11)}
+            with self.subTest(alias=alias):
+                self.assertEqual(entry["grades"], target)
+                self.assertTrue(all(e["sources"] for e in entry["grades"].values()))
+        self.assertEqual(set(terms["three-figure bearing"]["grades"]), {10, 11})
+        for ambiguous in ("bisector", "bisectors", "bases", "faces", "modes", "means", "axes", "scales"):
+            self.assertNotIn(ambiguous, terms)
+
+    def test_coverage_and_aliases_enforce_correct_renderings(self):
+        cases = {
+            6: [("elapsed time", "ගත වූ කාලය"), ("divisibility", "භාජ්‍යතාව"),
+                ("triangles", "ත්‍රිකෝණය"), ("angles", "කෝණ")],
+            7: [("rectangular boxes", "ඝනකාභය"), ("vertices", "ශීර්ෂය"),
+                ("LCM", "කුඩා ම පොදු ගුණාකාරය"), ("GCD", "මහා පොදු සාධකය"),
+                ("Euler relation", "ඔයිලර් සම්බන්ධතාව"), ("drawing scales", "පරිමාණය")],
+            8: [("circles", "වෘත්තය"), ("x axis", "x අක්ෂය"),
+                ("average", "මධ්‍යන්‍යය"), ("statistical modes", "මාතය")],
+            9: [("radii", "අරය"), ("slope", "අනුක්‍රමණය"),
+                ("angle bisectors", "කෝණ සමච්ඡේදකය"),
+                ("simultaneous equations", "සමගාමී සමීකරණ")],
+            10: [("arithmetic progression", "සමාන්තර ශ්‍රේඪි"),
+                 ("three-figure bearings", "දිගංශය"), ("pie graph", "වට ප්‍රස්තාරය")],
+            11: [("dependent event", "පරායත්ත සිද්ධි"), ("quartile", "චතුර්ථක"),
+                 ("compound interest", "වැල් පොලී"), ("plane figures", "තල රූපය")],
+        }
+        for grade, rows in cases.items():
+            questions = [{"n": i, "stem": en, "stem_si": si}
+                         for i, (en, si) in enumerate(rows, 1)]
+            with self.subTest(grade=grade, rendering="correct"):
+                rc, out = run_tool(yaml.safe_dump({"grade": grade, "questions": questions}, allow_unicode=True))
+                self.assertEqual(rc, 0, out)
+            for rendering in ("", "වෘත්තය" if grade == 6 else "කෝණය"):
+                wrong = [dict(q, stem_si=rendering) for q in questions]
+                with self.subTest(grade=grade, rendering=rendering):
+                    rc, out = run_tool(yaml.safe_dump({"grade": grade, "questions": wrong}, allow_unicode=True))
+                    self.assertEqual(rc, 1, out)
+                    for en, _ in rows:
+                        self.assertIn(en, out)
+
+    def test_new_alias_compounds_suppress_only_contained_hits(self):
+        cases = [
+            (7, "rectangular prisms", "ඝනකාභය", 0, None),
+            (7, "rectangular prisms and prisms", "ඝනකාභය", 1, "'prisms'"),
+            (7, "rectangular prisms", "ප්‍රිස්මය", 1, "'rectangular prisms'"),
+            (7, "rectangular prisms and prisms", "ඝනකාභය ප්‍රිස්මය", 0, None),
+            (10, "average speed", "මධ්‍යක වේගය", 0, None),
+            (10, "average speed and average", "මධ්‍යක වේගය", 1, "'average'"),
+        ]
+        for grade, en, si, expected, finding in cases:
+            with self.subTest(grade=grade, en=en, si=si):
+                doc = yaml.safe_dump({"grade": grade, "questions": [{"n": 1, "stem": en, "stem_si": si}]}, allow_unicode=True)
+                rc, out = run_tool(doc)
+                self.assertEqual(rc, expected, out)
+                if finding:
+                    self.assertIn(finding, out)
+
+    def test_empty_set_and_context_adjudications(self):
+        terms = yaml.safe_load(mod.DICT_PATH.read_text(encoding="utf-8"))["terms"]
+        self.assertNotIn("non-empty set", terms)
+        self.assertEqual(terms["null set"]["grades"], terms["empty set"]["grades"])
+        self.assertEqual(terms["company shares"]["grades"], terms["company share"]["grades"])
+        self.assertIsNone(mod.en_pattern("empty set").search("non-empty set"))
+        self.assertIsNone(mod.en_pattern("empty set").search("NON-EMPTY SET"))
+        self.assertIsNotNone(mod.en_pattern("non-terminating decimal").search("non-terminating decimal"))
+        cases = [
+            (8, "empty set", "අභිශූන්‍ය කුලකය", 0),
+            (8, "null set", "අභිශූන්‍ය කුලකය", 0),
+            (8, "empty set", "කුලකය", 1),
+            (8, "null set", "කුලකය", 1),
+            (8, "non-empty set", "කුලකය", 0),
+            (11, "company share", "සමාගමේ කොටස්", 0),
+            (11, "company shares", "සමාගමේ කොටස්", 0),
+            (11, "company share", "කොටස්", 1),
+            (11, "bar notation (logarithms)", "වියුති", 0),
+            (7, "digital root", "ඉලක්කම් දර්ශකය", 0),
+            (6, "number period", "සංඛ්‍යා කලාපයක්", 0),
+            (10, "height", "උස", 0),
+        ]
+        for grade, en, si, expected in cases:
+            with self.subTest(grade=grade, en=en, si=si):
+                doc = yaml.safe_dump({"grade": grade, "questions": [{"n": 1, "stem": en, "stem_si": si}]}, allow_unicode=True)
+                rc, out = run_tool(doc)
+                self.assertEqual(rc, expected, out)
 
 
 
