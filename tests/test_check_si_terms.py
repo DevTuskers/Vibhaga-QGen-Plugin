@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 TOOL = Path(__file__).resolve().parents[1] / "tools" / "check-si-terms.py"
 SPEC = importlib.util.spec_from_file_location("check_si_terms_test", TOOL)
 mod = importlib.util.module_from_spec(SPEC)
@@ -141,13 +143,13 @@ questions:
         self.assertEqual(rc, 0, out)
 
     def test_untaught_compound_still_suppresses_inner_word(self):
-        # "right angle" has no G8 entry; at grade 8 neither the compound nor
+        # "angle of elevation" has no G8 entry; neither the compound nor
         # the "angle" inside it is checked — the lexeme, not grade-activity,
         # decides suppression (un-taught terms are scope-card territory)
         doc = """\
 questions:
   - n: 1
-    stem: "Mark the right angle at B."
+    stem: "Mark the angle of elevation at B."
     stem_si: "B දී ලකුණු කරන්න."
 """
         rc, out = run_tool(doc, "--grade", "8")
@@ -571,6 +573,87 @@ questions:
                 rc, out = run_tool(doc.replace(si, "කෝණය"), "--grade", str(grade))
                 self.assertEqual(rc, 1, out)
                 self.assertIn(term, out)
+
+    def test_lookup_aliases_copy_cited_target_grades(self):
+        terms = yaml.safe_load(mod.DICT_PATH.read_text(encoding="utf-8"))["terms"]
+        required = {
+            "rectangular prism": "cuboid", "rectangular box": "cuboid",
+            "center": "centre", "radii": "radius", "vertices": "vertex",
+            "triangles": "triangle", "angles": "angle", "circles": "circle",
+            "chords": "chord", "sectors": "sector", "fractions": "fraction",
+            "sets": "set", "edges": "edge", "solid faces": "face",
+            "x axis": "x-axis", "average": "mean", "slope": "gradient",
+            "percent": "percentage", "compound interest": "compound interest (වැල්)",
+            "pie graph": "pie chart", "trapezoid": "trapezium", "prime": "prime number",
+            "LCM": "least common multiple", "HCF": "highest common factor",
+            "GCD": "highest common factor", "angle bisectors": "angle bisector",
+            "perpendicular bisectors": "perpendicular bisector",
+        }
+        for alias, target in required.items():
+            with self.subTest(alias=alias):
+                self.assertEqual(terms[alias]["note"], "alias of " + target)
+        for alias, entry in terms.items():
+            note = entry.get("note", "")
+            if not note.startswith("alias of "):
+                continue
+            target = terms[note[len("alias of "):]]["grades"]
+            if alias in {"three-figure bearing", "three-figure bearings",
+                         "three figure bearing", "three figure bearings"}:
+                target = {g: e for g, e in target.items() if g in (10, 11)}
+            with self.subTest(alias=alias):
+                self.assertEqual(entry["grades"], target)
+                self.assertTrue(all(e["sources"] for e in entry["grades"].values()))
+        self.assertEqual(set(terms["three-figure bearing"]["grades"]), {10, 11})
+        for ambiguous in ("bisector", "bisectors", "bases", "faces", "modes", "means", "axes", "scales"):
+            self.assertNotIn(ambiguous, terms)
+
+    def test_coverage_and_aliases_enforce_correct_renderings(self):
+        cases = {
+            6: [("elapsed time", "ගත වූ කාලය"), ("divisibility", "භාජ්‍යතාව"),
+                ("triangles", "ත්‍රිකෝණය"), ("angles", "කෝණ")],
+            7: [("rectangular boxes", "ඝනකාභය"), ("vertices", "ශීර්ෂය"),
+                ("LCM", "කුඩා ම පොදු ගුණාකාරය"), ("GCD", "මහා පොදු සාධකය"),
+                ("Euler relation", "ඔයිලර් සම්බන්ධතාව"), ("drawing scales", "පරිමාණය")],
+            8: [("circles", "වෘත්තය"), ("x axis", "x අක්ෂය"),
+                ("average", "මධ්‍යන්‍යය"), ("statistical modes", "මාතය")],
+            9: [("radii", "අරය"), ("slope", "අනුක්‍රමණය"),
+                ("angle bisectors", "කෝණ සමච්ඡේදකය"),
+                ("simultaneous equations", "සමගාමී සමීකරණ")],
+            10: [("arithmetic progression", "සමාන්තර ශ්‍රේඪි"),
+                 ("three-figure bearings", "දිගංශය"), ("pie graph", "වට ප්‍රස්තාරය")],
+            11: [("dependent event", "පරායත්ත සිද්ධි"), ("quartile", "චතුර්ථක"),
+                 ("compound interest", "වැල් පොලී"), ("plane figures", "තල රූපය")],
+        }
+        for grade, rows in cases.items():
+            questions = [{"n": i, "stem": en, "stem_si": si}
+                         for i, (en, si) in enumerate(rows, 1)]
+            with self.subTest(grade=grade, rendering="correct"):
+                rc, out = run_tool(yaml.safe_dump({"grade": grade, "questions": questions}, allow_unicode=True))
+                self.assertEqual(rc, 0, out)
+            for rendering in ("", "වෘත්තය" if grade == 6 else "කෝණය"):
+                wrong = [dict(q, stem_si=rendering) for q in questions]
+                with self.subTest(grade=grade, rendering=rendering):
+                    rc, out = run_tool(yaml.safe_dump({"grade": grade, "questions": wrong}, allow_unicode=True))
+                    self.assertEqual(rc, 1, out)
+                    for en, _ in rows:
+                        self.assertIn(en, out)
+
+    def test_new_alias_compounds_suppress_only_contained_hits(self):
+        cases = [
+            (7, "rectangular prisms", "ඝනකාභය", 0, None),
+            (7, "rectangular prisms and prisms", "ඝනකාභය", 1, "'prisms'"),
+            (7, "rectangular prisms", "ප්‍රිස්මය", 1, "'rectangular prisms'"),
+            (7, "rectangular prisms and prisms", "ඝනකාභය ප්‍රිස්මය", 0, None),
+            (10, "average speed", "මධ්‍යක වේගය", 0, None),
+            (10, "average speed and average", "මධ්‍යක වේගය", 1, "'average'"),
+        ]
+        for grade, en, si, expected, finding in cases:
+            with self.subTest(grade=grade, en=en, si=si):
+                doc = yaml.safe_dump({"grade": grade, "questions": [{"n": 1, "stem": en, "stem_si": si}]}, allow_unicode=True)
+                rc, out = run_tool(doc)
+                self.assertEqual(rc, expected, out)
+                if finding:
+                    self.assertIn(finding, out)
 
 
 
