@@ -192,77 +192,62 @@ needs_review:
   grades:
   - 8
   - 9
-  why: Explicitly not_taught in G8 L24, G9 L27 (taught in G10 L31 and G11 L18 using දිගංශය) — an author wanting a bearing word at G8-G9 has no corpus source. Rule before use.
+  why: Searched all-grade lessons/scope-cards for three-figure/true bearing, bearing, දිගංශය and quadrant formats. G8/G9 cards explicitly exclude three-figure bearings (maths/grade-08/scope-cards/24-Location-of-a-Place.yaml; maths/grade-09/scope-cards/27-Scale-Diagrams.yaml); closest taught word is දිගංශය (maths/grade-10/lessons/31-Scale-Diagrams.md; maths/grade-11/lessons/18-Trigonometry.md). G8/G9 use no same-grade Sinhala three-figure label.
 - en: quadrant (Cartesian)
   grades:
   - 7
   - 8
-  why: G7 L23 teaches only the first quadrant without naming 'quadrant'; the word කාර්තුව exists only for pie-chart sectors in G10/G11.
-- en: octagon / heptagon / decagon
-  grades:
-  - 7
-  why: Only pentagon (පංචාස්‍රය) and hexagon (ෂඩස්‍රය) appear in the corpus.
+  why: 'Searched all-grade lessons/scope-cards for quadrant, චතුර්ථ/චතුර්ත, කාර්තු and coordinate-plane descriptions. G7/G8 do not name Cartesian quadrants; G8 card explicitly excludes naming them (maths/grade-08/scope-cards/25-Number-Line-and-Cartesian-Plane.yaml). Closest taught expression: ඛණ්ඩාංක තලය (maths/grade-08/lessons/25-Number-Line-and-Cartesian-Plane.md); හතරෙන් පංගුවේ කේන්ද්‍රික ඛණ්ඩය (maths/grade-10/lessons/01-Perimeter.md) is a circular sector, not a Cartesian quadrant.'
 - en: cube root
   grades:
   - 8
   - 10
-  why: not_taught in G8 L08 and G10 L02; no Sinhala form shown.
-- en: standard form / significant figures
+  why: Searched all-grade lessons/scope-cards for cube root, ඝනමූල and ඝන මූල. G8/G10 hits are exclusion probes, not teaching (maths/grade-08/scope-cards/08-Square-Root.yaml; maths/grade-10/scope-cards/02-Square-Root.yaml). Closest taught label is වර්ගමූලය (maths/grade-08/lessons/08-Square-Root.md; maths/grade-10/lessons/02-Square-Root.md), a square root, not a cube root.
+- en: significant figures
   grades:
   - 9
-  why: not_taught in G9 L01 — the lesson stops at scientific notation.
+  why: 'Searched all-grade lessons/scope-cards for standard form, significant figures, සම්මත ආකාර and scientific-notation definitions; G9 scope-card explicitly excludes significant-figure rounding (maths/grade-09/scope-cards/01-Round-Off-and-Scientific-Notation.yaml). Closest taught concept: විද්‍යාත්මක අංකනය (maths/grade-09/lessons/01-Round-Off-and-Scientific-Notation.md, A × 10ⁿ definition); standard form resolved separately, not a Sinhala label for significant figures.'
 - en: empty set symbol ∅
   grades:
   - 11
-  why: not_taught in G11 L24; 'අභිශූන්‍ය කුලකය' (non-empty set) exists in G8 but the empty set itself is never named.
-- en: compasses / pair of compasses
-  grades:
-  - 7
-  - 8
-  why: Corpus shows කවකටුව only; if a plural/collective English phrasing is needed, cite කවකටුව.
+  why: Searched all-grade lessons/scope-cards for empty set, ∅, හිස් කුලක, ශූන්‍ය කුලක and අභිශූන්‍ය. G11 contains only අභිශූන්‍ය නොවන (maths/grade-11/lessons/24-Sets.md), and its card explicitly excludes ∅ (maths/grade-11/scope-cards/24-Sets.yaml). Closest definition is අභිශූන්‍ය කුලකය, explicitly a set with no elements (maths/grade-08/lessons/19-Sets.md, §19.4); the former why incorrectly called it non-empty.
 - en: set square
   grades:
-  - 7
   - 8
-  why: Constructions use කවකටුව + කෝදුව only; the set-square instrument is never named in the corpus.
-- en: x-intercept / y-intercept
+  why: 'Searched all-grade lessons/scope-cards for set square/set-square and විහිත; G8 has decorative English captions only, no Sinhala instrument label. Closest taught form: විහිත චතුරස්‍රය (maths/grade-07/lessons/07-Parallel-Straight-Lines.md, perpendicular-distance construction).'
+- en: x-intercept
   grades:
   - 9
   - 10
-  why: Graph lessons name the gradient (අනුක්‍රමණය) but never the intercepts.
+  why: Searched all-grade lessons/scope-cards for x-/y-intercept, intercept, අන්තඃඛණ්ඩ and axis-crossing descriptions. G9 defines අන්තඃඛණ්ඩය as the y-coordinate where the line meets the y-axis (maths/grade-09/lessons/20-Graphs.md); G10 identifies it with c in y = mx + c (maths/grade-10/lessons/20-Graphs.md). These resolve y-intercept, not x-intercept; no distinct G9/G10 Sinhala x-intercept label found.
 - en: tree diagram / outcome table
   grades:
   - 8
-  - 10
-  why: not_taught in both probability lessons; combined outcomes are handled by counting, no diagram name exists.
+  why: Searched all-grade lessons/scope-cards for tree diagram/outcome table, රුක් සටහන/රුක්සටහන්, කොටු දැල and ප්‍රතිඵල වගුව. G10 teaches රුක් සටහන and කොටු දැල (maths/grade-10/lessons/29-Probability.md, §§30.3/30.5), resolved separately. G8 has පරීක්ෂණය 20 වාරයක ප්‍රතිඵල වගුව (maths/grade-08/lessons/29-Probability.md), an empirical tally, not a combined-outcome grid; its scope-card excludes repeated/two-stage trials (maths/grade-08/scope-cards/29-Probability.yaml).
 - en: cone
   grades:
   - 7
-  why: no G7 corpus form; attested in G10 as 'කේතුව' (maths/grade-10/lessons/22-Formulae.md); G11 as 'කේතුව' (maths/grade-11/lessons/04-Surface-Area-of-Solids.md); G11 as 'කේතුව' (maths/grade-11/lessons/05-Volume-of-Solids.md); G7 L25 names polyhedral solids, not a Sinhala cone
+  why: 'Searched all-grade lessons/scope-cards for cone and කේතු. G7 lesson has no Sinhala cone label; scope hits are not_taught probes (maths/grade-07/scope-cards/25-Solids.yaml). Closest taught form: කේතුව (maths/grade-10/lessons/22-Formulae.md); G7 maths/grade-07/lessons/25-Solids.md classifies polyhedral solids.'
 - en: congruent
   grades:
   - 8
-  why: no G8 corpus form; attested in G10 as 'අංගසම' (maths/grade-10/lessons/05-Congruency.md); G10 as 'අංගසම' (maths/grade-10/lessons/15-Parallelograms-I.md); G10 as 'අංගසම' (maths/grade-10/lessons/16-Parallelograms-II.md); G10 as 'අංගසම' (maths/grade-10/lessons/26-Chords-of-a-Circle.md); G11 as 'අංගසම' (maths/grade-11/lessons/04-Surface-Area-of-Solids.md); G11 as 'අංගසම' (maths/grade-11/lessons/08-Area-of-Plane-Figures-Between-Parallel-Lines.md); G11 as 'අංගසම' (maths/grade-11/lessons/11-Mid-point-Theorem.md); G11 as 'අංගසම' (maths/grade-11/lessons/14-Equiangular-Triangles.md); G11 as 'අංගසම' (maths/grade-11/lessons/21-Cyclic-Quadrilaterals.md); G11 as 'අංගසම' (maths/grade-11/lessons/22-Tangents.md); no Sinhala congruency label in G8 triangle lessons
+  why: 'Searched all-grade lessons/scope-cards for congruent/congruency and අංගසම, including G8 triangle/construction lessons. No positive G8 Sinhala label; closest taught form: අංගසම (maths/grade-10/lessons/05-Congruency.md). G8 exclusions do not establish a same-grade term (maths/grade-08/scope-cards/26-Triangle-Constructions.yaml).'
 - en: cylinder
   grades:
   - 7
-  why: no G7 corpus form; attested in G6 as 'සිලින්ඩරය' (maths/grade-06/lessons/20-Mass.md); G10 as 'සිලින්ඩරය' (maths/grade-10/lessons/19-Logarithms-II.md); G10 as 'සිලින්ඩරය' (maths/grade-10/lessons/22-Formulae.md); G10 as 'සිලින්ඩරය' (maths/grade-10/lessons/28-Surface-Area-and-Volume.md); G11 as 'සිලින්ඩරය' (maths/grade-11/lessons/04-Surface-Area-of-Solids.md); G11 as 'සිලින්ඩරය' (maths/grade-11/lessons/05-Volume-of-Solids.md); G7 L25 has an English cylindrical-pillar caption but no Sinhala cylinder name
+  why: 'Searched all-grade lessons/scope-cards for cylinder/cylindrical and සිලින්ඩර. G7 has an English cylindrical-pillar caption only (maths/grade-07/lessons/25-Solids.md); G7 scope probes exclude the curved-solid family. Closest Sinhala form: සිලින්ඩරය (maths/grade-06/lessons/20-Mass.md; maths/grade-10/lessons/28-Surface-Area-and-Volume.md).'
 - en: quadrant (of a pie chart)
   grades:
   - 11
-  why: 'no G11 corpus form; no attested corpus form; closest cited-file Sinhala tokens: {"කාර්තුව": ["කාර්තු", "එකතුව", "බලාපොරොත්තුව", "කරනු", "වාර්ෂිකව"]}; closest lexical forms කාර්තු (maths/grade-11/lessons/10-Share-Market.md) and කාර්තුවකට (maths/grade-10/lessons/13-Percentages.md) mean quarters of a year, not pie-chart quadrants'
-- en: quadrant (of a pie chart)
-  grades:
-  - 10
-  why: 'no G10 corpus form; no attested corpus form; closest cited-file Sinhala tokens: {}; closest lexical form කාර්තුවකට (maths/grade-10/lessons/13-Percentages.md) means a quarterly tax instalment, not a pie-chart quadrant'
+  why: 'Searched all-grade lessons/scope-cards for quadrant, pie chart, කාර්තු, වට ප්‍රස්තාර and හතරෙන් පංගු. G11 කාර්තු (maths/grade-11/lessons/10-Share-Market.md) means financial quarters, not sectors. Closest geometric form: හතරෙන් පංගුවේ කේන්ද්‍රික ඛණ්ඩය (maths/grade-10/lessons/01-Perimeter.md, 90° sector); no G11 Sinhala quadrant label found.'
 - en: spoke
   grades:
   - 8
-  why: no G8 corpus form; attested in G7 as 'ගරාදි' (maths/grade-07/lessons/09-Angles.md); G8 circle lesson contains no spoke/wheel label; G7 wheel caption supplies the plural
+  why: 'Searched all-grade lessons/scope-cards for spoke/spokes and ගරාදි. G8 has an English compass-rose spoke caption (maths/grade-08/lessons/24-Location-of-a-Place.md), not a Sinhala wheel-part label; no label in maths/grade-08/lessons/23-Circle.md. Closest attested wheel form: ගරාදි (maths/grade-07/lessons/09-Angles.md).'
 - en: spokes
   grades:
   - 8
-  why: no G8 corpus form; attested in G7 as 'ගරාදි' (maths/grade-07/lessons/09-Angles.md); G8 circle lesson contains no spoke/wheel label; G7 wheel caption supplies the plural
+  why: 'Searched all-grade lessons/scope-cards for spoke/spokes and ගරාදි. G8 has an English compass-rose spoke caption (maths/grade-08/lessons/24-Location-of-a-Place.md), not a Sinhala wheel-part label; no label in maths/grade-08/lessons/23-Circle.md. Closest attested wheel form: ගරාදි (maths/grade-07/lessons/09-Angles.md).'
 not_taught:
   Algebraic fractions with unknown numerators or denominators:
     cards:
@@ -3235,32 +3220,32 @@ schema_version: 1
 suspect_corpus_strings:
 - en: Platonic solid
   grade: 8
-  note: කැට looks like a coinage or OCR error; textbook prints 'ප්ලේටෝ කැට (Platonic Solids)'
+  note: Confirmed textbook definition and explicit gloss 'ප්ලේටෝ කැට (Platonic Solids)' in §6.6; searched all-grade lessons/scope-cards, no replacement warranted.
   si: ප්ලේටෝ කැට
   source: maths/grade-08/lessons/06-Solids.md
 - en: spirit level
   grade: 6
-  note: phonetic transliteration rather than a Sinhala instrument name
+  note: Confirmed exact printed ස්ප්‍රීතු ලෙවලය in the sentence describing checking the horizontality of a plane (textbook p.10); searched spirit level and ස්ප්‍රීතු across all grades/lessons/scope-cards; retain the printing, not a proposed transliteration correction.
   si: ස්ප්‍රීතු ලෙවලය
   source: maths/grade-06/lessons/08-Directions.md
 - en: additive inverse
   grade: 8
-  note: unusual coinage for 'additive inverse'; corpus-verified but odd-looking
+  note: Confirmed exact ආකල ප්‍රතිලෝමය in the definition pairing (−1) with (+1), and the directed-number inverse table; searched additive inverse and the Sinhala phrase across all grades/lessons/scope-cards; no differing same-grade replacement found.
   si: ආකල ප්‍රතිලෝමය
   source: maths/grade-08/lessons/04-Directed-Numbers.md
 - en: union (of sets)
   grade: 9
-  note: '''S මේලය R'' for S ∪ R is unusual outside this textbook; corpus-verified'
+  note: Confirmed exact printed reading '(S ∪ R, මෙය ‘S මේලය R’ ලෙස කියවයි)' in §21.3; searched union and මේලය across all grades/lessons/scope-cards; retain this textbook-specific printing.
   si: මේලය
   source: maths/grade-09/lessons/22-Sets.md
 - en: certain event
   grade: 7
-  note: G7 uses this plural class label; G8 uses a different spelling and singular ending
+  note: Confirmed printed class label ස්ථීරවම සිදුවන සිද්ධි and its 'certain events' figure gloss in supplement-a p.4; all-grade lesson/scope-card search also finds the G8 singular spelling, not a correction to G7.
   si: ස්ථීරවම සිදුවන සිද්ධි
   source: maths/grade-07/lessons/29-Likelihood-of-an-Event-Occurring.md
 - en: certain event
   grade: 8
-  note: G8 class label; keep distinct from the G7 plural spelling
+  note: Confirmed exact printed ස්ථිරවම සිදු වන සිදුවීම in the textbook event-class list; all-grade lesson/scope-card search also finds ස්ථීරවම සිදුවන සිද්ධි in the G8 supplement. Preserve the textbook singular and note the within-grade supplement variant rather than normalising them.
   si: ස්ථිරවම සිදු වන සිදුවීම
   source: maths/grade-08/lessons/29-Probability.md
 terms:
@@ -4389,6 +4374,16 @@ terms:
         - maths/grade-08/lessons/28-Scale-Diagrams.md
         - maths/grade-08/scope-cards/23-Circle.yaml
         - maths/grade-08/scope-cards/26-Triangle-Constructions.yaml
+  compasses:
+    grades:
+      7:
+        si: කවකටුව
+        sources:
+        - maths/grade-07/lessons/18-Circles.md
+      8:
+        si: කවකටුව
+        sources:
+        - maths/grade-08/lessons/23-Circle.md
   complement (of a set):
     grades:
       10:
@@ -4881,6 +4876,12 @@ terms:
         sources:
         - maths/grade-07/lessons/06-Time.md
         - maths/grade-07/scope-cards/06-Time.yaml
+  decagon:
+    grades:
+      7:
+        si: දසාස්‍රය
+        sources:
+        - maths/grade-07/lessons/14-Rectilinear-Plane-Figures.md
   decimal:
     grades:
       6:
@@ -5808,6 +5809,12 @@ terms:
         - maths/grade-11/lessons/05-Volume-of-Solids.md
         - maths/grade-11/scope-cards/04-Surface-Area-of-Solids.yaml
         - maths/grade-11/scope-cards/05-Volume-of-Solids.yaml
+  heptagon:
+    grades:
+      7:
+        si: සප්තාස්‍රය
+        sources:
+        - maths/grade-07/lessons/14-Rectilinear-Plane-Figures.md
   hexagon:
     grades:
       7:
@@ -6990,6 +6997,12 @@ terms:
         sources:
         - maths/grade-07/lessons/14-Rectilinear-Plane-Figures.md
         - maths/grade-07/scope-cards/14-Rectilinear-Plane-Figures.yaml
+  octagon:
+    grades:
+      7:
+        si: අෂ්ටාස්‍රය
+        sources:
+        - maths/grade-07/lessons/14-Rectilinear-Plane-Figures.md
   octahedron:
     grades:
       8:
@@ -7068,6 +7081,13 @@ terms:
         - maths/grade-08/lessons/12-Triangles.md
         - maths/grade-08/lessons/29-Probability.md
         - maths/grade-08/scope-cards/29-Probability.yaml
+  outcome table:
+    grades:
+      10:
+        note: Two-stage sample-space grid (§30.3), not an empirical frequency table.
+        si: කොටු දැල
+        sources:
+        - maths/grade-10/lessons/29-Probability.md
   p.m.:
     grades:
       6:
@@ -7084,6 +7104,16 @@ terms:
         sources:
         - maths/grade-10/lessons/07-Factors-of-Quadratic-Expressions.md
         - maths/grade-10/scope-cards/07-Factors-of-Quadratic-Expressions.yaml
+  pair of compasses:
+    grades:
+      7:
+        si: කවකටුව
+        sources:
+        - maths/grade-07/lessons/18-Circles.md
+      8:
+        si: කවකටුව
+        sources:
+        - maths/grade-08/lessons/23-Circle.md
   pair of opposite sides:
     grades:
       6:
@@ -7537,6 +7567,13 @@ terms:
         - maths/grade-11/lessons/05-Volume-of-Solids.md
         - maths/grade-11/scope-cards/04-Surface-Area-of-Solids.yaml
         - maths/grade-11/scope-cards/05-Volume-of-Solids.yaml
+  quadrant (of a pie chart):
+    grades:
+      10:
+        note: A geometric quadrant is the 90° sector shown in the perimeter lesson, not a temporal quarter.
+        si: හතරෙන් පංගුවේ කේන්ද්‍රික ඛණ්ඩය
+        sources:
+        - maths/grade-10/lessons/01-Perimeter.md
   quadratic expression:
     grades:
       10:
@@ -8007,8 +8044,11 @@ terms:
         - සෘජු කෝණය
         - සෘජුකෝණය
         - ඍජුකෝණය
+        - ඍජු කෝණය
+        note: Cross-grade source supports only the attested spacing of the alt; the primary is attested at this grade.
         si: ඍජුකෝණය
         sources:
+        - maths/grade-06/lessons/07-Angles.md
         - maths/grade-09/lessons/08-Angles-Related-to-Straight-Lines-and-Parallel-Lines.md
         - maths/grade-09/lessons/19-Pythagoras-Relationship.md
       10:
@@ -8016,15 +8056,21 @@ terms:
         - සෘජු කෝණය
         - සෘජුකෝණය
         - ඍජුකෝණය
+        - ඍජු කෝණය
+        note: Cross-grade source supports only the attested spacing of the alt; the primary is attested at this grade.
         si: ඍජුකෝණය
         sources:
+        - maths/grade-06/lessons/07-Angles.md
         - maths/grade-10/lessons/08-Triangles.md
         - maths/grade-10/lessons/30-Angles-in-a-Circle.md
       11:
         alt:
         - ඍජුකෝණය
+        - ඍජු කෝණය
+        note: Cross-grade source supports only the attested spacing of the alt; the primary is attested at this grade.
         si: ඍජුකෝණය
         sources:
+        - maths/grade-06/lessons/07-Angles.md
         - maths/grade-11/lessons/17-Pythagoras-Theorem.md
   right circular cone:
     grades:
@@ -8391,6 +8437,12 @@ terms:
         sources:
         - maths/grade-11/lessons/01-Real-Numbers.md
         - maths/grade-11/scope-cards/01-Real-Numbers.yaml
+  set square:
+    grades:
+      7:
+        si: විහිත චතුරස්‍රය
+        sources:
+        - maths/grade-07/lessons/07-Parallel-Straight-Lines.md
   share market:
     grades:
       11:
@@ -8841,6 +8893,13 @@ terms:
         - maths/grade-10/lessons/22-Formulae.md
         - maths/grade-10/scope-cards/02-Square-Root.yaml
         - maths/grade-10/scope-cards/22-Formulae.yaml
+  standard form:
+    grades:
+      9:
+        note: 'Scientific-notation meaning: A × 10ⁿ with 1 ≤ A < 10, not significant-figure rounding.'
+        si: විද්‍යාත්මක අංකනය
+        sources:
+        - maths/grade-09/lessons/01-Round-Off-and-Scientific-Notation.md
   static nature (of an angle):
     grades:
       7:
@@ -9442,6 +9501,14 @@ terms:
         - maths/grade-06/lessons/25-Area.md
         - maths/grade-06/scope-cards/12-Rectilinear-Plane-Figures.yaml
         - maths/grade-06/scope-cards/25-Area.yaml
+  tree diagram:
+    grades:
+      10:
+        alt:
+        - රුක්සටහන්
+        si: රුක් සටහන
+        sources:
+        - maths/grade-10/lessons/29-Probability.md
   triangle:
     grades:
       6:
@@ -9914,3 +9981,13 @@ terms:
         sources:
         - maths/grade-07/lessons/23-Cartesian-Plane.md
         - maths/grade-07/scope-cards/23-Cartesian-Plane.yaml
+  y-intercept:
+    grades:
+      9:
+        si: අන්තඃඛණ්ඩය
+        sources:
+        - maths/grade-09/lessons/20-Graphs.md
+      10:
+        si: අන්තඃඛණ්ඩය
+        sources:
+        - maths/grade-10/lessons/20-Graphs.md

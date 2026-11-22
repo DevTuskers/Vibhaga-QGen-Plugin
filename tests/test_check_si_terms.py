@@ -321,7 +321,7 @@ questions:
     stem_si: "ජ්‍යායක් මඟින් කේන්ද්‍රයේ $60°$ ක කෝණයක් ආපාතනය කරයි."
   - n: 2
     stem: "State the alternate segment theorem."
-    stem_si: "ඒකාන්තර වෘත්ත ඛණ්ඩ ප්‍රමේයය ප්‍රකාශ කරන්න."
+    stem_si: "ඒකාන්තර වෘත්ත ඛණ්ඩයේ කෝණ ආශ්‍රිත ප්‍රමේයය ප්‍රකාශ කරන්න."
   - n: 3
     stem: "The bearing of B from A is $220°$."
     stem_si: "A සිට B හි දිගංශය $220°$ කි."
@@ -373,7 +373,7 @@ questions:
     stem_si: "කේන්ද්‍රයේ සිට ජ්‍යාවට අඳින ලද ලම්බයෙන් ජ්‍යාව සමච්ඡේදනය වේ."
   - n: 2
     stem: "Chords equidistant from the centre are equal in length."
-    stem_si: "කේන්ද්‍රයේ සිට සමාන දුරින් පිහිටි ජ්‍යා දිගින් සමාන වේ."
+    stem_si: "කේන්ද්‍රයේ සිට සමදුරින් පිහිටි ජ්‍යා දිගින් සමාන වේ."
   - n: 3
     stem: "A rope of length $16$ cm is tied across."
     stem_si: "$16$ cm දිගැති කඹයක් හරහා බැඳ ඇත."
@@ -382,10 +382,10 @@ questions:
     stem_si: "ක්ෂේත්‍රයේ පරිමාණ රූපයක් නිර්මාණය කරන්න."
   - n: 5
     stem: "The angle in a semicircle is a right angle."
-    stem_si: "අර්ධ වෘත්තයක කෝණය සෘජුකෝණයකි."
+    stem_si: "අර්ධ වෘත්තයේ කෝණය සෘජුකෝණයකි."
   - n: 6
     stem: "The chord subtends a central angle."
-    stem_si: "ජ්‍යාය කේන්ද්‍රික කෝණයක් ආපාතනය කරයි."
+    stem_si: "ජ්‍යාය කේන්ද්‍රික කෝණයක් ආපාතනය කරන බව දැක්වේ."
 """
         rc, out = run_tool(good_g10, "--grade", "10")
         self.assertEqual(rc, 0, out)
@@ -498,18 +498,31 @@ questions:
     stem: "The two triangles are congruent."
     stem_si: "ත්‍රිකෝණ දෙක එක හා සමාන වේ."
 """
-        rc, out = run_tool(bad_congruent, "--grade", "8")
+        good_congruent = bad_congruent.replace("එක හා සමාන වේ", "අංගසම වේ")
+        rc, out = run_tool(good_congruent, "--grade", "10")
+        self.assertEqual(rc, 0, out)
+        rc, out = run_tool(bad_congruent, "--grade", "10")
         self.assertEqual(rc, 1)
         self.assertIn("congruent", out)
 
-        # Missing 'spoke' dictionary rendering (ගරාදිය) is caught
+        # The wheel caption supplies the Grade 7 plural ගරාදි.
+        good_spoke = """\
+questions:
+  - n: 1
+    stem: "The wheel has 8 spokes."
+    stem_si: "රෝදයේ ගරාදි 8ක් ඇත."
+"""
+        rc, out = run_tool(good_spoke, "--grade", "7")
+        self.assertEqual(rc, 0, out)
+
+        # Missing 'spoke' dictionary rendering (ගරාදි) is caught
         bad_spoke = """\
 questions:
   - n: 1
     stem: "The wheel has 8 spokes."
     stem_si: "රෝදයේ කූරු 8ක් ඇත."
 """
-        rc, out = run_tool(bad_spoke, "--grade", "8")
+        rc, out = run_tool(bad_spoke, "--grade", "7")
         self.assertEqual(rc, 1)
         self.assertIn("spoke", out)
 
@@ -523,6 +536,41 @@ questions:
         rc, out = run_tool(bad_crossing, "--grade", "8")
         self.assertEqual(rc, 1)
         self.assertIn("crossing point", out)
+
+    def test_attested_right_angle_spacing_variants(self):
+        for grade in (9, 10, 11):
+            for si in ("ඍජුකෝණය", "ඍජු කෝණය"):
+                with self.subTest(grade=grade, si=si):
+                    doc = f'questions:\n  - n: 1\n    stem: "A right angle."\n    stem_si: "{si}"\n'
+                    rc, out = run_tool(doc, "--grade", str(grade))
+                    self.assertEqual(rc, 0, out)
+
+    def test_resolved_review_terms_enforced(self):
+        cases = [
+            ("heptagon", 7, "සප්තාස්‍රය"),
+            ("octagon", 7, "අෂ්ටාස්‍රය"),
+            ("decagon", 7, "දසාස්‍රය"),
+            ("compasses", 7, "කවකටුව"),
+            ("compasses", 8, "කවකටුව"),
+            ("pair of compasses", 7, "කවකටුව"),
+            ("pair of compasses", 8, "කවකටුව"),
+            ("set square", 7, "විහිත චතුරස්‍රය"),
+            ("standard form", 9, "විද්‍යාත්මක අංකනය"),
+            ("y-intercept", 9, "අන්තඃඛණ්ඩය"),
+            ("y-intercept", 10, "අන්තඃඛණ්ඩය"),
+            ("tree diagram", 10, "රුක් සටහන"),
+            ("tree diagram", 10, "රුක්සටහන්"),
+            ("outcome table", 10, "කොටු දැල"),
+            ("quadrant (of a pie chart)", 10, "හතරෙන් පංගුවේ කේන්ද්‍රික ඛණ්ඩය"),
+        ]
+        for term, grade, si in cases:
+            with self.subTest(term=term, grade=grade, si=si):
+                doc = f'questions:\n  - n: 1\n    stem: "{term}"\n    stem_si: "{si}"\n'
+                rc, out = run_tool(doc, "--grade", str(grade))
+                self.assertEqual(rc, 0, out)
+                rc, out = run_tool(doc.replace(si, "කෝණය"), "--grade", str(grade))
+                self.assertEqual(rc, 1, out)
+                self.assertIn(term, out)
 
 
 
