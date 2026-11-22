@@ -125,6 +125,11 @@ git grep -nIE '\b[0-9a-f]{8}\b' -- skills agents docs
 
 ## generate skill history 2026-10-21
 
+2026-11-22: Added `qgen-diagram-critic`, a separate sighted critic for batches with figures.
+It checks stored English descriptions against rendered PNGs and mathematical tidiness: the
+content critic's image-blind DSL/metric checks and the lead's authoring look cannot replace
+independent pixel judgment. Both critics must clear BLOCKER/MAJOR findings before SATISFIED.
+
 > Moved from Vibhaga-Docs `.devin/skills/generate-lesson-questions` @08c09a9 (see docs/MIGRATION.md);
 > rewritten as the orchestrator in W7 (2026-10-02). The S4–S8 skills hold the *rules* of each step;
 > this file holds the *order*, who does each step, and the per-run checklist.

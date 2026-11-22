@@ -11,7 +11,7 @@ argument-hint: "[grade] [lesson number or name] [how many questions]"
 This run is self-contained: read **this section and AGENTS.md**; use its linked rules and steps as needed.
 Open an S4–S8 skill only when a step needs a rule you do not know (a figure or a failing gate).
 `T=tools/playground-publish.py`, `A=wt/<topic>/actor`. A ~10-question run targets **2–3 ACUs**; start the
-generation session and its one critic in **Normal** mode. No figures unless a question needs one. Never re-read
+generation session and its critics in **Normal** mode. No figures unless a question needs one. Never re-read
 a skill or corpus file already read; allow one `build` + one `ship` per fix round.
 
 1. `python3 tools/qgen-setup.py` → `export VIBHAGA_ADMIN_ENV=/dev/shm/qgen-admin.env` (one command; prints names only).
@@ -55,7 +55,8 @@ a skill or corpus file already read; allow one `build` + one `ship` per fix roun
    --ledger $A/ledger.json` → `run-gates.py ship …` (takes ~5 min for 10 questions; run in the background, not
    under a short timeout) → `sql-proof.py q2 <sid> --expected 10` (`q2: ok`, `q2b: ok`) →
    `embeddings-refresh --grade <g> --subject Mathematics`.
-7. **One** fresh `qgen-critic` session for all 10, **Normal** mode, paths only. Fix BLOCKER/MAJOR; MINORs only if
+7. **One** fresh `qgen-critic` session for all 10, plus **one** `qgen-diagram-critic` when figures exist,
+   **Normal** mode, paths only (step 13). Fix BLOCKER/MAJOR from both; MINORs only if
    one-line, otherwise owner notes. **Sinhala-fluency MINORs are must-fix: apply the critic's rewrite.** Round 2
    uses a fresh critic with `Previous report:`, changed questions only. See [Sinhala fluency](../../agents/qgen-critic.md).
 8. Coverage after, logbook line, report in plain English.
@@ -144,7 +145,8 @@ Generation history: [docs/MIGRATION.md](../../docs/MIGRATION.md#generate-skill-h
 | 1 scope statement · 2 dedup judgment · 3 plan | **lead** | judgment: what the lesson teaches, what counts as a copy |
 | 4 `content.yaml` — stems, parts, answers, figure specs (which template, which stem numbers) | **lead** | the content *is* the product; a delegated stem or answer is unreviewed authorship |
 | 5–6 `run-gates.py build` · 7 session create · 8–11 `run-gates.py ship` · 12 pre-critic lint FAILs | mechanical (delegable: give exact commands and the run dir; ask for exit codes + the quoted lines) | each is one command whose exit code is the verdict |
-| 6b the contact sheet look | **lead** | the six metric rules miss wrong-edge labels, legibility, the wrong arc (visual-check "LOOK") |
+| 6b the contact sheet look | **lead** | gates authoring; independent rendered-pixel judgment belongs to the diagram critic |
+| 13 diagram critique (batches with figures) | **qgen-diagram-critic** | independent description-match and mathematical-tidiness judgment from PNGs, not metrics alone |
 | 13 critic spawn, finding triage, R/M/H comparison · 14 fix decisions · 15 logbook line | **lead** | independence and judgment; the critic is not told what you doubt |
 
 ### Run layout (set once)
@@ -298,7 +300,8 @@ same two checkout paths in the critic's spawn prompt.
    every figure's light-375 render at native size with its id captioned — and write one line per figure into
    `notes.md` the moment it is seen (what it shows; anything wrong; its pixel dimensions from the verdict line).
    Open a single figure's `light-375.png` only when the sheet shows a problem or is too small to judge — still one
-   image per `read`. A defect → back to step 4/5.
+   image per `read`. A defect → back to step 4/5. This lead look gates authoring; independent visual judgment
+   belongs to `qgen-diagram-critic` in step 13, not this authoring check.
 7. **Create the session** (once): `python3 $T session create --name "G<g> Maths · <Easy|Medium|Hard> · <N>Q · <d Mon YYYY, h:mm AM/PM>" --scope grade=<g>,subject=Mathematics,medium=<medium> --lessons <ids> --ledger $A/ledger.json`.
    The name follows the owner standard (ruling 2026-10-15): `·` is U+00B7 with a space each side, the
    time is the session's creation time from `TZ=Asia/Colombo date '+%-d %b %Y, %-I:%M %p'`, and there
@@ -366,11 +369,19 @@ same two checkout paths in the critic's spawn prompt.
     Never `content.yaml`, claim sets, staged docs, notes or a hint about which items you doubt (**T25**). **One
     critic for the whole batch** (≤ 12 questions — profile §7), started as a separate session in **Normal** mode,
     not Fusion (owner ruling 2026-10-20: fresh eyes kept, cost cut). The critic is
-    **image-blind**: its could-not-check list names the figure look, which step 6b already covered — say so in the
-    ledger, do not re-open the PNGs. Compare its R/M/H with your plan line: a gap of more than one level on a part is a
+    **image-blind**: its could-not-check list names the figure look, owned independently by the diagram critic below.
+    Compare its R/M/H with your plan line: a gap of more than one level on a part is a
     MINOR. `critic-read.py` also writes `brief.txt` beside the rows — the session's own scope pack — so the critic
     opens the lesson Markdown only at the sections a finding needs, never whole.
-14. **Fix and re-critique until SATISFIED.** SATISFIED = 0 BLOCKER and 0 MAJOR. Fix every BLOCKER/MAJOR; fix a
+    After the content critic, spawn [`qgen-diagram-critic`](../../agents/qgen-diagram-critic.md) for any batch
+    containing figures; skip only when figureless. One diagram critic per batch (≤12 questions), separate session,
+    **Normal** mode, paths only, with this prompt:
+    ```
+    Critique the diagrams of playground batch <sid> per your profile. Paths: plugin <checkout>; content-DB env <Vibhaga-DB/.env>; visual-check output <wt/<topic>/vc>; write the report to <wt/<topic>/critic/diagram-rN.md>.
+    ```
+    On re-runs add only the previous critic report and rows/hashes paths, never actor files or hints (T25).
+14. **Fix and re-critique until SATISFIED.** SATISFIED requires both critics at 0 BLOCKER and 0 MAJOR
+    (diagram critic not applicable for figureless batches), with no unresolved required checks. Fix every BLOCKER/MAJOR; fix a
     MINOR only when it is a one-line edit, otherwise write it down as an owner note (with the reason) — a MINOR
     alone never buys another critic round (lean runs, owner ruling 2026-10-20). A fix is: edit `content.yaml` (same `id_seed`, `n`, labels) → `run-gates.py build` → 6b (only
     for a figure that changed) → `run-gates.py ship` (`doc put`; `--session-check` only if a figure or stem changed)
@@ -378,7 +389,10 @@ same two checkout paths in the critic's spawn prompt.
     laptop. Then `python3 tools/critic-read.py hashes <sid>` prints `Q<n> <sha256>` per question — diff it against
     the previous round's hashes and re-spawn a **fresh** critic, with `Previous report: <path>`, only for chunks
     holding ≥1 changed question; a chunk with no changes carries its verdict (record that in the ledger — profile
-    §6: CARRIED / FIXED / OPEN / REGRESSED by hash). Never ask the same critic twice. **Sinhala-fluency MINORs are must-fix: apply the critic's rewrite.**
+    §6: CARRIED / FIXED / OPEN / REGRESSED by hash). Diagram fixes use this same edit → build → ship loop;
+    re-run visual-check mode 1 into `wt/<topic>/vc` so the fresh diagram critic sees current PNGs, not stale renders.
+    Re-run the diagram critic with `critic-read.py --previous`; carry per figure only when both the question and
+    PNG hashes match (diagram profile §6). Never ask the same critic twice. **Sinhala-fluency MINORs are must-fix: apply the critic's rewrite.**
 15. **Logbook line** — one dated entry in the plan logbook (private Docs repo): session id, N questions / parts /
     figures, the publish and Q2/Q3 lines, the coverage before → after diff (§5 item 5), critic rounds and verdicts,
     owner questions, effort. Add an ID-free line to
@@ -401,7 +415,8 @@ same two checkout paths in the critic's spawn prompt.
       · publish k/n + read-back + t77 + provenance quoted in notes.md · q2: ok · q3: ok (auto) or PENDING → MCP noted
 - [ ] 12 precritic-lint: 0 FAIL · every WARN read
 - [ ] 13 critic r1 spawned with paths only · verdict ____
-- [ ] 14 rounds: r__ SATISFIED · critic-read hashes diffed · unchanged chunks CARRIED in ledger · every finding FIXED
+- [ ] 13 diagram critic diagram-r1 spawned with paths only after content critic · verdict ____ (or figureless: skipped)
+- [ ] 14 rounds: both critics r__ SATISFIED · fresh PNGs after diagram fixes · critic-read hashes diffed · unchanged chunks CARRIED in ledger · every finding FIXED
       or an owner question · Q2 + Q3 ok after the last republish
 - [ ] 15 logbook line written · ID-free line added to MIGRATION.md
 ```
@@ -477,7 +492,7 @@ For an Easy question, "new" means one of these: a context the lesson does not us
    student `GET /v1/questions` is supporting evidence only (§1).
 7. `sql-proof.py q3` prints `q3: ok` on the merged project for the actor — an admin identity that
    exists there.
-8. The last fresh `qgen-critic` reported SATISFIED; every BLOCKER, MAJOR and MINOR on the way is FIXED (republished
+8. The last fresh `qgen-critic` and, for figures, `qgen-diagram-critic` reported SATISFIED; every BLOCKER, MAJOR and MINOR on the way is FIXED (republished
    flagged) or recorded as an owner question.
 9. The ledger (session id, question ids) is in the run's logbook entry.
 
