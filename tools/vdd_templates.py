@@ -16996,7 +16996,7 @@ def _circ_rect_claims(figure_id, stem, ask, title, description, medium, unit, va
 
 
 def _circ_build_stadium(figure_id, stem, ask, title, description, medium, unit,
-                   values, length, width, labels, shaded, unit_px):
+                   values, length, width, labels, shaded, unit_px, letters=False):
     L_u, W_u = _circ_pos("length", length), _circ_pos("width", width)
     upx = _circ_number(unit_px) if unit_px is not None else 240.0 / max(L_u, W_u)
     if not 8.0 <= upx <= 240.0:
@@ -17035,7 +17035,7 @@ def _circ_build_stadium(figure_id, stem, ask, title, description, medium, unit,
                                id="stad"))
     elements.extend([{"id": "centreleft", "type": "point", "at": vc.P(C1), "r": 3},
                      {"id": "centreright", "type": "point", "at": vc.P(C2), "r": 3}])
-    span = L + W + 160.0
+    span = (L + W) if letters else (L + W + 160.0)
     clr, gapl = _circ_clr(span), _circ_gapl(span)
     boxes = _circ_boxes(elements)
     el_l = _seat_side_label(_CIRC_KIND, elements, boxes, A, B,
@@ -17051,6 +17051,9 @@ def _circ_build_stadium(figure_id, stem, ask, title, description, medium, unit,
                                     (L / 2, -W / 2), clr, "flwid")
         elements.append(el_w)
         boxes.append(_text_box(g, el_w["at"]))
+    if letters:
+        for nm, pt in (("A", A), ("B", B), ("C", T2), ("D", T1)):
+            elements.append(_float_label(f"lb{nm}", nm, pt))
     anchors = {"A": A, "B": B, "C": T2, "D": T1, "E": C1, "F": C2}
     claims = []
 
@@ -17074,6 +17077,9 @@ def _circ_build_stadium(figure_id, stem, ask, title, description, medium, unit,
     if "width" in labels:
         add(f'label "{labels["width"]}" names BC', evv,
             "the semicircle diameter's glyph")
+    if letters:
+        for nm in "ABCD":
+            add(f'label "{nm}" names {nm}', "inferred", "a point letter")
     add(f"derive {_num_exact(L_u * W_u)} + {_num_exact(math.pi * W_u ** 2 / 4)} = {_num_exact(L_u * W_u + math.pi * W_u ** 2 / 4)}", evv, "stadium area: rectangle plus two semicircular ends")
     terms = [2.0 * L_u, math.pi * W_u]
     add(f"derive 2 * {_num_exact(L_u)} + {_num_exact(math.pi * W_u)} = "
@@ -17872,7 +17878,7 @@ def build_circular_composite(*, figure_id, stem, ask=None, title=None,
                              radius=None, inner=None, outer=None, angle=None,
                              base=None, height=None, leg=None, mode=None,
                              pieces=None, labels=None, cut="left",
-                             letters=True, shaded=None, unit_px=None,
+                             letters=None, shaded=None, unit_px=None,
                              r_px=None, start=None):
     """One bounded circular-composite dispatcher. `shape` selects the profile;
     all numeric givens are finite non-bool numbers checked against the stem in
@@ -17883,6 +17889,8 @@ def build_circular_composite(*, figure_id, stem, ask=None, title=None,
     if values not in ("stem", "figure"):
         raise TemplateError(f"{_CIRC_KIND}: values must be 'stem' or 'figure'")
     _circ_unit_check(unit)
+    if letters is None:
+        letters = False if shape == "stadium" else True
     if not isinstance(letters, bool):
         raise TemplateError(f"{_CIRC_KIND}: letters is a bool")
     if not isinstance(stem, str) or not stem.strip():
@@ -17961,7 +17969,7 @@ def build_circular_composite(*, figure_id, stem, ask=None, title=None,
     if shape == "stadium":
         return _circ_build_stadium(figure_id, stem, ask, title, description, medium,
                               unit, values, length, width, labels,
-                              bool(shaded), unit_px)
+                              bool(shaded), unit_px, letters)
     if shape == "triangle":
         return _circ_build_triangle(figure_id, stem, ask, title, description,
                                medium, unit, values, mode or "isosceles", base, height,
