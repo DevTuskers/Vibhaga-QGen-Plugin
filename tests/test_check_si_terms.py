@@ -655,6 +655,34 @@ questions:
                 if finding:
                     self.assertIn(finding, out)
 
+    def test_empty_set_and_context_adjudications(self):
+        terms = yaml.safe_load(mod.DICT_PATH.read_text(encoding="utf-8"))["terms"]
+        self.assertNotIn("non-empty set", terms)
+        self.assertEqual(terms["null set"]["grades"], terms["empty set"]["grades"])
+        self.assertEqual(terms["company shares"]["grades"], terms["company share"]["grades"])
+        self.assertIsNone(mod.en_pattern("empty set").search("non-empty set"))
+        self.assertIsNone(mod.en_pattern("empty set").search("NON-EMPTY SET"))
+        self.assertIsNotNone(mod.en_pattern("non-terminating decimal").search("non-terminating decimal"))
+        cases = [
+            (8, "empty set", "අභිශූන්‍ය කුලකය", 0),
+            (8, "null set", "අභිශූන්‍ය කුලකය", 0),
+            (8, "empty set", "කුලකය", 1),
+            (8, "null set", "කුලකය", 1),
+            (8, "non-empty set", "කුලකය", 0),
+            (11, "company share", "සමාගමේ කොටස්", 0),
+            (11, "company shares", "සමාගමේ කොටස්", 0),
+            (11, "company share", "කොටස්", 1),
+            (11, "bar notation (logarithms)", "වියුති", 0),
+            (7, "digital root", "ඉලක්කම් දර්ශකය", 0),
+            (6, "number period", "සංඛ්‍යා කලාපයක්", 0),
+            (10, "height", "උස", 0),
+        ]
+        for grade, en, si, expected in cases:
+            with self.subTest(grade=grade, en=en, si=si):
+                doc = yaml.safe_dump({"grade": grade, "questions": [{"n": 1, "stem": en, "stem_si": si}]}, allow_unicode=True)
+                rc, out = run_tool(doc)
+                self.assertEqual(rc, expected, out)
+
 
 
 if __name__ == "__main__":

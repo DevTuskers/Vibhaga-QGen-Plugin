@@ -42,7 +42,7 @@ def strip_markup(text: str) -> str:
 
 
 def en_pattern(term: str) -> re.Pattern:
-    return re.compile(r"(?<![A-Za-z])" + re.escape(term) + r"(?![A-Za-z])", re.I)
+    return re.compile(r"(?<![A-Za-z])(?<!non-)" + re.escape(term) + r"(?![A-Za-z])", re.I)
 
 
 def si_tokens(text: str):

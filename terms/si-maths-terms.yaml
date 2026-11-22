@@ -210,7 +210,7 @@ needs_review:
 - en: empty set symbol ∅
   grades:
   - 11
-  why: Searched all-grade lessons/scope-cards for empty set, ∅, හිස් කුලක, ශූන්‍ය කුලක and අභිශූන්‍ය. G11 contains only අභිශූන්‍ය නොවන (maths/grade-11/lessons/24-Sets.md), and its card explicitly excludes ∅ (maths/grade-11/scope-cards/24-Sets.yaml). Closest definition is අභිශූන්‍ය කුලකය, explicitly a set with no elements (maths/grade-08/lessons/19-Sets.md, §19.4); the former why incorrectly called it non-empty.
+  why: 'The word empty set is taught in G8 as අභිශූන්‍ය කුලකය (maths/grade-08/lessons/19-Sets.md, §19.4), now keyed as empty set/null set. This review concerns only symbol ∅ at G11: maths/grade-11/scope-cards/24-Sets.yaml explicitly excludes it; maths/grade-11/lessons/24-Sets.md uses අභිශූන්‍ය නොවන but does not establish the excluded symbol as taught.'
 - en: set square
   grades:
   - 8
@@ -254,10 +254,10 @@ needs_review:
   - 10
   - 11
   why: 'Alias deliberately not assigned: කෝණ සමච්ඡේදකය and ලම්බ සමච්ඡේදකය identify distinct constructions (maths/grade-09/lessons/13-Loci-and-Constructions.md); use angle bisector or perpendicular bisector. The verb bisect/bisects is a separate action, not a synonym for either line.'
-- en: non-empty set (meaning of existing entry)
+- en: non-empty set
   grades:
   - 8
-  why: 'Coverage semantic collision: existing non-empty set maps to අභිශූන්‍ය කුලකය, but the definition explicitly says it has no elements (maths/grade-08/lessons/19-Sets.md, §19.4). The new coverage must not propagate that mapping to other grades or add plural aliases. Resolve the existing wrong English headword before adding empty/non-empty aliases.'
+  why: Searched all G8 lessons and scope cards for non-empty and අභිශූන්‍ය නොවන / ශූන්‍ය නොවන, with joiners stripped. No distinct G8 Sinhala form found. G8 L19 §19.4 defines අභිශූන්‍ය කුලකය as EMPTY (maths/grade-08/lessons/19-Sets.md); now keyed as empty set/null set. The negated form අභිශූන්‍ය නොවන is attested only in G11 (maths/grade-11/lessons/24-Sets.md), not evidence for G8.
 not_taught:
   Algebraic fractions with unknown numerators or denominators:
     cards:
@@ -5039,6 +5039,7 @@ terms:
         si: වියුති
         sources:
         - maths/grade-11/lessons/03-Indices-and-Logarithms-II.md
+    note: G11 L03 explicitly reads the bar over a negative logarithmic characteristic as වියුති; the mantissa remains positive (textbook p. 3).
   base (of a power):
     grades:
       6:
@@ -6360,13 +6361,13 @@ terms:
   company share:
     grades:
       11:
-        si: කොටස්
+        si: සමාගමේ කොටස්
         sources:
         - maths/grade-11/lessons/10-Share-Market.md
   company shares:
     grades:
       11:
-        si: කොටස්
+        si: සමාගමේ කොටස්
         sources:
         - maths/grade-11/lessons/10-Share-Market.md
     note: alias of company share
@@ -7913,6 +7914,7 @@ terms:
         si: ඉලක්කම් දර්ශකය
         sources:
         - maths/grade-07/lessons/04-Factors-and-Multiples.md
+    note: G7 L04 defines repeated digit addition until a value from 1 to 9 remains (textbook pp. 1–2).
   digital roots:
     grades:
       7:
@@ -8298,6 +8300,15 @@ terms:
         sources:
         - maths/grade-08/lessons/12-Triangles.md
     note: alias of element of a triangle
+  empty set:
+    grades:
+      8:
+        si: අභිශූන්‍ය කුලකය
+        sources:
+        - maths/grade-08/lessons/19-Sets.md
+        - maths/grade-08/lessons/25-Number-Line-and-Cartesian-Plane.md
+        - maths/grade-08/scope-cards/19-Sets.yaml
+        - maths/grade-08/scope-cards/25-Number-Line-and-Cartesian-Plane.yaml
   end point:
     grades:
       7:
@@ -10058,6 +10069,7 @@ terms:
         si: උස
         sources:
         - maths/grade-10/lessons/28-Surface-Area-and-Volume.md
+    note: G10 L28 explicitly defines prism length/height as the distance between its triangular end faces (textbook p. 3).
   heights:
     grades:
       10:
@@ -12351,15 +12363,6 @@ terms:
         - maths/grade-08/lessons/20-Area.md
         - maths/grade-08/scope-cards/06-Solids.yaml
     note: alias of net
-  non-empty set:
-    grades:
-      8:
-        si: අභිශූන්‍ය කුලකය
-        sources:
-        - maths/grade-08/lessons/19-Sets.md
-        - maths/grade-08/lessons/25-Number-Line-and-Cartesian-Plane.md
-        - maths/grade-08/scope-cards/19-Sets.yaml
-        - maths/grade-08/scope-cards/25-Number-Line-and-Cartesian-Plane.yaml
   non-terminating decimal:
     grades:
       11:
@@ -12416,6 +12419,16 @@ terms:
         - maths/grade-08/lessons/21-Time.md
         - maths/grade-08/scope-cards/21-Time.yaml
     note: alias of northern hemisphere
+  null set:
+    grades:
+      8:
+        si: අභිශූන්‍ය කුලකය
+        sources:
+        - maths/grade-08/lessons/19-Sets.md
+        - maths/grade-08/lessons/25-Number-Line-and-Cartesian-Plane.md
+        - maths/grade-08/scope-cards/19-Sets.yaml
+        - maths/grade-08/scope-cards/25-Number-Line-and-Cartesian-Plane.yaml
+    note: alias of empty set
   number base two:
     grades:
       9:
@@ -12526,6 +12539,7 @@ terms:
         si: සංඛ්‍යා කලාපයක්
         sources:
         - maths/grade-06/lessons/02-Place-Value.md
+    note: G6 L02 defines three-digit groups as සංඛ්‍යා කලාපයක් and heads the section සංඛ්‍යා කලාප; no definite සංඛ්‍යා කලාපය is printed as a complete word.
   numerator:
     grades:
       6:
