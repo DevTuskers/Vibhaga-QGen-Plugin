@@ -68,12 +68,23 @@ or a copied side — §0.6).
    rely on pure text**. You must either provide a visual VDD diagram ([`figure-templates`](../figure-templates/SKILL.md),
    [`draw-and-verify-question-vdd`](../draw-and-verify-question-vdd/SKILL.md)) or chunk the description into clear, simple single-relation steps
    so that students are tested on the underlying mathematics rather than spatial working-memory overload.
-9. **IT & technical terms in Sinhala:** When authoring questions related to Information Technology (IT/ICT),
-   computing hardware/peripherals, or calculator/device interfaces, use standard English technical terms (either
-   in English or natural transliteration, e.g. "mouse" / "මවුසය", "keyboard", "monitor", "RAM", "CPU",
-   "software") even within the Sinhala version. Do NOT use awkward, artificial, or antiquated direct Sinhala
-   translations (e.g. for mouse, never use "මූසිකය"; for software, hardware, cursor, RAM, CPU, file, folder,
-   button, key, etc., use the English terms that students actually learn and use in IT practice and standard exam convention).
+9. **IT & technical terms in Sinhala (English terms in brackets rule):**
+   When authoring questions related to Information Technology (IT/ICT), computing hardware/peripherals,
+   data storage/systems, or calculator/device interfaces in Sinhala:
+   - **Include the English technical term in brackets:** Whenever technical terms are translated into Sinhala
+     (even when using correct/standard curriculum terminology), always include the English technical term
+     within parentheses immediately following the Sinhala term
+     (e.g. `අධිවේගී ෆ්ලෑෂ් ආචයන (High-Speed Flash Storage)`, `වෙන්කිරීම් කුට්ටි (allocation blocks)`,
+     `දර්ශක වාර්තාවක් (index record)`, `ගොනු පද්ධතිය (file system)`, `දෘඪ තැටිය (hard disk drive)`).
+     *Rationale:* Most Sinhala-medium students are unfamiliar with coined or formal Sinhala technical terms,
+     whereas they are already familiar with the English technical terms from practical computer use, syllabi,
+     and everyday life. Providing the English term in brackets eliminates ambiguity and cognitive friction.
+   - **Everyday IT peripherals and hardware terms:** Use standard English technical terms (either in English
+     or natural transliteration, e.g. "mouse" / "මවුසය", "keyboard", "monitor", "RAM", "CPU", "software",
+     "storage", "bytes") even within the Sinhala version. Do NOT use awkward, artificial, or antiquated
+     direct Sinhala translations alone (e.g. for mouse, never use "මූසිකය"; for software, hardware, cursor,
+     RAM, CPU, file, folder, button, key, etc., use the English terms that students actually learn and use
+     in IT practice and standard exam convention).
 10. **Sinhala mathematical terminology and translation calque traps:**
    When translating or authoring Sinhala question stems and parts, you must strictly follow Sri Lankan school curriculum terminology (`terms/si-maths-terms.yaml`). Non-frontier or generic machine translation models frequently produce catastrophic calques and mistranslations:
    - **Intersection / crossing:** "crossing point" in compass construction / loci is strictly `ඡේදන ලක්ෂ්‍යය`, NEVER `කුරුසු ලක්ෂ්‍යය` ("crucifix point"). "Arcs cross/intersect" is `චාප ඡේදනය වේ`, NEVER `කුරුසු වේ`.

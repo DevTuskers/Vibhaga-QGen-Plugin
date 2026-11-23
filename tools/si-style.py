@@ -24,6 +24,7 @@ COMMON_IT_TERMS = {
     "button", "buttons", "usb", "wifi", "internet", "web",
 }
 LATIN = re.compile(r"\b[A-Za-z]+\b")
+PAREN_ENGLISH_TERM = re.compile(r"\([A-Za-z0-9\s\-–—/,'\".+*]+\)")
 PASSIVE = re.compile(r"[\u0D80-\u0DFA]+නු\s+(?:ලැබේ|ලබයි|ලැබිණි|ලැබුණි)")
 TEXT_SINHALA = re.compile(r"\\text\{[^}]*[\u0D80-\u0DFF]")
 ANNOUNCEMENT_PREFIX = re.compile(r"^\s*(?:පිළිතුර|විසඳුම)\s*[:\-–—]")
@@ -46,11 +47,16 @@ def field_warnings(text: str) -> list[str]:
         words = sentence.split()
         if len(words) > 30:
             warnings.append(f"sentence has {len(words)} words (max 30)")
+    # Parenthetical English technical terms (e.g. "(High-Speed Flash Storage)", "(Ferris wheel)")
+    # are standard bilingual glosses and should not be flagged as stray Latin words.
+    paren_spans = [m.span() for m in PAREN_ENGLISH_TERM.finditer(plain)]
     for match in LATIN.finditer(plain):
         word = match.group(0)
         if word.lower() in UNITS or word.lower() in COMMON_IT_TERMS or re.fullmatch(r"[A-Z]{1,3}", word):
             continue
         if len(word) == 1 and plain[match.end():match.end() + 1] == "(":
+            continue
+        if any(s <= match.start() and match.end() <= e for s, e in paren_spans):
             continue
         warnings.append(f"Latin word {word!r}")
     if "කරුණාකර" in plain:
