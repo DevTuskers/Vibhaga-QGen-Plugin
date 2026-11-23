@@ -41,12 +41,18 @@ stem you author. These rules hold in every session that loads the plugin.
    real-world signals by web search and anchors every plan line to one, with a short students/teachers rubric
    ([`creative-signals`](skills/creative-signals/SKILL.md), generate step 2b). Real figures stated as fact are true
    (TRAPS T155). The copy check still runs on every line.
-10. **IT & technical vocabulary — use English terms in Sinhala.** For questions involving Information
-   Technology (IT/ICT), computing hardware/peripherals, or calculator/device interfaces, always use
-   standard English technical terms (either in English or natural transliteration, e.g. "mouse" / "මවුසය",
-   "keyboard", "monitor", "RAM", "CPU", "software") even within the Sinhala version. Do NOT use outdated,
-   unnatural, or overly literal Sinhala translations (e.g. for mouse, never use "මූසිකය"). Technical
-   computing terms must match real-world, natural Sri Lankan IT usage and exam convention.
+10. **IT & technical vocabulary — include English technical terms in brackets in Sinhala.** For questions
+   involving Information Technology (IT/ICT), computing hardware/peripherals, data storage/systems,
+   calculator/device interfaces, or technical/engineering concepts:
+   - When technical terms are translated into Sinhala (even when using correct/standard curriculum terminology),
+     **always include the English technical term in brackets immediately following the Sinhala term**
+     (e.g. `අධිවේගී ෆ්ලෑෂ් ආචයන (High-Speed Flash Storage)`, `වෙන්කිරීම් කුට්ටි (allocation blocks)`,
+     `දර්ශක වාර්තාවක් (index record)`).
+     *Reason:* Most Sinhala-medium students are not aware of coined/formal Sinhala technical vocabulary,
+     but they readily recognize and understand the standard English terms.
+   - For everyday IT hardware/peripherals or pure acronyms, use standard English terms or natural transliteration
+     (e.g. "mouse" / "මවුසය", "keyboard", "monitor", "RAM", "CPU", "software", "storage", "bytes") even within the Sinhala version.
+     Never use outdated, unnatural, or overly literal Sinhala translations (e.g. for mouse, never use "මූසිකය").
 
 ## Session discipline
 - **Session names follow the standard** (owner ruling 2026-10-15): `G<grade> Maths · <Easy|Medium|Hard> · <N>Q · <d Mon YYYY, h:mm AM/PM>`

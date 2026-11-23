@@ -53,6 +53,15 @@ class SinhalaStyleTests(unittest.TestCase):
         self.assertNotIn("Latin word 'mouse'", findings_clean)
         self.assertNotIn("Latin word 'CPU'", findings_clean)
 
+        # Technical terms with English in parentheses (e.g. "(High-Speed Flash Storage)")
+        # must not be flagged as stray Latin words.
+        findings_paren = si_style.field_warnings("අධිවේගී ෆ්ලෑෂ් ආචයන (High-Speed Flash Storage) ධාවකයක සහ රස්සියානු රෝදය (Ferris wheel)")
+        self.assertNotIn("Latin word 'High'", findings_paren)
+        self.assertNotIn("Latin word 'Speed'", findings_paren)
+        self.assertNotIn("Latin word 'Flash'", findings_paren)
+        self.assertNotIn("Latin word 'Ferris'", findings_paren)
+        self.assertNotIn("Latin word 'wheel'", findings_paren)
+
     def test_sinhala_inside_text_command_warned(self):
         text = r"$$\text{කේතුවේ පරිමාව} = \frac{1}{3} \pi r^2 h$$"
         findings = si_style.field_warnings(text)
