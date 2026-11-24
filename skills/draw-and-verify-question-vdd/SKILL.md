@@ -577,7 +577,7 @@ before citing, and update this file when you find drift.** ⚠️ **Dropped-fiel
 traps are a SURFACE to sweep, not bugs to fix once**: render each element type twice, with and
 without a field, and diff the SVG — that is how all of them were found. Cross-cutting traps go to
 [`docs/TRAPS.md`](../../docs/TRAPS.md); drawing and verification ones belong in reference.md §6, as a **story
-with the catch**. Run `tools/check-suite.py` before every commit.
+with the catch**. Run `tools/check-suite.py --quick` before every commit and the full suite before a push.
 
 ⚠️ **§3.7 is the section with the least evidence in this file.** Its three-shape table grew from two
 shapes because a critique drew the case the two-shape version mis-routed, and the apparatus tax, the

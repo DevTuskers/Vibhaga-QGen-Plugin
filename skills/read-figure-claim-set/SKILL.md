@@ -546,6 +546,6 @@ them you skipped and why**; skipping one silently is the same defect as failing 
 
 The claim-set format is an **interface**, so a change to it is a change to the drawing skill and to
 `tools/audit-claim-set.py` — never a local edit. **Append** to §3.2's predicate table rather than
-renumbering anything; a renumbered list breaks every inbound `§` citation. Run `tools/check-suite.py`
-before every commit. Cross-cutting traps go to [`docs/TRAPS.md`](../../docs/TRAPS.md); claim-set ones
+renumbering anything; a renumbered list breaks every inbound `§` citation. Run `tools/check-suite.py --quick`
+before every commit (the full suite before a push). Cross-cutting traps go to [`docs/TRAPS.md`](../../docs/TRAPS.md); claim-set ones
 belong in §6 here, written as a **story with the catch**.
