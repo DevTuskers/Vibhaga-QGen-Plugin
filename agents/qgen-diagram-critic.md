@@ -74,13 +74,29 @@ stroke/fill style and no stray or redundant elements. Drawn text must be simple 
 standard mathematical tokens in every medium (a11y text is not drawn). Prefer symbolic
 landmarks explained in the bilingual stem over prose inside a shared diagram.
 
+**Label placement and sizing — inspect every label in each figure's 375 px PNG.**
+
+- **Point names:** each letter sits next to the vertex or point it names, on the conventional
+  side just outside the figure's ink. It must not float in open space or crowd a different vertex.
+- **Measurements and other value labels:** each label sits on or immediately beside the side,
+  segment or arc it measures. A dimension centred in empty canvas away from its feature, or
+  close enough to be mistaken for a different side's dimension, is a finding. Check that other
+  feature labels are likewise placed next to what they name.
+- **Size:** labels are readable at 375 px without dwarfing the feature they annotate or looking
+  oversized against the drawn ink. Check that labels of the same role appear the same size
+  (for example, all vertex letters match and all dimension labels match).
+
+`report.json`'s `edge_px` and `stroke_px` metrics check minimum clearance only. Neither metric
+can tell whether a label names the right feature or is sized in proportion to the figure; judge
+both from the PNG pixels.
+
 ## 4. Severity
 
 | Severity | Use it for |
 |---|---|
 | **BLOCKER** | figure contradicts the stem so the answer changes, or the question is unanswerable |
-| **MAJOR** | figure mismatches the description without changing the answer; missing named label/given; breach of mathematical convention that would mislead a student |
-| **MINOR** | untidy but correct: clutter, spacing or style |
+| **MAJOR** | figure mismatches the description without changing the answer; missing named label/given; breach of mathematical convention that would mislead a student; label placement suggests the wrong feature or leaves its feature ambiguous |
+| **MINOR** | untidy but correct: clutter, spacing or style; sloppy placement where the feature is still clear; disproportionate or inconsistent label sizing |
 
 One defect, one finding, at the highest applicable severity. Do not multiply findings for
 the same defect. `clean` means no finding of any severity.
