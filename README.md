@@ -44,6 +44,16 @@ Vibhaga/
 └── Vibhaga-Maths-Corpus/    ← private; lesson markdown + scope cards
 ```
 
+## Lesson-note tools
+
+Used by the org `lesson-short-notes` skill. `WORK` holds `en.md`, `si.md`, `diagrams.json`.
+
+| Tool | What it proves |
+|---|---|
+| `tools/note-gates.py WORK --grade N` | Text preflight: fences, no Sinhala in maths, identical EN/SI maths spans, diagram refs, Sinhala terms, VDD; warns on pipe tables and wide displays. |
+| `node tools/note-render.mjs --work WORK --lesson ID --grade N [--stored]` | Real Admin preview (writes blocked): counts, KaTeX errors, exposed `$`, overflow at desktop and 375 px, screenshots. |
+| `tools/note-proof.py WORK --lesson ID` | Stored bodies equal WORK, draft with no verifier (API + Q5), audit event by this admin, student 404, sign-out, Q3. |
+
 ## Offline tests
 
 Everything runs offline — no session create, no publish, no network:
