@@ -10,6 +10,7 @@
 -- Which database each block targets is stated in its header. Hosts and project refs are NOT in this
 -- public file: see Vibhaga-Docs AGENTS.md § "Onboarding-tool verification" for the project.
 -- Blocks Q2, Q2b and Q3 are run non-interactively by `tools/sql-proof.py` (read-only; exits on the `ok` column).
+-- Block Q5 (columns checked 2026-11-24: lesson_notes.*, admin_audit_log.target_id is text) is run by `tools/note-proof.py`.
 
 
 -- ============================================================================================
@@ -274,3 +275,26 @@ CROSS JOIN LATERAL (
    LIMIT 5) n
 WHERE b.source_batch_id = :'batch_id'::uuid
 ORDER BY b.question_number, n.rank) r;
+
+-- ============================================================================================
+-- Q5 — Lesson-note draft proof                                     DATABASE: content
+-- Variables: lesson_id, note_id (uuid), version (int), actor_id (uuid — the admin that wrote it).
+-- Read by tools/note-proof.py after a lesson-short-notes upload. One row: the note is a DRAFT at
+-- the expected version with no verifier attribution, and an audit event (created or updated) by
+-- the actor exists for that exact version. Counts and flags only — never the note bodies.
+-- ============================================================================================
+
+SELECT n.status, n.version,
+       (n.verified_by IS NULL) AS no_verifier, (n.verified_at IS NULL) AS no_verification_time,
+       a.audit_events, a.last_audit_id,
+       (n.status = 'draft' AND n.version = :'version'::int AND n.verified_by IS NULL
+        AND n.verified_at IS NULL AND a.audit_events >= 1) AS ok
+FROM lesson_notes n
+CROSS JOIN LATERAL (
+  SELECT count(*) AS audit_events, (array_agg(l.audit_id ORDER BY l.created_at DESC))[1] AS last_audit_id
+  FROM admin_audit_log l
+  WHERE l.target_type = 'lesson_note' AND l.target_id = n.note_id::text
+    AND l.admin_user_id = :'actor_id'::uuid AND l.payload->>'version' = n.version::text
+    AND l.action IN ('lesson_note.created', 'lesson_note.updated')
+) a
+WHERE n.lesson_id = :'lesson_id'::uuid AND n.note_id = :'note_id'::uuid;
