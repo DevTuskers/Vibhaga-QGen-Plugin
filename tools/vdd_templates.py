@@ -12726,7 +12726,12 @@ def _marked_geometry_once(*, figure_id, stem, ask, title, description, medium, s
         if canon in printed:
             raise TemplateError(f"{kind}: {s!r} labels the same segment twice — "
                                 "name it once (AB and BA are the same segment)")
-        el = _seat_side_label(kind, elements, boxes, P[a_], P[b_], glyph, cen,
+        mid_ = vc.lerp(P[a_], P[b_], 0.5)
+        if sorted((a_, b_)) in [sorted(e) for e in edges]:
+            away = (2 * mid_[0] - cen[0], 2 * mid_[1] - cen[1])
+        else:
+            away = cen
+        el = _seat_side_label(kind, elements, boxes, P[a_], P[b_], glyph, away,
                               clr, f"sl{a_}{b_}")
         elements.append(el)
         boxes.append(label_boxes([el], FS)[0][1:])
