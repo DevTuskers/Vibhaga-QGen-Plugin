@@ -57,5 +57,16 @@ class QuickSelection(unittest.TestCase):
         self.assertEqual(cs.quick_selection(["tools/deleted-tool.py"]), (set(), set()))
 
 
+class Units(unittest.TestCase):
+    def test_empty_selection_imports_nothing(self):
+        self.assertEqual(cs.unittest_units(set()), ([], []))
+
+    def test_selection_keeps_only_its_module(self):
+        units, broken = cs.unittest_units({"test_check_suite"})
+        self.assertEqual(broken, [])
+        self.assertTrue(units)
+        self.assertTrue(all(i.startswith("test_check_suite.") for u in units for i in u["ids"]))
+
+
 if __name__ == "__main__":
     unittest.main()
