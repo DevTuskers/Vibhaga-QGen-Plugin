@@ -144,7 +144,10 @@ def main(argv: list[str] | None = None, transport=None, student_get=body_404_tra
     si = (work / "si.md").read_text(encoding="utf-8")
     diagrams = json.loads((work / "diagrams.json").read_text(encoding="utf-8"))
     try:
-        admin_env = _auth.read_env()
+        admin_path = (Path(os.environ["VIBHAGA_ADMIN_ENV"]) if os.environ.get("VIBHAGA_ADMIN_ENV")
+                      else Path(os.environ["VIBHAGA_ADMIN"]) / ".env.local" if os.environ.get("VIBHAGA_ADMIN")
+                      else _auth.ENV_PATH)
+        admin_env = _auth.read_env(admin_path)
     except SystemExit as e:
         die(f"admin credentials unavailable ({e.code})", 3)
     stu_path = a.student_env or Path(os.environ.get("VIBHAGA_WEB") or HERE.parent.parent / "Vibhaga-Web") / ".env.local"
