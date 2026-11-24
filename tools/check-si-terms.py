@@ -38,6 +38,22 @@ def norm(text: str) -> str:
     return text.translate(JOINERS)
 
 
+def load_yaml(text: str):
+    """LibYAML's C parser when available (≈8× faster on the 700 KB dictionary), same safe semantics."""
+    return yaml.load(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
+
+
+@functools.lru_cache(maxsize=4)
+def _load_dictionary(path: str, mtime_ns: int, size: int):
+    return load_yaml(Path(path).read_text(encoding="utf-8"))
+
+
+def load_dictionary(path: str):
+    """Parsed once per process (keyed by mtime + size) — callers must not mutate it."""
+    st = Path(path).stat()
+    return _load_dictionary(str(Path(path).resolve()), st.st_mtime_ns, st.st_size)
+
+
 def strip_markup(text: str) -> str:
     return norm(LATEX.sub(" ", text).replace("`", " "))
 
@@ -109,8 +125,8 @@ def main(argv=None) -> int:
     ap.add_argument("--dict", default=str(DICT_PATH))
     args = ap.parse_args(argv)
 
-    dictionary = yaml.safe_load(Path(args.dict).read_text(encoding="utf-8"))
-    doc = yaml.safe_load(Path(args.doc).read_text(encoding="utf-8"))
+    dictionary = load_dictionary(args.dict)
+    doc = load_yaml(Path(args.doc).read_text(encoding="utf-8"))
     grade = args.grade or (doc.get("grade") if isinstance(doc, dict) else None)
 
     banned = {norm(k): v for k, v in (dictionary.get("banned") or {}).items()}

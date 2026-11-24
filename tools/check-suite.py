@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
 """
-check-suite.py — the vibhaga-qgen offline gate. Run before every commit:
+check-suite.py — the vibhaga-qgen offline gate.
 
+    # before every commit — doc lint + only the tests tied to the files changed since origin/main:
+    PYTHONDONTWRITEBYTECODE=1 VIBHAGA_ADMIN_ENV=/nonexistent/offline-test-only \
+        python3 tools/check-suite.py --quick
+    # before every push and before asking for a merge — everything:
     PYTHONDONTWRITEBYTECODE=1 VIBHAGA_ADMIN_ENV=/nonexistent/offline-test-only \
         python3 tools/check-suite.py
+
+Part B runs in parallel (`--jobs N`, default: every core; `--jobs 1` is the old serial run). Unit
+tests are scheduled one test at a time (one class at a time when the class or module has a fixture),
+slowest first, from the durations the last run left in `out/check-suite-times.json`.
+`--quick` follows the changed files through the tools that name them (a changed `vdd_cookbook.py`
+selects everything that imports `vdd_templates`, which imports it) to the tests and self-tests that
+name any of them; `--base REF` changes the comparison point.
 
 (`VIBHAGA_ADMIN_ENV` is set for you when absent — this suite never reads real credentials.)
 
@@ -37,11 +48,17 @@ Exit non-zero on any error, so it can gate a commit.
 """
 from __future__ import annotations
 
+import argparse
+import io
+import json
+import multiprocessing
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import time
+import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -300,53 +317,276 @@ def sibling(name: str, env_key: str) -> Path:
 def run(name: str, argv: list[str], env: dict, cwd: Path = ROOT) -> bool:
     print(f"  run    {name}: {' '.join(argv)}")
     r = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True)
-    tail = (r.stdout + r.stderr).strip().splitlines()
-    for line in tail[-6:]:
+    return report(name, r.returncode, r.stdout + r.stderr)
+
+
+def report(name: str, code: int, output: str) -> bool:
+    for line in output.strip().splitlines()[-6:]:
         print(f"         {line}")
-    if r.returncode != 0:
-        ERRORS.append(f"{name} exited {r.returncode} (last output lines above)")
+    if code != 0:
+        ERRORS.append(f"{name} exited {code} (last output lines above)")
         return False
     return True
 
 
-def run_tests() -> None:
+SELF_TESTS = ["audit-claim-set", "playground-publish", "scope-cards", "vdd_templates", "critic-read",
+              "blueprint"]
+TIMES = ROOT / "out" / "check-suite-times.json"
+
+
+def offline_env() -> dict:
     env = dict(os.environ)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env.setdefault("VIBHAGA_ADMIN_ENV", "/nonexistent/offline-test-only")
+    return env
 
+
+def commands(tmp: str) -> list[tuple[str, list[str], str]]:
+    """(name, argv, tool stem) for every non-unittest step of Part B, in serial order."""
     admin = sibling("Vibhaga-Admin", "VIBHAGA_ADMIN")
     web = sibling("Vibhaga-Web", "VIBHAGA_WEB")
     have_admin = (admin / "package.json").is_file()
     have_web = (web / "package.json").is_file()
-
-    run("unittest", [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py"], env)
-    run("audit-claim-set --self-test", [sys.executable, "tools/audit-claim-set.py", "--self-test"], env)
-    run("playground-publish --self-test", [sys.executable, "tools/playground-publish.py", "--self-test"], env)
-    run("scope-cards --self-test", [sys.executable, "tools/scope-cards.py", "--self-test"], env)
-    run("vdd_templates --self-test", [sys.executable, "tools/vdd_templates.py", "--self-test"], env)
-    run("critic-read --self-test", [sys.executable, "tools/critic-read.py", "--self-test"], env)
-    run("blueprint --self-test", [sys.executable, "tools/blueprint.py", "--self-test"], env)
-
+    out = [(f"{t} --self-test", [sys.executable, f"tools/{t}.py", "--self-test"], t) for t in SELF_TESTS]
     if have_web and have_admin:
-        run("markdown-gate --self-test", ["node", "tools/markdown-gate.mjs", "--self-test"], env)
+        out.append(("markdown-gate --self-test", ["node", "tools/markdown-gate.mjs", "--self-test"], "markdown-gate"))
     else:
         SKIPS.append(f"markdown-gate --self-test SKIP (need Vibhaga-Web at {web} AND Vibhaga-Admin at {admin})")
-
     if have_admin:
-        run("vdd-check --self-test", ["node", "tools/vdd-check.mjs", "--self-test"], env)
+        out.append(("vdd-check --self-test", ["node", "tools/vdd-check.mjs", "--self-test"], "vdd-check"))
         for t in sorted((ROOT / "tests").glob("*.mjs")):
-            run(f"node --test {t.name}", ["node", "--test", str(t)], env)
+            out.append((f"node --test {t.name}", ["node", "--test", str(t)], f"tests/{t.name}"))
     else:
         SKIPS.append(f"vdd-check --self-test + node --test SKIP (need Vibhaga-Admin at {admin} — playwright lives there)")
-
     fixture = ROOT / "tests" / "fixtures" / "content.yaml"
     if fixture.is_file():
-        with tempfile.TemporaryDirectory() as tmp:
-            run("build-staged smoke", [sys.executable, "tools/build-staged.py", str(fixture),
-                                       "--out", str(Path(tmp) / "staged.json")], env)
+        out.append(("build-staged smoke", [sys.executable, "tools/build-staged.py", str(fixture),
+                                           "--out", str(Path(tmp) / "staged.json")], "build-staged"))
+    return out
 
 
-def main() -> int:
+# ---------------------------------------------------------------------------------------------
+# --quick: which tests does this change reach?
+# ---------------------------------------------------------------------------------------------
+def git(*argv: str) -> str:
+    r = subprocess.run(["git", *argv], cwd=ROOT, capture_output=True, text=True)
+    return r.stdout if r.returncode == 0 else ""
+
+
+def changed_files(base: str | None) -> list[str]:
+    """Committed since the merge-base with `base` (default origin/main, then main), staged,
+    unstaged and untracked."""
+    for ref in ([base] if base else ["origin/main", "main"]):
+        mb = git("merge-base", ref, "HEAD").strip()
+        if mb:
+            break
+    else:
+        sys.exit(f"check-suite --quick: no merge-base with {base or 'origin/main or main'}")
+    names = git("diff", "--name-only", mb).splitlines() + git("ls-files", "--others", "--exclude-standard").splitlines()
+    return sorted({n for n in names if n})
+
+
+def keys_of(path: str) -> set[str]:
+    """The names other files use to reach `path`: a code file's stem in `-`/`_` spellings, any
+    other file's own name (`si-maths-terms.yaml`, `queries.sql`, a fixture)."""
+    p = Path(path)
+    if p.suffix in (".py", ".mjs", ".js"):
+        return {p.stem, p.stem.replace("-", "_"), p.stem.replace("_", "-")}
+    return {p.name}
+
+
+def mentions(text: str, keys: set[str]) -> bool:
+    return any(re.search(rf"(?<![\w-]){re.escape(k)}(?![\w-])", text) for k in keys)
+
+
+def depends(text: str, keys: set[str]) -> bool:
+    """A real dependency edge between tools: an import, or the file's name as a quoted path
+    (subprocess argv, importlib, a data file). A name in a comment or docstring is not one."""
+    for k in keys:
+        e = re.escape(k)
+        if "." in k:
+            pat = rf"[\"'/]{e}[\"']"
+        else:
+            pat = (rf"(?m)^\s*(?:from\s+{e}\s+import\b|import\s+(?:[\w.]+\s*,\s*)*{e}\b)"
+                   rf"|[\"'/]{e}\.(?:py|mjs|js)[\"']")
+        if re.search(pat, text):
+            return True
+    return False
+
+
+def quick_selection(changed: list[str]) -> tuple[set[str], set[str]]:
+    """(test files to run, tool stems reached). Doc-only paths reach nothing — part A lints them."""
+    code = [c for c in changed if c.startswith(("tools/", "tests/", "terms/")) or "/" not in c]
+    code = [c for c in code if not c.endswith(".md") and (ROOT / c).is_file()]
+    keys: set[str] = set()
+    for c in code:
+        keys |= keys_of(c)
+    tools = {p: p.read_text(encoding="utf-8", errors="replace")
+             for p in sorted((ROOT / "tools").glob("*")) if p.suffix in (".py", ".mjs", ".js")}
+    reached = {Path(c).stem for c in code if c.startswith("tools/")}
+    grew = True
+    while grew:
+        grew = False
+        for p, text in tools.items():
+            if p.stem not in reached and depends(text, keys):
+                reached.add(p.stem)
+                keys |= keys_of(str(p))
+                grew = True
+    tests = {c for c in code if c.startswith("tests/test_") and c.endswith((".py", ".mjs"))}
+    for p in sorted((ROOT / "tests").glob("test_*")):
+        if p.suffix in (".py", ".mjs") and mentions(p.read_text(encoding="utf-8", errors="replace"), keys):
+            tests.add(f"tests/{p.name}")
+    for c in code:
+        if c.startswith(("tools/", "tests/")) and not c.startswith("tests/test_") \
+                and not any(mentions((ROOT / t).read_text(encoding="utf-8", errors="replace"), keys_of(c))
+                            for t in tests):
+            WARNS.append(f"--quick: no test names {c} — nothing exercises this change offline")
+    return tests, reached
+
+
+# ---------------------------------------------------------------------------------------------
+# Parallel Part B: unit tests one at a time (a fixture class/module whole), commands whole.
+# ---------------------------------------------------------------------------------------------
+def _flatten(suite):
+    for t in suite:
+        if isinstance(t, unittest.TestSuite):
+            yield from _flatten(t)
+        else:
+            yield t
+
+
+def _needs_whole(cls) -> bool:
+    mod = sys.modules.get(cls.__module__)
+    if mod is not None and (hasattr(mod, "setUpModule") or hasattr(mod, "tearDownModule")):
+        return True
+    return any(k not in (unittest.TestCase, object) and ("setUpClass" in vars(k) or "tearDownClass" in vars(k))
+               for k in cls.__mro__)
+
+
+def unittest_units(modules: set[str] | None) -> tuple[list[dict], list]:
+    """Discovered tests as schedulable units; `modules` (quick mode) keeps only those test modules.
+    Also returns selected tests that failed to import, which run in the parent."""
+    if modules is not None and not modules:
+        return [], []
+    suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"), pattern="test_*.py",
+                                                top_level_dir=str(ROOT / "tests"))
+    groups: dict[str, list[str]] = {}
+    broken = []
+    for t in _flatten(suite):
+        if type(t).__module__ == "unittest.loader":
+            if modules is None or t._testMethodName in modules:   # _FailedTest names its module
+                broken.append(t)
+            continue
+        cls = type(t)
+        if modules is not None and cls.__module__ not in modules:
+            continue
+        key = f"{cls.__module__}.{cls.__qualname__}" if _needs_whole(cls) else t.id()
+        groups.setdefault(key, []).append(t.id())
+    return [{"key": k, "kind": "unittest", "ids": ids} for k, ids in groups.items()], broken
+
+
+def _work(unit: dict):
+    t0 = time.monotonic()
+    if unit["kind"] == "cmd":
+        r = subprocess.run(unit["argv"], cwd=ROOT, env=offline_env(), capture_output=True, text=True)
+        return unit, r.returncode, r.stdout + r.stderr, 0, time.monotonic() - t0
+    stream = io.StringIO()
+    try:
+        suite = unittest.defaultTestLoader.loadTestsFromNames(unit["ids"])
+        res = unittest.TextTestRunner(stream=stream, verbosity=0, buffer=True).run(suite)
+        ok, ran = res.wasSuccessful(), res.testsRun
+    except BaseException as e:  # noqa: BLE001 — a crashing unit is a failure, never a hung pool
+        stream.write(f"{type(e).__name__}: {e}\n")
+        ok, ran = False, 0
+    return unit, 0 if ok else 1, "" if ok else stream.getvalue(), ran, time.monotonic() - t0
+
+
+def _init_worker(path: list[str], tmp_root: str) -> None:
+    """Each worker gets its own TMPDIR: the node tools share one bundle/symlink cache under
+    os.tmpdir() and are not safe to run concurrently against it."""
+    sys.dont_write_bytecode = True
+    sys.path[:] = path
+    os.environ["TMPDIR"] = tempfile.mkdtemp(prefix="worker-", dir=tmp_root)
+    tempfile.tempdir = None
+
+
+def run_parallel(units: list[dict], jobs: int, tmp_root: str) -> None:
+    try:
+        times = json.loads(TIMES.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        times = {}
+    guess = {"cmd": 30.0, "class": 30.0, "unittest": 1.0}
+    units.sort(key=lambda u: -times.get(u["key"], guess["class" if len(u.get("ids", [])) > 1 else u["kind"]]))
+    t0 = time.monotonic()
+    ran = 0
+    failed: list[tuple[dict, str]] = []
+    ctx = multiprocessing.get_context("fork" if "fork" in multiprocessing.get_all_start_methods() else "spawn")
+    with ctx.Pool(jobs, initializer=_init_worker, initargs=(list(sys.path), tmp_root)) as pool:
+        for unit, code, output, n, dt in pool.imap_unordered(_work, units, chunksize=1):
+            times[unit["key"]] = round(dt, 3)
+            ran += n
+            if unit["kind"] == "cmd":
+                print(f"  run    {unit['key']} ({dt:.1f}s): {' '.join(unit['argv'])}")
+                report(unit["key"], code, output)
+            elif code:
+                failed.append((unit, output))
+    n_unit = sum(u["kind"] == "unittest" for u in units)
+    print(f"  run    unittest: {ran} tests in {n_unit} units · {time.monotonic() - t0:.1f}s wall with --jobs {jobs}")
+    for unit, output in failed:
+        print(f"  FAIL   {unit['key']}")
+        for line in output.strip().splitlines():
+            print(f"         {line}")
+        ERRORS.append(f"unittest {unit['key']} failed (output above)")
+    slow = sorted(((v, k) for k, v in times.items() if any(u["key"] == k for u in units)), reverse=True)[:3]
+    print("  slowest " + " · ".join(f"{k} {v:.0f}s" for v, k in slow))
+    TIMES.parent.mkdir(exist_ok=True)
+    TIMES.write_text(json.dumps(times, indent=0, sort_keys=True), encoding="utf-8")
+
+
+def run_tests(jobs: int, quick: bool, base: str | None) -> None:
+    env = offline_env()
+    os.environ.update({k: env[k] for k in ("PYTHONDONTWRITEBYTECODE", "VIBHAGA_ADMIN_ENV")})
+    sys.dont_write_bytecode = True
+    os.chdir(ROOT)
+    sys.path[0] = str(ROOT)   # as `python3 -m unittest` run from ROOT sees it (tests import `tools.*`)
+    tests: set[str] | None = None
+    reached: set[str] = set()
+    if quick:
+        changed = changed_files(base)
+        tests, reached = quick_selection(changed)
+        print(f"  quick  {len(changed)} changed file(s) reach {len(tests)} test file(s): "
+              + (", ".join(sorted(Path(t).name for t in tests)) or "none — doc lint only"))
+    with tempfile.TemporaryDirectory() as tmp:
+        cmds = [c for c in commands(tmp)
+                if tests is None or c[2] in reached or c[2] in tests or c[2] == "build-staged" and "build-staged" in reached]
+        if jobs <= 1:
+            if tests is None:
+                run("unittest", [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py"], env)
+            elif any(t.endswith(".py") for t in tests):
+                tenv = {**env, "PYTHONPATH": os.pathsep.join(filter(None, [str(ROOT), env.get("PYTHONPATH")]))}
+                run("unittest", [sys.executable, "-m", "unittest",
+                                 *sorted(Path(t).stem for t in tests if t.endswith(".py"))], tenv, cwd=ROOT / "tests")
+            for name, argv, _ in cmds:
+                run(name, argv, env)
+            return
+        modules = None if tests is None else {Path(t).stem for t in tests if t.endswith(".py")}
+        units, broken = unittest_units(modules)
+        for t in broken:
+            r = unittest.TextTestRunner(stream=io.StringIO(), verbosity=0).run(t)
+            ERRORS.append(f"unittest {t.id()} failed to import: {r.errors[0][1].strip().splitlines()[-1]}")
+        units += [{"key": name, "kind": "cmd", "argv": argv} for name, argv, _ in cmds]
+        if units:
+            run_parallel(units, jobs, tmp)
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="vibhaga-qgen offline gate")
+    ap.add_argument("--quick", action="store_true",
+                    help="only the tests reached by files changed since --base (doc lint still runs in full)")
+    ap.add_argument("--base", help="comparison ref for --quick (default origin/main, then main)")
+    ap.add_argument("--jobs", type=int, default=os.cpu_count() or 1,
+                    help="parallel workers for part B (default: every core; 1 = serial)")
+    args = ap.parse_args(argv)
     docs = doc_files()
     check_section_anchors(docs)
     check_table_cells(docs)
@@ -357,8 +597,8 @@ def main() -> int:
     check_frontmatter(docs)
     check_deletions()
 
-    print("part B — offline test run:")
-    run_tests()
+    print("part B — offline test run" + (" (--quick)" if args.quick else "") + ":")
+    run_tests(args.jobs, args.quick, args.base)
 
     for s in SKIPS:
         print(f"  skip   {s}")

@@ -403,21 +403,35 @@ def stroke_segments(elements: list[dict], stroke_w: float = 2.0) -> list[tuple[X
     return segs
 
 
+_hypot = math.hypot
+
+
 def _pt_seg(a: XY, u: XY, v: XY) -> float:
-    dx, dy = v[0] - u[0], v[1] - u[1]
+    ux, uy = u
+    dx, dy = v[0] - ux, v[1] - uy
+    ax, ay = a[0] - ux, a[1] - uy
     L2 = dx * dx + dy * dy
     if L2 == 0:
-        return math.hypot(a[0] - u[0], a[1] - u[1])
-    t = max(0.0, min(1.0, ((a[0] - u[0]) * dx + (a[1] - u[1]) * dy) / L2))
-    return math.hypot(a[0] - u[0] - t * dx, a[1] - u[1] - t * dy)
+        return _hypot(ax, ay)
+    t = (ax * dx + ay * dy) / L2
+    # clamp to [0, 1] exactly as max(0.0, min(1.0, t)) does — NaN included
+    if not t < 1.0:
+        t = 1.0
+    elif not t > 0.0:
+        t = 0.0
+    return _hypot(ax - t * dx, ay - t * dy)
 
 
 def _seg_seg_dist(p: XY, q: XY, r: XY, s: XY) -> float:
     """0 when the segments cross, else the smallest endpoint-to-segment distance."""
-    den = (q[0] - p[0]) * (s[1] - r[1]) - (q[1] - p[1]) * (s[0] - r[0])   # cross(d1, d2)
+    px, py = p
+    rx, ry = r
+    d1x, d1y = q[0] - px, q[1] - py
+    d2x, d2y = s[0] - rx, s[1] - ry
+    den = d1x * d2y - d1y * d2x   # cross(d1, d2)
     if den:
-        t = ((r[0] - p[0]) * (s[1] - r[1]) - (r[1] - p[1]) * (s[0] - r[0])) / den
-        u = ((r[0] - p[0]) * (q[1] - p[1]) - (r[1] - p[1]) * (q[0] - p[0])) / den
+        t = ((rx - px) * d2y - (ry - py) * d2x) / den
+        u = ((rx - px) * d1y - (ry - py) * d1x) / den
         if 0 <= t <= 1 and 0 <= u <= 1:
             return 0.0
     return min(_pt_seg(p, r, s), _pt_seg(q, r, s), _pt_seg(r, p, q), _pt_seg(s, p, q))
@@ -425,9 +439,8 @@ def _seg_seg_dist(p: XY, q: XY, r: XY, s: XY) -> float:
 
 def _seg_rect_dist(p: XY, q: XY, box_: tuple[float, float, float, float]) -> float:
     x0, y0, x1, y1 = box_
-    edges = [((x0, y0), (x1, y0)), ((x1, y0), (x1, y1)),
-             ((x1, y1), (x0, y1)), ((x0, y1), (x0, y0))]
-    return min(_seg_seg_dist(p, q, a, b) for a, b in edges)
+    return min(_seg_seg_dist(p, q, (x0, y0), (x1, y0)), _seg_seg_dist(p, q, (x1, y0), (x1, y1)),
+               _seg_seg_dist(p, q, (x1, y1), (x0, y1)), _seg_seg_dist(p, q, (x0, y1), (x0, y0)))
 
 
 # ────────────────────────────────────────────────────────────────────────────────

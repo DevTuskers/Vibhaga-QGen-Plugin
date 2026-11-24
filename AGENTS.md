@@ -81,7 +81,14 @@ stem you author. These rules hold in every session that loads the plugin.
   printed.
 - Lesson corpus: `VIBHAGA_CORPUS` env → sibling `<plugin>/../Vibhaga-Maths-Corpus`.
 
-## Offline test command (run before every commit)
+## Offline test commands
+Before every commit — doc lint plus only the tests reached by the files changed since `origin/main`:
+```
+PYTHONDONTWRITEBYTECODE=1 VIBHAGA_ADMIN_ENV=/nonexistent/offline-test-only \
+  python3 tools/check-suite.py --quick
+```
+Before every push and before asking for a merge — the full suite (parallel on every core;
+`--jobs 1` runs it serially):
 ```
 PYTHONDONTWRITEBYTECODE=1 VIBHAGA_ADMIN_ENV=/nonexistent/offline-test-only \
   python3 tools/check-suite.py
