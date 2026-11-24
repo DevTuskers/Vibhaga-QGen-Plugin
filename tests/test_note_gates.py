@@ -92,6 +92,13 @@ class NoteGates(unittest.TestCase):
         self.assertIn("FAIL VDD", out)
         self.assertEqual(run.call_count, 2)
 
+    def test_whitespace_blank_lines_around_display(self):
+        en = EN.replace(".\n\n$$", ".\n \t\n$$").replace("$$\n\nDone", "$$\n  \nDone")
+        si = SI.replace(".\n\n$$", ".\n \t\n$$").replace("$$\n\nඅවසන්", "$$\n  \nඅවසන්")
+        self.assertNotEqual((en, si), (EN, SI))
+        code, out, *_ = self.run_gate(en, si)
+        self.assertEqual(code, 0, out)
+
     def test_warnings_do_not_fail(self):
         wide = "$$\n\\begin{aligned}\n" + " + ".join(["\\overline{3}.8753"] * 6) + "\n\\end{aligned}\n$$\n"
         en = EN + "\n| a | b |\n\n" + wide

@@ -65,9 +65,9 @@ def spans(name: str, text: str) -> list[tuple[bool, str, int]]:
             raise GateError(f"{name}:{ln}: Sinhala inside maths — move the words outside the span")
         if block:
             before = text[:start].rstrip(" \t")
-            after = text[m.end():].lstrip(" \t")
-            after_ok = not after.strip() or after.startswith(("\n\n", "\r\n\r\n", "\n\r\n"))
-            if (before and not before.endswith("\n\n")) or not after_ok:
+            after = text[m.end():]
+            after_ok = not after.strip() or re.match(r"[ \t]*\r?\n[ \t]*\r?\n", after)
+            if (before.strip() and not re.search(r"\n[ \t]*\r?\n$", before)) or not after_ok:
                 raise GateError(f"{name}:{ln}: a display needs a blank line before and after it")
         out.append((block, m[0], ln))
         i = m.end()
