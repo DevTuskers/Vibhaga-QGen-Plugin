@@ -465,14 +465,17 @@ def _needs_whole(cls) -> bool:
 
 def unittest_units(modules: set[str] | None) -> tuple[list[dict], list]:
     """Discovered tests as schedulable units; `modules` (quick mode) keeps only those test modules.
-    Also returns tests that failed to import, which run in the parent."""
+    Also returns selected tests that failed to import, which run in the parent."""
+    if modules is not None and not modules:
+        return [], []
     suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"), pattern="test_*.py",
                                                 top_level_dir=str(ROOT / "tests"))
     groups: dict[str, list[str]] = {}
     broken = []
     for t in _flatten(suite):
         if type(t).__module__ == "unittest.loader":
-            broken.append(t)
+            if modules is None or t._testMethodName in modules:   # _FailedTest names its module
+                broken.append(t)
             continue
         cls = type(t)
         if modules is not None and cls.__module__ not in modules:
