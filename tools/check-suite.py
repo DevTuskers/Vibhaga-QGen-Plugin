@@ -501,12 +501,16 @@ def _work(unit: dict):
     return unit, 0 if ok else 1, "" if ok else stream.getvalue(), ran, time.monotonic() - t0
 
 
-def _init_worker(path: list[str]) -> None:
+def _init_worker(path: list[str], tmp_root: str) -> None:
+    """Each worker gets its own TMPDIR: the node tools share one bundle/symlink cache under
+    os.tmpdir() and are not safe to run concurrently against it."""
     sys.dont_write_bytecode = True
     sys.path[:] = path
+    os.environ["TMPDIR"] = tempfile.mkdtemp(prefix="worker-", dir=tmp_root)
+    tempfile.tempdir = None
 
 
-def run_parallel(units: list[dict], jobs: int) -> None:
+def run_parallel(units: list[dict], jobs: int, tmp_root: str) -> None:
     try:
         times = json.loads(TIMES.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -517,7 +521,7 @@ def run_parallel(units: list[dict], jobs: int) -> None:
     ran = 0
     failed: list[tuple[dict, str]] = []
     ctx = multiprocessing.get_context("fork" if "fork" in multiprocessing.get_all_start_methods() else "spawn")
-    with ctx.Pool(jobs, initializer=_init_worker, initargs=(list(sys.path),)) as pool:
+    with ctx.Pool(jobs, initializer=_init_worker, initargs=(list(sys.path), tmp_root)) as pool:
         for unit, code, output, n, dt in pool.imap_unordered(_work, units, chunksize=1):
             times[unit["key"]] = round(dt, 3)
             ran += n
@@ -572,7 +576,7 @@ def run_tests(jobs: int, quick: bool, base: str | None) -> None:
             ERRORS.append(f"unittest {t.id()} failed to import: {r.errors[0][1].strip().splitlines()[-1]}")
         units += [{"key": name, "kind": "cmd", "argv": argv} for name, argv, _ in cmds]
         if units:
-            run_parallel(units, jobs)
+            run_parallel(units, jobs, tmp)
 
 
 def main(argv: list[str] | None = None) -> int:
