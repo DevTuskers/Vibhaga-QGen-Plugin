@@ -134,6 +134,18 @@ The cookbook (`tools/vdd_cookbook.py`, `--self-test`, `--demo <dir>`) already kn
 (`triangle_from_angles`, `foot_of_perpendicular`, `intersect`, `point_at_angle`). W3 extends it.
 Keep the canvas ≤ ~360 wide — it is scaled to the phone.
 
+#### 3.2a Label placement and sizing
+
+- Offset each point letter just outside its vertex, close enough to name it unambiguously and
+  clear of the strokes. Place dimensions immediately beside the side, segment or arc they measure.
+  For a side label, use the midpoint as the anchor: offset the label from the stroke, or place it
+  at the midpoint in a deliberate gap in the line. Place angle numerals inside their arcs and
+  other feature labels next to what they name.
+- Choose `fontSize` in proportion to the canvas and drawn ink: a label's cap height should be a
+  small fraction of the figure's shortest dimension, and the label should not dwarf its feature.
+  Use a uniform size per role (e.g. one size for vertex letters and one for dimensions). Check
+  that all labels are legible at the **320 px** render.
+
 ### 3.3 `a11y`: `title` is the figure's name, `description` is its transcript
 
 `a11y.title` is a **name, not a caption**: short, and it names the figure — *"Number line for −2 and
@@ -389,8 +401,8 @@ adjacent side stops reading; shrink it and re-render.
 
 ⚠️ **Look at the picture, too.** Screenshot at **320 · 375 · 768** px and read them: a label
 overlapping a line, a label outside its angle, a right-angle mark bisected by a ray were all found
-that way. The new label metrics in `vdd-check` (§4.0) measure the first two classes numerically —
-the eye still owns the rest.
+that way. The label metrics in `vdd-check` (§4.0) measure minimum clearance; only the screenshots
+show whether each label is at the feature it names and is sized proportionally (§3.2a).
 
 ### 4.3 What the schema rejects that looks fine
 
@@ -507,7 +519,7 @@ neutralised, and the two surfaces disagreed about it). This skill's own:
       the drawing is inside the band (§5.3).
 - [ ] ⭐ **`audit-claim-set.py <claim set>` exited 0** — including the stem-ratio check (§5.3a).
 - [ ] ⭐ **`vdd-check.mjs <figure> --claims <claim set>` exited 0** (§4.0) — §4.1 + §4.2 + §4.2b +
-      §5.2 + §5.3 + label metrics in one run; the lines below are what it asserts.
+      §5.2 + §5.3 + label metrics in one run; visual checks still need the screenshots.
 - [ ] `parseVddDocument` returns `ok` (§4.1) — run, not assumed.
 - [ ] `a11y.title` is non-empty, is not `"Diagram"`, and describes the **figure**;
       `a11y.description` is present, English (OD-12), and **every comparative word corresponds to a
@@ -528,6 +540,10 @@ neutralised, and the two surfaces disagreed about it). This skill's own:
 - [ ] `checkDiagram()` warnings are resolved **or** explained by the claim set's `scale:` (§5.3).
 - [ ] Screenshots read at **320 · 375 · 768** px: no label overlapping a stroke, no label outside its
       angle, nothing clipped — and the label metrics agree (≥ 8 rendered px edge, ≥ 6 rendered px stroke).
+- [ ] **Label placement and sizing passed (§3.2a):** every label sits at the feature it names
+      (point letter at its vertex, dimension label on or immediately beside its side), and font sizes
+      are proportional to the figure and consistent per role. Confirmed on the rendered screenshots
+      at **320 · 375 · 768** px, not assumed.
 - [ ] **Orientation passed (§3.1a):** frame applied, evidence retained, upright labels, no invented
       givens/reflection or flattened intentional geometry; exact map and justification recorded.
 - [ ] **Framing passed (§3.1a):** complete visible-ink bounds/clearances on stored and normalized
