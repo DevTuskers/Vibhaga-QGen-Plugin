@@ -138,9 +138,9 @@ Keep the canvas ≤ ~360 wide — it is scaled to the phone.
 
 - Offset each point letter just outside its vertex, close enough to name it unambiguously and
   clear of the strokes. Place dimensions immediately beside the side, segment or arc they measure.
-  For a side label, use the midpoint as the anchor: offset the label from the stroke, or place it
-  at the midpoint in a deliberate gap in the line. Place angle numerals inside their arcs and
-  other feature labels next to what they name.
+  Offset side labels from the midpoint, clear of the stroke; never split a claimed side's edge
+  to make room. Place angle numerals inside their arcs and other feature labels next to what they
+  name.
 - Choose `fontSize` in proportion to the canvas and drawn ink: a label's cap height should be a
   small fraction of the figure's shortest dimension, and the label should not dwarf its feature.
   Use a uniform size per role (e.g. one size for vertex letters and one for dimensions). Check
