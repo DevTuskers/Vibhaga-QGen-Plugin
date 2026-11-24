@@ -7638,10 +7638,18 @@ def build_parallel_area(*, figure_id, stem, ask=None, title=None, description=No
         vc.line((x0, gap), (x1, gap), id="lnL")]
     ux_ = sorted(upper.values())[0], sorted(upper.values())[-1]
     lx_ = sorted(lower.values())[0], sorted(lower.values())[-1]
-    elements += vc.parallel_marks(((ux_[0] + ux_[1]) / 2 - 40, 0.0),
-                                  ((ux_[0] + ux_[1]) / 2 + 40, 0.0), 1, size=9)
-    elements += vc.parallel_marks(((lx_[0] + lx_[1]) / 2 - 40, gap),
-                                  ((lx_[0] + lx_[1]) / 2 + 40, gap), 1, size=9)
+    ux_mid = (ux_[0] + ux_[1]) / 2
+    if any(abs(ux_mid - x) < 20 for x in upper.values()):
+        s_ups = sorted(upper.values())
+        ux_mid = (s_ups[0] + s_ups[1]) / 2
+    lx_mid = (lx_[0] + lx_[1]) / 2
+    if any(abs(lx_mid - x) < 20 for x in lower.values()):
+        s_los = sorted(lower.values())
+        lx_mid = (s_los[0] + s_los[1]) / 2
+    elements += vc.parallel_marks((ux_mid - 40, 0.0),
+                                  (ux_mid + 40, 0.0), 1, size=9)
+    elements += vc.parallel_marks((lx_mid - 40, gap),
+                                  (lx_mid + 40, gap), 1, size=9)
     for i, row in enumerate(figures):
         elements.append(vc.polygon([P[n] for n in row], id=f"fig{i}"))
     if dist_spec:
