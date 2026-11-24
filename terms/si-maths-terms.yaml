@@ -70,8 +70,8 @@ banned:
     use: 'three-class phrasing — see phrases: probability event classes'
   ප්‍රතිලෝම කරන්න:
     en: invert (a fraction)
-    note: literal calque of 'invert'; curriculum uses පරස්පරය (reciprocal) — e.g. පරස්පරය ගන්න / පරස්පරයෙන් ගුණ කරන්න
-    use: පරස්පරය ගන්න / පරස්පරයෙන් ගුණ කරන්න
+    note: literal calque of 'invert'; curriculum uses පරස්පරය (reciprocal) — use පරස්පරය ගන්න (or පරස්පරයෙන් ගුණ කරන්න when dividing by a fraction)
+    use: පරස්පරය ගන්න
   ප්‍රතිලෝම ප්‍රමේයය:
     en: converse theorem
     note: converse of a theorem is විලෝමය; ප්‍රතිලෝමය is inverse
@@ -3191,8 +3191,8 @@ phrases:
     - 9
     - 10
     - 11
-    note: Use පරස්පරය (reciprocal) rather than the literal calque ප්‍රතිලෝම කරන්න.
-    pattern: පරස්පරය ගන්න · පරස්පරයෙන් ගුණ කරන්න
+    note: Use පරස්පරය (reciprocal) rather than the literal calque ප්‍රතිලෝම කරන්න; when dividing by a fraction, the corpus writes පරස්පරයෙන් ගුණ කරන්න.
+    pattern: පරස්පරය ගන්න
     sources:
     - maths/grade-08/lessons/14-Fractions-II.md
     - maths/grade-11/lessons/07-Algebraic-Fractions.md
