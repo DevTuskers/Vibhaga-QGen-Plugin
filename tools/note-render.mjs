@@ -76,8 +76,8 @@ function measure() {
   const note = document.querySelector('article[lang="en"], article[lang="si"]');
   if (!note) return null;
   const count = (s) => [...note.querySelectorAll(s)].filter((x) => !x.closest("figure")).length;
-  const over = () => [...note.querySelectorAll("*")]
-    .filter((e) => e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX !== "visible")
+  const over = () => [note, ...note.querySelectorAll("*")]
+    .filter((e) => e.scrollWidth > e.clientWidth + 1 && (e === note || getComputedStyle(e).overflowX !== "visible"))
     .map((e) => `${e.scrollWidth}/${e.clientWidth} ${e.innerText.slice(0, 40).replace(/\s+/g, " ")}`);
   return {
     language: note.lang, math: count(".katex"), display: count(".katex-display"),
