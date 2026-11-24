@@ -556,8 +556,9 @@ def run_tests(jobs: int, quick: bool, base: str | None) -> None:
             if tests is None:
                 run("unittest", [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py"], env)
             elif any(t.endswith(".py") for t in tests):
+                tenv = {**env, "PYTHONPATH": os.pathsep.join(filter(None, [str(ROOT), env.get("PYTHONPATH")]))}
                 run("unittest", [sys.executable, "-m", "unittest",
-                                 *sorted(Path(t).stem for t in tests if t.endswith(".py"))], env, cwd=ROOT / "tests")
+                                 *sorted(Path(t).stem for t in tests if t.endswith(".py"))], tenv, cwd=ROOT / "tests")
             for name, argv, _ in cmds:
                 run(name, argv, env)
             return
