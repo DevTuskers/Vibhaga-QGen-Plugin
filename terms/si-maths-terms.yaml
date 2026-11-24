@@ -68,6 +68,10 @@ banned:
   බොහෝ දුරට සිදු වන:
     en: likely event
     use: 'three-class phrasing — see phrases: probability event classes'
+  ප්‍රතිලෝම කරන්න:
+    en: invert (a fraction)
+    note: literal calque of 'invert'; curriculum uses පරස්පරය (reciprocal) — use පරස්පරය ගන්න (or පරස්පරයෙන් ගුණ කරන්න when dividing by a fraction)
+    use: පරස්පරය ගන්න
   ප්‍රතිලෝම ප්‍රමේයය:
     en: converse theorem
     note: converse of a theorem is විලෝමය; ප්‍රතිලෝමය is inverse
@@ -3181,6 +3185,17 @@ phrases:
     pattern: 'hh : mm : ss · පෙ.ව. (a.m.) · ප.ව. (p.m.)'
     sources:
     - maths/grade-06/lessons/04-Time.md
+  invert a fraction:
+    grades:
+    - 8
+    - 9
+    - 10
+    - 11
+    note: Use පරස්පරය (reciprocal) rather than the literal calque ප්‍රතිලෝම කරන්න; when dividing by a fraction, the corpus writes පරස්පරයෙන් ගුණ කරන්න.
+    pattern: පරස්පරය ගන්න
+    sources:
+    - maths/grade-08/lessons/14-Fractions-II.md
+    - maths/grade-11/lessons/07-Algebraic-Fractions.md
   location phrasing:
     example: O ස්ථානයේ සිට P ස්ථානය උතුරේ සිට 50° ක් නැගෙනහිර දිශාවෙන් පිහිටා ඇත.
     grades:
