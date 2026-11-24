@@ -77,6 +77,17 @@ def compare_stored(note: dict, en: str, si: str, diagrams: list) -> list[str]:
     return bad
 
 
+def db_url(db_env: str | None, admin_path: Path) -> str:
+    """`--db-env` → `DATABASE_URL` env → the selected admin env file → Vibhaga-DB/.env beside it."""
+    if db_env:
+        return cr.resolve_db_url(db_env)
+    url, src = cr.find_db_url(admin_path)
+    if not url:
+        die(f"no database URL ({src})", 3)
+    print(f"{PROG}: DB URL from {src}", file=sys.stderr)
+    return url
+
+
 def student_env(path: Path, admin_env: dict) -> dict | None:
     if not path.is_file():
         return None
@@ -154,7 +165,7 @@ def main(argv: list[str] | None = None, transport=None, student_get=body_404_tra
     stu_env = student_env(stu_path, admin_env)
     if stu_env is None:
         die(f"no DEV_LOGIN_EMAIL/DEV_LOGIN_PASSWORD student identity in {stu_path}", 3)
-    url = cr.resolve_db_url(a.db_env)
+    url = db_url(a.db_env, admin_path)
     pg = cr.pg_env_from_url(url)
     kw = {} if transport is None else {"transport": transport}
     adm, stu = _auth.Admin(env=admin_env, **kw), _auth.Admin(env=stu_env, **kw)

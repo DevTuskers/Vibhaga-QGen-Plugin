@@ -9,6 +9,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 TOOLS = Path(__file__).resolve().parent.parent / "tools"
 SPEC = importlib.util.spec_from_file_location("note_proof", TOOLS / "note-proof.py")
@@ -97,6 +98,18 @@ class NoteProof(unittest.TestCase):
             self.assertIn(f":'{var}'", sql)
         self.assertNotIn("content_english", sql)
         self.assertNotIn("Q1", sql)
+
+    def test_db_url_follows_selected_admin_env(self):
+        with tempfile.TemporaryDirectory() as d, patch.dict(np_.os.environ, {}, clear=False):
+            np_.os.environ.pop("DATABASE_URL", None)
+            env = Path(d) / "Vibhaga-Admin" / ".env.local"
+            env.parent.mkdir()
+            env.write_text("DATABASE_URL=postgresql://u:p@db.invalid.test:5432/postgres\n", encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(np_.db_url(None, env), "postgresql://u:p@db.invalid.test:5432/postgres")
+                with self.assertRaises(SystemExit) as cm:
+                    np_.db_url(None, Path(d) / "missing" / ".env.local")
+            self.assertEqual(cm.exception.code, 3)
 
     def test_usage_and_missing_student(self):
         with tempfile.TemporaryDirectory() as d:
