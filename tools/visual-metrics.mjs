@@ -96,6 +96,20 @@ const distPointToBox = (p, bb) =>
     Math.max(bb[0] - p[0], 0, p[0] - (bb[0] + bb[2])),
     Math.max(bb[1] - p[1], 0, p[1] - (bb[1] + bb[3])),
   );
+function recordedPointGap(meta, glyph) {
+  let scale = 1;
+  while (meta && typeof meta === "object") {
+    const gap = meta.pointLabelGaps?.[glyph];
+    if (Number.isFinite(gap)) return gap * scale;
+    if (meta.layoutMetadataSchema !== "vdd-layout-metadata-v1"
+        || meta.inputMetadataRole !== "INPUT_PROVENANCE" || !meta.inputMetadataPresent) break;
+    const step = meta.inputCanvasScale ?? 1;
+    if (!Number.isFinite(step) || step <= 0) break;
+    scale *= step;
+    meta = meta.inputMetadata;
+  }
+  return 0;
+}
 const distToSegment = (p, [a, b]) => {
   const dx = b[0] - a[0], dy = b[1] - a[1];
   const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy)));
@@ -395,9 +409,8 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
         const ambiguous = marked.some((pt) => dist(pt, points[0]) > 1
           && dist(centre, pt) <= own + TARGET_MARGIN * l.fontSizeU);
         const graphGap = GRAPH_POINT_GAP_FACTOR * l.fontSizeU;
-        const seatGap = doc?.meta?.pointLabelGaps?.[l.text];
         const limit = coordinateGraph && graphGap > 0
-          ? Math.min(POINT_GAP_MAX, Math.max(graphGap, Number.isFinite(seatGap) ? seatGap : 0))
+          ? Math.min(POINT_GAP_MAX, Math.max(graphGap, recordedPointGap(doc?.meta, l.text)))
           : POINT_GAP_MAX;
         return { d: distPointToBox(points[0], l.bbox),
           via: `claimed point ${JSON.stringify(l.text)}`, ambiguous, limit };

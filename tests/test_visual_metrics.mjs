@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { assess, parseClaimSet, arcDelta, angleMarkSpan, angleInSpan, paintVisible } from "../tools/visual-metrics.mjs";
+import { mapPoint, similarity, transformDocument } from "../tools/vdd-layout.mjs";
 
 // Synthetic measured labels only — every fixture below is invented; nothing mirrors a real figure.
 const L = (over = {}) => ({
@@ -152,6 +153,33 @@ test("target: a graph's recorded builder seat permits only its bounded near-edge
   assert.ok(rules(assessAt([107, 54, 12, 12])).has("target"));
   d.meta.pointLabelGaps.B = 1000;
   assert.ok(rules(assessAt([145, 54, 12, 12])).has("target"));
+});
+
+test("target: a reframed graph keeps its builder point-label gap in canvas units", () => {
+  const source = doc([
+    { id: "dotB", type: "point", at: [80, 60], r: 3 },
+    { id: "labelB", type: "text", at: [111, 60], value: "B" },
+  ]);
+  source.meta = { pointLabelGaps: { B: 26 } };
+  const matrix = similarity({ angleDegrees: 0, pivot: [0, 0], translation: [7, 9] });
+  const moved = transformDocument(source, matrix);
+  const assessSeat = (d, fontSizeU, gap) => {
+    const [x, y] = d.elements[0].at;
+    const claims = `anchors:\n  B ${x} ${y}\nclaims:\n  K1 label "B" names B | inferred |\n` + axisClaims;
+    return assess({ doc: d, claims, widths: W([L({
+      text: "B", fontSizeU, bbox: [x + gap, y - 6, 12, 12],
+    })]) });
+  };
+  assert.equal(assessSeat(source, 18, 25).verdict, "PASS");
+  assert.equal(moved.meta.pointLabelGaps, undefined);
+  assert.equal(assessSeat(moved, 18, 25).verdict, "PASS");
+  delete moved.meta.inputCanvasScale;
+  assert.equal(assessSeat(moved, 18, 25).verdict, "PASS");
+  const scale = similarity({ angleDegrees: 0, pivot: [0, 0], scale: 1.5 });
+  const reframed = transformDocument(moved, scale);
+  assert.deepEqual(reframed.elements[0].at, mapPoint(scale, moved.elements[0].at));
+  assert.equal(assessSeat(reframed, 27, 37.5).verdict, "PASS");
+  assert.ok(rules(assessSeat(reframed, 27, 40)).has("target"));
 });
 
 test("target: a detached standalone point label fails even beside unrelated geometry", () => {
