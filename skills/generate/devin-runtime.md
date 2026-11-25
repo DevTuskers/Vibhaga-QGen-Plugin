@@ -21,7 +21,12 @@ stop, commit clean work, write a handoff under `wt/<topic>/` and report what rem
 
 ## One config per round
 
-Write `wt/current-critique.json` relative to the **plugin checkout that contains the script**.
+Write `wt/current-critique.json` in the **parent VM's plugin checkout**.
+The workflow uses `VIBHAGA_QGEN_ROOT` from the workflow runtime environment when set, otherwise
+the checkout containing the script, otherwise `~/repos/Vibhaga-QGen-Plugin` (for a script copied
+outside the checkout, e.g. under `/tmp`). If using a non-default checkout with a copied script,
+set `VIBHAGA_QGEN_ROOT` to that checkout's absolute path in the workflow environment before starting
+the round. The config's `plugin` must name the selected checkout.
 Use absolute paths. Never stage this file or include source text, credentials, or actor notes.
 One checkout runs one critique round at a time. Keep the config unchanged while that run is
 active; resume a workflow only with its original config. Archive the config in the private run

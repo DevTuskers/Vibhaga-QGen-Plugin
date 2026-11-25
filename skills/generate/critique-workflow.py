@@ -1,10 +1,10 @@
 import asyncio
 import json
+import os
 from functools import partial
 from pathlib import Path
 
 
-CONFIG = Path(__file__).resolve().parents[2] / "wt/current-critique.json"
 META = {
     "name": "Qgen critique",
     "description": "One independent critique round on the parent VM",
@@ -17,6 +17,20 @@ SCHEMA = {
     "minors": {"type": "integer"},
     "report_path": {"type": "string"},
 }
+
+
+def plugin_root():
+    override = os.environ.get("VIBHAGA_QGEN_ROOT")
+    if override:
+        root = Path(override).expanduser()
+        if not root.is_absolute():
+            raise ValueError("VIBHAGA_QGEN_ROOT must point to an absolute checkout path")
+        return root.resolve()
+
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "tools/run-gates.py").is_file():
+            return parent
+    return (Path.home() / "repos/Vibhaga-QGen-Plugin").resolve()
 
 
 def previous_prompt(previous):
@@ -111,9 +125,18 @@ async def critique(cfg, kind, report, prompt):
 
 async def main():
     await register_workflow(META)
-    cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
+    root = plugin_root()
+    config = root / "wt/current-critique.json"
+    if not config.is_file():
+        raise FileNotFoundError(
+            f"No critique config at {config}; set VIBHAGA_QGEN_ROOT to the parent checkout "
+            "and write wt/current-critique.json there"
+        )
+    cfg = json.loads(config.read_text(encoding="utf-8"))
+    if Path(cfg["plugin"]).resolve() != root:
+        raise ValueError("Critique config plugin path must match the selected checkout")
     jobs = jobs_for(cfg)
-    wt = (Path(cfg["plugin"]) / "wt").resolve()
+    wt = (root / "wt").resolve()
     dirs = set()
     for _, report, _ in jobs:
         path = Path(report).resolve().relative_to(wt)
