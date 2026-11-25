@@ -2900,12 +2900,45 @@ class G11Templates(unittest.TestCase):
                                     legs_px=[288, 120], extra_base={"D": 1.8},
                                     extra_base_labels={"D": 9},
                                     side_label_t={"AC": 0.7})
-        self.assertIn('label "BD = 9 m" names BD', b.claims)
+        self.assertIn('label "9 m" names BD', b.claims)
         ids = [e["id"] for e in b.doc["elements"]]
         self.assertIn("dimBD", ids)
         self.assertIn("dimBDB", ids)
         self.assertIn("dimBDD", ids)
         self._ok(b)
+
+    def test_rt_extended_base_audit_catches_bad_ratio(self):
+        stem = ("In the figure AB = 12 m, BC = 5 m and BD = 9 m. "
+                "The support is perpendicular to the ground. AC is x m.")
+        with self.assertRaises(vt.TemplateError) as cm:
+            vt.build_right_triangle(figure_id="r8", stem=stem, ask=[["a", "x"]],
+                                    sides={"AB": 12, "BC": 5, "CA": "x"}, unit="m",
+                                    legs_px=[288, 120], extra_base={"D": 1.2},
+                                    extra_base_labels={"D": 9})
+        self.assertIn("the dimension contradicts the drawing", str(cm.exception))
+
+    def test_rt_extended_base_dimensions_stagger(self):
+        stem = ("In the figure AB = 12 m, BC = 5 m, BD = 6 m and BE = 9 m. "
+                "The support is perpendicular to the ground. AC is x m.")
+        b = vt.build_right_triangle(figure_id="r9", stem=stem, ask=[["a", "x"]],
+                                    sides={"AB": 12, "BC": 5, "CA": "x"}, unit="m",
+                                    legs_px=[288, 120], extra_base={"D": 1.2, "E": 1.8},
+                                    extra_base_labels={"D": 6, "E": 9})
+        self.assertIn('label "6 m" names BD', b.claims)
+        self.assertIn('label "9 m" names BE', b.claims)
+        self._ok(b)
+
+    def test_narrow_charts_with_axis_titles_build(self):
+        stem_h = "Class edges 0 1 2 3; frequencies 5 5 5; axis step 1 maximum 5."
+        h = vt.build_histogram(figure_id="h1", stem=stem_h, bounds=[0, 1, 2, 3],
+                               freqs=[5, 5, 5], step=1, v_max=5,
+                               x_title="Width", y_title="Count")
+        self._ok(h)
+        stem_o = "Class edges 0 1 2 3; cumulative counts 0 2 4 5; axis step 1 maximum 5."
+        o = vt.build_ogive(figure_id="o1", stem=stem_o, bounds=[0, 1, 2, 3],
+                           cum_freqs=[0, 2, 4, 5], step=1, v_max=5,
+                           x_title="Width", y_title="Count")
+        self._ok(o)
 
     def test_rt_keyword_only(self):
         with self.assertRaises(TypeError):

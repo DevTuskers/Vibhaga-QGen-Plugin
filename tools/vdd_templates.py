@@ -6348,6 +6348,15 @@ def build_right_triangle(*, figure_id, stem, ask=None, title=None, description=N
         if not fig_mode:
             require_stem(stem, **{f"base {right}{nm}": float(v_)})
         base_lbl[nm] = float(v_)
+    if leg_h_key in numeric:
+        for nm, v_ in base_lbl.items():
+            want = v_ / numeric[leg_h_key]
+            got = extra[nm]
+            if abs(got - want) / want > 0.005:
+                raise TemplateError(
+                    f"{kind}: {right}{nm} is labelled {v_:g} {unit} against "
+                    f"{right}{horiz} {numeric[leg_h_key]:g} {unit}, but the point sits at "
+                    f"{got:g}× that base — the dimension contradicts the drawing")
     alt = None
     if altitude is not None:
         if not isinstance(altitude, dict) or altitude.get("from") not in names:
@@ -6419,18 +6428,22 @@ def build_right_triangle(*, figure_id, stem, ask=None, title=None, description=N
                               clr, f"lbl{s}", t0=label_ts.get(s))
         elements.append(el)
         boxes.append(label_boxes([el], FS)[0][1:])
-    for nm, v_ in base_lbl.items():
+    dim_rows = sorted(base_lbl,
+                      key=lambda nm: (abs(P[nm][0] - P[right][0]) +
+                                      abs(P[nm][1] - P[right][1]), nm))
+    for row, nm in enumerate(dim_rows):
+        v_ = base_lbl[nm]
         end = P[nm]
         mx = (P[right][0] + end[0]) / 2
-        glyph = f"{right}{nm} = {v_:g} {unit}"
-        yline = sy * (clr + MID_UP * FS + 38.0)
+        glyph = f"{v_:g} {unit}"
+        yline = sy * (clr + MID_UP * FS + 38.0 + row * 56.0)
         elements.append(vc.line((P[right][0], yline), (end[0], yline),
                                 id=f"dim{right}{nm}", width=0.8))
         for px_, tag in ((P[right][0], right), (end[0], nm)):
             elements.append(vc.line((px_, yline - sy * 5.0), (px_, yline + sy * 5.0),
                                     id=f"dim{right}{nm}{tag}", width=0.8))
         y = yline + sy * 28.0
-        el = vc.text((mx, y), glyph, id=f"lbl{right}{nm}", size=16)
+        el = vc.text((mx, y), glyph, id=f"lbl{right}{nm}")
         elements.append(el)
         boxes.append(label_boxes([el], FS)[0][1:])
     for v_, (kk, num, txt, arms) in ang_specs.items():
@@ -6507,7 +6520,7 @@ def build_right_triangle(*, figure_id, stem, ask=None, title=None, description=N
             f"{nm} sits on the {right}{horiz} ray")
         add(f'label "{nm}" names {nm}', "inferred", "the letter at the base point")
     for nm, v_ in base_lbl.items():
-        glyph = f"{right}{nm} = {v_:g} {unit}"
+        glyph = f"{v_:g} {unit}"
         add(f'label "{glyph}" names {right}{nm}', "stem" if not fig_mode else "inferred",
             "the printed extended-base dimension")
     for nm in names:
@@ -6521,6 +6534,7 @@ def build_right_triangle(*, figure_id, stem, ask=None, title=None, description=N
         "sides, marks and labels only — nothing else is drawn")
     segs = [f"{a}{b}" for a, b in ((right, up), (right, horiz), (up, horiz))]
     segs += [f"{up}{nm}" for nm in extra]
+    segs += [f"{right}{nm}" for nm in base_lbl]
     if alt:
         segs.append(f"{alt[0]}{alt[1]}")
     return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
@@ -8676,6 +8690,26 @@ def build_inequality_line(*, figure_id, stem, ask=None, title=None,
                   medium=medium)
 
 
+def _chart_x_width(x_span: float, v_max: float, width_cap: float) -> float:
+    """Units per class interval. Narrow charts otherwise become tall enough to trip the
+    mobile aspect gate; 156/99 are the measured canvas vertical overhead and constant
+    horizontal chrome, so the lower bound widens only as much as the aspect needs."""
+    plot_cap = min(64.0 * float(v_max), 360.0)
+    needed_plot = (plot_cap + 156.0) / 2 - 99.0
+    return min(80.0, width_cap / x_span, max(46.0, needed_plot / x_span))
+
+
+def _chart_y_title_metrics(width: float, y_title: str | None) -> tuple[float, float, float]:
+    """(axis headroom, x offset, centre offset) for a horizontal y-axis title seated in
+    the axis headroom rather than adding a second row above the chart."""
+    if not y_title:
+        return 30.0, 0.0, 0.0
+    xgap = _clearance_units(STROKE_PX + SLACK_STROKE + 2.0, width + 80.0)
+    centre_off = xgap + MID_DOWN * FS
+    headroom = max(30.0, centre_off + MID_UP * FS + 2.0)
+    return headroom, xgap, centre_off
+
+
 def build_histogram(*, figure_id, stem, ask=None, title=None, description=None,
                     medium="english", bounds, freqs, step, v_max, values="stem",
                     polygon=False, x_title=None, y_title=None, adjusted=False):
@@ -8744,14 +8778,15 @@ def build_histogram(*, figure_id, stem, ask=None, title=None, description=None,
             raise TemplateError(f"{kind}: every drawn height must be a multiple of "
                                 f"step/2 ({step / 2:g}) for the reads claim")
     upx_v = 46.0
-    xw = min(46.0, 380.0 / (bs[-1] - bs[0]))
+    xw = _chart_x_width(bs[-1] - bs[0], v_max, 380.0)
     upy = min(64.0, 360.0 / v_max)
     W = (bs[-1] - bs[0]) * xw
     X = lambda v: (v - bs[0]) * xw
     Y = lambda v: -v * upy
+    y_head, y_xgap, y_center = _chart_y_title_metrics(W, y_title)
     elements: list[dict] = [
         vc.line((-16, 0), (W + 40, 0), id="axX"),
-        vc.line((0, 14), (0, -v_max * upy - 30), id="axY")]
+        vc.line((0, 14), (0, -v_max * upy - y_head), id="axY")]
     # axis numerals: `int(j*10)` ids can collide for a step below 0.1 — a
     # duplicate-suffix keeps the historical ids wherever they were unique and
     # disambiguates only the colliding ones (byte-identical on all valid outputs)
@@ -8802,8 +8837,8 @@ def build_histogram(*, figure_id, stem, ask=None, title=None, description=None,
     if x_title:
         elements.append(vc.text((W / 2, 82), x_title, id="xt", size=15))
     if y_title:
-        elements.append(vc.text((0, -v_max * upy - 58), y_title, id="yt", size=15,
-                                align="start"))
+        elements.append(vc.text((y_xgap, -v_max * upy - y_center), y_title,
+                                id="yt", size=15, align="start"))
     claims: list[tuple[str, str, str]] = []
 
     def add(pred, ev, note=""):
@@ -9316,14 +9351,15 @@ def build_ogive(*, figure_id, stem, ask=None, title=None, description=None,
                 t = 0.0 if cs[i] == cs[i - 1] else (gv - cs[i - 1]) / (cs[i] - cs[i - 1])
                 gx = bs[i - 1] + t * (bs[i] - bs[i - 1])
         gd = (gv, gx, nm)
-    xw = min(46.0, 400.0 / (bs[-1] - bs[0]))
+    xw = _chart_x_width(bs[-1] - bs[0], v_max, 400.0)
     upy = min(64.0, 360.0 / v_max)
     W = (bs[-1] - bs[0]) * xw
     X = lambda v: (v - bs[0]) * xw
     Y = lambda v: -v * upy
+    y_head, y_xgap, y_center = _chart_y_title_metrics(W, y_title)
     elements: list[dict] = [
         vc.line((-16, 0), (W + 40, 0), id="axX"),
-        vc.line((0, 14), (0, -v_max * upy - 30), id="axY")]
+        vc.line((0, 14), (0, -v_max * upy - y_head), id="axY")]
     _id_used: set = set()                       # see histogram — collision-safe tick ids
 
     def _tick_id(prefix: str, j: float) -> str:
@@ -9373,8 +9409,8 @@ def build_ogive(*, figure_id, stem, ask=None, title=None, description=None,
     if x_title:
         elements.append(vc.text((W / 2, 84), x_title, id="xt", size=15))
     if y_title:
-        elements.append(vc.text((0, -v_max * upy - 58), y_title, id="yt", size=15,
-                                align="start"))
+        elements.append(vc.text((y_xgap, -v_max * upy - y_center), y_title,
+                                id="yt", size=15, align="start"))
     claims: list[tuple[str, str, str]] = []
 
     def add(pred, ev, note=""):
