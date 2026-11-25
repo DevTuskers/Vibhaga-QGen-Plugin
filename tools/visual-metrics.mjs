@@ -13,8 +13,9 @@
  *   edge    — label bbox < 8 rendered px from the canvas edge
  *   stroke  — label bbox < 6 rendered px from a stroked primitive's EDGE (centreline − width/2)
  *   target  — label far from what it names: a label equal to a `point` element's label is measured
- *             bbox→point; a word label or an AREA label (`label "…" names region_…`) is skipped;
- *             any other label uses geom_u (nearest painted primitive). > 1.5·fontSizeU fails
+ *             bbox→point; standalone point letters must favour their own dot and stay close on
+ *             coordinate graphs. Dimension labels are checked against their claimed segments;
+ *             unbound words and area labels are skipped, and other labels use nearest paint.
  *   arc     — an angle numeral/variable (^\d+(\.\d+)?°?$ | ^[a-z]°?$ | ^[α-ωθ]°?$) whose centre's polar
  *             angle from the vertex lies outside the DRAWN span of every arc / unlabelled angleMark
  *             within r + 1.5·fontSizeU (labelled angleMarks are skipped — the renderer places those)
@@ -25,7 +26,7 @@
 export const EDGE_MIN_PX = 8;
 export const STROKE_MIN_PX = 6;
 export const TARGET_FACTOR = 1.5;
-const CLAIMED_POINT_FACTOR = 1.2;
+const GRAPH_POINT_FACTOR = 1.2;
 const TARGET_MARGIN = 0.25;
 // One shared bound — the same figure-taller-than-a-phone-screen limit vdd_templates.py's finish()
 // refuses at build time and vdd-check.mjs fails on the doc's canvas. Aspect is preserved from
@@ -352,6 +353,7 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
   const axes = new Set((cs?.claims ?? []).filter((c) => c.pred === "axis")
     .flatMap((c) => c.args.match(/^[A-Z]{2}(?=\s)/)?.[0] ?? [])
     .map((s) => segments.has(s) ? s : [...s].reverse().join("")));
+  const coordinateGraph = axes.size >= 2;
   for (const c of cs?.claims ?? []) {
     const scaled = c.pred === "scale-length" && String(c.args).match(/^([A-Z]{2}) = (.+)$/);
     if (scaled && segments.has(segmentKey(scaled[1]))) {
@@ -387,9 +389,10 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
       const points = claimPoints.get(l.text);
       if (points?.length === 1) {
         const d = dist(centre, points[0]);
-        const ambiguous = [...claimPoints.values()].flat().some((pt) => dist(pt, points[0]) > 1
+        const ambiguous = marked.some((pt) => dist(pt, points[0]) > 1
           && dist(centre, pt) <= d + TARGET_MARGIN * l.fontSizeU);
-        return { d, via: `claimed point ${JSON.stringify(l.text)}`, ambiguous, factor: CLAIMED_POINT_FACTOR };
+        return { d, via: `claimed point ${JSON.stringify(l.text)}`, ambiguous,
+          factor: coordinateGraph ? GRAPH_POINT_FACTOR : null };
       }
       if (WORD_LABEL_RE.test(l.text ?? "") || areaLabels.has(l.text)) return { d: null, skipped: true };
       const sides = claimSegments.get(dimensionToken(l.latex)) ?? claimSegments.get(dimensionToken(l.text));
@@ -410,7 +413,8 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
     return { d: l.geom_u ?? null, via: "the nearest painted geometry" };
   };
   const targetBad = (l, tg) =>
-    !tg.skipped && (tg.ambiguous || (tg.d != null && l.fontSizeU > 0 && tg.d > (tg.factor ?? TARGET_FACTOR) * l.fontSizeU));
+    !tg.skipped && (tg.ambiguous || (tg.factor !== null && tg.d != null && l.fontSizeU > 0
+      && tg.d > (tg.factor ?? TARGET_FACTOR) * l.fontSizeU));
 
   // ONE target result per label, shared by the rows and the finding — the distance to the thing
   // a label names is a canvas-unit invariant, but the DOM box is re-measured at every width and

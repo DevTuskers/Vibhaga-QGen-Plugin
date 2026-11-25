@@ -15,6 +15,7 @@ const doc = (elements) => ({
 });
 const fails = (r) => r.findings.filter((f) => f.severity === "fail");
 const rules = (r) => new Set(fails(r).map((f) => f.rule));
+const axisClaims = '  K8 axis LR from 0 to 6 | inferred |\n  K9 axis BU from 0 to 6 | inferred |';
 
 test("claim-set parser: anchors, claims, allow, labels (vdd-check grammar)", () => {
   const cs = parseClaimSet(`# comment
@@ -107,18 +108,27 @@ test("target: a far point label fails even when it is short", () => {
 
 test("target: claimed standalone point label is measured against its marked point", () => {
   const d = doc([{ type: "point", at: [50, 50], r: 3 }]);
-  const claims = 'anchors:\n  A 50 50\nclaims:\n  K1 label "A" names A | inferred |';
+  const claims = 'anchors:\n  A 50 50\nclaims:\n  K1 label "A" names A | inferred |\n' + axisClaims;
   const assessAt = (bbox) => assess({ doc: d, claims, widths: W([L({ text: "A", bbox })]) });
   assert.ok(rules(assessAt([62, 63, 12, 12])).has("target"));
   assert.equal(assessAt([57, 56, 12, 12]).verdict, "PASS");
 });
 
-test("target: a standalone label just under the former distance limit still floats", () => {
+test("target: a graph label just under the former distance limit still floats", () => {
   const d = doc([{ type: "point", at: [80, 80], r: 3 }]);
-  const claims = 'anchors:\n  B 80 80\nclaims:\n  K1 label "B" names B | inferred |';
+  const claims = 'anchors:\n  B 80 80\nclaims:\n  K1 label "B" names B | inferred |\n' + axisClaims;
   const assessAt = (bbox) => assess({ doc: d, claims, widths: W([L({ text: "B", bbox })]) });
   assert.ok(rules(assessAt([90, 90, 12, 12])).has("target"));
   assert.equal(assessAt([59, 61, 12, 12]).verdict, "PASS");
+});
+
+test("target: a clear locus label can sit farther away, but must still favour its dot", () => {
+  const d = doc([{ type: "point", at: [80, 60], r: 3 },
+    { type: "point", at: [98, 60], r: 3 }]);
+  const claims = 'anchors:\n  Q 80 60\nclaims:\n  K1 label "Q" names Q | inferred |';
+  const assessAt = (bbox) => assess({ doc: d, claims, widths: W([L({ text: "Q", bbox })]) });
+  assert.equal(assessAt([74, 27, 12, 12]).verdict, "PASS");
+  assert.ok(fails(assessAt([83, 27, 12, 12])).some((f) => f.message.includes("another target")));
 });
 
 test("target: a dimension between two disjoint parallel edges must favour its own edge", () => {
