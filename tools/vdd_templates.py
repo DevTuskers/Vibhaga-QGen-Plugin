@@ -6120,7 +6120,8 @@ def _angle_text_kind(kind: str, t_, vertex: str):
 
 
 def _seat_side_label(kind: str, elements: list[dict], boxes: list, a: XY, b: XY,
-                     text: str, away: XY, clr: float, id_: str) -> dict:
+                     text: str, away: XY, clr: float, id_: str,
+                     t0: float | None = None) -> dict:
     """Seat a label off the side a-b on the half-plane facing `away`, walked along the
     side and pushed out until its box clears every stroke and seated label — the same
     pocket search circle_parts uses for chord labels. Raises TemplateError."""
@@ -6129,7 +6130,8 @@ def _seat_side_label(kind: str, elements: list[dict], boxes: list, a: XY, b: XY,
     if ((away[0] - mid0[0]) * nx + (away[1] - mid0[1]) * ny) < 0:
         nx, ny = -nx, -ny
     strokes = stroke_segments(elements)
-    for t in (0.5, 0.4, 0.6, 0.35, 0.65, 0.3, 0.7):
+    tries = ((t0,) if t0 is not None else ()) + (0.5, 0.4, 0.6, 0.35, 0.65, 0.3, 0.7)
+    for t in dict.fromkeys(tries):
         m = vc.lerp(a, b, t)
         half = _label_half_along(text, FS, nx, ny)
         for k in range(12):
@@ -6209,7 +6211,7 @@ def build_right_triangle(*, figure_id, stem, ask=None, title=None, description=N
                          medium="english", names=("A", "B", "C"), right="B", up=None,
                          sides=None, unit="cm", legs_px=None, angles=None,
                          altitude=None, extra_base=None, mirror=None,
-                         values="stem"):
+                         extra_base_labels=None, side_label_t=None, values="stem"):
     """A right triangle with true side labels. `names` = three capitals; `right` names
     the 90° vertex; `up` names the vertex at the far end of the VERTICAL leg (default
     the first non-right name) — the third vertex closes the horizontal leg.
@@ -6222,7 +6224,11 @@ def build_right_triangle(*, figure_id, stem, ask=None, title=None, description=N
     equal the drawn angle within 0.75° AND be a stem number. `altitude` = {"from": V,
     "foot": "D"} drops a perpendicular from a vertex to the opposite side with a right
     mark; `extra_base` = {"D": t} puts point D on the horizontal leg's ray at t× the
-    leg length and joins it to `up`. `mirror` = "x"|"y"|"xy" flips the layout.
+    leg length and joins it to `up`. `extra_base_labels` = {"D": 9} prints an
+    explicit `BD = 9 <unit>` dimension on a dimension line below the extended base.
+    `mirror` = "x"|"y"|"xy" flips the layout.
+    `side_label_t={"AC": 0.7}` prefers that fraction along the side when seating
+    its label.
     `values="figure"` is the read-the-figure mode: printed side lengths and angle
     sizes are figure content (stem checks skipped, claims inferred)."""
     kind = "right_triangle"
@@ -6245,6 +6251,14 @@ def build_right_triangle(*, figure_id, stem, ask=None, title=None, description=N
                   "".join(sorted((right, horiz))): None,
                   "".join(sorted((up, horiz))): None}
     leg_v_key, leg_h_key, hyp_key = list(side_names)
+    label_ts: dict[str, float] = {}
+    for side, t_ in (side_label_t or {}).items():
+        if not (isinstance(side, str) and len(side) == 2 and
+                "".join(sorted(side)) in side_names):
+            raise TemplateError(f"{kind}: side_label_t key {side!r} is not a side")
+        if not isinstance(t_, (int, float)) or isinstance(t_, bool) or not 0.2 <= t_ <= 0.8:
+            raise TemplateError(f"{kind}: side_label_t for {side!r} must be in [0.2, 0.8]")
+        label_ts["".join(sorted(side))] = float(t_)
     val: dict[str, object] = {}
     for s, v_ in (sides or {}).items():
         if not (isinstance(s, str) and len(s) == 2 and "".join(sorted(s)) in side_names):
@@ -6324,6 +6338,16 @@ def build_right_triangle(*, figure_id, stem, ask=None, title=None, description=N
                                 "in (0, 3]")
         P[nm] = (H[0] * float(t), H[1] * float(t))
         extra[nm] = float(t)
+    base_lbl: dict[str, float] = {}
+    for nm, v_ in (extra_base_labels or {}).items():
+        if nm not in extra:
+            raise TemplateError(f"{kind}: extra_base_labels key {nm!r} is not an "
+                                "extra_base point")
+        if isinstance(v_, bool) or not isinstance(v_, (int, float)) or v_ <= 0:
+            raise TemplateError(f"{kind}: extra base label {nm!r} must be a positive number")
+        if not fig_mode:
+            require_stem(stem, **{f"base {right}{nm}": float(v_)})
+        base_lbl[nm] = float(v_)
     alt = None
     if altitude is not None:
         if not isinstance(altitude, dict) or altitude.get("from") not in names:
@@ -6382,9 +6406,31 @@ def build_right_triangle(*, figure_id, stem, ask=None, title=None, description=N
         if s not in val:
             continue
         v_ = val[s]
-        glyph = f"{v_:g} {unit}" if isinstance(v_, (int, float)) else str(v_)
-        el = _seat_side_label(kind, elements, boxes, P[na], P[nb], glyph, centroid,
-                              clr, f"lbl{s}")
+        glyph = (f"{v_:g} {unit}" if isinstance(v_, (int, float)) else
+                 str(v_))
+        away = centroid
+        if s != leg_h_key and not (s == hyp_key and extra):
+            mid = vc.lerp(P[na], P[nb], 0.5)
+            nx, ny = vc.normal(P[na], P[nb])
+            side = (centroid[0] - mid[0]) * nx + (centroid[1] - mid[1]) * ny
+            sign = 1.0 if side >= 0 else -1.0
+            away = (mid[0] - sign * nx * 100.0, mid[1] - sign * ny * 100.0)
+        el = _seat_side_label(kind, elements, boxes, P[na], P[nb], glyph, away,
+                              clr, f"lbl{s}", t0=label_ts.get(s))
+        elements.append(el)
+        boxes.append(label_boxes([el], FS)[0][1:])
+    for nm, v_ in base_lbl.items():
+        end = P[nm]
+        mx = (P[right][0] + end[0]) / 2
+        glyph = f"{right}{nm} = {v_:g} {unit}"
+        yline = sy * (clr + MID_UP * FS + 38.0)
+        elements.append(vc.line((P[right][0], yline), (end[0], yline),
+                                id=f"dim{right}{nm}", width=0.8))
+        for px_, tag in ((P[right][0], right), (end[0], nm)):
+            elements.append(vc.line((px_, yline - sy * 5.0), (px_, yline + sy * 5.0),
+                                    id=f"dim{right}{nm}{tag}", width=0.8))
+        y = yline + sy * 28.0
+        el = vc.text((mx, y), glyph, id=f"lbl{right}{nm}", size=16)
         elements.append(el)
         boxes.append(label_boxes([el], FS)[0][1:])
     for v_, (kk, num, txt, arms) in ang_specs.items():
@@ -6414,7 +6460,8 @@ def build_right_triangle(*, figure_id, stem, ask=None, title=None, description=N
     add(f"right {a1} {right} {a2}", "inferred", "the right-angle mark")
     for s, v_ in val.items():
         na, nb = seg_of[s]
-        glyph = f"{v_:g} {unit}" if isinstance(v_, (int, float)) else str(v_)
+        glyph = (f"{v_:g} {unit}" if isinstance(v_, (int, float)) else
+                 str(v_))
         add(f'label "{glyph}" names {na}{nb}',
             "inferred" if fig_mode else
             ("stem" if isinstance(v_, (int, float)) else "inferred"),
@@ -6459,6 +6506,10 @@ def build_right_triangle(*, figure_id, stem, ask=None, title=None, description=N
         add(f"collinear {right} {horiz} {nm}", "inferred",
             f"{nm} sits on the {right}{horiz} ray")
         add(f'label "{nm}" names {nm}', "inferred", "the letter at the base point")
+    for nm, v_ in base_lbl.items():
+        glyph = f"{right}{nm} = {v_:g} {unit}"
+        add(f'label "{glyph}" names {right}{nm}', "stem" if not fig_mode else "inferred",
+            "the printed extended-base dimension")
     for nm in names:
         add(f'label "{nm}" names {nm}', "inferred", "a vertex letter")
     if fig_mode:
@@ -8751,9 +8802,8 @@ def build_histogram(*, figure_id, stem, ask=None, title=None, description=None,
     if x_title:
         elements.append(vc.text((W / 2, 82), x_title, id="xt", size=15))
     if y_title:
-        elements.append(vc.text((-52, -v_max * upy / 2), y_title, id="yt", size=15,
-                                ))
-        elements[-1].update({"at": [-52, -v_max * upy / 2]})
+        elements.append(vc.text((0, -v_max * upy - 58), y_title, id="yt", size=15,
+                                align="start"))
     claims: list[tuple[str, str, str]] = []
 
     def add(pred, ev, note=""):
@@ -9323,7 +9373,8 @@ def build_ogive(*, figure_id, stem, ask=None, title=None, description=None,
     if x_title:
         elements.append(vc.text((W / 2, 84), x_title, id="xt", size=15))
     if y_title:
-        elements.append(vc.text((-52, -v_max * upy / 2), y_title, id="yt", size=15))
+        elements.append(vc.text((0, -v_max * upy - 58), y_title, id="yt", size=15,
+                                align="start"))
     claims: list[tuple[str, str, str]] = []
 
     def add(pred, ev, note=""):

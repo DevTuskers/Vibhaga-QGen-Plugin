@@ -2892,6 +2892,21 @@ class G11Templates(unittest.TestCase):
                                     angles={"C": "30"})
         self.assertIn("drawn angle", str(cm.exception))
 
+    def test_rt_extended_base_dimension_and_label_t(self):
+        stem = ("In the figure AB = 12 m, BC = 5 m and BD = 9 m. "
+                "The support is perpendicular to the ground. AC is x m.")
+        b = vt.build_right_triangle(figure_id="r7", stem=stem, ask=[["a", "x"]],
+                                    sides={"AB": 12, "BC": 5, "CA": "x"}, unit="m",
+                                    legs_px=[288, 120], extra_base={"D": 1.8},
+                                    extra_base_labels={"D": 9},
+                                    side_label_t={"AC": 0.7})
+        self.assertIn('label "BD = 9 m" names BD', b.claims)
+        ids = [e["id"] for e in b.doc["elements"]]
+        self.assertIn("dimBD", ids)
+        self.assertIn("dimBDB", ids)
+        self.assertIn("dimBDD", ids)
+        self._ok(b)
+
     def test_rt_keyword_only(self):
         with self.assertRaises(TypeError):
             vt.build_right_triangle("r6", self.RT_STEM)
@@ -3277,8 +3292,8 @@ class ByteIdentity(unittest.TestCase):
         "selftest-venn": "fbc07d9f9f560504984241dafe4cf5c18a772b2faef551f8eedf139fa8e52568",
         "selftest-venn3": "b5baef12404e11361c716a35e0e4a9b22eaeeb5f13fce2e4b21ed281b5bca563",
         "selftest-circle": "bba42c4d35e57115bd23c50832770f8459ee13b3077a4e4b7eb64b272c601711",
-        "selftest-rtri": "6edac3fbab6774cebfef996cbbd2e8327b67dc72deb3c6afdb4b755dbce7315f",
-        "selftest-rtri2": "4bee604ae6ac55a4c6f31f9298898cfcd64c6f3148245f590d05c7df293fd39a",
+        "selftest-rtri": "0390a202f5e6bde0c656950382a2200eec791e621be29f340d535bd0d5ddd50b",
+        "selftest-rtri2": "a3f785fe284fdb05901d9919a4f207a5bc1ce44cc414cb4b1d02e1b667e63781",
         "selftest-cyc": "ce683dc4b715bd0a9cfc5b9826b9c7a0d775de21dc1fbc48e7fefa5549169dd7",
         "selftest-tan": "654d82cd00f56b4fe16014488bab99a9281569575a135a254aa81c03c97157ef",
         "selftest-tpar": "cd4afcf42d89027b1ce485d449bd6e019437b62072fa0812ff5430b0f362a0c6",
