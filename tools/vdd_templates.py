@@ -18646,13 +18646,14 @@ def build_elevation_scene(*, figure_id, stem, post, sights, eyes=None,
 
 
 def _scn_seat_text(kind, elements, boxes, anchors, near, txt, id_, prefer=None,
-               free=()):
+                   free=(), point_label=False):
     """A deterministic seat for a drawn text — the counterpart of a floater for
     anchors ringed by dots/strokes where the 8-direction sweep starves. `near`
     is the spot the text belongs to (a point's anchor, a segment's midpoint);
     `anchors` is every named anchor — the label centre must beat every rival by
-    3.5 units. Sweeps 12 directions (least-crowded or `prefer` first) × 15
-    distances; a candidate wins only if its box clears every stroke by 9.5
+    the ownership margin. Sweeps 12 directions (least-crowded or `prefer` first) × 15
+    distances, with a finer search for crowded point letters. A candidate wins
+    only if its box clears every stroke by 11
     units and every seated label by 4 units — finish()'s rendered-px
     pre-flight (which measures label boxes as part of the canvas extent)
     re-checks edge clearance and stays the final word."""
@@ -18673,25 +18674,33 @@ def _scn_seat_text(kind, elements, boxes, anchors, near, txt, id_, prefer=None,
         base = math.degrees(math.atan2(p[1] - my, p[0] - mx))
     else:
         base = prefer
-    dirs = sorted(range(-180, 180, 30),
-                  key=lambda a: abs(((base - a) + 180) % 360 - 180))
-    for d in (14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 56, 62, 70, 82, 96):
-        for deg in dirs:
-            ux, uy = math.cos(math.radians(deg)), math.sin(math.radians(deg))
-            cx, cy = p[0] + ux * d, p[1] + uy * d
-            el = vc.text((cx, cy), txt, id=id_)
-            box = label_boxes([el], FS)[0][1:]
-            if strokes and min(_seg_rect_dist(a, b, box) - w / 2
-                               for a, b, w in strokes) < 11.0:
-                continue
-            if any(_rect_gap(box, pb) < 4.0 for pb in boxes):
-                continue
-            own = math.hypot(cx - p[0], cy - p[1])
-            if any(math.hypot(cx - o[0], cy - o[1]) - own < 3.5
-                   for o in others.values()):
-                continue
-            boxes.append(box)
-            return el
+
+    def dirs(step):
+        return sorted(range(-180, 180, step),
+                      key=lambda a: abs(((base - a) + 180) % 360 - 180))
+
+    coarse = (14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 56, 62, 70, 82, 96)
+    searches = [(coarse, dirs(30))]
+    if point_label:
+        searches.append((range(14, 65), dirs(10)))
+    own_margin = 0.25 * FS + 1.0 if point_label else 3.5
+    for d, deg in ((d, deg) for distances, directions in searches
+                   for d in distances for deg in directions):
+        ux, uy = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+        cx, cy = p[0] + ux * d, p[1] + uy * d
+        el = vc.text((cx, cy), txt, id=id_)
+        box = label_boxes([el], FS)[0][1:]
+        if strokes and min(_seg_rect_dist(a, b, box) - w / 2
+                           for a, b, w in strokes) < 11.0:
+            continue
+        if any(_rect_gap(box, pb) < 4.0 for pb in boxes):
+            continue
+        own = math.hypot(cx - p[0], cy - p[1])
+        if any(math.hypot(cx - o[0], cy - o[1]) - own < own_margin
+               for o in others.values()):
+            continue
+        boxes.append(box)
+        return el
     raise TemplateError(
         f'{kind}: the text {txt!r} has no clear seat — spread the geometry')
 
@@ -18699,7 +18708,7 @@ def _scn_seat_text(kind, elements, boxes, anchors, near, txt, id_, prefer=None,
 def _scn_seat_letter(kind, elements, boxes, anchors, nm, clr):
     """Seat the single-capital letter `nm` at its anchor via _scn_seat_text."""
     return _scn_seat_text(kind, elements, boxes, anchors, tuple(anchors[nm]), nm,
-                      f'lb{nm}')
+                          f'lb{nm}', point_label=True)
 
 
 def _scn_seat_angle_label(kind, elements, boxes, v, a_, b_, txt, r0, clr, far):

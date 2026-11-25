@@ -5057,6 +5057,12 @@ class TwoCircleGeometryTests(unittest.TestCase):
                                          stem='Radii 5 cm and 2 cm, centres 3 cm.',
                                          r1=5, r2=2, d=3)
         self.assertIn('collinear A B P', b.claims)      # internal touch
+        box = next((x0, y0, x1, y1) for text, x0, y0, x1, y1
+                   in vt.label_boxes(b.doc['elements']) if text == 'B')
+        x0, y0, x1, y1 = box
+        centre = ((x0 + x1) / 2, (y0 + y1) / 2)
+        self.assertGreater(math.dist(centre, b.anchors['P']) -
+                           math.dist(centre, b.anchors['B']), 0.25 * vt.FS)
 
     def test_topology_refusals(self):
         with self.assertRaises(vt.TemplateError):       # separate
