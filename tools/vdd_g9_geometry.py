@@ -785,13 +785,17 @@ def build_locus_scene(*, figure_id, stem, kind=None,
                          description=desc_d, scale=scale, budget=budget,
                          medium=medium)
 
-    def dim_label(near, on, value):
+    def dim_label(near, on, value, *, side=None):
         """A floating physical-measure label seated beside a drawn segment —
         `values="figure"` never leaves a physical given undrawn, and `values=
         "stem"` keeps the stem's number honest on the figure itself."""
-        elements.append({"type": "text", "id": f"dim{on}", "at": [0, 0],
-                         "value": value, "align": "middle",
-                         "baseline": "middle", "_near": list(near), "_gap": 14})
+        if side is None:
+            elements.append({"type": "text", "id": f"dim{on}", "at": [0, 0],
+                             "value": value, "align": "middle",
+                             "baseline": "middle", "_near": list(near), "_gap": 14})
+        else:
+            elements.append(vt._seat_side_label(k, elements, [], *side, value, near,
+                                                14.0, f"dim{on}", keep_near=True, start=0.25))
         declared_segments.append(on)
         add(f'label "{value}" names {on}',
             "stem" if values == "stem" else "inferred",
@@ -918,7 +922,7 @@ def build_locus_scene(*, figure_id, stem, kind=None,
             dim_label((q[0] + nrm2[0] * 20.0 * side_d,
                        q[1] + nrm2[1] * 20.0 * side_d),
                       f"{sn[0]}{sn[1]}",
-                      f"{length:g}{' ' + unit if unit else ''}")
+                      f"{length:g}{' ' + unit if unit else ''}", side=(A, B))
         for i, (lt, _) in enumerate(sample_pts):
             add(f"on {lt} UW", "measured", "the sample sits on the bisector")
             add(f"equal {sn[0]}{lt} {lt}{sn[1]}", "measured",

@@ -1053,6 +1053,25 @@ class RenderedClearance(unittest.TestCase):
         dist = vt._seg_rect_dist(da[0], da[1], bx)
         self.assertLessEqual(dist, 1.5 * slh["fontSize"])
 
+    def test_dimension_labels_stay_near_their_claimed_side(self):
+        targets = {
+            "selftest-cafoot": {"4 cm": "AF"},
+            "selftest-elev-eye": {"1.6 m": "GE"},
+            "selftest-g9-ls-perp": {"8 cm": "AB"},
+            "selftest-mgtri": {"6 cm": "BM"},
+            "selftest-tpar": {"6 cm": "AX", "x": "XB"},
+        }
+        for spec in vt.SELF_TEST:
+            if spec["figure_id"] not in targets:
+                continue
+            kw = dict(spec)
+            b = vt.BUILDERS[kw.pop("template")](**kw)
+            boxes = {text: box for text, *box in vt.label_boxes(b.doc["elements"])}
+            for glyph, (a, z) in targets[b.figure_id].items():
+                with self.subTest(figure=b.figure_id, glyph=glyph):
+                    gap = vt._seg_rect_dist(b.anchors[a], b.anchors[z], boxes[glyph])
+                    self.assertLessEqual(gap, 1.5 * vt.FS)
+
 
 def _dot(id_, x, y):
     return {"type": "circle", "id": id_, "center": [x, y], "r": 4.0,
@@ -3293,7 +3312,7 @@ class ByteIdentity(unittest.TestCase):
         "selftest-rtri2": "4bee604ae6ac55a4c6f31f9298898cfcd64c6f3148245f590d05c7df293fd39a",
         "selftest-cyc": "ce683dc4b715bd0a9cfc5b9826b9c7a0d775de21dc1fbc48e7fefa5549169dd7",
         "selftest-tan": "654d82cd00f56b4fe16014488bab99a9281569575a135a254aa81c03c97157ef",
-        "selftest-tpar": "cd4afcf42d89027b1ce485d449bd6e019437b62072fa0812ff5430b0f362a0c6",
+        "selftest-tpar": "5bf6627f048e0c79363863d123679875f7eed6ea1b63e556c7adf5d94490a216",
         "selftest-parea": "22bcbf0c54bf349926a1df9997de8c414050667aa736109543147670476ff559",
         # G11 round-2 — regenerated after the visual-initial label fixes moved
         # cone/cyl leader labels, graph/fline axis numerals, ineq tick numerals,
@@ -3334,8 +3353,8 @@ class ByteIdentity(unittest.TestCase):
         "selftest-ogfig": "f567516f5ac2c0dc787cc10f4aac33e7526126a0287d5944ff23bae23d4c644c",
         "selftest-vrn3": "e429f8a7a298354ed6701685ffebaecb173882ec4523651ef180c7218cb5abb0",
         "selftest-cvess": "08202bf91edde8c110786685cc4de06012ffaaff6e1007399e3a57e8197394a3",
-        "selftest-mgtri": "1b2ab8c6072d01ea216b8eefaf4a4d3b887ba13a2c8928aebb07ca044c633c9d",
-        "selftest-mgpara": "972b01fc2eb06bdd92ff0795f5001b15018561ff2811b54e7ee1eab88ac27bad",
+        "selftest-mgtri": "ff73dd92169516ae7b7132089dacc115c4b3b3063956391fe37fcb2ab5e183d4",
+        "selftest-mgpara": "a932bb8733d74e3620a38b86877faceb9a7f1e94ad0656d21affec3149c55ff0",
         "selftest-mgtrap": "61065264cfc9c3016e1f2316004f915ba5720b80166a457f803867bf47d163ae",
         "selftest-histadj": "005de7f479c1f085da424a64a15faf23596374fc0f52b3b8acb4546fcddda805",
         "selftest-genquad": "01f3a4f7cf37c3893d48835014eda21345601dce81d2819a7784036491b751d7",
@@ -3357,7 +3376,7 @@ class ByteIdentity(unittest.TestCase):
         "selftest-sec": "06785c0d8bd89093b4e18b9d57578fdc3720c1c7c473ad1f46facdd23e0dc7d4",
         "selftest-semi": "494b7ee495b133e9bd432c72ac2a3d9339a76897176bf69e31752ca13995bd7b",
         "selftest-annu": "3ee6167d59da66858a25ebdf64e94403700e49aecc69a5c1523fc2f6a9a0fe07",
-        "selftest-cafoot": "9c06dc3b3aab5b414e50cbebda8e26d70f633fab1df5f9f222c318e3bc8fe276",
+        "selftest-cafoot": "33983b6bb7875ba19cba88bb6830f510addb321e6a387219a70901ab88e7a34c",
         "selftest-cax": "1c72bd9ecf8b07fa65275e9bb896c5cfd9505319a105a26d7217ca3e49516ec9",
         "selftest-vcomp": "cd596042f266b98ac93e2bcac4db2c648bb72ade19e03bc8660d9b4bf76bbbf6",
         "selftest-vcsh": "1dd9fb115595d103831b0c3174b0806621499982e6de559e329346b700535114",
@@ -3413,7 +3432,7 @@ class ByteIdentity(unittest.TestCase):
         # (process hash seed); builder now sorts ground anchors, making bytes
         # seed-stable. Rendered figure unchanged.
         "selftest-elev": "1560aeb34abcf706d80ef8f144a9581f0e545107ea686ab309bb200bffc673c8",
-        "selftest-elev-eye": "9e50d813e8d9296626ce8096a99c357325f6870bd6f7668c8de49670bb42db92",
+        "selftest-elev-eye": "a70b3efb80f279d0cd90a096d08a7b56cb2e942ad2d755644fe7a964b5ee62ea",
         "selftest-2cgeo": "4496435b5646ae77bc9271342194aa9938a69ec26fba07ba968becd7722d90ee",
         "selftest-2cgeo-touch": "63e0f76416d4508174725237ad891ecc20a316bb956210192a03eedf0561bf84",
         "selftest-2cgeo-angle": "b9790f7b9bfd59f0c680869df701253e7e817a78ca00d170fa9bc772046ec297",
@@ -3469,7 +3488,7 @@ class ByteIdentity(unittest.TestCase):
         "selftest-g9-ml-trans": "3a140e009a45fdbad815b90a608ec1f9f291c02a4c033bb149f94849de09fb91",
         "selftest-g9-ls-circle": "b141137d1978f9a682ea9e13d1085ccd35e7cded647eb7b164b6a3054dbbdea6",
         # Lead reverified renders: the 8 cm label belongs above AB, not AP.
-        "selftest-g9-ls-perp": "eb9e096bfbdde2a21d1e568d5a9dc0ae8fbf86c955e950db0bd8034a54d87dca",
+        "selftest-g9-ls-perp": "14a3c35c4478526b01019f88ffc2fef07e07bdd6efc551f6c709b6ca90948d0d",
         "selftest-g9-ls-offset": "a8f8fd7025ee4256438b47c7506255f69e8e523a6389f9bdc5e34cf902ffd558",
         "selftest-g9-ls-bis": "1372250e3b4968ae35d1ce5efd0443b11a3fc23dbb0241e43862bb6614e04d0c",
         "selftest-g9-pa-int": "d17e37a245bba183cc9a7ecce3a6a97b81bc8399d81625927c5a9ef9e284d52b",
