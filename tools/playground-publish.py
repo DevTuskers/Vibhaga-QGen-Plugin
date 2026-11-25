@@ -106,6 +106,9 @@ class PlaygroundApi(_pub.Api):
 
     def _pg(self, method, path, body=None, ok=(200,)):
         st, js = self._json(method, f"{self.base}{path}", self._auth(), body, scope="admin")
+        if st == 0:
+            time.sleep(2)
+            st, js = self._json(method, f"{self.base}{path}", self._auth(), body, scope="admin")
         if st not in ok:
             raise Refuse(f"{method} {path} → {_auth.response_error(st, js)}", 5)
         return js
@@ -145,7 +148,11 @@ class PlaygroundApi(_pub.Api):
         return js
 
     def validate(self, sid: str, questions: list) -> tuple[int, dict]:
-        return self._json("POST", f"{self.base}/v1/admin/playground/validate", self._auth(), {"session_id": sid, "questions": questions}, scope="admin")
+        st, js = self._json("POST", f"{self.base}/v1/admin/playground/validate", self._auth(), {"session_id": sid, "questions": questions}, scope="admin")
+        if st == 0:
+            time.sleep(2)
+            st, js = self._json("POST", f"{self.base}/v1/admin/playground/validate", self._auth(), {"session_id": sid, "questions": questions}, scope="admin")
+        return st, js
 
     def publish(self, sid: str, ids: list[str], dry_run=False) -> tuple[int, dict]:
         body: dict = {"question_ids": ids}  # ALWAYS sent — omitting it would publish ALL
@@ -748,6 +755,8 @@ def run_publish(api: PlaygroundApi, sid: str, staged_path: Path, scope_kv, ids_p
     # ---- stage 4: server-side validate of the WHOLE server doc (session mode); errors on a CHOSEN question refuse
     server_list = doc["questions"]
     st, js = api.validate(sid, server_list)
+    if st == 0:
+        log("  validate → 000 (connection) — retrying once"); time.sleep(2); st, js = api.validate(sid, server_list)
     if st != 200:
         raise Refuse(f"validate → {_auth.response_error(st, js)}", 5)
     checked_validate_report(js)
@@ -791,8 +800,11 @@ def run_publish(api: PlaygroundApi, sid: str, staged_path: Path, scope_kv, ids_p
     for i in order:
         q = server_q[i]
         st, res = api.publish(sid, [i])
-        if st == 0:
-            log(f"  Q{q.get('question_number')} {i} → 000 (connection) — retrying once"); time.sleep(2); st, res = api.publish(sid, [i])
+        retries = 0
+        while st == 0 and retries < 3:
+            retries += 1
+            msg = "retrying once" if retries == 1 else f"retrying ({retries}/3)"
+            log(f"  Q{q.get('question_number')} {i} → 000 (connection) — {msg}"); time.sleep(2 * retries); st, res = api.publish(sid, [i])
         if not (200 <= st < 300):
             log(f"  Q{q.get('question_number')} {i} → {_auth.response_error(st, res)}")
             raise Refuse(f"STOPPED after {done}/{len(order)}: publish of Q{q.get('question_number')} failed with HTTP {st}. The ledger {ledger_path} stands; fix and re-run.", 5)
