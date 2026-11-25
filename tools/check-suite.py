@@ -68,9 +68,9 @@ SKIPS: list[str] = []
 
 
 def doc_files() -> dict[Path, str]:
-    """skills/*/SKILL.md + agents/*.md + docs/*.md — the plugin's prose corpus."""
+    """Skills, agents and docs, including nested references and archives."""
     paths = sorted(ROOT.glob("skills/*/*.md")) + sorted((ROOT / "agents").glob("*.md")) \
-        + sorted((ROOT / "docs").glob("*.md"))
+             + sorted((ROOT / "docs").rglob("*.md"))
     return {p: p.read_text(encoding="utf-8") for p in paths if p.is_file()}
 
 
@@ -109,13 +109,51 @@ def check_section_anchors(docs: dict[Path, str]) -> None:
 # ---------------------------------------------------------------------------------------------
 def check_trap_references(docs: dict[Path, str]) -> None:
     traps_path = ROOT / "docs" / "TRAPS.md"
-    if not traps_path.is_file():
+    if traps_path not in docs:
         WARNS.append("docs/TRAPS.md missing — trap-citation check skipped")
         return
-    traps = set(re.findall(r"^## (T\d+)", traps_path.read_text(encoding="utf-8"), re.M))
+    trap_id = r"T(?:-QG-)?\d+"
+    details = {
+        (p, tid)
+        for p, s in docs.items()
+        if p.parent == traps_path.parent / "traps"
+        for tid in re.findall(rf"^## ({trap_id}) — ", s, re.M)
+    }
+    indexed = set()
+    seen = set()
+    for _, line, is_prose in prose_lines(docs[traps_path]):
+        if not is_prose or not line.lstrip().startswith("|"):
+            continue
+        cell = line.lstrip().split("|", 2)[1].strip()
+        cell = re.sub(r'<a name="[^"]+"></a>', "", cell).strip()
+        id_match = re.search(rf"\b{trap_id}\b", cell)
+        if not id_match:
+            continue
+        tid = id_match.group()
+        if tid in seen:
+            ERRORS.append(f"docs/TRAPS.md: duplicate trap {tid}")
+        seen.add(tid)
+        link = re.fullmatch(rf"\[{tid}\]\((traps/[^)#]+)#([^)]*)\)", cell)
+        if not link:
+            ERRORS.append(f"docs/TRAPS.md: {tid} has no detail link")
+            continue
+        target, anchor = link.groups()
+        path = traps_path.parent / target
+        if (path, tid) not in details or anchor != tid.lower() or (
+            f'<a name="{anchor}"></a>\n\n## {tid} — ' not in docs.get(path, "")
+        ):
+            ERRORS.append(f"docs/TRAPS.md: {tid} does not link to its detail in {target}#{anchor}")
+        indexed.add((path, tid))
+    if not seen:
+        ERRORS.append("docs/TRAPS.md: no trap index entries")
+    for p, tid in sorted(details - indexed):
+        ERRORS.append(f"{rel(p)}: {tid} missing from docs/TRAPS.md index")
+
+    # Keep the inherited numbered-TRAPS advisory separate from the index integrity check.
+    traps = {t for t in seen if t[1:].isdigit()}
     cited: set[str] = set()
     for p, s in docs.items():
-        if p == traps_path:
+        if p == traps_path or p.parent == traps_path.parent / "traps":
             continue
         cited |= {f"T{n}" for n in re.findall(r"\bT(\d+)\b", s)}
     for t in sorted(traps, key=lambda x: int(x[1:])):
