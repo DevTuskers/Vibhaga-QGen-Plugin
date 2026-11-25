@@ -27,8 +27,8 @@ No figures unless a question needs one. Never re-read a skill or corpus file alr
    leaf; `number_line` takes only non-negative endpoints and needs every drawn number (incl. step `1`) written in
    the stem — write `$0, 1, 2, \ldots, 8$`; a maths-only `approach_si` identical to English fails Q2b
    (`part_approach_no_sinhala`) — always add a Sinhala sentence to the approach. Easy pictograph parts are ONE read (one row, or a given count → its row); reading two rows and adding is M. A "Is X correct? Show your working" part is H — in a Medium batch ask the computation instead ("how many more …", "find the wrong entry").
-3b. **Plan critic** — follow [Plan-stage critic](#plan-stage-critic): use OK reserves that keep the requested
-   lesson/band mix before rewriting. At most two rounds, the second only for replacements. Never author unreviewed lines.
+3b. **Plan critic** — follow [Plan-stage critic](#plan-stage-critic): select N OK candidates that meet the
+   requested lesson/band mix before rewriting. At most two rounds, the second only for replacements. Never author unreviewed lines.
 4. Write `$A/content.yaml` (bilingual, readable layout, required `difficulty: easy|medium|hard`; questions may override it; `check:` on every leaf).
    **Assess Cognitive Decoding & Spatial Imagery (CDS Index)** via [`assess-spatial-imagination`](../assess-spatial-imagination/SKILL.md):
    if a question's description requires visualizing multi-point coordinate grids, 2D composite shapes, folding, or
@@ -227,14 +227,13 @@ same two checkout paths in the critic's spawn prompt.
    (sequence of operations, not numbers or story) with every card worked example, exercise and activity and every
    live row. It answers per line `OK` or `REPLACE — <abstract task-chain reason>`; a matching chain must be replaced.
    The reason states the chain without quoting source text. Round 1 judges all candidates including reserves.
-   Keep OK primary lines. Fill REPLACE slots from OK reserves in priority order with the same lesson tags and
-   band, or with another OK candidate only if it preserves the target lesson coverage and band split.
-   If slots remain open, rewrite from the abstract reasons for those slots and re-run `similar` and the dedup
-   sheet for the replacements only. If a replacement uses a new eligible lesson, include its card and source
-   signals. Round 2 judges only the replacement lines against the same copy check.
-   Drop anything still REPLACE and use only remaining OK candidates that preserve the mix. Check both the
-   count and the mix before creating the session. Report any unfilled lesson/band slots to the owner as
-   a shortfall rather than change the mix, author an unjudged line or run a third plan round.
+   After each round, choose any N currently OK lines from primaries and reserves that meet the target lesson
+   coverage and band split. Prefer primaries, but swap out an OK primary when needed to meet the mix.
+   If no such selection exists after round 1, rewrite REPLACE lines from the abstract reasons and re-run
+   `similar` and the dedup sheet for the replacements only. If a replacement uses a new eligible lesson,
+   include its card and source signals. Round 2 judges only those replacements against the same copy check.
+   Create the session only once the selection meets both count and mix. If no such selection exists after
+   round 2, report the shortfall to the owner rather than change the mix, author an unjudged line or run a third round.
 4. **Author `content.yaml`** (`id_seed`, `lessons:` key map, `figures:` key map, `questions:`
    with `n`, `lessons`, `stem`, `figure`, `parts[label, text, figure, approach, final]`; `build-staged.py` docstring):
    - **Stem** — [`author-question-text`](../author-question-text/SKILL.md) §1a + §3: `$…$`/`$$…$$`, never Sinhala
@@ -471,7 +470,7 @@ For an Easy question, "new" means one of these: a context the lesson does not us
 ### Room left and stop rule
 
 - **Room left, not just row count.** Have the plan critic check the dedup sheet, not the writer. If the live rows already use every card section task and every `difficulty_hooks` entry at the target band, the lesson is **full**. Skip it and take the next thin lesson.
-- **Stop rule.** At most two [plan rounds](#plan-stage-critic). Drop still-REPLACE slots and use only judged OK alternatives that preserve the target lesson coverage and band split.
+- **Stop rule.** At most two [plan rounds](#plan-stage-critic). Discard still-REPLACE candidates and select from the OK pool as above.
   After two copy MAJORs on one slot (plan or batch), stop rewriting it. Use an eligible alternative from a different
   lesson only when it preserves that mix (`playground-publish.py session update <sid> --lessons …` adds a lesson
   after session creation), or drop the question and report the shortfall to the owner. This never allows a third plan round.
