@@ -124,6 +124,9 @@ function assertOutputMetadata(document, anchors) {
   need(meta?.layoutMetadataSchema===METADATA_CONTRACT.schema && meta.inputMetadataRole===METADATA_CONTRACT.inputMetadataRole && typeof meta.inputMetadataPresent==='boolean' && Object.hasOwn(meta,'inputMetadata'),'output metadata contract missing; regenerate rather than guessing legacy metadata frames');
   need(meta.anchorsFrame===METADATA_CONTRACT.anchorsFrame && Object.hasOwn(meta,'anchors') && stable(meta.anchors)===stable(anchors),'stored output anchor frame/sidecar mismatch');
 }
+function compatibleMetadataContract(contract) {
+  return contract && stable({inputCanvasScale:METADATA_CONTRACT.inputCanvasScale,...contract})===stable(METADATA_CONTRACT);
+}
 export function transformDocument(document, matrix) {
   validateMatrix(matrix); finiteTree(document);
   keys(document, ['schema', 'schemaVersion', 'canvas', 'defaults', 'elements', 'a11y', 'meta'], 'document');
@@ -756,7 +759,7 @@ export function loadOutputs(prefix) {
   }
   need(bytes.provenance,'missing provenance');
   const provenance=JSON.parse(bytes.provenance);need(provenance.approved,'bundle not layout-approved');
-  need(stable(manifest.metadataContract)===stable(METADATA_CONTRACT) && stable(provenance.metadataContract)===stable(METADATA_CONTRACT),'missing/incompatible metadata frame contract; regenerate legacy bundles, do not guess frames');
+  need(compatibleMetadataContract(manifest.metadataContract) && compatibleMetadataContract(provenance.metadataContract),'missing/incompatible metadata frame contract; regenerate legacy bundles, do not guess frames');
   const member=(documentBytes,anchorBytes,rawAnchors)=>{
     const document=JSON.parse(documentBytes),anchors=JSON.parse(anchorBytes);assertOutputMetadata(document,anchors);
     return {document,anchors,rawAnchors,rawAnchorsFrame:METADATA_CONTRACT.rawAnchorsFrame};

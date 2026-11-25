@@ -134,6 +134,32 @@ test('new-file-only writer preserves raw bytes and refuses rejected output/colli
   } finally { fs.rmSync(dir,{recursive:true,force:true}); }
 });
 
+test('approved v1 bundle without scale metadata still loads',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'vdd-layout-v1-'));
+  try {
+    const prefix=path.join(dir,'legacy'),anchors={A:[1,2]},raw=Buffer.from(JSON.stringify(anchors));
+    const input={...doc([{id:'p',type:'point',at:[1,2]}]),meta:{anchors}};
+    const document=transformDocument(input,similarity({angleDegrees:0,pivot:[0,0]}));
+    delete document.meta.inputCanvasScale;
+    const files=writeOutputs(prefix,raw,{document,anchors,provenance:{approved:true,failures:[]}});
+    const manifest=JSON.parse(fs.readFileSync(files[4],'utf8'));
+    const provenance=JSON.parse(fs.readFileSync(files[3],'utf8'));
+    delete manifest.metadataContract.inputCanvasScale;
+    delete provenance.metadataContract.inputCanvasScale;
+    const bytes=JSON.stringify(provenance);
+    const entry=manifest.files.find(e=>e.role==='provenance');
+    entry.bytes=Buffer.byteLength(bytes);entry.sha256=createHash('sha256').update(bytes).digest('hex');
+    fs.writeFileSync(files[3],bytes);fs.writeFileSync(files[4],JSON.stringify(manifest));
+    const loaded=loadOutputs(prefix);
+    assert.deepEqual(loaded.document,document);
+    assert.deepEqual(loaded.anchors,anchors);
+    assert.deepEqual(loaded.rawAnchors,raw);
+    manifest.metadataContract.anchorsFrame='INPUT_VDD_CANVAS';
+    fs.writeFileSync(files[4],JSON.stringify(manifest));
+    assert.throws(()=>loadOutputs(prefix),/metadata frame contract/);
+  } finally { fs.rmSync(dir,{recursive:true,force:true}); }
+});
+
 test('normalization checks bounded quantization, critical incidence, topology, flags and CSS error separately',()=>{
   const round=d=>{const n=structuredClone(d);for(const e of n.elements){if(e.points)e.points=e.points.map(p=>p.map(Math.round));if(e.at)e.at=e.at.map(Math.round);if(e.center)e.center=e.center.map(Math.round);}return n;};
   const simple=doc([{id:'p',type:'polygon',points:[[20.1,20.4],[180.4,20.1],[90.2,180.3]]}]);
