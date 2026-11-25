@@ -278,3 +278,66 @@ assert the card's translation moved every element equally; after publishing, rea
 SVG. And prefer primitives: a filled curved region is a ≤ 2°-sampled `polygon` under an `arc` rim
 (§3.2), not a `path`. The rule stands regardless of any fix, because *"which surfaces run which
 code"* is exactly the thing a green harness cannot tell you.
+
+## Throwaway renderer harness
+
+```bash
+mkdir -p /tmp/vdd-harness && cd /tmp/vdd-harness
+A=/path/to/Vibhaga-Admin                    # resolved: --admin flag > $VIBHAGA_ADMIN > sibling checkout
+ln -sfn "$A/node_modules" node_modules
+cp "$A/node_modules/katex/dist/katex.min.css" .
+cat > entry.tsx <<'TSX'
+import { createRoot } from "react-dom/client";
+import { DiagramRenderer } from "@/components/diagram/DiagramRenderer";
+import { parseVddDocument } from "@vibhaga/shared/vdd-schema";
+import { checkDiagram } from "@/components/diagram/validate";
+const doc = (window as any).__FIGURE__;
+const r = parseVddDocument(doc);
+if (!r.ok) { console.log("INVALID", JSON.stringify(r.errors)); }
+else {
+  console.log("advisory", JSON.stringify(checkDiagram(r.value)));
+  const host = document.getElementById("fig")!;
+  createRoot(host).render(<DiagramRenderer dsl={r.value} />);
+}
+TSX
+"$A/node_modules/.bin/esbuild" entry.tsx --bundle --format=iife --outfile=bundle.js \
+  --tsconfig="$A/tsconfig.json" --loader:.tsx=tsx --define:process.env.NODE_ENV='"development"'
+```
+
+`index.html` needs `katex.min.css`, a `<div id="fig">` sized to the width you are testing, the
+tailwind utilities the renderer uses (`relative absolute w-full h-full inset-0 overflow-hidden
+pointer-events-none`), a `<script>` setting `window.__FIGURE__`, then `bundle.js`. Serve it
+(`python3 -m http.server`) and drive it with a **headed** Playwright Chromium.
+
+## Schema and renderer failure cases
+
+### 4.3 What the schema rejects that looks fine
+
+- `polygon` with **fewer than 3** points — a closed 3-point line loses its duplicated closing vertex,
+  becomes a 2-point "polygon", is saved, then discarded by `parseVdd`, so the figure **simply never
+  appeared**, with no error anywhere.
+- `line` with anything other than **exactly 2** points.
+- `polyline` / `arrow` with fewer than 2.
+- `path.d` containing any command outside `M L Q C A Z`.
+- a missing or empty `id`, a non-positive canvas dimension, or `schema` ≠ `"vibhaga.diagram"`.
+
+### 4.4 What nothing rejects — so you must
+
+- a **mistyped element type** → publishes `200`, then is skipped by both renderers ⇒ **a triangle
+  with no hypotenuse**;
+- a **missing `a11y`** ⇒ an image-role element with no accessible name;
+- **200 elements**;
+- a **`$` or backtick in a `text` label** ⇒ reaches the student verbatim;
+- **Sinhala inside a `math` element's `latex`** ⇒ forbidden (`\text{}` rule) and renders as garbage;
+- ⚠️ **a claim from the claim set that has no element at all** ⇒ §5.2, and the reason this skill
+  exists in the same half as the verification;
+- ⚠️ **a drawn number the stem never stated** ⇒ the stem-ratio check in `audit-claim-set.py` (§5.3a)
+  is the backstop — every `ratio`/`angle` claim's value must be derivable from the stem's own numbers
+  or a cited `derive`, so a copied-anchor mistake is caught before the render ever runs;
+- **English words or sentences inside VDD diagrams (recommended guideline):** `diagram_dsl` is
+  common to both English and Sinhala question views (there is no `_sinhala` variant). Having English
+  prose labels (e.g. `"Home"`, `"Finish"`, `"Water garden"`, `"Pillar"`) directly rendered inside the
+  diagram introduces language friction for Sinhala-medium students. Prefer single English letters or
+  standard mathematical tokens ($H, F, W, P$), and let the bilingual question stem describe what they
+  represent ($H$ = home / නිවස, $F$ = finish / ගමන් අවසන් කළ ස්ථානය). *(General guideline / best practice,
+  not a hard validator refusal).*

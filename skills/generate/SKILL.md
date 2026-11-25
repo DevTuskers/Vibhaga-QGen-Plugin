@@ -54,7 +54,7 @@ Authoring lessons from earlier runs (see [T143–T154](../../docs/TRAPS.md)):
 - Keep Sinhala words outside maths spans (T151); provide medium-appropriate figure descriptions that do not give answers (T152).
 - Count available figure cells before asking for more (T153).
 
-Generation history: [docs/MIGRATION.md](../../docs/MIGRATION.md#generate-skill-history-2026-10-21). Cross-cutting traps:
+Optional generation history: [docs/MIGRATION.md](../../docs/migration/archive/history.md#generate-skill-history-2026-10-21). Cross-cutting traps:
 [`docs/TRAPS.md`](../../docs/TRAPS.md).
 
 > **Decision:** [`0018`](https://github.com/DevTuskers/Vibhaga-Docs/blob/main/decisions/0018-agent-question-generation-playground.md) (paperless playground), on top of
@@ -403,7 +403,7 @@ same two checkout paths in the critic's spawn prompt.
 15. **Logbook line** — one dated entry in the plan logbook (private Docs repo): session id, N questions / parts /
     figures, the publish and Q2/Q3 lines, the coverage before → after diff (§5 item 5), critic rounds and verdicts,
     owner questions, effort. Add an ID-free line to
-    [MIGRATION.md](../../docs/MIGRATION.md#generate-skill-history-2026-10-21).
+    [MIGRATION.md](../../docs/migration/archive/history.md#generate-skill-history-2026-10-21).
 
 ### Per-run checklist — `$A/RUN.md`, ticked as you go
 
@@ -511,4 +511,4 @@ For an Easy question, "new" means one of these: a context the lesson does not us
 When the playground contract changes (new verb, delete, or a publish that mirrors the flag itself), update §1, §2 and
 the tool together, and retire T142 if the server starts writing the flag. When a tool's flags change, update the step
 that calls it. When §3 changes, change `agents/qgen-critic.md` §3 in the same PR. Keep dated run history in
-[MIGRATION.md](../../docs/MIGRATION.md#generate-skill-history-2026-10-21); session ids stay in the private plan logbook.
+[MIGRATION.md](../../docs/migration/archive/history.md#generate-skill-history-2026-10-21); session ids stay in the private plan logbook.

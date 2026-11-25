@@ -1,7 +1,8 @@
 ---
 name: draw-and-verify-question-vdd
 description: >-
-  Draw a VDD figure for a question — usually inside Vibhaga-Admin's onboarding-review Edit mode for the question, sub-question or answer — from the claim set the read-figure-claim-set skill emitted (constructed channel: the geometry is authored from the stem's stated values and the claim set's anchors, then proven by audit + render). Use when a figure must be created or corrected — a printed-mark fidelity claim, a missing drawing, or a field found unusable on inspection. Never draw without a claim set; never save without a render.
+  Draw, correct and verify a VDD diagram for a generated question, sub-question or answer.
+  Build from a constructed claim set; audit and render before saving.
 ---
 
 > **Moved from Vibhaga-Docs `.devin/skills/draw-and-verify-question-vdd` @08c09a9; paper-only sections removed (see docs/MIGRATION.md).** Figure source-reading references now point at `skills/read-figure-claim-set`.
@@ -319,33 +320,7 @@ renders **fixtures**, not your document, and you may not edit `Vibhaga-Admin` to
 component `/diagtest` uses — against a page you control. Symlink Admin's `node_modules` so the
 bundler resolves React; nothing in `Vibhaga-Admin` is touched.
 
-```bash
-mkdir -p /tmp/vdd-harness && cd /tmp/vdd-harness
-A=/path/to/Vibhaga-Admin                    # resolved: --admin flag > $VIBHAGA_ADMIN > sibling checkout
-ln -sfn "$A/node_modules" node_modules
-cp "$A/node_modules/katex/dist/katex.min.css" .
-cat > entry.tsx <<'TSX'
-import { createRoot } from "react-dom/client";
-import { DiagramRenderer } from "@/components/diagram/DiagramRenderer";
-import { parseVddDocument } from "@vibhaga/shared/vdd-schema";
-import { checkDiagram } from "@/components/diagram/validate";
-const doc = (window as any).__FIGURE__;
-const r = parseVddDocument(doc);
-if (!r.ok) { console.log("INVALID", JSON.stringify(r.errors)); }
-else {
-  console.log("advisory", JSON.stringify(checkDiagram(r.value)));
-  const host = document.getElementById("fig")!;
-  createRoot(host).render(<DiagramRenderer dsl={r.value} />);
-}
-TSX
-"$A/node_modules/.bin/esbuild" entry.tsx --bundle --format=iife --outfile=bundle.js \
-  --tsconfig="$A/tsconfig.json" --loader:.tsx=tsx --define:process.env.NODE_ENV='"development"'
-```
-
-`index.html` needs `katex.min.css`, a `<div id="fig">` sized to the width you are testing, the
-tailwind utilities the renderer uses (`relative absolute w-full h-full inset-0 overflow-hidden
-pointer-events-none`), a `<script>` setting `window.__FIGURE__`, then `bundle.js`. Serve it
-(`python3 -m http.server`) and drive it with a **headed** Playwright Chromium.
+For path (b), use the [throwaway renderer harness recipe](reference.md#throwaway-renderer-harness) if you need to bundle the component yourself.
 
 ⭐ **4.2b Render EVERY surface, not one.** ⚠️ **The reviewer's card is a different code path from the
 student renderer, and a figure verified on one was wrong on the other.**
@@ -406,34 +381,15 @@ show whether each label is at the feature it names and is sized proportionally (
 
 ### 4.3 What the schema rejects that looks fine
 
-- `polygon` with **fewer than 3** points — a closed 3-point line loses its duplicated closing vertex,
-  becomes a 2-point "polygon", is saved, then discarded by `parseVdd`, so the figure **simply never
-  appeared**, with no error anywhere.
-- `line` with anything other than **exactly 2** points.
-- `polyline` / `arrow` with fewer than 2.
-- `path.d` containing any command outside `M L Q C A Z`.
-- a missing or empty `id`, a non-positive canvas dimension, or `schema` ≠ `"vibhaga.diagram"`.
+Keep the schema and authoring checks distinct: valid point counts, supported path commands,
+non-empty IDs and positive canvas dimensions do not prove that elements render, a11y is present,
+the figure respects its element budget, or every claim is drawn. Keep `$` and backticks out of text
+labels; maths and drawn text follow the language rules above. Check claims and stem-backed values
+in §5. See [schema and renderer failure cases](reference.md#schema-and-renderer-failure-cases).
 
 ### 4.4 What nothing rejects — so you must
 
-- a **mistyped element type** → publishes `200`, then is skipped by both renderers ⇒ **a triangle
-  with no hypotenuse**;
-- a **missing `a11y`** ⇒ an image-role element with no accessible name;
-- **200 elements**;
-- a **`$` or backtick in a `text` label** ⇒ reaches the student verbatim;
-- **Sinhala inside a `math` element's `latex`** ⇒ forbidden (`\text{}` rule) and renders as garbage;
-- ⚠️ **a claim from the claim set that has no element at all** ⇒ §5.2, and the reason this skill
-  exists in the same half as the verification;
-- ⚠️ **a drawn number the stem never stated** ⇒ the stem-ratio check in `audit-claim-set.py` (§5.3a)
-  is the backstop — every `ratio`/`angle` claim's value must be derivable from the stem's own numbers
-  or a cited `derive`, so a copied-anchor mistake is caught before the render ever runs;
-- **English words or sentences inside VDD diagrams (recommended guideline):** `diagram_dsl` is
-  common to both English and Sinhala question views (there is no `_sinhala` variant). Having English
-  prose labels (e.g. `"Home"`, `"Finish"`, `"Water garden"`, `"Pillar"`) directly rendered inside the
-  diagram introduces language friction for Sinhala-medium students. Prefer single English letters or
-  standard mathematical tokens ($H, F, W, P$), and let the bilingual question stem describe what they
-  represent ($H$ = home / නිවස, $F$ = finish / ගමන් අවසන් කළ ස්ථානය). *(General guideline / best practice,
-  not a hard validator refusal).*
+Use the [renderer failure cases](reference.md#44-what-nothing-rejects--so-you-must) and complete the manual checks in §5.
 
 ---
 

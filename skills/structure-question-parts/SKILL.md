@@ -1,6 +1,9 @@
 ---
 name: structure-question-parts
-description: Turn one authored question into the staged doc's structural fields — `question_number` as a real JSON number, an explicit `is_multipart`, and a 2-level `sub_questions` tree with non-empty labels, text and `sort_order`. Owns the silent-coercion failures in the publish mapper (`question_number → 0`, `is_multipart` never computed server-side, empty labels and empty sub-question text accepted). `tools/build-staged.py` emits most of this from your `content.yaml` — this skill is the rules it implements and the checks that catch what it cannot. Use when splitting a question into (a)/(b)/(i)/(ii) parts, when setting or checking question numbers or multipart flags, or when a published question's structure came out wrong.
+description: >-
+  Structure an authored question into (a)/(b)/(i)/(ii) parts in the staged doc.
+  Use when setting or checking question numbers, multipart flags, part labels or sub-question trees,
+  or diagnosing a published question's structure.
 argument-hint: "[question number or staged item]"
 ---
 

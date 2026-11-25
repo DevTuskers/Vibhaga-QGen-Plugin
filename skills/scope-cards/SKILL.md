@@ -1,15 +1,9 @@
 ---
 name: scope-cards
 description: >-
-  Draft and curate the per-lesson SCOPE CARDS that live in the private Vibhaga-Maths-Corpus at
-  `maths/grade-NN/scope-cards/<NN>-<Slug>.yaml`. A card is the machine-checkable statement of what a
-  published lesson teaches — sections, vocabulary, a mined `phrases` term bank, worked examples,
-  exercises, activities, figures, summary — plus a hand-curated block saying what it does NOT teach,
-  its prerequisites and its
-  difficulty hooks. The `generate` skill reads the card before it reads the lesson; a grade or lesson
-  with no passing cards is refused. Use when asked to make, update or check scope cards for a grade
-  or lesson, or before generating questions for a grade that has none. Card content never enters
-  this public repo.
+  Make, update or check per-lesson scope cards in the private Vibhaga-Maths-Corpus.
+  Use for lesson scope, vocabulary, prerequisites and exclusions, or before generating questions
+  for a grade that has no passing cards.
 argument-hint: "[grade] [lesson numbers]"
 ---
 

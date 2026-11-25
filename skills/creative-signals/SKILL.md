@@ -1,13 +1,8 @@
 ---
 name: creative-signals
 description: >-
-  Gather real-world "creative signals" by web search before a generate plan is sketched — Sri Lankan
-  and international news (current and past), historical facts and anniversaries, sports statistics
-  (cricket, Olympics), science and space events, Sri Lankan geography, environment and culture
-  (festivals, landmarks, agriculture, economy), and technology or everyday-life data — then keep only
-  the signals that fit the lesson's maths, the grade and a school audience, and write them to
-  signals.md. Every plan line in generate is anchored to one signal and carries a short creativity
-  rubric. Use at generate step 2b, or whenever plan lines keep colliding with existing questions.
+  Gather real-world creative signals by web search for a generation plan, filtered to the lesson's
+  maths, grade and school audience. Use at generate step 2b or when plans collide with existing questions.
 argument-hint: "[grade] [lesson number] [how many questions]"
 ---
 
@@ -65,7 +60,7 @@ Start from the lesson's maths, then ask which real situation naturally contains 
   never required outside knowledge.
 - State a real figure as fact only when it is the sourced value, or a clearly rounded one ("about 2 200 m high").
 - When the arithmetic needs other numbers, change the framing, not the facts: "A school group visits
-  Sigiriya …", "Suppose a shop sells …". Never present an invented statistic as real. ([T155](../../docs/TRAPS.md))
+  Sigiriya …", "Suppose a shop sells …". Never present an invented statistic as real. ([T155](../../docs/traps/authoring.md#t155))
 - "Current" news: check the event date against the run date; do not use an event whose result is still open.
 - Sinhala names of places and festivals are the everyday Sinhala ones (සීගිරිය, පොසොන්); units stay English
   symbols after numbers (T150).
