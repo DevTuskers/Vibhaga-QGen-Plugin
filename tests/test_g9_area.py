@@ -80,6 +80,21 @@ class AlgebraAreaRectangleTests(unittest.TestCase):
         with self.assertRaisesRegex(vt.TemplateError, "positive cuts"):
             ga.build_algebra_area(**options, scale_at_x=1)
 
+    def test_scaled_corner_claims_cover_intact_drawn_edges(self):
+        for corner in ("tr", "tl", "br", "bl"):
+            with self.subTest(corner=corner), tempfile.TemporaryDirectory() as directory:
+                figure = ga.build_algebra_area(
+                    figure_id="scaled2", stem=STEM_FIG, style="corner_cut", values="figure",
+                    outer_top="x+9", outer_side="x+6", cut_w="x+3",
+                    cut_h="x-1" if corner == "tr" else "x+1",
+                    W=180, scale_at_x=3, corner=corner)
+                figure.write(Path(directory))
+                result = subprocess.run(
+                    ["node", str(TOOLS / "vdd-check.mjs"), str(Path(directory) / "scaled2.json"),
+                     "--claims", str(Path(directory) / "scaled2-claims.txt"), "--no-render"],
+                    capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_area_must_be_true_product(self):
 
         with self.assertRaises(vt.TemplateError):

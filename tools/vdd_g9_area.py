@@ -565,11 +565,19 @@ def build_algebra_area(*, figure_id, stem, style, ask=None, title=None,
             add("derive 360 / 90 = 4", "inferred",
                 "the outer rectangle's four right corners")
             if scale_at_x is not None:
+                width_segment = next(s for s in whole_sides if s in ("AB", "CD"))
+                height_segment = next(s for s in whole_sides if s in ("BC", "DA"))
+                if width_segment == "CD":
+                    next(el for el in elements if el["id"] == "mow")["at"] = (
+                        W / 2, H + fs * vt.MID_UP + clear)
+                if height_segment == "BC":
+                    label = next(el for el in elements if el["id"] == "moh")
+                    label["at"] = (W - label["at"][0], H / 2)
                 sx = x0 if y1 == H else x1
                 sy = y1 if x1 == W else y0
                 P.update(E=(sx, sy), F=(x1 if sx == x0 else x0, sy),
                          G=(sx, y1 if sy == y0 else y0))
-                for segment, token in (("AB", outer_top), ("DA", outer_side),
+                for segment, token in ((width_segment, outer_top), (height_segment, outer_side),
                                        ("EF", cut_w), ("EG", cut_h)):
                     add(f"scale-length {segment} = {_norm(token)}", "inferred",
                         "printed length at the common substitution")
