@@ -128,7 +128,7 @@ def write(p: Path, text: str) -> Path:
 
 
 def make_run(tmp: Path, stem: str = "Shade the strip.", parts=None, approach=None,
-             final=None, lessons=None) -> Path:
+             final=None, lessons=None, figure=None) -> Path:
     run = tmp / "run"
     run.mkdir(parents=True, exist_ok=True)
     q = {"n": 1, "lessons": lessons if lessons is not None else ["L07"], "stem": stem}
@@ -138,6 +138,8 @@ def make_run(tmp: Path, stem: str = "Shade the strip.", parts=None, approach=Non
         q["final"] = final
     if parts is not None:
         q["parts"] = parts
+    if figure is not None:
+        q["figure"] = figure
     import yaml
     write(run / "content.yaml",
           yaml.safe_dump({"id_seed": "synthetic", "lessons": {"L07": "placeholder"},
@@ -221,6 +223,17 @@ class PrecriticLintTest(unittest.TestCase):
             self.assertIn("completed vs ongoing", result.stdout)
             self.assertIn("gradient directly", result.stdout)
             self.assertIn("multiple method steps", result.stdout)
+
+    def test_wording_advises_on_prepartitioned_figure_for_symbolic_area(self):
+        with tempfile.TemporaryDirectory() as td:
+            stem = "The diagram shows how the sides of the rectangle are split."
+            parts = [{"label": "a", "text": "Give the area as a simplified expression."}]
+            run = make_run(Path(td), stem=stem, parts=parts, figure="Q1")
+            result = subprocess.run([sys.executable, str(TOOL), str(run)], capture_output=True, text=True)
+            self.assertIn("pre-partitioned figure gives away the area method", result.stdout)
+            make_run(Path(td), stem="The diagram labels the full side lengths.", parts=parts, figure="Q1")
+            result = subprocess.run([sys.executable, str(TOOL), str(run)], capture_output=True, text=True)
+            self.assertNotIn("pre-partitioned figure", result.stdout)
 
     # ---- (a) not_taught probes ----------------------------------------------
     def test_probe_in_stem_fails(self):

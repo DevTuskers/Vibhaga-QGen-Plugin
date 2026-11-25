@@ -25,7 +25,7 @@
 export const EDGE_MIN_PX = 8;
 export const STROKE_MIN_PX = 6;
 export const TARGET_FACTOR = 1.5;
-const CLAIMED_POINT_FACTOR = 1.4;
+const CLAIMED_POINT_FACTOR = 1.2;
 const TARGET_MARGIN = 0.25;
 // One shared bound — the same figure-taller-than-a-phone-screen limit vdd_templates.py's finish()
 // refuses at build time and vdd-check.mjs fails on the doc's canvas. Aspect is preserved from

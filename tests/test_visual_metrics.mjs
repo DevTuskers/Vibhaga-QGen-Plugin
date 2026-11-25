@@ -110,7 +110,15 @@ test("target: claimed standalone point label is measured against its marked poin
   const claims = 'anchors:\n  A 50 50\nclaims:\n  K1 label "A" names A | inferred |';
   const assessAt = (bbox) => assess({ doc: d, claims, widths: W([L({ text: "A", bbox })]) });
   assert.ok(rules(assessAt([62, 63, 12, 12])).has("target"));
-  assert.equal(assessAt([62, 58, 12, 12]).verdict, "PASS");
+  assert.equal(assessAt([57, 56, 12, 12]).verdict, "PASS");
+});
+
+test("target: a standalone label just under the former distance limit still floats", () => {
+  const d = doc([{ type: "point", at: [80, 80], r: 3 }]);
+  const claims = 'anchors:\n  B 80 80\nclaims:\n  K1 label "B" names B | inferred |';
+  const assessAt = (bbox) => assess({ doc: d, claims, widths: W([L({ text: "B", bbox })]) });
+  assert.ok(rules(assessAt([90, 90, 12, 12])).has("target"));
+  assert.equal(assessAt([59, 61, 12, 12]).verdict, "PASS");
 });
 
 test("target: a dimension between two disjoint parallel edges must favour its own edge", () => {

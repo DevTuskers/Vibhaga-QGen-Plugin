@@ -413,6 +413,9 @@ def readable_values(claims_text: str) -> set[str]:
 
 def wording_warnings(q: dict):
     fields = dict(all_student_fields(q))
+    prepartitioned = (q.get("figure") and re.search(
+        r"\b(?:split|partition(?:ed|s)?|subdivid(?:ed|es)|(?:rectangular|square) sections?)\b",
+        q.get("stem") or "", re.I))
     for where, en in fields.items():
         if where.endswith("_si"):
             continue
@@ -427,6 +430,10 @@ def wording_warnings(q: dict):
                 and re.search(r"\b(?:product|difference|sum) of (?:two )?(?:binomials|products|expressions)\b", en, re.I)
                 and re.search(r"(?:^|[.!?]\s+)(?:expand|collect|substitute)\b", en, re.I)):
             yield where, "check whether the prompt gives away multiple method steps"
+        if (prepartitioned and q.get("difficulty") != "easy" and where.endswith(".text")
+                and re.search(r"\barea\b", en, re.I)
+                and re.search(r"\b(?:simplified|expanded) expression\b", en, re.I)):
+            yield where, "check whether the pre-partitioned figure gives away the area method"
 
 
 def lint(run: Path, args, log=print) -> tuple[int, int]:
