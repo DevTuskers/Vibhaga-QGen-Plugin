@@ -127,6 +127,21 @@ test("target: a point label named like a word is STILL checked against its point
   assert.ok(rules(r).has("target"));
 });
 
+test("target: a dimension near unrelated geometry still fails far from its claimed edge", () => {
+  const claims = 'segments: CD\nanchors:\n  C 90 30\n  D 90 120'
+    + '\nclaims:\n  K1 scale-length CD = 4 | inferred |';
+  const assessAt = (bbox) => assess({ claims, widths: W([L({ text: "4", bbox, geom_u: 5 })]) });
+  assert.ok(fails(assessAt([164, 66, 12, 12])).some((f) => f.message.includes("claimed segment CD")));
+  assert.equal(assessAt([110, 66, 12, 12]).verdict, "PASS");
+});
+
+test("target: an axis title can sit by arrow paint beyond the measured axis", () => {
+  const claims = 'segments: AB\nanchors:\n  A 30 60\n  B 120 60'
+    + '\nclaims:\n  K1 axis AB from 0 to 9 | inferred |\n  K2 label "x" names AB | inferred |';
+  const label = L({ bbox: [150, 54, 12, 12], geom_u: 5 });
+  assert.equal(assess({ claims, widths: W([label]) }).verdict, "PASS");
+});
+
 test("target: a point label measured against ITS point, not the nearest paint", () => {
   const d = doc([{ id: "pA", type: "point", at: [50, 50], r: 3, label: "A" }]);
   const far = assess({ doc: d, widths: W([L({ text: "A", bbox: [200, 200, 20, 14], geom_u: 5 })]) });

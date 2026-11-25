@@ -99,6 +99,23 @@ const distToSegment = (p, [a, b]) => {
   return dist(p, [a[0] + t * dx, a[1] + t * dy]);
 };
 const dimensionToken = (s) => s?.replace(/[−–]/g, "-").replace(/\s+/g, "");
+const distBoxToSegment = (box, [a, b]) => {
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 2; i++) {
+    const delta = b[i] - a[i], min = box[i], max = min + box[i + 2];
+    if (!delta) {
+      if (a[i] < min || a[i] > max) hi = -1;
+      continue;
+    }
+    const enter = (min - a[i]) / delta, exit = (max - a[i]) / delta;
+    lo = Math.max(lo, Math.min(enter, exit));
+    hi = Math.min(hi, Math.max(enter, exit));
+  }
+  if (lo <= hi) return 0;
+  const [x, y, w, h] = box;
+  return Math.min(distPointToBox(a, box), distPointToBox(b, box),
+    ...[[x, y], [x + w, y], [x, y + h], [x + w, y + h]].map((p) => distToSegment(p, [a, b])));
+};
 
 // ── Arc semantics — MIRROR DiagramRenderer.tsx exactly (Admin src/components/diagram/): ────────────
 // · `arc` element → sweepArcPath (lines ~321–345): delta = end − start; `sweep:"cw"` forces the
@@ -331,6 +348,9 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
       && dist(cs.anchors[s[0]], cs.anchors[s[1]]) > 0)
     .map((s) => [s, [cs.anchors[s[0]], cs.anchors[s[1]]]]));
   const marked = elements.filter((el) => el.type === "point" && el.r > 0).map((el) => el.at);
+  const axes = new Set((cs?.claims ?? []).filter((c) => c.pred === "axis")
+    .flatMap((c) => c.args.match(/^[A-Z]{2}(?=\s)/)?.[0] ?? [])
+    .map((s) => segments.has(s) ? s : [...s].reverse().join("")));
   for (const c of cs?.claims ?? []) {
     const scaled = c.pred === "scale-length" && String(c.args).match(/^([A-Z]{2}) = (.+)$/);
     if (scaled && segments.has(scaled[1])) {
@@ -350,7 +370,7 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
       claimPoints.set(glyph, candidates);
     }
     const side = segments.has(name) ? name : [...name].reverse().join("");
-    if (segments.has(side)) {
+    if (segments.has(side) && !axes.has(side)) {
       const token = dimensionToken(glyph);
       const candidates = claimSegments.get(token) ?? [];
       candidates.push(side);
@@ -382,7 +402,7 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
           && ![...intended].some((point) => name.includes(point))
           && Math.abs((b[0] - a[0]) * (q[1] - p[1]) - (b[1] - a[1]) * (q[0] - p[0])) < 1
           && distToSegment(centre, [p, q]) <= d + TARGET_MARGIN * l.fontSizeU);
-        return { d: l.geom_u, via: `claimed segment ${intended}`, ambiguous };
+        return { d: distBoxToSegment(l.bbox, side), via: `claimed segment ${intended}`, ambiguous };
       }
     }
     if (WORD_LABEL_RE.test(l.text ?? "") || areaLabels.has(l.text)) return { d: null, skipped: true };
