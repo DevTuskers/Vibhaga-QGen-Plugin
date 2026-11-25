@@ -191,6 +191,46 @@ banned:
     en: congruent (calque / mistranslation)
     note: සම්පාත means coincident (geometric figures occupying the identical location); geometric congruency is strictly අංගසම / අංගසම වේ
     use: අංගසම / අංගසම වේ
+  ලම්භ:
+    en: perpendicular
+    note: orthographic error with mahaprana භ; Sri Lankan curriculum strictly uses alpaprana බ (ලම්බ / ලම්බක / ලම්බකය / ලම්බ සමච්ඡේදක)
+    use: ලම්බ / ලම්බක / ලම්බකය
+  ලම්භක:
+    en: perpendicular (adj.)
+    note: orthographic error with mahaprana භ; use alpaprana බ
+    use: ලම්බක
+  ලම්භකව:
+    en: perpendicularly
+    note: orthographic error with mahaprana භ; use alpaprana බ
+    use: ලම්බකව
+  ලම්භකය:
+    en: perpendicular (noun)
+    note: orthographic error with mahaprana භ; use alpaprana බ
+    use: ලම්බකය
+  ලම්භ සමච්ඡේදක:
+    en: perpendicular bisector
+    note: orthographic error with mahaprana භ; use alpaprana බ
+    use: ලම්බ සමච්ඡේදක
+  ලම්භ සමච්ඡේදකය:
+    en: perpendicular bisector
+    note: orthographic error with mahaprana භ; use alpaprana බ
+    use: ලම්බ සමච්ඡේදකය
+  විශ්කම්භ:
+    en: diameter
+    note: orthographic variant with taluja ශ්; Sri Lankan curriculum canonical entry uses murdhaja ෂ් (විෂ්කම්භය)
+    use: විෂ්කම්භ / විෂ්කම්භය
+  විශ්කම්භය:
+    en: diameter
+    note: orthographic variant with taluja ශ්; use canonical murdhaja ෂ්
+    use: විෂ්කම්භය
+  විශ්කම්භයක්:
+    en: a diameter
+    note: orthographic variant with taluja ශ්; use canonical murdhaja ෂ්
+    use: විෂ්කම්භයක්
+  පියස්සවල්:
+    en: roof trusses
+    note: unnatural plural calque for roof trusses; curriculum and standard exam usage is පියසි රාමු or ට්‍රස්
+    use: පියසි රාමු / ට්‍රස්
 needs_review:
 - en: three-figure bearing
   grades:
