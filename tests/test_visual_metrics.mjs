@@ -105,6 +105,22 @@ test("target: a far point label fails even when it is short", () => {
   assert.ok(rules(r).has("target"));
 });
 
+test("target: claimed standalone point label is measured against its marked point", () => {
+  const d = doc([{ type: "point", at: [50, 50], r: 3 }]);
+  const claims = 'anchors:\n  A 50 50\nclaims:\n  K1 label "A" names A | inferred |';
+  const assessAt = (bbox) => assess({ doc: d, claims, widths: W([L({ text: "A", bbox })]) });
+  assert.ok(rules(assessAt([62, 63, 12, 12])).has("target"));
+  assert.equal(assessAt([62, 58, 12, 12]).verdict, "PASS");
+});
+
+test("target: a dimension between two disjoint parallel edges must favour its own edge", () => {
+  const claims = 'segments: AB CD\nanchors:\n  A 50 30\n  B 50 120\n  C 90 30\n  D 90 120'
+    + '\nclaims:\n  K1 scale-length CD = 4 | inferred |';
+  const assessAt = (bbox) => assess({ doc: doc([]), claims, widths: W([L({ text: "4", kind: "math", bbox })]) });
+  assert.ok(rules(assessAt([64, 66, 12, 12])).has("target"));
+  assert.equal(assessAt([73, 66, 12, 12]).verdict, "PASS");
+});
+
 test("target: a point label named like a word is STILL checked against its point", () => {
   const d = doc([{ id: "pZ", type: "point", at: [50, 50], r: 3, label: "Zed" }]);
   const r = assess({ doc: d, widths: W([L({ text: "Zed", bbox: [220, 220, 24, 12] })]) });

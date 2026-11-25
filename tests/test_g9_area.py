@@ -7,7 +7,9 @@ rectangular-frame (06:770) and the lesson-10 arrow mappings
 (10:276,323,380,972,1041). Dissection-rearrangement (06:372 composite,
 07:683) is refused and stays a handdrawn residual. All stems SYNTHETIC.
 """
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -52,6 +54,31 @@ class AlgebraAreaRectangleTests(unittest.TestCase):
             ga.build_algebra_area(figure_id="g9a3",
                                   stem="A plot is x by 5 metres.",
                                   style="rectangle", top="x", side="2")
+
+    def test_corner_cut_can_use_one_scale(self):
+        options = dict(figure_id="scaled1", stem=STEM_FIG, style="corner_cut",
+                       values="figure", outer_top="x+9", outer_side="x+6",
+                       cut_w="x+3", cut_h="x-1", W=180)
+        b = ga.build_algebra_area(**options, scale_at_x=3)
+        for element_id, w, h in (("rem", 180, 135), ("cut", 90, 30)):
+            p = next(e["points"] for e in b.doc["elements"] if e["id"] == element_id)
+            self.assertAlmostEqual(max(x for x, _ in p) - min(x for x, _ in p), w)
+            self.assertAlmostEqual(max(y for _, y in p) - min(y for _, y in p), h)
+        self.assertIn("to scale at x = 3", b.claims)
+        with tempfile.TemporaryDirectory() as directory:
+            claims = Path(directory) / "claims.txt"
+            claims.write_text(b.claims, encoding="utf-8")
+            audit = subprocess.run([sys.executable, str(TOOLS / "audit-claim-set.py"), str(claims)],
+                                   capture_output=True, text=True)
+            self.assertEqual(audit.returncode, 0, audit.stdout + audit.stderr)
+            claims.write_text(b.claims.replace("scale-length EF = x+3", "scale-length EF = x+2"),
+                              encoding="utf-8")
+            audit = subprocess.run([sys.executable, str(TOOLS / "audit-claim-set.py"), str(claims)],
+                                   capture_output=True, text=True)
+            self.assertEqual(audit.returncode, 1)
+            self.assertIn("common scale disagrees", audit.stdout)
+        with self.assertRaisesRegex(vt.TemplateError, "positive cuts"):
+            ga.build_algebra_area(**options, scale_at_x=1)
 
     def test_area_must_be_true_product(self):
 

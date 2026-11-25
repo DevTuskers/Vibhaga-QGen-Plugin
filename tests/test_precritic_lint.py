@@ -204,6 +204,24 @@ def write_levels_run(tmp: Path, *question_levels) -> Path:
 
 
 class PrecriticLintTest(unittest.TestCase):
+    def test_wording_advisories_use_paired_fields_and_part_prompt(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td), stem="Count the pages printed by then.", parts=[{
+                "label": "a", "text": "Write the area as a product of two binomials. Expand it.",
+                "text_si": "වර්ගඵලය සඳහා ප්‍රකාශනයක් ලියන්න.",
+                "approach": "The gradient in metres per hour is 4.",
+                "approach_si": "පැයකට මීටර ලෙස ගත් විට අනුක්‍රමණය හතරකි.",
+            }])
+            content = run / "content.yaml"
+            import yaml
+            doc = yaml.safe_load(content.read_text(encoding="utf-8"))
+            doc["questions"][0]["stem_si"] = "ඒ වන විට මුද්‍රණය වන පිටු ගණන."
+            content.write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
+            result = subprocess.run([sys.executable, str(TOOL), str(run)], capture_output=True, text=True)
+            self.assertIn("completed vs ongoing", result.stdout)
+            self.assertIn("gradient directly", result.stdout)
+            self.assertIn("multiple method steps", result.stdout)
+
     # ---- (a) not_taught probes ----------------------------------------------
     def test_probe_in_stem_fails(self):
         with tempfile.TemporaryDirectory() as td:

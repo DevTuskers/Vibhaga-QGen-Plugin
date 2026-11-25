@@ -226,6 +226,7 @@ One claim per line: `ID  predicate  args  |  evidence  |  note`.
 | `grid` | `<rows> by <cols> over P Q` | a rectangular array of equal cells (an area model) |
 | `stage` | `<n> shows <what>` | one term of a growing pattern (stick/dot patterns: *"stage 3 shows 9 sticks"*) |
 | `describe` | `"prose"` | ⚠️ **the fallback for a figure whose meaning is not geometric** (§3.5). Free prose. It is not auditable against anchors and the auditor says so — use it deliberately, not to avoid work |
+| `scale-length` | `AB = x+3` | The printed length of a declared segment. With `scale: to scale at x = 4`, audit checks all declared scale lengths against one common scale. |
 | `paint` | `PQ solid\|dashed\|dotted [opaque]` | the line style of a segment or a mark. ⚠️ **In a maths figure this is MEANING, not decoration** — a dashed edge is a hidden or construction edge, and an **opaque** mark hides what crosses it |
 | `none` | `<element type names>` — e.g. `none tickMark parallelMark angleArc arrow shaded` | ⚠️ **the negative inventory**: none of the named classes appears in the figure. Write one for every mark class the element union can draw, so a *missing* mark is as visible as an invented one |
 | ⭐ `derive` | `<expr> = <value>` | ⚠️ **REQUIRED on `channel: constructed`** (§2.3). The construction's own arithmetic, as a bare evaluable expression — `derive 4 - (-2) = 6`. **Two things are checked and they close two different doors:** `<expr>` must really evaluate to `<value>`, **and** an `arrow` claim's end, projected onto the `axis` scale, must LAND on `<value>` (within a quarter step). ⚠️ **`arrow`'s endpoints are anchor-checked to make that possible** |
@@ -267,6 +268,10 @@ looking and **wrong for this predicate** — it fails two checks at once:
    can separate the classes. Which strokes are heavy IS the answer on a number line.
 
 ### 3.3 The scale claim, which is not optional
+
+For a proportional algebra figure, declare one positive substitution (`scale: to scale at x = 4`)
+and bind each printed dimension to its segment with `scale-length`. Declare all relevant edges,
+including competing edges on other panels, so the visual gate can check label placement.
 
 ⚠️ **Whenever the stem's stated value and the drawn value could be read as disagreeing, write `scale:` and
 say which the drawing follows.** On a constructed figure the default expectation is **drawn to the stem** —

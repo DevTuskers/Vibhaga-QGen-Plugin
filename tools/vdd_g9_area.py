@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import math
 import re
+from decimal import Decimal
 
 import vdd_cookbook as vc
 
@@ -252,8 +253,8 @@ def build_algebra_area(*, figure_id, stem, style, ask=None, title=None,
                        inner_top=None, inner_side=None,
                        cut_w=None, cut_h=None, corner="tr", mode="corner",
                        gap_top=None, gap_side=None, shaded=True,
-                       W=150.0, H=110.0, frac=0.32):
-    """A symbolic algebra-area figure; the drawn size NEVER encodes values.
+                       W=150.0, H=110.0, frac=0.32, scale_at_x=None):
+    """An algebra-area figure, symbolic unless scale_at_x is specified.
 
     `style` = "rectangle" | "corner_cut" | "frame" | "dissection"(refused).
 
@@ -264,6 +265,8 @@ def build_algebra_area(*, figure_id, stem, style, ask=None, title=None,
       `inner_side` (optional) label the remaining edges (mode="strips"
       needs both — the remaining rectangle's sides); `corner` is which
       corner is removed; `shaded` fills the remaining region.
+      A corner cut can use `scale_at_x` (a positive x), deriving the height
+      and both cut dimensions from the outer width on a single scale.
     frame: `outer_top`/`outer_side`, `inner_top`/`inner_side` label the
       two rectangles; `gap_top`/`gap_side` label the band width at the
       top and left (the inner rectangle hugs the bottom-right per the
@@ -304,6 +307,8 @@ def build_algebra_area(*, figure_id, stem, style, ask=None, title=None,
     if style == "frame" and mode == "strips":
         raise TemplateError(f"{kind}: a frame has one inner rectangle — "
                             "mode='strips' belongs to corner_cut")
+    if scale_at_x is not None and (style != "corner_cut" or mode != "corner"):
+        raise TemplateError(f"{kind}: scale_at_x requires a corner cut")
 
     tok = lambda n, s, m=14: None if s is None else _tok(kind, n, s, m)
     top, side, area = tok("top", top), tok("side", side), tok("area", area)
@@ -491,6 +496,20 @@ def build_algebra_area(*, figure_id, stem, style, ask=None, title=None,
 
     if style == "corner_cut":
         cw, ch = frac * W, frac * H
+        scale = "symbolic — the cut fraction does not encode the labels' values"
+        if scale_at_x is not None:
+            x = _num(kind, "scale_at_x", scale_at_x)
+            forms = [lin(t) for t in (outer_top, outer_side, cut_w, cut_h)]
+            if not x > 0 or any(f is None or f.keys() - {"", "x"} for f in forms):
+                raise TemplateError(f"{kind}: scale_at_x needs positive x and linear lengths in x")
+            ow, oh, sw, sh = [f.get("", 0) + x * f.get("x", 0) for f in forms]
+            if not (0 < sw < ow and 0 < sh < oh):
+                raise TemplateError(f"{kind}: scale_at_x must give positive cuts inside the outer rectangle")
+            units = W / ow
+            H, cw, ch = oh * units, sw * units, sh * units
+            if not 60 <= H <= 400:
+                raise TemplateError(f"{kind}: scaled height {H:g} outside 60-400 units; adjust W")
+            scale = f"to scale at x = {Decimal(str(x)):f} — one scale for all four lengths"
         x0, y0, x1, y1 = _CORNERS[corner](W, H, cw, ch)
         A, B, C, D = (0.0, 0.0), (W, 0.0), (W, H), (0.0, H)
         P = dict(zip("ABCD", (A, B, C, D)))
@@ -545,6 +564,17 @@ def build_algebra_area(*, figure_id, stem, style, ask=None, title=None,
                 "rectangle — a difference, not a dissection")
             add("derive 360 / 90 = 4", "inferred",
                 "the outer rectangle's four right corners")
+            if scale_at_x is not None:
+                sx = x0 if y1 == H else x1
+                sy = y1 if x1 == W else y0
+                P.update(E=(sx, sy), F=(x1 if sx == x0 else x0, sy),
+                         G=(sx, y1 if sy == y0 else y0))
+                for segment, token in (("AB", outer_top), ("DA", outer_side),
+                                       ("EF", cut_w), ("EG", cut_h)):
+                    add(f"scale-length {segment} = {_norm(token)}", "inferred",
+                        "printed length at the common substitution")
+                    if segment not in whole_sides:
+                        whole_sides.append(segment)
             add("none tickMark parallelMark angleMark arrow"
                 + ("" if shaded else " shaded"), "inferred",
                 "one " + ("shaded" if shaded else "unshaded")
@@ -559,8 +589,7 @@ def build_algebra_area(*, figure_id, stem, style, ask=None, title=None,
                     "the " + ("shaded " if shaded else "")
                     + "L-shape that remains has the outer minus the "
                     "corner area."),
-                scale="symbolic — the cut fraction does not encode the "
-                      "labels' values", medium=medium)
+                scale=scale, medium=medium)
 
         iw, ih = W - cw, H - ch
         elements.append(vc.polygon([A, B, C, D], id="outer"))

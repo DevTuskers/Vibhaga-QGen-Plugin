@@ -38,6 +38,17 @@ questions:
 
 
 class CheckSiTermsTests(unittest.TestCase):
+    def test_grade_nine_like_terms_use_textbook_words(self):
+        template = """questions:
+  - n: 1
+    stem: "Collect like terms."
+    stem_si: "{} පද එකතු කරන්න."
+"""
+        rc, out = run_tool(template.format("සමජාතීය"), "--grade", "9")
+        self.assertEqual(rc, 1)
+        self.assertIn("banned term", out)
+        self.assertEqual(run_tool(template.format("සජාතීය"), "--grade", "9")[0], 0)
+
     def test_known_bad_strings_all_flagged(self):
         bad = """\
 questions:

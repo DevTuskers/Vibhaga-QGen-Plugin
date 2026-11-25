@@ -411,6 +411,24 @@ def readable_values(claims_text: str) -> set[str]:
     return vals
 
 
+def wording_warnings(q: dict):
+    fields = dict(all_student_fields(q))
+    for where, en in fields.items():
+        if where.endswith("_si"):
+            continue
+        si = fields.get(where + "_si", "")
+        if (re.search(r"\b(?:finished|printed|completed) by (?:then|that (?:time|point))\b", en, re.I)
+                and re.search(r"ඒ වන විට[^.?!\n]{0,45}\sවන\s", si)):
+            yield where + "_si", "check completed vs ongoing action against the English"
+        if where.endswith(".approach") and re.search(r"\bgradient in .+ per .+ is\b", en, re.I):
+            if "ලෙස ගත් විට අනුක්‍රමණය" in si:
+                yield where + "_si", "state the gradient directly in units per interval"
+        if (q.get("difficulty") != "easy" and where.endswith(".text")
+                and re.search(r"\b(?:product|difference|sum) of (?:two )?(?:binomials|products|expressions)\b", en, re.I)
+                and re.search(r"(?:^|[.!?]\s+)(?:expand|collect|substitute)\b", en, re.I)):
+            yield where, "check whether the prompt gives away multiple method steps"
+
+
 def lint(run: Path, args, log=print) -> tuple[int, int]:
     content = load_content(run)
     cards = load_cards(args) if args.card else {}
@@ -423,6 +441,10 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
             die(f"--card {spec}: {key!r} is not a content.yaml lessons key (have: {have})")
     questions = content["questions"]
     fails = warns = 0
+    for q in questions:
+        for where, message in wording_warnings(q):
+            warns += 1
+            log(f"  WARN {where}: {message}")
 
     # (a) not_taught probes must not appear in a question field — PER QUESTION by
     # default: a question answers only to the cards its own `lessons:` keys bind (a

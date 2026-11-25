@@ -357,7 +357,8 @@ same two checkout paths in the critic's spawn prompt.
     after any `content.yaml` edit. Fix every
     FAIL (`not_taught` probe found in a stem/part/approach/final — per question by default: a question
     answers only to the cards its `lessons:` keys tag; `--all-probes` is the old run-wide check) and look at each WARN (a11y `description`
-    carrying a figure's readable number — T125; the vocabulary heuristic) before the critic sees the batch.
+    carrying a figure's readable number — T125; vocabulary and wording heuristics) before the critic
+    sees the batch. For a reasoning part, ask for the result and justification without giving away the method.
     `--existing` may WARN a blueprint variant against a row from another session — expected: across sessions
     variants count as distinct (owner ruling 2026-10-03; within a batch build-staged already refused, T-QG-8).
 13. **Critique — a fresh-context `qgen-critic`** ([profile](../../agents/qgen-critic.md);
