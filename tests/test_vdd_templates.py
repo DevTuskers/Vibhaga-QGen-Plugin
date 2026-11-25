@@ -3312,7 +3312,7 @@ class ByteIdentity(unittest.TestCase):
         "selftest-rtri2": "4bee604ae6ac55a4c6f31f9298898cfcd64c6f3148245f590d05c7df293fd39a",
         "selftest-cyc": "ce683dc4b715bd0a9cfc5b9826b9c7a0d775de21dc1fbc48e7fefa5549169dd7",
         "selftest-tan": "654d82cd00f56b4fe16014488bab99a9281569575a135a254aa81c03c97157ef",
-        "selftest-tpar": "5bf6627f048e0c79363863d123679875f7eed6ea1b63e556c7adf5d94490a216",
+        "selftest-tpar": "b65406a745c467e78d49655a50c7750ced30b78b06e59f1d33243c04c5d7105d",
         "selftest-parea": "22bcbf0c54bf349926a1df9997de8c414050667aa736109543147670476ff559",
         # G11 round-2 — regenerated after the visual-initial label fixes moved
         # cone/cyl leader labels, graph/fline axis numerals, ineq tick numerals,
@@ -3353,9 +3353,9 @@ class ByteIdentity(unittest.TestCase):
         "selftest-ogfig": "f567516f5ac2c0dc787cc10f4aac33e7526126a0287d5944ff23bae23d4c644c",
         "selftest-vrn3": "e429f8a7a298354ed6701685ffebaecb173882ec4523651ef180c7218cb5abb0",
         "selftest-cvess": "08202bf91edde8c110786685cc4de06012ffaaff6e1007399e3a57e8197394a3",
-        "selftest-mgtri": "ff73dd92169516ae7b7132089dacc115c4b3b3063956391fe37fcb2ab5e183d4",
-        "selftest-mgpara": "a932bb8733d74e3620a38b86877faceb9a7f1e94ad0656d21affec3149c55ff0",
-        "selftest-mgtrap": "61065264cfc9c3016e1f2316004f915ba5720b80166a457f803867bf47d163ae",
+        "selftest-mgtri": "43d3a802d6b6fb0c6fe6a258fffeb34d7d087419f1c51d282952e9b9f005dca9",
+        "selftest-mgpara": "3ef96dd68cbc27a46f1476b9025959f5f2a84d9253309a0c11abcda4ddbddcbc",
+        "selftest-mgtrap": "74745199b5321fe1650bbdc03b660b24329d3e5f3e44ac10e7f4f8e15ba95fb7",
         "selftest-histadj": "005de7f479c1f085da424a64a15faf23596374fc0f52b3b8acb4546fcddda805",
         "selftest-genquad": "01f3a4f7cf37c3893d48835014eda21345601dce81d2819a7784036491b751d7",
         "selftest-multi": "1ee61a6dbb90eedc7cb8e453389a5520e6038dd50458f8ad095db3a394591785",
@@ -3756,6 +3756,18 @@ class G11ContractTests(unittest.TestCase):
             sides={"AB": 8}, angles={"A": 60, "B": 60, "C": 60},
             ticks={"AB": 1, "BC": 1}, labels={"AB": "8 cm"})
         self.assertIn("ABC", b.claims)
+
+    def test_marked_geometry_side_label_clears_canvas_widened_by_vertex_letters(self):
+        spec = next(s for s in vt.SELF_TEST if s["figure_id"] == "selftest-mgtri")
+        b = vt.build_marked_geometry(
+            **{k: v for k, v in spec.items() if k != "template"}, base_px=192)
+        elements = b.doc["elements"]
+        strokes = vt.stroke_segments(elements)
+        without_vertices = [el for el in elements if not el.get("id", "").startswith("lbv")]
+        self.assertGreater(b.doc["canvas"]["width"],
+                           vt._fit_extent(strokes, vt.label_boxes(without_vertices))[2])
+        box = next(box for text, *box in vt.label_boxes(elements) if text == "6 cm")
+        self.assertLessEqual(vt._seg_rect_dist(b.anchors["M"], b.anchors["B"], box), 1.5 * vt.FS)
 
 
 class G10ContractTests(unittest.TestCase):

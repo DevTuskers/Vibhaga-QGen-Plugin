@@ -6147,6 +6147,7 @@ def _seat_side_label(kind: str, elements: list[dict], boxes: list, a: XY, b: XY,
     if ((away[0] - mid0[0]) * nx + (away[1] - mid0[1]) * ny) < 0:
         nx, ny = -nx, -ny
     strokes = stroke_segments(elements)
+    fixed_boxes = label_boxes(elements) if keep_near else []
     positions = (start, 0.5, 0.4, 0.6, 0.35, 0.65, 0.3, 0.7)
     # The conservative glyph-width estimate needs extra slack for mostly horizontal gaps.
     limit = 1.5 * FS - max(1.5, abs(nx) * len(text) * FS * 0.06)
@@ -6160,19 +6161,21 @@ def _seat_side_label(kind: str, elements: list[dict], boxes: list, a: XY, b: XY,
                 d = gap + half + k
                 cx, cy = m[0] + ux * d, m[1] + uy * d
                 box = _text_box(text, (cx, cy))
-                if close:
-                    if _seg_rect_dist(a, b, box) > limit:
-                        break
-                    _, _, width, _ = _fit_extent(strokes, [("", *pb) for pb in [*boxes, box]])
+                if close and _seg_rect_dist(a, b, box) > limit:
+                    break
+                if keep_near:
+                    _, _, width, _ = _fit_extent(strokes, [*fixed_boxes, (text, *box)])
                     scale = min(1.0, PLATE_INNER / (width + 60.0))
-                    clearance = (STROKE_PX + SLACK_STROKE + 1.0) / scale
+                    clearance = max(0 if close else clr, (STROKE_PX + SLACK_STROKE + 1.0) / scale)
                     label_gap = 4.0 / scale
+                    others = (pb[1:] for pb in fixed_boxes)
                 else:
                     clearance, label_gap = clr, 2.0
+                    others = boxes
                 if strokes and min(_seg_rect_dist(p, q, box) - w / 2
                                    for p, q, w in strokes) < clearance:
                     continue
-                if any(_rect_gap(box, pb) < label_gap for pb in boxes):
+                if any(_rect_gap(box, pb) < label_gap for pb in others):
                     continue
                 return vc.text((cx, cy), text, id=id_)
         return None
