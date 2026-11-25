@@ -13,8 +13,8 @@
  *   edge    — label bbox < 8 rendered px from the canvas edge
  *   stroke  — label bbox < 6 rendered px from a stroked primitive's EDGE (centreline − width/2)
  *   target  — label far from what it names: a label equal to a `point` element's label is measured
- *             bbox→point; standalone point letters must favour their own dot and stay within
- *             1.8·fontSizeU (1.2·fontSizeU on coordinate graphs). Dimension labels are checked against their claimed segments;
+ *             bbox→point; standalone point letters must favour their own dot and cap the gap
+ *             from the box to that dot. Dimension labels are checked against their claimed segments;
  *             unbound words and area labels are skipped, and other labels use nearest paint.
  *   arc     — an angle numeral/variable (^\d+(\.\d+)?°?$ | ^[a-z]°?$ | ^[α-ωθ]°?$) whose centre's polar
  *             angle from the vertex lies outside the DRAWN span of every arc / unlabelled angleMark
@@ -26,8 +26,9 @@
 export const EDGE_MIN_PX = 8;
 export const STROKE_MIN_PX = 6;
 export const TARGET_FACTOR = 1.5;
-const GRAPH_POINT_FACTOR = 1.2;
-const CLAIMED_POINT_FACTOR = 1.8;
+const GRAPH_POINT_GAP_FACTOR = 0.72;
+// The widest template search starts at 26u and can advance 36u, plus rendered-box slack.
+const POINT_GAP_MAX = 64;
 const TARGET_MARGIN = 0.25;
 // One shared bound — the same figure-taller-than-a-phone-screen limit vdd_templates.py's finish()
 // refuses at build time and vdd-check.mjs fails on the doc's canvas. Aspect is preserved from
@@ -368,9 +369,10 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
     const [, glyph, name] = m;
     if (name.startsWith("region_")) areaLabels.add(glyph);
     const anchor = cs.anchors?.[name];
-    if (anchor && marked.some((pt) => dist(pt, anchor) < 1)) {
+    const dot = anchor && marked.find((pt) => dist(pt, anchor) < 1);
+    if (dot) {
       const candidates = claimPoints.get(glyph) ?? [];
-      candidates.push(anchor);
+      candidates.push(dot);
       claimPoints.set(glyph, candidates);
     }
     const side = segmentKey(name);
@@ -389,11 +391,16 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
       const centre = [x + w / 2, y + h / 2];
       const points = claimPoints.get(l.text);
       if (points?.length === 1) {
-        const d = dist(centre, points[0]);
+        const own = dist(centre, points[0]);
         const ambiguous = marked.some((pt) => dist(pt, points[0]) > 1
-          && dist(centre, pt) <= d + TARGET_MARGIN * l.fontSizeU);
-        return { d, via: `claimed point ${JSON.stringify(l.text)}`, ambiguous,
-          factor: coordinateGraph ? GRAPH_POINT_FACTOR : CLAIMED_POINT_FACTOR };
+          && dist(centre, pt) <= own + TARGET_MARGIN * l.fontSizeU);
+        const graphGap = GRAPH_POINT_GAP_FACTOR * l.fontSizeU;
+        const seatGap = doc?.meta?.pointLabelGaps?.[l.text];
+        const limit = coordinateGraph && graphGap > 0
+          ? Math.min(POINT_GAP_MAX, Math.max(graphGap, Number.isFinite(seatGap) ? seatGap : 0))
+          : POINT_GAP_MAX;
+        return { d: distPointToBox(points[0], l.bbox),
+          via: `claimed point ${JSON.stringify(l.text)}`, ambiguous, limit };
       }
       if (WORD_LABEL_RE.test(l.text ?? "") || areaLabels.has(l.text)) return { d: null, skipped: true };
       const sides = claimSegments.get(dimensionToken(l.latex)) ?? claimSegments.get(dimensionToken(l.text));
@@ -413,8 +420,8 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
     if (WORD_LABEL_RE.test(l.text ?? "") || areaLabels.has(l.text)) return { d: null, skipped: true };
     return { d: l.geom_u ?? null, via: "the nearest painted geometry" };
   };
-  const targetBad = (l, tg) =>
-    !tg.skipped && (tg.ambiguous || (tg.d != null && l.fontSizeU > 0 && tg.d > (tg.factor ?? TARGET_FACTOR) * l.fontSizeU));
+  const targetBad = (l, tg) => !tg.skipped && (tg.ambiguous || (tg.d != null
+    && (tg.limit != null ? tg.d > tg.limit : l.fontSizeU > 0 && tg.d > TARGET_FACTOR * l.fontSizeU)));
 
   // ONE target result per label, shared by the rows and the finding — the distance to the thing
   // a label names is a canvas-unit invariant, but the DOM box is re-measured at every width and
@@ -476,9 +483,12 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
     const tr = targetRes(l);
     if (targetBad(tr.l, tr.tg)) {
       if (!allow.has(`label:${l.text}`)) targetFails++;
+      const bound = tr.tg.limit == null
+        ? `${TARGET_FACTOR}× fontSize ${round1(tr.l.fontSizeU)}u`
+        : `${round1(tr.tg.limit)}u box gap`;
       const reason = tr.tg.ambiguous
         ? `could name another target near ${tr.tg.via}`
-        : `${round1(tr.tg.d)}u from ${tr.tg.via} (> ${tr.tg.factor ?? TARGET_FACTOR}× fontSize ${round1(tr.l.fontSizeU)}u)`;
+        : `${round1(tr.tg.d)}u from ${tr.tg.via} (> ${bound})`;
       declared("target", `label ${JSON.stringify(l.text)}: ${reason}`, l.text);
     }
   }

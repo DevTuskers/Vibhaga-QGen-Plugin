@@ -1003,6 +1003,22 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
                       title=title or f"A {kind.replace('_', ' ')} figure",
                       description=description or f"A {kind.replace('_', ' ')} figure built from the stem's numbers.",
                       font_size=fs)
+    axis_segments = {m.group(1) for pred, _, _ in claims if (m := re.match(r"axis ([A-Z]{2})\s", pred))}
+    if len(axis_segments) >= 2:
+        dots = [el["at"] for el in elements if el["type"] == "point" and el.get("r", 0) > 0]
+        tied = {el.get("label") for el in elements if el["type"] == "point"}
+        seats = {}
+        for target, glyphs in named.items():
+            dot = next((pt for pt in dots if math.dist(pt, anchors[target]) < 1), None)
+            if dot is None:
+                continue
+            x, y = dot
+            for txt, x0, y0, x1, y1 in boxes:
+                if txt in glyphs and txt not in tied:
+                    gap = math.hypot(max(x0 - x, 0, x - x1), max(y0 - y, 0, y - y1))
+                    seats[txt] = round(gap + 2, 2)  # allow for renderer text-box measurement
+        if seats:
+            document["meta"] = {"pointLabelGaps": seats}
     return Built(figure_id=figure_id, doc=document, anchors=anchors, claims="\n".join(L) + "\n")
 
 

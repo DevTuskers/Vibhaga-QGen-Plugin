@@ -114,13 +114,14 @@ test("target: claimed standalone point label is measured against its marked poin
   assert.equal(assessAt([57, 56, 12, 12]).verdict, "PASS");
 });
 
-test("target: a graph label just under the former distance limit still floats", () => {
+test("target: a graph label just outside the near-edge limit still floats", () => {
   const d = doc([{ type: "point", at: [80, 80], r: 3 }]);
   const claims = 'anchors:\n  B 80 80\nclaims:\n  K1 label "B" names B | inferred |\n' + axisClaims;
   const assessAt = (bbox) => assess({ doc: d, claims, widths: W([L({ text: "B", bbox })]) });
   assert.ok(rules(assessAt([90, 90, 12, 12])).has("target"));
-  assert.ok(fails(assessAt([92, 87.8, 12, 12]))
-    .some((f) => f.message.includes('22.7u from claimed point "B"')));
+  assert.ok(fails(assessAt([93.25, 81.56, 11.5, 21.8]))
+    .some((f) => f.message.includes('13.3u from claimed point "B"')));
+  assert.equal(assessAt([90.25, 81.56, 11.5, 21.8]).verdict, "PASS");
   assert.equal(assessAt([59, 61, 12, 12]).verdict, "PASS");
 });
 
@@ -134,13 +135,32 @@ test("target: a clear locus label can sit farther away, but must still favour it
   assert.ok(fails(assessAt([83, 27, 12, 12])).some((f) => f.message.includes("another target")));
 });
 
+test("target: an angle-bisector label's near edge can be clear even when its centre is farther", () => {
+  const d = doc([{ type: "point", at: [80, 100], r: 3 }]);
+  const claims = 'anchors:\n  P 80 100\nclaims:\n  K1 label "P" names P | inferred |';
+  const result = assess({ doc: d, claims, widths: W([L({ text: "P", bbox: [74, 126, 12, 22] })]) });
+  assert.equal(result.verdict, "PASS");
+  assert.equal(result.labels[0].target_u, 26);
+});
+
+test("target: a graph's recorded builder seat permits only its bounded near-edge gap", () => {
+  const d = doc([{ type: "point", at: [80, 60], r: 3 }]);
+  d.meta = { pointLabelGaps: { B: 26 } };
+  const claims = 'anchors:\n  B 80 60\nclaims:\n  K1 label "B" names B | inferred |\n' + axisClaims;
+  const assessAt = (bbox) => assess({ doc: d, claims, widths: W([L({ text: "B", bbox })]) });
+  assert.equal(assessAt([105, 54, 12, 12]).verdict, "PASS");
+  assert.ok(rules(assessAt([107, 54, 12, 12])).has("target"));
+  d.meta.pointLabelGaps.B = 1000;
+  assert.ok(rules(assessAt([145, 54, 12, 12])).has("target"));
+});
+
 test("target: a detached standalone point label fails even beside unrelated geometry", () => {
   const d = doc([{ type: "point", at: [50, 50], r: 3 },
     { type: "line", points: [[187, 40], [187, 80]] }]);
   const claims = 'anchors:\n  A 50 50\nclaims:\n  K1 label "A" names A | inferred |';
   const label = L({ text: "A", bbox: [168, 44, 12, 12], geom_u: 7, stroke_u: 7 });
   const result = assess({ doc: d, claims, widths: W([label]) });
-  assert.ok(fails(result).some((f) => f.message.includes('124u from claimed point "A"')));
+  assert.ok(fails(result).some((f) => f.message.includes('118u from claimed point "A"')));
 });
 
 test("target: a dimension between two disjoint parallel edges must favour its own edge", () => {

@@ -1595,6 +1595,17 @@ class CoordinatePlane(unittest.TestCase):
         self.assertIn('label "x" names OX', b.claims)
         self.assertIn('label "y" names OY', b.claims)
 
+    def test_marked_point_gaps_follow_the_builder_seats(self):
+        b = vt.BUILDERS["coordinate_plane"](**self._sweep_spec(7, 7))
+        gaps = b.doc["meta"]["pointLabelGaps"]
+        self.assertEqual(set(gaps), set("ABCDE"))
+        dots = {el["id"][2:]: el["at"] for el in b.doc["elements"] if el["type"] == "point"}
+        for glyph, x0, y0, x1, y1 in vt.label_boxes(b.doc["elements"]):
+            if glyph in gaps:
+                x, y = dots[glyph]
+                gap = math.hypot(max(x0 - x, 0, x - x1), max(y0 - y, 0, y - y1))
+                self.assertAlmostEqual(gaps[glyph], gap + 2, delta=0.02)
+
     def test_join_sym_axis_guides_and_origin_label(self):
         b = self._b(points={"A": (3, 4), "B": (1, 2), "C": (5, 1)},
                     join=[["A", "B", "C"]], closed=True, sym_axis={"x": 3},
@@ -3236,7 +3247,8 @@ class IntegratedReviewRegressions(unittest.TestCase):
 
 class ByteIdentity(unittest.TestCase):
     """The floating-label machinery must not change any existing template's bytes —
-    sha256 over each self-test spec's three emitted files, captured on origin/main."""
+    sha256 over each self-test spec's three emitted files. The graph hashes include
+    the point-label clearance metadata; their diagram geometry and claims are unchanged."""
 
     GOLDEN = {
         "selftest-cuboid": "05f09debdef31ece88cfbc7ffc0036095112bab21c2ff513ffd1afa5b8f58c9c",
@@ -3262,7 +3274,7 @@ class ByteIdentity(unittest.TestCase):
         # W11 — generated when the three G7 templates landed
         # W12 — selftest-plane/grid regenerated: A3's cell-corner label seating moved the
         # point letters, A4's default cols/rows are the shape's exact extent
-        "selftest-plane": "f80cfd4e7d009043e3b9ad28b71051f239e6afd286e60f0469600e3ce65602cb",
+        "selftest-plane": "269c61a32526c2aa6f519ff8b7710dffa1132060e4b889aa02f6c2a84bf8ce93",
         "selftest-parallel": "a90ffb97dca6fe53f22f192f1b4dc989822ab6147a72ab3b012a00e00ec96861",
         "selftest-bars": "f6427cfc31e6a891bb820165618cf6c14598be4dd1fa3920f0a3e53155e684b0",
         # W12 A5 — generated when orientation="h" landed (the v spec's hash above is
@@ -3289,8 +3301,8 @@ class ByteIdentity(unittest.TestCase):
         # cone/cyl re-pinned after the slant-dim + smaller dim-label changes (#59)
         "selftest-cone": "2d37bc1d6d662551841f1d824383665e87932621cd33eb5dd7b1d43d3d80a11e",
         "selftest-cyl": "520c52bf194f99545ecd056ba54049ccb4f5d43bd1593de5b60924224242e564",
-        "selftest-graph": "9e706817cc3f452789a66a5cbe20416bdeb13c096a7b28f0426d6429694e2cf0",
-        "selftest-fline": "23a9b1b569769a5af7b7d1e2e9e9a5a30d8bf461c632a243949a7aceb7b91db8",
+        "selftest-graph": "cb847257f57d77512077a701dae6b5a921ebdbf88a90def4422bba8278da7ade",
+        "selftest-fline": "cc7eea0a95decf7b9f725b275249dba9a6a0cac670441044fcec3612169b2940",
         "selftest-ineq": "43bf626ad2c9a79bc062b3a496e54ab33d1202b0720410cea9416d324d887feb",
         "selftest-ineq2": "66f2b038a56d767137d69d4f8de92055697e5b408cd3fa562312b81e25254d11",
         "selftest-hist": "5c57542d9307b17787ebff7c30353236e65ccbe9ecc47c67eff71c5ce03c7165",
@@ -3326,8 +3338,8 @@ class ByteIdentity(unittest.TestCase):
         "selftest-mgpara": "972b01fc2eb06bdd92ff0795f5001b15018561ff2811b54e7ee1eab88ac27bad",
         "selftest-mgtrap": "61065264cfc9c3016e1f2316004f915ba5720b80166a457f803867bf47d163ae",
         "selftest-histadj": "005de7f479c1f085da424a64a15faf23596374fc0f52b3b8acb4546fcddda805",
-        "selftest-genquad": "fffe82ded70b2b4150e21251f10a546f2d9a031e62db40bad26df13371ee71d1",
-        "selftest-multi": "3d4d4acd3dd68b8c4f334f69ae7d3de332490565647eec37f2d07676e5af055b",
+        "selftest-genquad": "01f3a4f7cf37c3893d48835014eda21345601dce81d2819a7784036491b751d7",
+        "selftest-multi": "1ee61a6dbb90eedc7cb8e453389a5520e6038dd50458f8ad095db3a394591785",
         "selftest-reading-inscribed_circle": "b724be5ec2054e8f8a583c637b94b7807daddfa58f179c0344d9c1e7c325b5b5",
         "selftest-reading-venn_regions": "ff2583f8f00884f7e0bf4cfe16a02cd1906e79ee0de1ac89420598eb995de83b",
         "selftest-reading-solid_composite": "d609b632ff445eba680091e5c5ddb9a96dffaeb0127c6e6c1fb6bf51749499c1",
@@ -3350,8 +3362,8 @@ class ByteIdentity(unittest.TestCase):
         "selftest-vcomp": "cd596042f266b98ac93e2bcac4db2c648bb72ade19e03bc8660d9b4bf76bbbf6",
         "selftest-vcsh": "1dd9fb115595d103831b0c3174b0806621499982e6de559e329346b700535114",
         "selftest-cineq": "d01603d0bc30a983abd661159b65591a04df500fc7a7ddcb98163db9c8cf4646",
-        "selftest-cdt": "f214dacea5b23b152bbfb939ce0719aecce552550ae5fa54151a89c2b24d5bfe",
-        "selftest-cx3": "d95f59d8f75365ca01fe3938d6401848ba5a4c4daea5f9b5d36dbf671b5c2e98",
+        "selftest-cdt": "ddc0fd814fc4de3d8ea6c091a4a3163f91e3b3f11a45f1712fcb71df1471da3d",
+        "selftest-cx3": "9a7a1e7339461cd216f44e5c8c0dfc88bfaca4f7566f200c417c733da709f33e",
         "selftest-conv2-aas": "429ba1c5cfaf8fe8f4f143b716b4e74217db5e6b00c2212fb7e909859bc4145c",
         "selftest-conv2-aas-b": "06026c0fae0cd7a5ff0a797532f7bb6ad50b9d1afde6e65671e2479d6ec03d2c",
         "selftest-conv2-alternate": "38e03483801b44371197284bc8053f0861f8abbfa7625650555fe40ff19ec467",
