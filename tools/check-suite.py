@@ -113,7 +113,6 @@ def check_trap_references(docs: dict[Path, str]) -> None:
         WARNS.append("docs/TRAPS.md missing — trap-citation check skipped")
         return
     trap_id = r"T(?:-QG-)?\d+"
-    entries = re.findall(rf"^\| [^|]*?\[({trap_id})\]\((traps/[^)#]+)\#([^)]*)\)", docs[traps_path], re.M)
     details = {
         (p, tid)
         for p, s in docs.items()
@@ -122,18 +121,31 @@ def check_trap_references(docs: dict[Path, str]) -> None:
     }
     indexed = set()
     seen = set()
-    if not entries:
-        ERRORS.append("docs/TRAPS.md: no trap index entries")
-    for tid, target, anchor in entries:
-        path = traps_path.parent / target
+    for _, line, is_prose in prose_lines(docs[traps_path]):
+        if not is_prose or not line.lstrip().startswith("|"):
+            continue
+        cell = line.lstrip().split("|", 2)[1].strip()
+        cell = re.sub(r'<a name="[^"]+"></a>', "", cell).strip()
+        id_match = re.search(rf"\b{trap_id}\b", cell)
+        if not id_match:
+            continue
+        tid = id_match.group()
         if tid in seen:
             ERRORS.append(f"docs/TRAPS.md: duplicate trap {tid}")
         seen.add(tid)
+        link = re.fullmatch(rf"\[{tid}\]\((traps/[^)#]+)#([^)]*)\)", cell)
+        if not link:
+            ERRORS.append(f"docs/TRAPS.md: {tid} has no detail link")
+            continue
+        target, anchor = link.groups()
+        path = traps_path.parent / target
         if (path, tid) not in details or anchor != tid.lower() or (
             f'<a name="{anchor}"></a>\n\n## {tid} — ' not in docs.get(path, "")
         ):
             ERRORS.append(f"docs/TRAPS.md: {tid} does not link to its detail in {target}#{anchor}")
         indexed.add((path, tid))
+    if not seen:
+        ERRORS.append("docs/TRAPS.md: no trap index entries")
     for p, tid in sorted(details - indexed):
         ERRORS.append(f"{rel(p)}: {tid} missing from docs/TRAPS.md index")
 

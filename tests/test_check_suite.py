@@ -69,6 +69,27 @@ class Units(unittest.TestCase):
 
 
 class TrapIndex(unittest.TestCase):
+    def test_unlinked_trap_row_without_detail_is_an_error(self):
+        index = ROOT / "docs" / "TRAPS.md"
+        area = index.parent / "traps" / "figures.md"
+        docs = {
+            index: "| [T-QG-2](traps/figures.md#t-qg-2) | Check stem values. |\n"
+                   "| T-QG-3 | An unlinked trap with no detail. |\n",
+            area: '<a name="t-qg-2"></a>\n\n## T-QG-2 — Check stem values\n',
+        }
+        errors = len(cs.ERRORS)
+        try:
+            cs.check_trap_references(docs)
+            self.assertEqual(cs.ERRORS[errors:], ["docs/TRAPS.md: T-QG-3 has no detail link"])
+            del cs.ERRORS[errors:]
+            docs[index] = docs[index].replace("| T-QG-3 |", "| [T-QG-3](traps/figures.md#t-qg-3) |")
+            cs.check_trap_references(docs)
+            self.assertEqual(cs.ERRORS[errors:], [
+                "docs/TRAPS.md: T-QG-3 does not link to its detail in traps/figures.md#t-qg-3",
+            ])
+        finally:
+            del cs.ERRORS[errors:]
+
     def test_detail_links_must_match_the_indexed_trap_id(self):
         index = ROOT / "docs" / "TRAPS.md"
         area = index.parent / "traps" / "figures.md"
