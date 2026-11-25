@@ -64,6 +64,25 @@ questions:
         self.assertIn("බොහෝ දුරට", out)
         self.assertIn("අසම්භාව්", out)
 
+    def test_banned_orthographic_and_calque_terms(self):
+        bad = """\
+questions:
+  - n: 1
+    stem: "Calculate the perpendicular distance."
+    stem_si: "ලම්භකව ඇති ලම්භ දුර ගණනය කරන්න. ලම්භ සමච්ඡේදකය අඳින්න."
+  - n: 2
+    stem: "AB is a diameter."
+    stem_si: "AB යනු විශ්කම්භයක් වේ."
+  - n: 3
+    stem: "Fabricate 612 trusses."
+    stem_si: "පියස්සවල් 612 ක් සකසන්න."
+"""
+        rc, out = run_tool(bad, "--grade", "10")
+        self.assertEqual(rc, 1)
+        self.assertIn("ලම්භ", out)
+        self.assertIn("විශ්කම්භ", out)
+        self.assertIn("පියස්සවල්", out)
+
     def test_dictionary_renderings_pass(self):
         rc, out = run_tool(GOOD, "--grade", "8")
         self.assertEqual(rc, 0, out)
