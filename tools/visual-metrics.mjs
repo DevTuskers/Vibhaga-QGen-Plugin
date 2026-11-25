@@ -348,15 +348,16 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
       && dist(cs.anchors[s[0]], cs.anchors[s[1]]) > 0)
     .map((s) => [s, [cs.anchors[s[0]], cs.anchors[s[1]]]]));
   const marked = elements.filter((el) => el.type === "point" && el.r > 0).map((el) => el.at);
+  const segmentKey = (name) => segments.has(name) ? name : [...name].reverse().join("");
   const axes = new Set((cs?.claims ?? []).filter((c) => c.pred === "axis")
     .flatMap((c) => c.args.match(/^[A-Z]{2}(?=\s)/)?.[0] ?? [])
     .map((s) => segments.has(s) ? s : [...s].reverse().join("")));
   for (const c of cs?.claims ?? []) {
     const scaled = c.pred === "scale-length" && String(c.args).match(/^([A-Z]{2}) = (.+)$/);
-    if (scaled && segments.has(scaled[1])) {
+    if (scaled && segments.has(segmentKey(scaled[1]))) {
       const token = dimensionToken(scaled[2]);
       const candidates = claimSegments.get(token) ?? [];
-      candidates.push(scaled[1]);
+      candidates.push(segmentKey(scaled[1]));
       claimSegments.set(token, candidates);
     }
     const m = c.pred === "label" && String(c.args).match(/^"(.*)" names (\S+)$/);
@@ -369,7 +370,7 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
       candidates.push(anchor);
       claimPoints.set(glyph, candidates);
     }
-    const side = segments.has(name) ? name : [...name].reverse().join("");
+    const side = segmentKey(name);
     if (segments.has(side) && !axes.has(side)) {
       const token = dimensionToken(glyph);
       const candidates = claimSegments.get(token) ?? [];

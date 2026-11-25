@@ -121,6 +121,14 @@ test("target: a dimension between two disjoint parallel edges must favour its ow
   assert.equal(assessAt([73, 66, 12, 12]).verdict, "PASS");
 });
 
+test("target: a reversed scale-length binding still identifies the intended edge", () => {
+  const claims = 'segments: AB CD\nanchors:\n  A 50 30\n  B 50 120\n  C 90 30\n  D 90 120'
+    + '\nclaims:\n  K1 scale-length DC = 4 | inferred |';
+  const assessAt = (bbox) => assess({ claims, widths: W([L({ text: "4", bbox })]) });
+  assert.ok(fails(assessAt([64, 66, 12, 12])).some((f) => f.message.includes("another target")));
+  assert.equal(assessAt([73, 66, 12, 12]).verdict, "PASS");
+});
+
 test("target: a point label named like a word is STILL checked against its point", () => {
   const d = doc([{ id: "pZ", type: "point", at: [50, 50], r: 3, label: "Zed" }]);
   const r = assess({ doc: d, widths: W([L({ text: "Zed", bbox: [220, 220, 24, 12] })]) });
