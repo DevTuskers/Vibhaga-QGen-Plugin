@@ -7291,7 +7291,7 @@ terms:
   cumulative frequencies:
     grades:
       11:
-        si: සමුච්චිත සංඛ්‍යාතය
+        si: සමුච්චිත සංඛ්‍යාත
         sources:
         - maths/grade-11/lessons/15-Data-Representation-and-Interpretation.md
         - maths/grade-11/scope-cards/15-Data-Representation-and-Interpretation.yaml
@@ -7299,7 +7299,7 @@ terms:
   cumulative frequency:
     grades:
       11:
-        si: සමුච්චිත සංඛ්‍යාතය
+        si: සමුච්චිත සංඛ්‍යාත
         sources:
         - maths/grade-11/lessons/15-Data-Representation-and-Interpretation.md
         - maths/grade-11/scope-cards/15-Data-Representation-and-Interpretation.yaml
