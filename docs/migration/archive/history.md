@@ -127,7 +127,7 @@ git grep -nIE '\b[0-9a-f]{8}\b' -- skills agents docs
 
 ## generate skill history 2026-10-21
 
-2026-11-25: Validated the bounded shared-VM flow on a bilingual Grade 9 mixed batch: 10 flagged questions, 22 answer leaves and 5 figures; two plan rounds, then two concurrent content and diagram rounds to SATISFIED. Final Q2/Q2b/Q3 and all 20 Admin previews passed. The copied workflow script needed a local config-path override during this run.
+2026-11-25: Validated the bounded shared-VM flow on a bilingual Grade 9 mixed batch: 10 flagged questions, 22 answer leaves and 5 figures; two plan rounds, then three concurrent content and diagram rounds (r1 not satisfied; r2 and r3 both satisfied, 0 majors; content/diagram minors 7/2 in r2 and 2/1 in r3). After r2, corrected Sinhala wording and terms, scale and label placement, and a Markdown-table style false positive. After r3, moved the graph point label closer and replaced the pre-partitioned area diagram with two full rectangles. All five figures passed at 320/375/768 px in light and dark, and 20/20 Admin previews passed. Republished all 10 flagged and unsigned; Q2/Q2b passed with the expected count of 10, and Q3 passed. No fourth round. The copied workflow script needed a local config-path override during this run.
 
 2026-11-25: Added plan reserves and capped critique at two plan rounds and three batch rounds.
 Devin cloud critics use a shared-VM dynamic workflow; other hosts use their own fresh-context mechanism.
