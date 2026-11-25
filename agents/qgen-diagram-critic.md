@@ -153,7 +153,7 @@ has `verified_by` NULL. A prematurely cleared flag is a process BLOCKER, reporte
 
 ## 7. One diagram critic per batch
 
-A batch of **≤12 questions** gets **one** fresh diagram critic, as a separate session in
-**Normal** mode, spawned with paths only. Above 12, split into chunks of ≤12 questions;
+A batch of **≤12 questions** gets **one** fresh-context diagram critic, spawned with paths only
+([Devin runtime](../skills/generate/devin-runtime.md)). Above 12, split into chunks of ≤12 questions;
 each critic reads the batch but reports only its chunk, never another chunk's report.
 Skip the spawn for a figureless batch. The lead merges chunk totals and could-not-checks.

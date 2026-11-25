@@ -1,48 +1,34 @@
 ---
 name: generate
-description: The orchestrator for generating new practice questions FROM A LESSON (no source paper) through the Agent Question Playground, as ONE ordered flow — scope cards (and, for a grade with no named lesson, a coverage snapshot that picks the thinnest lessons) → creative signals gathered by web search → a signal-anchored one-line-per-question plan → the lead-authored `content.yaml` → figure templates → visual-check → validate → `doc put` → visual-check `--session` → publish FLAGGED with `tools/playground-publish.py` → SQL proof (queries.sql Q2 + Q3 via `tools/sql-proof.py`) → a fresh `qgen-critic` until SATISFIED → logbook line. Every row lands flagged and hidden from students until a human marks it reviewed. Use when asked to generate, write, create or author questions for a lesson, topic or grade, to "fill a lesson with practice questions", to fill the least-covered lessons of a grade, or to run or resume a playground session. Not for onboarding an existing PDF paper — this plugin only generates.
+description: Generate new maths practice questions for a lesson, topic or grade, fill the least-covered lessons, or run or resume an Agent Question Playground batch. Publishes flagged for human review. Not for onboarding questions from an existing paper.
 argument-hint: "[grade] [lesson number or name] [how many questions]"
 ---
 
 # Generate questions from a lesson — the orchestrator
 
-## Quick run (lean, ~10 questions — target 2–3 ACUs; owner ruling 2026-10-20)
+## Quick run (lean, ~10 questions)
 
 This run is self-contained: read **this section and AGENTS.md**; use its linked rules and steps as needed.
 Open an S4–S8 skill only when a step needs a rule you do not know (a figure or a failing gate).
-`T=tools/playground-publish.py`, `A=wt/<topic>/actor`. A ~10-question run targets **2–3 ACUs**; start the
-generation session and its critics in **Normal** mode. No figures unless a question needs one. Never re-read
-a skill or corpus file already read; allow one `build` + one `ship` per fix round.
+`T=tools/playground-publish.py`, `A=wt/<topic>/actor`. Devin cloud: follow the [Devin runtime](devin-runtime.md).
+No figures unless a question needs one. Never re-read a skill or corpus file already read; allow one
+`build` + one `ship` per fix round.
 
 1. `python3 tools/qgen-setup.py` → `export VIBHAGA_ADMIN_ENV=/dev/shm/qgen-admin.env` (one command; prints names only).
-2. `python3 $T coverage --grade <g> --subject Mathematics --pairs --out $A/coverage-before.json` → pick the lessons
-   the request needs (default 2–3) — None/Thin with room left; prefer a strong scope card. For each chosen lesson,
+2. Follow [coverage and lesson selection](#coverage-and-lesson-selection). For each chosen lesson,
    the writer reads `python3 tools/scope-cards.py brief <NN> --grade <g> --writer` and only the sections it plans
    to use via `python3 tools/scope-cards.py lesson <NN> --grade <g> --section <N.M>`. The writer never opens a lesson
    file directly and never reads card `worked_examples`, `exercises` or `activities`. Apply the [Room left and stop
    rule](#room-left-and-stop-rule).
-2b. **Creative signals** — follow [`creative-signals`](../creative-signals/SKILL.md): about 6 web searches across
-   its categories (news, anniversaries, sports, science and space, Sri Lankan geography and culture, everyday-life
-   data), keep only signals that fit the lesson's maths, the grade and a school audience, and write
-   `$A/signals.md` (fact · source · fit) before any plan line.
-3. Sketch 10 one-liners, each anchored to one signal — the data's own shape picks the task, not only the story —
-   with `signal: S<k>` and the creativity rubric (`students: … · teachers: …`, creative-signals §6) →
-   `$A/plan-items.yaml`, then run `python3 $T similar --grade <g> --items
-   $A/plan-items.yaml --out $A/similar-plan.json`; the writer may read its neighbour rows after sketching. Build
-   `$A/dedup-sheet.md` with `python3 tools/dedup-sheet.py --grade <g> --card <key>=<NN> --plan $A/plan-items.yaml
-   --similar $A/similar-plan.json --out $A/dedup-sheet.md`; this full-text sheet is input for the sighted plan
-   critic only, not the writer. Apply [Difficulty bands](#difficulty-bands).
+2b. **Creative signals** — [gather signals before sketching](#creative-signals-and-plan).
+3. Sketch the requested N lines plus reserves, then run similarity and build the critic-only sheet
+   ([plan format and commands](#creative-signals-and-plan)).
    See [T143–T154](../../docs/TRAPS.md). Tips: Hard Q stems may leave R only as part (a) and must end on an H
    leaf; `number_line` takes only non-negative endpoints and needs every drawn number (incl. step `1`) written in
    the stem — write `$0, 1, 2, \ldots, 8$`; a maths-only `approach_si` identical to English fails Q2b
    (`part_approach_no_sinhala`) — always add a Sinhala sentence to the approach. Easy pictograph parts are ONE read (one row, or a given count → its row); reading two rows and adding is M. A "Is X correct? Show your working" part is H — in a Medium batch ask the computation instead ("how many more …", "find the wrong entry").
-3b. **Plan critic** — follow [Plan-stage critic](#plan-stage-critic): one fresh `qgen-critic` session, Normal
-   mode, `Mode: plan`; paths only (`plan-items.yaml`, `similar-plan.json`, `dedup-sheet.md`, `signals.md`, the
-   cards). It also checks each line's signal (cited, honest, school-appropriate, in scope). The sighted critic compares each plan line's task chain (sequence of operations,
-   not numbers or story) with every card worked example, exercise and activity and every live row. Replace a line
-   when its chain matches; its reason states the chain abstractly without quoting source text, and the writer replaces
-   it from that reason. Then rerun `similar` and the dedup sheet. A second plan round is only for changed lines; then
-   the stop rule applies. Create the session only when every line is OK.
+3b. **Plan critic** — follow [Plan-stage critic](#plan-stage-critic): take the first N OK lines, using
+   reserves before rewriting. At most two rounds, the second only for replacements. Never author unreviewed lines.
 4. Write `$A/content.yaml` (bilingual, readable layout, required `difficulty: easy|medium|hard`; questions may override it; `check:` on every leaf).
    **Assess Cognitive Decoding & Spatial Imagery (CDS Index)** via [`assess-spatial-imagination`](../assess-spatial-imagination/SKILL.md):
    if a question's description requires visualizing multi-point coordinate grids, 2D composite shapes, folding, or
@@ -55,10 +41,8 @@ a skill or corpus file already read; allow one `build` + one `ship` per fix roun
    --ledger $A/ledger.json` → `run-gates.py ship …` (takes ~5 min for 10 questions; run in the background, not
    under a short timeout) → `sql-proof.py q2 <sid> --expected 10` (`q2: ok`, `q2b: ok`) →
    `embeddings-refresh --grade <g> --subject Mathematics`.
-7. **One** fresh `qgen-critic` session for all 10, plus **one** `qgen-diagram-critic` when figures exist,
-   **Normal** mode, paths only (step 13). Fix BLOCKER/MAJOR from both; MINORs only if
-   one-line, otherwise owner notes. **Sinhala-fluency MINORs are must-fix: apply the critic's rewrite.** Round 2
-   uses a fresh critic with `Previous report:`, changed questions only. See [Sinhala fluency](../../agents/qgen-critic.md).
+7. Run the [batch self-check and critics](#batch-critique-and-fixes). Start the two critics together when
+   figures exist; at most three batch rounds, with unchanged chunks carried forward.
 8. Coverage after, logbook line, report in plain English.
 
 Authoring lessons from earlier runs (see [T143–T154](../../docs/TRAPS.md)):
@@ -166,19 +150,19 @@ same two checkout paths in the critic's spawn prompt.
 
 ### The steps
 
-1. **Read the writer-safe scope card and selected lesson sections.** For each selected lesson, run
-   `python3 tools/scope-cards.py brief <NN> --grade <g> --writer`; this prints sections, vocabulary, the
-   `phrases` term bank, `figure_kinds` and curated scope while withholding worked examples, exercises and
-   activities. Read only the sections used by the plan with
-   `python3 tools/scope-cards.py lesson <NN> --grade <g> --section <N.M>` (repeat `--section` as needed). The
-   command drops frontmatter and withholds every worked-example, exercise and activity span. The writer never
-   opens the lesson file directly or reads card `worked_examples`, `exercises` or `activities`. The card's
+1. **Read the writer-safe scope card and selected lesson sections** using Quick run step 2. The brief prints
+   sections, vocabulary, the `phrases` term bank, `figure_kinds` and curated scope while withholding worked
+   examples, exercises and activities. The lesson-section command drops frontmatter and withholds every
+   worked-example, exercise and activity span. The card's
    `sections` + `summary` + `vocabulary` + `not_taught` say what is and is not taught; `phrases` is the mined
    lesson-language bank (emphasis terms, section-title words and recurring words); `figure_kinds` are reusable
    figure *kinds*; `difficulty_hooks` anchor R/M/H. Write the scope statement into `notes.md`.
    - **O/L:** composed from the G10 + G11 *scope cards* via Vibhaga-Docs `lessons/ol/mathematics.md`, tagged with O/L
      lesson ids (owner ruling 2026-09-29). **Refused until BOTH card sets exist** (plan OD-3). Never copy a card into
      this public repo.
+
+### Coverage and lesson selection
+
 2. **Coverage, taxonomy and what exists.** First the snapshot: `python3 $T coverage --grade <g> --subject Mathematics
    --pairs --out $A/coverage-before.json` (read-only; every taxonomy lesson listed, thinnest first, `None` = 0 rows,
    `Thin` = 1..`--thin` (default 2); `flagged` = still awaiting review, hidden from students; `pairs` = two-lesson
@@ -193,18 +177,22 @@ same two checkout paths in the critic's spawn prompt.
    the working — AGENTS rule 3); the API lists only the cells that exist, so a missing one is your judgment, named in
    the plan line. Coverage reads the API (Hyperdrive, ~75 s stale — T5): it chooses lessons; it never proves rows.
    `python3 $T lessons --grade 6 --subject Mathematics` → the `lesson_id`.
-   Apply [Room left and stop rule (T3)](#room-left-and-stop-rule).
+
+### Creative signals and plan
+
 2b. **Creative signals, before the plan** — [`creative-signals`](../creative-signals/SKILL.md). Search the web
    (lean budget: about 6 searches, 4 page reads) across its six categories — Sri Lankan and international news,
    history and anniversaries, sports statistics, science and space, Sri Lankan geography/environment/culture,
    technology and everyday life. Keep a signal only when its data contains the lesson's maths, fits the grade
    without anything on `not_taught`, is school-appropriate and has a source you read. Write `$A/signals.md`
    (creative-signals §5). A batch spans ≥ 3 categories and ≥ 3 Sri Lankan signals.
-3. **Plan — one line per question** in `notes.md`, before any authoring, each anchored to one kept signal:
+3. **Plan — one line per candidate** in `notes.md`, before any authoring, each anchored to one kept signal.
+   Sketch N + max(2, ceil(N/4)) lines in priority order, including reserves:
    `Q<n> · <skill / section> · <R/M/H per part> · signal: S<k> · students: <why it is interesting> · teachers: <what it adds> · closest: <question_id> (<score>) — differs because <task, not numbers> · figure: <template | hand-draw | none>`
    The signal's data picks the task chain (creative-signals §6); a lesson task retold in a new story is still a
    copy. Each `plan-items.yaml` item carries `signal: S<k>` too.
-   **Similarity check (decision 0026), before step 4.** Sketch each planned question as `{key, stem, parts}` in
+   **Similarity check (decision 0026), before step 4.** Sketch each candidate as `{key, stem, parts}` with a stable
+   `Q<n>` key in
    `$A/plan-items.yaml` (a list; one-sentence stem + one line per part is enough) and run
    `python3 $T similar --grade <g> --subject Mathematics --items $A/plan-items.yaml --out $A/similar-plan.json`
    (`--exam <slug>` for an exam pool). It prints the 5 nearest published questions per item with a score, flags a
@@ -228,14 +216,23 @@ same two checkout paths in the critic's spawn prompt.
      (`H: reverse`, `H: decide`, `H: justify`, `H: new context`).
 ### Plan-stage critic
 
-3b. **Plan critic (one fresh `qgen-critic` session, Normal mode, `Mode: plan`).** Pass it only paths: `plan-items.yaml`,
-   `similar-plan.json`, `dedup-sheet.md`, `signals.md` and the cards. It also checks each line's signal. The sighted critic compares each plan line's task chain
+3b. **Plan critic (one fresh-context `qgen-critic` per round; [Devin runtime](devin-runtime.md)).**
+   Use this paths-only prompt:
+   ```
+   Mode: plan
+   Critique the plan per your profile. Paths: plan-items <plan-items.yaml>; similar-plan <similar-plan.json>; dedup-sheet <dedup-sheet.md>; signals <signals.md>; cards <JSON list of card paths>; write the report to <wt/<topic>/critic/plan-rN.md>. [Previous report: <path>.]
+   ```
+   It checks each line's signal. The sighted critic compares each plan line's task chain
    (sequence of operations, not numbers or story) with every card worked example, exercise and activity and every
    live row. It answers per line `OK` or `REPLACE — <abstract task-chain reason>`; a matching chain must be replaced.
-   The reason states the chain without quoting source text, and the writer replaces from that reason. Then re-run
-   `similar` and the dedup sheet. A second plan round is allowed only for the lines that changed; after that the stop
-   rule applies. Create the session only once every line is OK. This catches copies while a fix costs one line,
-   before the build, ship and SQL.
+   The reason states the chain without quoting source text. Round 1 judges all candidates including reserves.
+   Take the first N OK lines in plan order. If short, rewrite from the abstract reasons or use the next eligible
+   lesson (include its card and source signals); re-run `similar` and the dedup sheet for the replacements only.
+   Round 2 judges only those lines against the same copy check, including any new lesson's sources. In final plan
+   order take the first N lines with a current OK from either round. Drop anything still REPLACE; fill from
+   unused OK reserves or already-judged OK lines from the next eligible lesson. If still short, report the
+   shortfall to the owner rather than author an unjudged line or run a third plan round. Create the session only
+   once every selected line is OK.
 4. **Author `content.yaml`** (`id_seed`, `lessons:` key map, `figures:` key map, `questions:`
    with `n`, `lessons`, `stem`, `figure`, `parts[label, text, figure, approach, final]`; `build-staged.py` docstring):
    - **Stem** — [`author-question-text`](../author-question-text/SKILL.md) §1a + §3: `$…$`/`$$…$$`, never Sinhala
@@ -350,37 +347,46 @@ same two checkout paths in the critic's spawn prompt.
 
     **One-time Q3 setup:** run as `postgres` on the merged project; see
     [docs/Q3-SETUP.md](../../docs/Q3-SETUP.md).
-12. **Pre-critic lint** — `run-gates build --card` already ran `tools/precritic-lint.py`; re-run it standalone
-    (`python3 tools/precritic-lint.py $A --card <key>=<NN> --grade <g>`) after any `content.yaml` edit. Fix every
+
+### Batch critique and fixes
+
+12. **Pre-critic self-check** — the lead runs `precritic-lint` before round 1 and re-reads the stems against
+    the [fit table](#3-what-makes-a-generated-question-fit). `run-gates build --card` runs
+    `tools/precritic-lint.py`; re-run it standalone (`python3 tools/precritic-lint.py $A --card <key>=<NN> --grade <g>`)
+    after any `content.yaml` edit. Fix every
     FAIL (`not_taught` probe found in a stem/part/approach/final — per question by default: a question
     answers only to the cards its `lessons:` keys tag; `--all-probes` is the old run-wide check) and look at each WARN (a11y `description`
     carrying a figure's readable number — T125; the vocabulary heuristic) before the critic sees the batch.
     `--existing` may WARN a blueprint variant against a row from another session — expected: across sessions
     variants count as distinct (owner ruling 2026-10-03; within a batch build-staged already refused, T-QG-8).
-13. **Critique — a fresh `qgen-critic`** ([`agents/qgen-critic.md`](../../agents/qgen-critic.md)). Spawn it with
-    **paths only**, in exactly this shape:
+13. **Critique — a fresh-context `qgen-critic`** ([profile](../../agents/qgen-critic.md);
+    [Devin runtime](devin-runtime.md)). Spawn it with **paths only**, in exactly this shape
+    (bracketed clauses are optional):
     ```
     Critique playground batch <sid> per your profile. Paths: plugin <plugin checkout>; corpus <corpus checkout>;
     content-DB env <Vibhaga-DB/.env>; visual-check output <wt/<topic>/vc>; write the report to
-    <wt/<topic>/critic/rN.md> — the exact file path (not a directory; the critic passes the corpus
-    checkout to critic-read itself). [VIBHAGA_ADMIN=<Admin checkout> VIBHAGA_WEB=<Web checkout> — when the plugin is
-    not a sibling of them, e.g. a worktree.] [Chunk: questions <n..m>.] [Previous report: <path>.]
+    <wt/<topic>/critic/rN/content/rN.md>. [VIBHAGA_ADMIN=<Admin checkout> VIBHAGA_WEB=<Web checkout>.]
+    [Chunk: questions <n..m>.] [Previous report: <path>.] [Previous rows: <path>.]
     ```
     Never `content.yaml`, claim sets, staged docs, notes or a hint about which items you doubt (**T25**). **One
-    critic for the whole batch** (≤ 12 questions — profile §7), started as a separate session in **Normal** mode,
-    not Fusion (owner ruling 2026-10-20: fresh eyes kept, cost cut). The critic is
+    critic for the whole batch** (≤ 12 questions — profile §7). Supply Admin/Web paths if the checkouts
+    are not siblings (e.g. in a worktree) and pass the corpus path through to `critic-read.py`. Give each
+    critic its own report directory in each round so row
+    outputs cannot collide. The content critic is
     **image-blind**: its could-not-check list names the figure look, owned independently by the diagram critic below.
     Compare its R/M/H with your plan line: a gap of more than one level on a part is a
     MINOR. `critic-read.py` also writes `brief.txt` beside the rows — the session's own scope pack — so the critic
     opens the lesson Markdown only at the sections a finding needs, never whole.
-    After the content critic, spawn [`qgen-diagram-critic`](../../agents/qgen-diagram-critic.md) for any batch
-    containing figures; skip only when figureless. One diagram critic per batch (≤12 questions), separate session,
-    **Normal** mode, paths only, with this prompt:
+    Start a fresh-context [`qgen-diagram-critic`](../../agents/qgen-diagram-critic.md) alongside the content critic
+    when the host supports concurrency; their inputs are independent. Skip it for figureless batches.
+    One diagram critic per batch (≤12 questions), paths only, with this prompt:
     ```
-    Critique the diagrams of playground batch <sid> per your profile. Paths: plugin <checkout>; content-DB env <Vibhaga-DB/.env>; visual-check output <wt/<topic>/vc>; write the report to <wt/<topic>/critic/diagram-rN.md>.
+    Critique the diagrams of playground batch <sid> per your profile. Paths: plugin <checkout>; content-DB env <Vibhaga-DB/.env>; visual-check output <wt/<topic>/vc>; write the report to <wt/<topic>/critic/rN/diagram/diagram-rN.md>. [Chunk: questions <n..m>.] [Previous report: <path>.] [Previous rows: <path>.]
     ```
     On re-runs add only the previous critic report and rows/hashes paths, never actor files or hints (T25).
-14. **Fix and re-critique until SATISFIED.** SATISFIED requires both critics at 0 BLOCKER and 0 MAJOR
+14. **Fix and re-critique, at most three batch rounds** (five total including plan rounds). After round 3,
+    stop and report open BLOCKERs, MAJORs or unresolved required checks as owner notes, not SATISFIED.
+    SATISFIED requires both critics at 0 BLOCKER and 0 MAJOR
     (diagram critic not applicable for figureless batches), with no unresolved required checks. Fix every BLOCKER/MAJOR; fix a
     MINOR only when it is a one-line edit, otherwise write it down as an owner note (with the reason) — a MINOR
     alone never buys another critic round (lean runs, owner ruling 2026-10-20). A fix is: edit `content.yaml` (same `id_seed`, `n`, labels) → `run-gates.py build` → 6b (only
@@ -415,9 +421,9 @@ same two checkout paths in the critic's spawn prompt.
       · publish k/n + read-back + t77 + provenance quoted in notes.md · q2: ok · q3: ok (auto) or PENDING → MCP noted
 - [ ] 12 precritic-lint: 0 FAIL · every WARN read
 - [ ] 13 critic r1 spawned with paths only · verdict ____
-- [ ] 13 diagram critic diagram-r1 spawned with paths only after content critic · verdict ____ (or figureless: skipped)
-- [ ] 14 rounds: both critics r__ SATISFIED · fresh PNGs after diagram fixes · critic-read hashes diffed · unchanged chunks CARRIED in ledger · every finding FIXED
-      or an owner question · Q2 + Q3 ok after the last republish
+- [ ] 13 diagram critic diagram-r1 spawned alongside content critic if supported, paths only · verdict ____ (or figureless: skipped)
+- [ ] 14 rounds (max 3): both critics SATISFIED or open findings reported to owner · fresh PNGs after diagram fixes · hashes diffed · unchanged chunks CARRIED in ledger
+      · every finding FIXED or an owner note · Q2 + Q3 ok after the last republish
 - [ ] 15 logbook line written · ID-free line added to MIGRATION.md
 ```
 
@@ -442,7 +448,7 @@ A planned or written question is a **copy** when its task chain (what the studen
 1. any live row tagged with the same lesson (every row, read in full — not only the `similar` top 5),
 2. any of the card's `worked_examples`, `exercises` or `activities`,
 3. any `similar` neighbour, whatever its score (the score only ranks the neighbours).
-The sighted plan critic reads `tools/dedup-sheet.py` before planning. The writer does not read the sheet or card
+The sighted plan critic reads the sheet produced by `tools/dedup-sheet.py`. The writer does not read the sheet or card
 example/exercise/activity text; it may read `similar-plan.json` neighbour rows after sketching and receives only an
 abstract task-chain reason for any replacement. Write one line per planned question in `notes.md`: closest item · how
 the **task** differs.
@@ -462,8 +468,11 @@ For an Easy question, "new" means one of these: a context the lesson does not us
 
 ### Room left and stop rule
 
-- **Room left, not just row count.** Before you keep a thin lesson, read its dedup sheet. If its live rows already use every card section task and every `difficulty_hooks` entry at the target band, the lesson is **full**. Skip it and take the next thin lesson.
-- **Stop rule.** If one slot draws two copy MAJORs (from the plan critic or the batch critic), stop rewriting it. Move the slot to a different lesson (`playground-publish.py session update <sid> --lessons …` adds the lesson to the session), or drop the question and tell the owner.
+- **Room left, not just row count.** Have the plan critic check the dedup sheet, not the writer. If the live rows already use every card section task and every `difficulty_hooks` entry at the target band, the lesson is **full**. Skip it and take the next thin lesson.
+- **Stop rule.** At most two [plan rounds](#plan-stage-critic). Drop still-REPLACE slots and use only judged OK alternatives.
+  After two copy MAJORs on one slot (plan or batch), stop rewriting it. Use an eligible alternative from a different
+  lesson (`playground-publish.py session update <sid> --lessons …` adds a lesson after session creation), or drop
+  the question and tell the owner. This never allows a third plan round.
 
 ## 4. Traps
 
