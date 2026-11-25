@@ -39,7 +39,7 @@ No figures unless a question needs one. Never re-read a skill or corpus file alr
    → exit 0. Rubric defaults from content difficulty (easy→easy, medium→medium, hard→medium-hard); a mixed batch (`difficulty: medium` + per-question `difficulty: hard`) defaults to `--rubric by-band`, which checks each question against its own band (Hard: R only as (a), last leaf H); `--rubric` overrides. Build also runs warning-only `si-style.py` followed by blocking `unit-notation.py`; a figureless run skips figure stages.
 6. `session create --name "<standard name>" --scope "grade=<g>,subject=Mathematics,medium=<medium>" --lessons <ids> --difficulty <content band>
    --ledger $A/ledger.json` → `run-gates.py ship …` (takes ~5 min for 10 questions; run in the background, not
-   under a short timeout) → `sql-proof.py q2 <sid> --expected 10` (`q2: ok`, `q2b: ok`) →
+   under a short timeout) → `sql-proof.py q2 <sid> --expected <N>` (requested question count; `q2: ok`, `q2b: ok`) →
    `embeddings-refresh --grade <g> --subject Mathematics`.
 7. Run the [batch self-check and critics](#batch-critique-and-fixes). Start the two critics together when
    figures exist; at most three batch rounds, with unchanged chunks carried forward.
