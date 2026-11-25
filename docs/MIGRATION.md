@@ -125,6 +125,10 @@ git grep -nIE '\b[0-9a-f]{8}\b' -- skills agents docs
 
 ## generate skill history 2026-10-21
 
+2026-11-25: Added plan reserves and capped critique at two plan rounds and three batch rounds.
+Devin cloud critics use a shared-VM dynamic workflow; other hosts use their own fresh-context mechanism.
+Content and diagram critics run concurrently when supported.
+
 2026-11-22: Added `qgen-diagram-critic`, a separate sighted critic for batches with figures.
 It checks stored English descriptions against rendered PNGs and mathematical tidiness: the
 content critic's image-blind DSL/metric checks and the lead's authoring look cannot replace

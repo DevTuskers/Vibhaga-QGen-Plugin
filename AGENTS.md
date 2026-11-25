@@ -17,18 +17,12 @@ stem you author. These rules hold in every session that loads the plugin.
 5. **Prove by SQL, not by the API.** Use `queries.sql` (Q2 post-publish proof, Q3 Auth revocation —
    same merged project, actor asserted to exist AND to be an admin first). Never select token
    values.
-6. **Language-neutral and symbolic diagrams; drawn text is simple English on every medium** (ADR 0021 —
-   `Vibhaga-Docs/decisions/0021-english-only-diagram-text.md`). Point letters, labels, text
-   elements, math latex, axis/category/series/value titles, units — never Sinhala, whatever the
-   question's `medium` (the old T-S6b-6 medium condition is superseded; TRAPS T-QG-12). The a11y
-   `title`/`description` are not drawn and keep the question's medium.
-   **General guideline / best practice:** Because the single `diagram_dsl` is shared across both
-   English and Sinhala question views, avoid embedding English prose words, phrases, or sentences
-   inside the diagram (e.g. avoid `"Home"`, `"Finish"`, `"School"`, `"Water tank"`). Instead, use
-   single English letters or standard mathematical tokens ($A, B, C, P, Q, H, F, T, S$) to mark
-   landmarks or positions, and describe what each token represents in the bilingual question stems/parts
-   (`question_text` and `question_text_sinhala`). *(Note: this is a strongly recommended authoring
-   practice for clean bilingual parity, not an absolute prohibition).*
+6. **Drawn diagram text is simple English, never Sinhala** (ADR 0021 —
+   `Vibhaga-Docs/decisions/0021-english-only-diagram-text.md`; TRAPS T-QG-12 supersedes T-S6b-6).
+   This includes point letters, labels, text elements, math latex, axis/category/series/value
+   titles and units. Undrawn a11y `title`/`description` keep the question's medium.
+   Because both media share one diagram, prefer single English letters or standard maths symbols
+   explained in the bilingual stems/parts over English prose; this is a recommendation, not a ban.
 7. **Bilingual.** Every stem, part text, approach and final is written in English AND Sinhala
    (`*_si` keys); build-staged refuses a missing or copied side; queries.sql Q2b proves both landed.
 8. **Student text is laid out for reading.** Stems, part texts, approaches and finals use one
@@ -41,18 +35,15 @@ stem you author. These rules hold in every session that loads the plugin.
    real-world signals by web search and anchors every plan line to one, with a short students/teachers rubric
    ([`creative-signals`](skills/creative-signals/SKILL.md), generate step 2b). Real figures stated as fact are true
    (TRAPS T155). The copy check still runs on every line.
-10. **IT & technical vocabulary — include English technical terms in brackets in Sinhala.** For questions
-   involving Information Technology (IT/ICT), computing hardware/peripherals, data storage/systems,
-   calculator/device interfaces, or technical/engineering concepts:
-   - When technical terms are translated into Sinhala (even when using correct/standard curriculum terminology),
-     **always include the English technical term in brackets immediately following the Sinhala term**
-     (e.g. `අධිවේගී ෆ්ලෑෂ් ආචයන (High-Speed Flash Storage)`, `වෙන්කිරීම් කුට්ටි (allocation blocks)`,
-     `දර්ශක වාර්තාවක් (index record)`).
-     *Reason:* Most Sinhala-medium students are not aware of coined/formal Sinhala technical vocabulary,
-     but they readily recognize and understand the standard English terms.
-   - For everyday IT hardware/peripherals or pure acronyms, use standard English terms or natural transliteration
-     (e.g. "mouse" / "මවුසය", "keyboard", "monitor", "RAM", "CPU", "software", "storage", "bytes") even within the Sinhala version.
-     Never use outdated, unnatural, or overly literal Sinhala translations (e.g. for mouse, never use "මූසිකය").
+10. **In Sinhala, follow translated technical terms immediately with the English term in brackets**
+    (e.g. `වෙන්කිරීම් කුට්ටි (allocation blocks)`), even for standard curriculum terms. This covers
+    IT/ICT, hardware/peripherals, data storage/systems, calculator/device interfaces and engineering.
+    For everyday IT terms and acronyms use English or natural transliteration (mouse / මවුසය, RAM),
+    never outdated, unnatural or overly literal Sinhala.
+11. **Independent critics.** Use a fresh context with paths only (T25), never a self-review in the
+    authoring context. Devin cloud follows [Devin runtime](skills/generate/devin-runtime.md).
+    Other hosts (Gemini CLI, Claude Code, Codex, …) use native subagents or fresh conversations
+    and can run content and diagram critics concurrently when supported.
 
 ## Session discipline
 - **Session names follow the standard** (owner ruling 2026-10-15): `G<grade> Maths · <Easy|Medium|Hard> · <N>Q · <d Mon YYYY, h:mm AM/PM>`
@@ -63,11 +54,7 @@ stem you author. These rules hold in every session that loads the plugin.
 - **One image per `read` call.** An image is seen only if the result shows it. Log what you saw at
   once; never re-read an image already confirmed. A read that came back without the image may be
   retried once, alone; after that, change approach.
-- **Lean by default (owner ruling 2026-10-20).** A ~10-question run targets 2–3 ACUs: follow the
-  generate skill's "Quick run", start the session and its single critic in Normal mode, no figures unless
-  a question needs one.
-- **30-ACU cap per session.** When you reach it, or the rest cannot fit, stop: commit clean work,
-  write a hand-off prompt under `wt/<topic>/`, and report what is done and what is left.
+- **Lean by default.** Follow the generate skill's Quick run; no figures unless a question needs one.
 
 ## Public repo — never commit production content
 - No real question text, corpus or scope-card text, real UUIDs, email addresses, or anything that

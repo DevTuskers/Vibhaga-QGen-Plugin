@@ -49,7 +49,7 @@ answer is right, and whether a Grade-N child who learned this lesson can do it.
 In batch mode, the spawn prompt gives you paths, never content: `batch_id`, the plugin checkout, the corpus
 checkout, the content-DB env file, the visual-check output dir, the report path, and optionally the
 Admin/Web checkouts (`VIBHAGA_ADMIN`, `VIBHAGA_WEB` — for markdown-gate), a chunk
-(`question_number`s) and a previous report (§6).
+(`question_number`s), a previous report and previous rows/hashes (§6).
 In `Mode: plan`, there is no `batch_id` and no rows, figures or SQL; use only the plan inputs in §8.
 
 | # | Input | How to read it |
@@ -160,7 +160,7 @@ rows, stems or answer strings beyond the one quoted string a finding needs.
 
 After the actor republishes, a **fresh** critic is spawned with the previous report as an extra
 input (it is critic output, not actor output). `critic-read.py --previous` does the diff itself:
-pass the previous round's report dir (its `hashes.txt`) or a `hashes --out` file — either must be
+pass the previous round's rows dir (its `hashes.txt`) or a `hashes --out` file — either must be
 critic-read's own output: it opens with a `# critic-read hashes v1 sid=<uuid>` header naming the
 same batch, and anything without it (a hand-written `Q<n> <sha256>` file, or a different session's
 hashes) is refused, because carrying by hash is fail-safe only when the file really is the previous
@@ -182,8 +182,8 @@ the process, reported first.
 
 ## 7. One critic per batch (lean runs, owner ruling 2026-10-20)
 
-A batch of up to **12 questions** gets **one** fresh critic, started as a separate session in **Normal**
-mode (not Fusion) — fresh eyes are kept, the duplicate session startup is not. Only above 12 does the
+A batch of up to **12 questions** gets **one** fresh-context critic
+([Devin runtime](../skills/generate/devin-runtime.md)). Only above 12 does the
 lead split into chunks of ≤ 12 `question_number`s; a chunk critic still reads the whole Q4b (needed for
 within-batch duplicates and self-containment) but writes findings only for its chunk, never sees another
 chunk's report, and the lead merges totals, one OUT OF SCOPE list and the union of could-not-check.
@@ -193,9 +193,9 @@ chunk's report, and the lead merges totals, one OUT OF SCOPE list and the union 
 ### Mode: plan
 
 Inputs: `plan-items.yaml`, `similar-plan.json`, `dedup-sheet.md`, `signals.md`, the scope cards. There are no rows, figures or SQL; do not look for them.
-For each plan line, the sighted critic compares its task chain (the sequence of operations, not the numbers or story) with every bound card's worked examples, exercise items and activities, and every live row in `dedup-sheet.md`. Also apply the band (generate §Difficulty bands) and the card's `not_taught` list. Then check the line's signal ([`creative-signals`](../skills/creative-signals/SKILL.md) §3–§4): it cites a kept row of `signals.md`; the plan uses the sourced fact honestly (a real figure stated as fact is the sourced or a clearly rounded value; invented numbers are framed as "suppose"); the signal is school-appropriate; its data needs nothing on `not_taught`; and the task comes from the signal's data, not a lesson task in a new story. You may not open the source URLs; judge from `signals.md`. If a chain matches, mark REPLACE. State the reason abstractly (for example, "same chain as a lesson exercise: divide the total by n, then multiply by k"), without quoting or reproducing source text. The writer replaces from that abstract reason and never reads the source item. Write `plan-review.md`:
+For each plan line, the sighted critic compares its task chain (the sequence of operations, not the numbers or story) with every bound card's worked examples, exercise items and activities, and every live row in `dedup-sheet.md`. Also apply the band (generate §Difficulty bands) and the card's `not_taught` list. Then check the line's signal ([`creative-signals`](../skills/creative-signals/SKILL.md) §3–§4): it cites a kept row of `signals.md`; the plan uses the sourced fact honestly (a real figure stated as fact is the sourced or a clearly rounded value; invented numbers are framed as "suppose"); the signal is school-appropriate; its data needs nothing on `not_taught`; and the task comes from the signal's data, not a lesson task in a new story. You may not open the source URLs; judge from `signals.md`. If a chain matches, mark REPLACE. State the reason abstractly (for example, "same chain as a lesson exercise: divide the total by n, then multiply by k"), without quoting or reproducing source text. The writer replaces from that abstract reason and never reads the source item. Write to the exact report path in the prompt:
 ```
 VERDICT: SATISFIED | NOT SATISFIED — OK n · REPLACE m
-P<n> · OK | REPLACE — closest: <dedup-sheet item id / similar id> · same task chain: <yes/no + abstract operation chain, no source text> · band fit: <yes/no> · signal: <S<k> ok | missing | misused | unsafe | out of scope> · suggestion: <one line, a different task, not new numbers>
+Q<n> · OK | REPLACE — closest: <dedup-sheet item id / similar id> · same task chain: <yes/no + abstract operation chain, no source text> · band fit: <yes/no> · signal: <S<k> ok | missing | misused | unsafe | out of scope> · suggestion: <one line, a different task, not new numbers>
 ```
-A line is REPLACE when its task chain matches a dedup-sheet item, or it breaks the band, or it uses a `not_taught` idea, or its signal is not `ok`. Stop after the report; this mode never reads the DB.
+A line is REPLACE when its task chain matches a dedup-sheet item, or it breaks the band, or it uses a `not_taught` idea, or its signal is not `ok`. Flag lessons with no room left per generate's [stop rule](../skills/generate/SKILL.md#room-left-and-stop-rule), without quoting source items. Stop after the report; this mode never reads the DB.
