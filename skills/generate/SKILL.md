@@ -27,8 +27,8 @@ No figures unless a question needs one. Never re-read a skill or corpus file alr
    leaf; `number_line` takes only non-negative endpoints and needs every drawn number (incl. step `1`) written in
    the stem — write `$0, 1, 2, \ldots, 8$`; a maths-only `approach_si` identical to English fails Q2b
    (`part_approach_no_sinhala`) — always add a Sinhala sentence to the approach. Easy pictograph parts are ONE read (one row, or a given count → its row); reading two rows and adding is M. A "Is X correct? Show your working" part is H — in a Medium batch ask the computation instead ("how many more …", "find the wrong entry").
-3b. **Plan critic** — follow [Plan-stage critic](#plan-stage-critic): take the first N OK lines, using
-   reserves before rewriting. At most two rounds, the second only for replacements. Never author unreviewed lines.
+3b. **Plan critic** — follow [Plan-stage critic](#plan-stage-critic): use OK reserves that keep the requested
+   lesson/band mix before rewriting. At most two rounds, the second only for replacements. Never author unreviewed lines.
 4. Write `$A/content.yaml` (bilingual, readable layout, required `difficulty: easy|medium|hard`; questions may override it; `check:` on every leaf).
    **Assess Cognitive Decoding & Spatial Imagery (CDS Index)** via [`assess-spatial-imagination`](../assess-spatial-imagination/SKILL.md):
    if a question's description requires visualizing multi-point coordinate grids, 2D composite shapes, folding, or
@@ -187,8 +187,9 @@ same two checkout paths in the critic's spawn prompt.
    without anything on `not_taught`, is school-appropriate and has a source you read. Write `$A/signals.md`
    (creative-signals §5). A batch spans ≥ 3 categories and ≥ 3 Sri Lankan signals.
 3. **Plan — one line per candidate** in `notes.md`, before any authoring, each anchored to one kept signal.
-   Sketch N + max(2, ceil(N/4)) lines in priority order, including reserves:
-   `Q<n> · <skill / section> · <R/M/H per part> · signal: S<k> · students: <why it is interesting> · teachers: <what it adds> · closest: <question_id> (<score>) — differs because <task, not numbers> · figure: <template | hand-draw | none>`
+   Record the target lesson coverage and band split. Sketch N primary lines plus max(2, ceil(N/4))
+   reserves in priority order. Tag every candidate with its lessons and difficulty band:
+   `Q<n> · lessons: <keys> · band: <easy | medium | hard> · <skill / section> · <R/M/H per part> · signal: S<k> · students: <why it is interesting> · teachers: <what it adds> · closest: <question_id> (<score>) — differs because <task, not numbers> · figure: <template | hand-draw | none>`
    The signal's data picks the task chain (creative-signals §6); a lesson task retold in a new story is still a
    copy. Each `plan-items.yaml` item carries `signal: S<k>` too.
    **Similarity check (decision 0026), before step 4.** Sketch each candidate as `{key, stem, parts}` with a stable
@@ -226,13 +227,14 @@ same two checkout paths in the critic's spawn prompt.
    (sequence of operations, not numbers or story) with every card worked example, exercise and activity and every
    live row. It answers per line `OK` or `REPLACE — <abstract task-chain reason>`; a matching chain must be replaced.
    The reason states the chain without quoting source text. Round 1 judges all candidates including reserves.
-   Take the first N OK lines in plan order. If short, rewrite from the abstract reasons or use the next eligible
-   lesson (include its card and source signals); re-run `similar` and the dedup sheet for the replacements only.
-   Round 2 judges only those lines against the same copy check, including any new lesson's sources. In final plan
-   order take the first N lines with a current OK from either round. Drop anything still REPLACE; fill from
-   unused OK reserves or already-judged OK lines from the next eligible lesson. If still short, report the
-   shortfall to the owner rather than author an unjudged line or run a third plan round. Create the session only
-   once every selected line is OK.
+   Keep OK primary lines. Fill REPLACE slots from OK reserves in priority order with the same lesson tags and
+   band, or with another OK candidate only if it preserves the target lesson coverage and band split.
+   If slots remain open, rewrite from the abstract reasons for those slots and re-run `similar` and the dedup
+   sheet for the replacements only. If a replacement uses a new eligible lesson, include its card and source
+   signals. Round 2 judges only the replacement lines against the same copy check.
+   Drop anything still REPLACE and use only remaining OK candidates that preserve the mix. Check both the
+   count and the mix before creating the session. Report any unfilled lesson/band slots to the owner as
+   a shortfall rather than change the mix, author an unjudged line or run a third plan round.
 4. **Author `content.yaml`** (`id_seed`, `lessons:` key map, `figures:` key map, `questions:`
    with `n`, `lessons`, `stem`, `figure`, `parts[label, text, figure, approach, final]`; `build-staged.py` docstring):
    - **Stem** — [`author-question-text`](../author-question-text/SKILL.md) §1a + §3: `$…$`/`$$…$$`, never Sinhala
@@ -469,10 +471,10 @@ For an Easy question, "new" means one of these: a context the lesson does not us
 ### Room left and stop rule
 
 - **Room left, not just row count.** Have the plan critic check the dedup sheet, not the writer. If the live rows already use every card section task and every `difficulty_hooks` entry at the target band, the lesson is **full**. Skip it and take the next thin lesson.
-- **Stop rule.** At most two [plan rounds](#plan-stage-critic). Drop still-REPLACE slots and use only judged OK alternatives.
+- **Stop rule.** At most two [plan rounds](#plan-stage-critic). Drop still-REPLACE slots and use only judged OK alternatives that preserve the target lesson coverage and band split.
   After two copy MAJORs on one slot (plan or batch), stop rewriting it. Use an eligible alternative from a different
-  lesson (`playground-publish.py session update <sid> --lessons …` adds a lesson after session creation), or drop
-  the question and tell the owner. This never allows a third plan round.
+  lesson only when it preserves that mix (`playground-publish.py session update <sid> --lessons …` adds a lesson
+  after session creation), or drop the question and report the shortfall to the owner. This never allows a third plan round.
 
 ## 4. Traps
 
