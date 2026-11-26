@@ -10,6 +10,8 @@ the migration tables and generation history. No workflow or validation rules cha
 
 2026-11-26: Grade 11 mixed run — 20 bilingual Medium questions (41 answer parts; 10 diagrams), published flagged; Q2/Q2b/Q3 passed; two plan rounds and three batch rounds, final critics satisfied. Added optional per-chunk critic selection and precritic wording, scaffold, and figure-description checks.
 
+2026-11-27: Grade 9 mixed run — 20 bilingual Medium questions (60 answer parts; 10 diagrams: L13 Loci, L25 Angles of Polygons, L08 Straight Lines and Parallel Lines; 10 figureless: L24 Probability, L03 Number Patterns, L10 Direct Proportion, L07 Factors of Algebraic Expressions), published flagged to session 476bf97a-41ba-452c-9f1f-8648bad9cef4. Q2/Q2b/Q3/T77 passed, visual 6-rule standard verified (10/10 PASS), batch content critic satisfied (20/20 clean). Description length rule strictly enforced with <= 240 char paragraphs.
+
 ## Archive — not required before a generation run
 
 - <a name="tools"></a>[Tools](migration/archive/history.md#tools)
