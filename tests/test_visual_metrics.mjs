@@ -633,7 +633,8 @@ test("allow: label:\"x\" downgrades edge and stroke findings exactly like vdd-ch
 test("paintVisible: none/transparent/alpha-0 are not paint", () => {
   for (const v of ["none", "transparent", "#0000", "#11223300", "rgba(1,2,3,0)", "rgb(1 2 3 / 0)", "hsla(9,10%,10%,0%)"])
     assert.equal(paintVisible(v), false, v);
-  for (const v of ["#e5e7eb", "rgba(1,2,3,.4)", "rgb(1 2 3 / 50%)", "color-mix(in srgb, red, blue)"])
+  for (const v of ["#e5e7eb", "rgba(1,2,3,.4)", "rgb(1 2 3 / 50%)", "color-mix(in srgb, red, blue)",
+    "rgb(255, 128, 0)", "hsl(240, 100%, 0%)", "rgba(255, 128, 0, 1)"])
     assert.equal(paintVisible(v), true, v);
 });
 
