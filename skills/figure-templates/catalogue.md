@@ -2,6 +2,18 @@
 
 [Template selection and workflow](SKILL.md).
 
+**Graph labels:** `function_graph` accepts optional `x_step` and `y_step`
+(positive integers dividing their spans) and `x_label_side="below"|"above"`,
+`y_label_side="left"|"right"`. Numerals stay aligned to their ticks; the
+builder may flip a whole axis or refuse if no clear arrangement exists.
+The numeral for zero binds to the shared origin and aligns with the x-axis
+numeral row. If the row cannot fit zero and the question does not need it,
+the shared origin is declared unlabelled. Both `function_graph`
+and `cartesian_plot` bind point labels and check arrowhead clearance;
+`solid` (cylinder/cone radius and height) and `solid_composite` bind dimension
+labels to their leaders. See the [hand-drawn API](finish-api.md) for the same
+helpers and the visible-mark contract.
+
 | template | you pass | stem-checked | the claim set emits | limits |
 |---|---|---|---|---|
 | `elevation_scene` | `post=('F','T')`, `sights=[{from,to,angle,kind,side}]` ≤2, `eyes={E:ground}`?, `heights`/`distances` (stem keys), `unknowns`, `labels`, `unit` | every numeric given; depression is declared by `kind="depression"` with a positive angle magnitude | `right` post/eye posts, `angle H <from> <to> = v` on the datum end (real capital anchor), `parallel` datum∥ground, `on` mid-ground points, `derive` complement, `label` per letter/numeral, `none` | arcs are owned by the horizontal datum, never the ground; under/over-determined or contradictory givens refuse; 3+ sights/observers refuse |

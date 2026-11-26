@@ -18,6 +18,146 @@ const fails = (r) => r.findings.filter((f) => f.severity === "fail");
 const rules = (r) => new Set(fails(r).map((f) => f.rule));
 const axisClaims = '  K8 axis LR from 0 to 6 | inferred |\n  K9 axis BU from 0 to 6 | inferred |';
 
+test("tick ownership distinguishes the same numeral on both axes and rejects a wrong seat", () => {
+  const d = doc([
+    { id: "tx2", type: "line", points: [[90, 125], [90, 135]] },
+    { id: "ty2", type: "line", points: [[45, 90], [55, 90]] },
+    { id: "x2", type: "text", at: [90, 153], value: "2" },
+    { id: "y2", type: "text", at: [25, 90], value: "2" },
+  ]);
+  const claims = `anchors:
+    L 50 130
+    R 170 130
+    B 50 130
+    U 50 10
+claims:
+${axisClaims}
+  K10 tick-label LR 2 tx2 x2 below | inferred |
+  K11 tick-label BU 2 ty2 y2 left | inferred |`;
+  const x2 = L({ text: "2", elementId: "x2", bbox: [85, 147, 10, 12] });
+  const y2 = L({ i: 1, text: "2", elementId: "y2", bbox: [20, 84, 10, 12] });
+  const good = assess({ doc: d, claims, widths: W([x2, y2]) });
+  assert.equal(good.verdict, "PASS");
+  assert.ok(good.labels.every((l) => l.binding === "bound"));
+  const bad = assess({ doc: d, claims, widths: W([x2, { ...y2, bbox: [20, 64, 10, 12] }]) });
+  assert.ok(rules(bad).has("tick-label"));
+  assert.ok(rules(assess({ doc: d, claims, widths: W([x2]) })).has("tick-label"));
+  const distant = { ...x2, bbox: [85, 235, 10, 12] };
+  assert.ok(rules(assess({ doc: d, claims, widths: W([distant, y2]) })).has("tick-label"));
+});
+
+test("bound point labels must prefer their own point to an unmarked crossing", () => {
+  const d = doc([
+    { id: "dot", type: "point", at: [50, 50], r: 3 },
+    { id: "first", type: "line", points: [[75, 20], [75, 110]] },
+    { id: "second", type: "line", points: [[20, 75], [110, 75]] },
+  ]);
+  const claims = 'anchors:\n D 50 50\nclaims:\n K1 point-label D d 32 | inferred |';
+  const at = (bbox) => assess({ doc: d, claims, widths: W([L({ text: "D", elementId: "d", bbox })]) });
+  assert.equal(at([38, 25, 10, 12]).verdict, "PASS");
+  assert.ok(rules(at([63, 57, 10, 12])).has("target"));
+  assert.ok(rules(at([13, 20, 10, 12])).has("target"));
+});
+
+test("a solid-composite label at the old seat fails its own leader midpoint", () => {
+  const fixtures = [
+    ["radius", "4 cm", [[77, 57.68], [129.48, 47.47]], [161.34, 24.6], [103.24, 36]],
+    ["height", "10 cm", [[167, 57.68], [167, 217.68]], [141.09, 254.67], [194, 137.68]],
+    ["sphere_r", "3 cm", [[77, 169.68], [43.4, 135.12]], [48.75, 99.29], [66, 137]],
+  ];
+  for (const [id, text, points, old, near] of fixtures) {
+    const d = doc([
+      { id: "ld" + id, type: "line", points, stroke: { width: 2, dash: [4, 4] } },
+      { id: "lb" + id, type: "text", at: old, value: text },
+    ]);
+    const claims = `claims:\n  K1 dimension-label ld${id} lb${id} 28 | inferred |`;
+    const seat = (at, strokes) => {
+      d.elements[1].at = at;
+      return assess({ doc: d, claims, widths: W([L({
+        text, elementId: "lb" + id, bbox: [at[0] - 14, at[1] - 7, 28, 14],
+        stroke_u: 4, strokeByElement: strokes,
+      })]) });
+    };
+    assert.ok(rules(seat(old, { ["ld" + id]: 4 })).has("target"), id);
+    assert.equal(seat(near, { ["ld" + id]: 4 }).verdict, "PASS", id);
+    assert.ok(rules(seat(near, { ["ld" + id]: 4, other: 4 })).has("stroke"), id);
+  }
+});
+
+test("origin zero is below-left on the x-label baseline, not on a displaced row", () => {
+  const d = doc([
+    { id: "tx0", type: "line", points: [[50, 125], [50, 135]] },
+    { id: "ty0", type: "line", points: [[45, 130], [55, 130]] },
+    { id: "tx2", type: "line", points: [[90, 125], [90, 135]] },
+    { id: "x2", type: "text", at: [90, 155], value: "2" },
+    { id: "zero", type: "text", at: [32, 155], value: "0" },
+  ]);
+  const claims = "anchors:\n  L 50 130\n  R 170 130\n  B 50 130\n  U 50 10\nclaims:\n"
+    + axisClaims + "\n  K10 tick-label LR 2 tx2 x2 below | inferred |"
+    + "\n  K11 tick-label origin 0 tx0:ty0 zero below-left | inferred |";
+  const numeral = L({ text: "2", elementId: "x2", bbox: [85, 147, 10, 12] });
+  const zero = L({ i: 1, text: "0", elementId: "zero", bbox: [27, 147, 10, 12] });
+  const check = (bbox) => assess({ doc: d, claims, widths: W([numeral, { ...zero, bbox }]) });
+  assert.equal(check(zero.bbox).verdict, "PASS");
+  assert.ok(rules(check([27, 165, 10, 12])).has("tick-label"));
+  assert.ok(rules(check([56, 147, 10, 12])).has("tick-label"));
+});
+
+test("origin zero may use the y-label column only near the crossing", () => {
+  const d = doc([
+    { id: "tx0", type: "line", points: [[50, 125], [50, 135]] },
+    { id: "ty0", type: "line", points: [[45, 130], [55, 130]] },
+    { id: "ty2", type: "line", points: [[45, 90], [55, 90]] },
+    { id: "y2", type: "text", value: "2" },
+    { id: "zero", type: "text", value: "0" },
+  ]);
+  const claims = "anchors:\n  L 50 130\n  R 170 130\n  B 50 130\n  U 50 10\nclaims:\n"
+    + axisClaims + "\n  K10 tick-label BU 2 ty2 y2 left | inferred |"
+    + "\n  K11 tick-label origin 0 tx0:ty0 zero below-left | inferred |";
+  const y2 = L({ text: "2", elementId: "y2", bbox: [20, 84, 10, 12] });
+  const seat = (y) => assess({ doc: d, claims, widths: W([y2,
+    L({ i: 1, text: "0", elementId: "zero", bbox: [20, y, 10, 12] }),
+  ]) });
+  assert.equal(seat(138).verdict, "PASS");
+  assert.ok(rules(seat(170)).has("tick-label"));
+});
+
+test("a curve reaching the arrowhead fails a bound axis clearance", () => {
+  const d = doc([
+    { id: "x", type: "arrow", head: "end", points: [[20, 100], [220, 100]] },
+    { id: "curve", type: "polyline", points: [[40, 170], [194, 100]] },
+  ]);
+  const claims = "claims:\n K1 axis-clearance x 4 curve | inferred |";
+  const measure = () => assess({ doc: d, claims, widths: W([]) });
+  assert.equal(measure().verdict, "PASS");
+  d.elements[1].points[1][0] = 212;
+  assert.ok(rules(measure()).has("axis-clearance"));
+});
+
+test("an invisible line cannot back a tick or dimension binding", () => {
+  const d = doc([
+    { id: "tx2", type: "line", points: [[90, 125], [90, 135]] },
+    { id: "x2", type: "text", value: "2" },
+    { id: "leader", type: "line", points: [[160, 100], [240, 100]] },
+  ]);
+  const claims = "anchors:\n  L 50 130\n  R 170 130\n  B 50 130\n  U 50 10\nclaims:\n"
+    + axisClaims + "\n  K10 tick-label LR 2 tx2 x2 below | inferred |"
+    + "\n  K11 dimension-label leader dim 18 | inferred |";
+  const check = () => assess({ doc: d, claims, widths: W([
+    L({ text: "2", elementId: "x2", bbox: [85, 147, 10, 12] }),
+    L({ i: 1, text: "4 cm", elementId: "dim", bbox: [189, 105, 22, 12] }),
+  ]) });
+  assert.equal(check().verdict, "PASS");
+  for (const hidden of [{ opacity: 0 }, { stroke: { color: "none" } }, { display: "none" }]) {
+    const [tick, label, leader] = d.elements;
+    d.elements = [{ ...tick, ...hidden }, label, { ...leader, ...hidden }];
+    const result = rules(check());
+    assert.ok(result.has("tick-label"));
+    assert.ok(result.has("target"));
+    d.elements = [tick, label, leader];
+  }
+});
+
 test("claim-set parser: anchors, claims, allow, labels (vdd-check grammar)", () => {
   const cs = parseClaimSet(`# comment
 labels: "9 : 4" ratio
@@ -491,9 +631,11 @@ test("allow: label:\"x\" downgrades edge and stroke findings exactly like vdd-ch
 });
 
 test("paintVisible: none/transparent/alpha-0 are not paint", () => {
-  for (const v of ["none", "transparent", "#0000", "#11223300", "rgba(1,2,3,0)", "rgb(1 2 3 / 0)", "hsla(9,10%,10%,0%)"])
+  for (const v of ["none", "transparent", "#0000", "#11223300", "rgba(1,2,3,0)", "rgb(1 2 3 / 0)", "hsla(9,10%,10%,0%)",
+    "rgb(255,128,0,0)", "hsl(240,100%,0%,0%)", "rgb(255 128 0 / 0%)"])
     assert.equal(paintVisible(v), false, v);
-  for (const v of ["#e5e7eb", "rgba(1,2,3,.4)", "rgb(1 2 3 / 50%)", "color-mix(in srgb, red, blue)"])
+  for (const v of ["#e5e7eb", "rgba(1,2,3,.4)", "rgb(1 2 3 / 50%)", "color-mix(in srgb, red, blue)",
+    "rgb(255, 128, 0)", "hsl(240, 100%, 0%)", "rgba(255, 128, 0, 1)", "rgb(255,128,0,50%)"])
     assert.equal(paintVisible(v), true, v);
 });
 

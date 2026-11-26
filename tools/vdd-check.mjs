@@ -56,7 +56,7 @@
  */
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
-import { ASPECT_MAX, paintVisible } from "./visual-metrics.mjs";
+import { ASPECT_MAX, OWN_LEADER_MIN_PX, STROKE_MIN_PX, paintVisible, tickOwners } from "./visual-metrics.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -328,6 +328,9 @@ function checkDocument(doc, cs, canvasAnchors) {
     const extra = labelsInDoc.filter((s) => !cs.labels.includes(s));
     if (extra.length) notes.push(`⚠️ labels on the drawing that the claim set does not list (declare as departures unless they are 'not to scale'): ${extra.map((s) => JSON.stringify(s)).join(" ")}`);
     const A = canvasAnchors;
+    for (const [id, owner] of tickOwners(d, { ...cs, anchors: A })) {
+      if (!owner.valid) fails.push(`tick-label: ${id} does not name a drawn tick at its claimed axis value`);
+    }
     const anchored = Object.keys(A);
     const missingAnch = cs.points.filter((p) => !A[p]);
     if (missingAnch.length) fails.push(`coverage: no canvas anchor for point(s) ${missingAnch.join(" ")} — pass --anchors, set meta.anchors, or add a label-only point element`);
@@ -363,6 +366,30 @@ function checkDocument(doc, cs, canvasAnchors) {
       if (["line", "polyline", "arrow"].includes(el.type)) return strokeVisible(el);
       return true;
     };
+    const onLine = (pt, a, b) => offLine(a, pt, b) * len(a, b) <= 0.5;
+    const onRay = (pt, a, b) => len(pt, a) > 0.01 && onLine(pt, a, b) &&
+      (pt[0] - a[0]) * (b[0] - a[0]) + (pt[1] - a[1]) * (b[1] - a[1]) > 0;
+    for (const c of cs.claims.filter((claim) => claim.pred === "visible-mark")) {
+      const [kind, n, ...targets] = c.args.split(/\s+/);
+      for (const target of targets) {
+        const pts = [...target].map((name) => A[name]);
+        const matched = pts.every(Boolean) && d.elements.some((el) => {
+          if (!strokeVisible(el)) return false;
+          if (kind === "right") {
+            if (el.type !== "angleMark" || el.variant !== "right" || !(el.r > 0) || +n !== 1 ||
+                len(el.vertex, pts[1]) > 0.5) return false;
+            return (onRay(el.from, pts[1], pts[0]) && onRay(el.to, pts[1], pts[2])) ||
+              (onRay(el.to, pts[1], pts[0]) && onRay(el.from, pts[1], pts[2]));
+          }
+          if (el.type !== ({ parallel: "parallelMark", equal: "tickMark" })[kind] ||
+              (el.count ?? 1) !== +n || !(el.size ?? 8) || len(...el.on) <= 0.01) return false;
+          const t = el.at ?? 0.5;
+          const p = el.on[0].map((v, i) => v + t * (el.on[1][i] - v));
+          return el.on.every((v) => onLine(v, ...pts)) && onSegment(p, ...pts, 0.005);
+        });
+        if (!matched) fails.push(`visible-mark: ${c.id} expected ${n} ${kind} mark(s) on ${target}`);
+      }
+    }
     const strokes = d.elements.map((el, index) => {
       if (!["line", "polyline", "polygon", "arrow"].includes(el.type)) return null;
       if (!strokeVisible(el)) return null;
@@ -469,6 +496,11 @@ const fmt = (v) => (Math.abs(v) < 0.01 && v !== 0 ? v.toExponential(2) : (+v.toF
 
 // ── 10. Render both surfaces in Chromium ───────────────────────────────────────────────────────────
 async function render(doc, cs, outDir, widths, headed, coverage = []) {
+  const dimensions = Object.fromEntries((cs?.claims ?? []).filter((c) => c.pred === "dimension-label")
+    .map((c) => {
+      const [leader, label, , callout] = c.args.split(/\s+/);
+      return [label, [leader, ...(callout ? [callout] : [])]];
+    }));
   const RENDER_BUNDLE = path.join(CACHE, `render-${stamp()}-${SELF_HASH}.js`);
   if (!fs.existsSync(RENDER_BUNDLE)) {
     const entry = path.join(CACHE, "render-entry.tsx");
@@ -512,7 +544,7 @@ else {
       const page = await browser.newPage({ viewport: { width: w + 32, height: 1400 } });
       await page.goto(`http://127.0.0.1:${port}/w${w}.html`);
       await page.waitForFunction(() => document.querySelectorAll('[role="img"] svg').length === 2 || (window).__INVALID__, null, { timeout: 15000 }).catch(() => {});
-      const read = await page.evaluate(() => {
+      const read = await page.evaluate(({ dimensions, ownLeaderMin, strokeMin }) => {
         if (window.__INVALID__) return { invalid: window.__INVALID__ };
         const surf = (id) => {
           const host = document.getElementById(id); const img = host.querySelector('[role="img"]'); const svg = img?.querySelector("svg");
@@ -522,6 +554,13 @@ else {
           const painted = window.__FIGURE__.elements.map((el, index) => ({ el, index }));
           if (painted.some(({ el }) => typeof el.z === "number")) painted.sort((a, b) => (a.el.z ?? 0) - (b.el.z ?? 0) || a.index - b.index);
           const shapes = painted.filter(({ el }) => el.type !== "math"), groups = [...svg.children].filter((e) => e.tagName.toLowerCase() === "g");
+          const elementIds = new Map(groups.length === shapes.length
+            ? groups.map((g, i) => [g, shapes[i].el.id]) : []);
+          const elementId = (node) => {
+            let g = node.closest("g");
+            while (g && g.parentElement !== svg) g = g.parentElement?.closest("g");
+            return elementIds.get(g);
+          };
           const canvas = document.createElement("canvas"); canvas.width = canvas.height = 1;
           const ctx = canvas.getContext("2d", { willReadFrequently: true });
           const ancestors = []; for (let e = img; e; e = e.parentElement) ancestors.unshift(e);
@@ -566,21 +605,26 @@ else {
             let bb; try { bb = t.getBBox(); } catch { bb = null; }
             if (!bb || !pxPerUnit) return { text: t.textContent, edge_px: null, stroke_px: null, ok: false };
             const edge = Math.min(bb.x - vb.x, bb.y - vb.y, vb.x + vb.width - (bb.x + bb.width), vb.y + vb.height - (bb.y + bb.height)) * pxPerUnit;
-            let stroke = Infinity;
+            let stroke = Infinity, strokeViolation = null;
+            const own = dimensions[elementId(t)] ?? [];
             for (const s of strokes) {
               let L; try { L = s.getTotalLength(); } catch { continue; }
               if (!Number.isFinite(L) || L <= 0) continue;
               const sw = (parseFloat(getComputedStyle(s).strokeWidth) || 0) * pxPerUnit;
+              const min = own.includes(elementId(s)) ? ownLeaderMin : strokeMin;
               const n = Math.max(8, Math.min(64, Math.ceil(L / 4)));
               for (let i = 0; i <= n; i++) {
                 const p = s.getPointAtLength((L * i) / n);
                 const dx = Math.max(bb.x - p.x, 0, p.x - (bb.x + bb.width));
                 const dy = Math.max(bb.y - p.y, 0, p.y - (bb.y + bb.height));
-                stroke = Math.min(stroke, Math.hypot(dx, dy) * pxPerUnit - sw / 2);
+                const gap = Math.hypot(dx, dy) * pxPerUnit - sw / 2;
+                stroke = Math.min(stroke, gap);
+                if (+gap.toFixed(1) < min && (!strokeViolation || gap - min < strokeViolation.gap - strokeViolation.min))
+                  strokeViolation = { gap, min };
               }
             }
             const edge_px = +edge.toFixed(1), stroke_px = stroke === Infinity ? null : +stroke.toFixed(1);
-            return { text: t.textContent, edge_px, stroke_px, ok: edge_px >= 8 && (stroke_px === null || stroke_px >= 6) };
+            return { text: t.textContent, edge_px, stroke_px, strokeViolation, ok: edge_px >= 8 && !strokeViolation };
           });
           return {
             visibleStrokes,
@@ -598,7 +642,7 @@ else {
           };
         };
         return { student: surf("student"), card: surf("card") };
-      });
+      }, { dimensions, ownLeaderMin: OWN_LEADER_MIN_PX, strokeMin: STROKE_MIN_PX });
       const shot = path.join(outDir, `render-${w}.png`);
       await page.screenshot({ path: shot, fullPage: true });
       results.push({ width: w, shot, ...read });
@@ -612,7 +656,7 @@ else {
         for (const l of r.labels ?? []) {
           if (l.edge_px === null) fails.push(`label ${JSON.stringify(l.text)}: render ${w}px ${s} bbox could not be measured — failing closed (a label that cannot be measured cannot be proven clear; declare 'allow: label:${JSON.stringify(l.text)}' only if intentional)`);
           else if (l.edge_px < 8) fails.push(`label ${JSON.stringify(l.text)}: render ${w}px ${s} bbox is ${l.edge_px}px from the canvas edge (< 8px — move it in or declare 'allow: label:${JSON.stringify(l.text)}')`);
-          if (l.stroke_px !== null && l.stroke_px < 6) fails.push(`label ${JSON.stringify(l.text)}: render ${w}px ${s} bbox is ${l.stroke_px}px from stroke geometry (< 6px — move it clear or declare 'allow: label:${JSON.stringify(l.text)}')`);
+          if (l.strokeViolation) fails.push(`label ${JSON.stringify(l.text)}: render ${w}px ${s} bbox is ${+l.strokeViolation.gap.toFixed(1)}px from stroke geometry (< ${l.strokeViolation.min}px — move it clear or declare 'allow: label:${JSON.stringify(l.text)}')`);
         }
         if (cs) for (const g of cs.labels) if (!r.texts.includes(g)) fails.push(`render ${w}px ${s}: label ${JSON.stringify(g)} did not render as <text> (rendered: ${r.texts.map((t) => JSON.stringify(t)).join(" ")})`);
       }
@@ -706,6 +750,12 @@ async function selfTest() {
   const anchors = { A: [60, 40], B: [60, 220], C: [240, 220] };
   let ok = true; const t = (name, cond) => { console.log(`${cond ? "PASS" : "FAIL"}  ${name}`); if (!cond) ok = false; };
   const good = checkDocument(tri, cs, anchors);
+  const withMark = { ...cs, claims: [...cs.claims, { id: "K9", pred: "visible-mark", args: "right 1 ABC" }] };
+  t("declared right mark paints on the claimed vertex and arms",
+    !checkDocument(tri, withMark, anchors).fails.some((f) => f.startsWith("visible-mark:")));
+  const noMark = { ...tri, elements: tri.elements.filter((el) => el.id !== "rB") };
+  t("deleting the declared right mark fails even though the underlying geometry is still right",
+    checkDocument(noMark, withMark, anchors).fails.some((f) => f.startsWith("visible-mark:")));
   t("correct triangle: 0 failures", good.fails.length === 0);
   t("numeric: 3 claims compared", good.numeric.length === 3);
   const noAB = { ...tri, elements: tri.elements.filter((e) => e.id !== "AB") };
@@ -899,6 +949,16 @@ async function selfTest() {
     const clear = r.results[0].student.labels.find((l) => l.text === "clear");
     t("label metrics emitted per <text> with {text, edge_px, stroke_px, ok}",
       !!clear && clear.ok && clear.edge_px >= 8 && clear.stroke_px >= 6);
+    const leader = { id: "leader", type: "line", points: [[80, 100], [180, 100]] };
+    const dimension = { id: "dimension", type: "text", at: [125, 87.5], value: "4 cm", fontSize: 13 };
+    const dimDoc = { ...tri, elements: [leader, dimension] };
+    const unbound = await render(dimDoc, null, labOut, [320], false);
+    const bound = await render(dimDoc, { labels: ["4 cm"], claims: [
+      { pred: "dimension-label", args: "leader dimension 18" },
+    ] }, labOut, [320], false);
+    t("a 3–6px gap is allowed only for a bound dimension's own leader",
+      unbound.fails.some((f) => f.includes('label "4 cm"') && f.includes("stroke geometry")) &&
+      !bound.fails.some((f) => f.includes('label "4 cm"') && f.includes("stroke geometry")));
     // F3: the rule is RENDERED px at each width — a canvas far wider than the render shrinks user
     // units into px. 20 units is comfortably ≥ 8 on the canvas but ≈ 6 px at 320, so it must fail.
     const wideDoc = { ...tri, canvas: { ...tri.canvas, width: 1000 }, elements: [...linesOnly,
