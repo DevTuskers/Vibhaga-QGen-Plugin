@@ -4396,6 +4396,16 @@ class Grade10SolidsTests(unittest.TestCase):
                 self.assertTrue(b.doc["elements"])
                 self.assertIn("channel:  constructed", b.claims)
 
+    def test_sphere_radius_leader_rotates_when_horizontal_seat_is_blocked(self):
+        b = vt.build_solid_composite(
+            figure_id="review1", stem=self.STEM, shape="sphere_in_cylinder",
+            dims={"radius": 4, "height": 8, "sphere_r": 2}, values="figure")
+        ball = next(e for e in b.doc["elements"] if e["id"] == "ball")
+        a, z = next(e["points"] for e in b.doc["elements"] if e["id"] == "ldsphere_r")
+        self.assertNotEqual(a[1], z[1])
+        self.assertEqual(a, ball["center"])
+        self.assertAlmostEqual(math.dist(a, z), ball["r"], delta=0.02)
+
     def test_each_numeric_given_is_stem_checked(self):
         for i, (fn, kwargs) in enumerate(self.CASES):
             for value in kwargs["dims"].values():

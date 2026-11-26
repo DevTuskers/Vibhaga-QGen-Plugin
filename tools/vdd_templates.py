@@ -58,6 +58,9 @@ MARGIN = 12.0                # canvas margin around ALL ink, canvas units
 CHAR_EM = 0.62               # measured label advance; the renderer measured 0.53–0.69 em/char
 LABEL_GAP = 18.0             # angleMark label gap (DiagramRenderer)
 EDGE_PX, STROKE_PX = 8.0, 6.0   # vdd-check rule: rendered px to canvas edge / to stroke edge
+_CLEARANCE = json.loads(Path(__file__).with_name("vdd-clearance.json").read_text())
+OWN_LEADER_MIN_PX = _CLEARANCE["ownLeaderMinPx"]
+TICK_MAX_GAP_PX = _CLEARANCE["tickMaxGapPx"]
 SLACK_EDGE, SLACK_STROKE = 1.0, 2.0   # the estimator errs — require the render limits plus slack
 # The narrowest render surface is the StudentPreview figure plate at 320 px: its content box is
 # 320 − 2×12 px padding − 2×1 px border = 294 px (measured: svg width = 294 on /diagtest). A canvas
@@ -593,7 +596,7 @@ def _floater_bad(cbs: list[tuple], near: XY, rivals: list[XY], strokes: list[tup
     every label box that is not this floater's (fixed labels + the other floaters')."""
     bad = 0
     if any((_seg_rect_dist(a, b, cb[1:5]) - w / 2) * s
-           < (3.0 + SLACK_STROKE if _leader_stroke(a, b, leader) else STROKE_PX + SLACK_STROKE)
+           < (OWN_LEADER_MIN_PX + SLACK_STROKE if _leader_stroke(a, b, leader) else STROKE_PX + SLACK_STROKE)
            for a, b, w in strokes for cb in cbs):
         bad |= 1
     if any(_rect_gap(cb[1:5], pb[1:5]) * s < 4.0 for cb in cbs for pb in others):
@@ -975,7 +978,7 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
                      and not _leader_stroke(a, b, leader_pts)
                      and not _leader_stroke(a, b, callout["points"] if callout else None)),
                     default=99) if clear_strokes else 99
-        if leader_pts and (_seg_rect_dist(*leader_pts, (x0, y0, x1, y1)) - 1) * scale_stroke < 3:
+        if leader_pts and (_seg_rect_dist(*leader_pts, (x0, y0, x1, y1)) - 1) * scale_stroke < OWN_LEADER_MIN_PX:
             refuse_label(i, "the leader-clearance rule", f"{kind}: label {txt!r} overlaps its leader")
         if worst * scale_stroke < STROKE_PX + SLACK_STROKE:
             refuse_label(i, "the stroke-clearance rule",
@@ -8510,6 +8513,9 @@ def build_function_graph(*, figure_id, stem, ask=None, title=None, description=N
                 for x, y, align in positions:
                     cand = vc.text((x, y), f"{value:g}", size=15, id=label_id, align=align)
                     box = label_boxes([cand], 15)[0][1:]
+                    tick = (X(value) if axis == "LR" else X(0), Y(value) if axis == "BU" else Y(0))
+                    if _seg_rect_dist(tick, tick, box) > _clearance_units(TICK_MAX_GAP_PX, width + 60):
+                        continue
                     if any(_rect_gap(box, old) < _clearance_units(4.5, width + 60) for old in boxes):
                         continue
                     if any(_seg_rect_dist(a, b, box) - w / 2 < clearance
@@ -12314,14 +12320,34 @@ def build_solid_composite(*, figure_id, stem, ask=None, title=None,
         add(f'describe "{hd} is drawn dashed"', "inferred", "hidden outline")
     add("none tickMark parallelMark angleMark arrow shaded", "inferred",
         "outlines and dashed leaders only")
-    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
-                  anchors=dict(P), points=list(P), segments=[], claims=claims,
-                  ask=ask, title=title or what.capitalize(),
-                  description=description or (what[0].upper() + what[1:] +
-                                            ", with its dimensions marked."),
-                  scale="proportions to scale where numeric; letter dims are "
-                        "representative",
-                  medium=medium)
+    def build():
+        return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                      anchors=dict(P), points=list(P), segments=[], claims=claims,
+                      ask=ask, title=title or what.capitalize(),
+                      description=description or (what[0].upper() + what[1:] +
+                                                  ", with its dimensions marked."),
+                      scale="proportions to scale where numeric; letter dims are "
+                            "representative",
+                      medium=medium)
+
+    try:
+        return build()
+    except TemplateError as exc:
+        ball_glyph = f"{val['sphere_r']:g} {unit}" if "sphere_r" in num else val.get("sphere_r")
+        if shape != "sphere_in_cylinder" or f"floating label {ball_glyph!r} found no clear spot" not in str(exc):
+            raise
+        leader = next(el for el in elements if el.get("id") == "ldsphere_r")
+        centre = (cx, bot - sr)
+        for degrees in (225, 315, 135, 45):
+            angle = math.radians(degrees)
+            end = (cx + sr * math.cos(angle), centre[1] + sr * math.sin(angle))
+            leader["points"] = [centre, end]
+            P["S1"] = vc.lerp(centre, end, 0.5)
+            try:
+                return build()
+            except TemplateError:
+                continue
+        raise
 
 
 _NET_SHAPES = ("square_pyramid",)

@@ -23,6 +23,10 @@
  *             claimed cells (`shaded N of M cells` + 0.5 × `describe "…half shaded…"`)
  *   font    — KaTeX math labels mixed with <text> labels, or >1 computed fontFamily among texts
  */
+import { readFileSync } from "node:fs";
+
+export const { ownLeaderMinPx: OWN_LEADER_MIN_PX, tickMaxGapPx: TICK_MAX_GAP_PX } =
+  JSON.parse(readFileSync(new URL("./vdd-clearance.json", import.meta.url), "utf8"));
 export const EDGE_MIN_PX = 8;
 export const STROKE_MIN_PX = 6;
 export const TARGET_FACTOR = 1.5;
@@ -311,6 +315,13 @@ function hasVisibleFill(el, defaults) {
   return op > 0;
 }
 
+export function visibleLine(el, defaults) {
+  return el?.type === "line" && el.display !== "none" && el.style?.display !== "none" &&
+    (el.opacity ?? defaults?.opacity ?? 1) > 0 && (el.stroke?.opacity ?? 1) > 0 &&
+    (el.stroke?.width ?? defaults?.strokeWidth ?? 2) > 0 &&
+    paintVisible(el.stroke?.color ?? defaults?.strokeColor ?? "black");
+}
+
 export function tickOwners(doc, cs) {
   const elements = new Map((doc?.elements ?? []).map((el) => [el.id, el]));
   const axes = new Map();
@@ -319,7 +330,8 @@ export function tickOwners(doc, cs) {
     if (a && cs.anchors[a[1]] && cs.anchors[a[2]])
       axes.set(a.slice(1, 3).join(""), [cs.anchors[a[1]], cs.anchors[a[2]], +a[3], +a[4]]);
   }
-  const midpoint = (el) => el?.type === "line" ? el.points[0].map((v, i) => (v + el.points[1][i]) / 2) : null;
+  const midpoint = (el) => visibleLine(el, doc?.defaults)
+    ? el.points[0].map((v, i) => (v + el.points[1][i]) / 2) : null;
   const out = new Map();
   for (const c of cs?.claims ?? []) {
     if (c.pred !== "tick-label") continue;
@@ -353,11 +365,12 @@ export function tickOwners(doc, cs) {
   return out;
 }
 
-function tickSeatWrong(owner, label, owners, labels) {
+function tickSeatWrong(owner, label, owners, labels, scale) {
   if (!owner.valid || !owner.side || !label.bbox) return true;
   const b = label.bbox;
   const centre = [b[0] + b[2] / 2, b[1] + b[3] / 2];
   const [x, y] = owner.at;
+  if (distPointToBox(owner.at, b) * scale > TICK_MAX_GAP_PX) return true;
   if ((owner.side.includes("left") && b[0] + b[2] >= x) ||
       (owner.side.includes("right") && b[0] <= x) ||
       (owner.side.includes("above") && b[1] + b[3] >= y) ||
@@ -374,7 +387,8 @@ function tickSeatWrong(owner, label, owners, labels) {
       const other = labels.get(r.labelId)?.bbox;
       return other && Math.abs(other[0] + other[2] - (b[0] + b[2])) <= 2;
     });
-    if (!sameRow && !sameColumn) return true;
+    const nearOriginY = Math.max(b[1] - y, y - b[1] - b[3], 0) <= b[3];
+    if (!sameRow && !(sameColumn && nearOriginY)) return true;
     return [...owners.values()].some((r) => {
       if (!r.valid || r.axis === "origin" || (sameRow ? r.dimension !== 0 : r.dimension !== 1)) return false;
       const i = r.dimension;
@@ -539,7 +553,7 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
   const targetOf = (l, ppu, labels) => {
     if (ticks.has(l.elementId)) {
       const tick = ticks.get(l.elementId);
-      return { d: null, via: `tick ${tick.axis}`, ambiguous: labels && tickSeatWrong(tick, l, ticks, labels) };
+      return { d: null, via: `tick ${tick.axis}`, ambiguous: labels && tickSeatWrong(tick, l, ticks, labels, mobileScale) };
     }
     const bound = pointsById.get(l.elementId);
     if (bound && l.bbox) {
@@ -555,15 +569,13 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
     if (dimension && l.bbox) {
       const [leader, limit, target, callout] = dimension;
       const via = `leader ${target}`;
-      if (leader?.type !== "line" || !ppu) return { d: null, ambiguous: true, via };
+      if (!visibleLine(leader, doc?.defaults) || !ppu) return { d: null, ambiguous: true, via };
       const [a, b] = leader.points;
       const midpoint = a.map((v, i) => (v + b[i]) / 2);
       if (callout) {
         const connector = byElementId.get(callout);
         const points = connector?.points;
-        if (connector?.type !== "line" ||
-            !paintVisible(connector.stroke?.color ?? doc.defaults?.strokeColor ?? "black") ||
-            (connector.stroke?.width ?? doc.defaults?.strokeWidth ?? 2) <= 0 ||
+        if (!visibleLine(connector, doc?.defaults) ||
             !points?.some((p) => dist(p, midpoint) <= 0.1))
           return { d: null, ambiguous: true, via };
         const tip = points.find((p) => dist(p, midpoint) > 0.1);
@@ -611,7 +623,7 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
   for (const w of widths) {
     const byId = new Map((w.labels ?? []).map((l) => [l.elementId, l]));
     for (const [id, owner] of ticks) {
-      if (tickSeatWrong(owner, byId.get(id) ?? {}, ticks, byId))
+      if (tickSeatWrong(owner, byId.get(id) ?? {}, ticks, byId, mobileScale))
         push("tick-label", "fail",
           `label ${id}: ${owner.value} is not seated at its own ${owner.axis} tick on the ${owner.side} side at ${w.width}px`,
           String(owner.value));
@@ -650,7 +662,7 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
       const dimension = dimensionsById.get(l.elementId);
       const relaxed = dimension && l.strokeByElement && ppu;
       const soft = relaxed ? new Set([dimension[2], dimension[3]]) : null;
-      const rendered = relaxed ? Object.entries(l.strokeByElement).map(([id, u]) => [u * ppu, soft.has(id) ? 3 : STROKE_MIN_PX]) : [];
+      const rendered = relaxed ? Object.entries(l.strokeByElement).map(([id, u]) => [u * ppu, soft.has(id) ? OWN_LEADER_MIN_PX : STROKE_MIN_PX]) : [];
       const stroke_px = l.stroke_u == null || ppu == null ? null : l.stroke_u * ppu;
       const violation = relaxed ? rendered.find(([gap, min]) => gap < min) :
         stroke_px !== null && stroke_px < STROKE_MIN_PX ? [stroke_px, STROKE_MIN_PX] : null;
