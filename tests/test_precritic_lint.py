@@ -5,6 +5,7 @@ Synthetic fixtures only: a hand-written scope card (English filler, no real less
 <tmp>/cards/, a content.yaml with toy stems, and a synthetic claims file. --cards-dir keeps the
 corpus out of the loop entirely.
 """
+import json
 import subprocess
 import sys
 import tempfile
@@ -128,7 +129,7 @@ def write(p: Path, text: str) -> Path:
 
 
 def make_run(tmp: Path, stem: str = "Shade the strip.", parts=None, approach=None,
-             final=None, lessons=None, figure=None) -> Path:
+             final=None, lessons=None, figure=None, figures=None) -> Path:
     run = tmp / "run"
     run.mkdir(parents=True, exist_ok=True)
     q = {"n": 1, "lessons": lessons if lessons is not None else ["L07"], "stem": stem}
@@ -143,6 +144,7 @@ def make_run(tmp: Path, stem: str = "Shade the strip.", parts=None, approach=Non
     import yaml
     write(run / "content.yaml",
           yaml.safe_dump({"id_seed": "synthetic", "lessons": {"L07": "placeholder"},
+                          "figures": figures or {},
                           "questions": [with_si(q)]}, allow_unicode=True, sort_keys=False))
     cards = tmp / "cards"
     write(cards / "07-Fractions.yaml", CARD)
@@ -206,6 +208,105 @@ def write_levels_run(tmp: Path, *question_levels) -> Path:
 
 
 class PrecriticLintTest(unittest.TestCase):
+    def test_mechanical_wording_advisories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            run = make_run(
+                tmp, stem="The loan has principal and interest. The repayment stays the same.",
+                parts=[{
+                    "label": "a",
+                    "text": "Use $P$ and $Q$ from 3 to 7. Explain why Q is larger.",
+                    "text_si": "$P$ හා $Q$ සඳහා 3 සිට 8 දක්වා සලකන්න.",
+                    "approach": "Compare the endpoints at x = 7.",
+                    "final": "$Q > P$",
+                }],
+            )
+            result = lint(run, tmp)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for message in (
+                "specify whether principal, interest, or the total payment stays unchanged",
+                "consistent notation: use inline math for Q",
+                "bare variable assignment",
+                "explicit numeric range endpoints disagree",
+                "prompt asks for a reason, but the final is math only",
+            ):
+                self.assertIn(message, result.stdout)
+
+    def test_qualified_aligned_wording_is_quiet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            run = make_run(
+                tmp, stem="The loan has principal and interest. The principal repayment stays the same.",
+                parts=[{
+                    "label": "a",
+                    "text": "Use $P$ and $Q$ from 3 to 7. Explain why $Q$ is larger.",
+                    "text_si": "$P$ හා $Q$ සඳහා 3 සිට 7 දක්වා සලකන්න.",
+                    "approach": "Compare the fraction endpoints at $x = 7$.",
+                    "final": "$Q > P$ because $Q$ is farther right.",
+                }],
+            )
+            result = lint(run, tmp)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("precritic-lint: 0 fail(s) · 0 warn(s)", result.stdout)
+
+    def test_exact_scaffold_and_phantom_bounds_are_advisories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            run = make_run(tmp, figure="curve", figures={"curve": "figures/curve.json", "marked": "figures/marked.json"},
+                           parts=[{"label": "a", "text": "Expand $(t + 13)^4$.",
+                                   "figure": "marked", "approach": "Use repeated multiplication.", "final": "Done."}])
+            existing = write(tmp / "existing.json", '[{"id":"synthetic","stem_excerpt":"Verify the polynomial expansion of $(t+13)^{4}$ before substituting any values."}]')
+            write(run / "figures" / "curve.json", '{"a11y":{"description":"The curve has marked plot endpoints."},"elements":[{"type":"polyline"}]}')
+            write(run / "figures" / "marked.json", '{"a11y":{"description":"The curve has marked plot endpoints."},"elements":[{"type":"point","r":3}]}')
+            result = lint(run, tmp, "--existing", str(existing))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("exact algebra scaffold also appears in existing.json:synthetic", result.stdout)
+            self.assertIn("WARN curve: a11y describes marked plot bounds", result.stdout)
+            self.assertNotIn("WARN marked:", result.stdout)
+
+    def test_lints_only_figure_paths_referenced_by_questions_or_nested_parts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            run = make_run(tmp, lessons=[], figure="main", figures={"main": "figures/main.json",
+                           "nested": "diagrams/endpoints.json", "unused": "figures/unused.json"},
+                           parts=[{"label": "a", "text": "Read the plot.", "parts": [
+                               {"label": "i", "text": "Name the endpoints.", "figure": "nested",
+                                "approach": "Read the axis.", "final": "Done."}]}])
+            figure = '{"a11y":{"description":"Marked plot endpoints."},"elements":[]}'
+            write(run / "figures" / "main.json", figure)
+            write(run / "diagrams" / "endpoints.json", figure)
+            write(run / "figures" / "unused.json", "{")
+            write(run / "figures" / "abandoned.json", "{")
+            result = lint_plain(run)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("WARN main: a11y describes marked plot bounds", result.stdout)
+            self.assertIn("WARN endpoints: a11y describes marked plot bounds", result.stdout)
+            self.assertIn("precritic-lint: 0 fail(s) · 2 warn(s)", result.stdout)
+
+    def test_marked_bounds_recognize_dashed_lines_and_default_point_radius(self):
+        line = {"type": "line", "points": [[0, 0], [0, 20]]}
+        point = {"type": "point", "at": [0, 0]}
+        fixtures = [
+            ({**line, "stroke": {"style": "dashed"}}, {}, False),
+            (line, {"strokeStyle": "dashed"}, False),
+            (point, {}, False),
+            ({**line, "stroke": {"style": "solid"}}, {"strokeStyle": "dashed"}, True),
+            ({**point, "r": 0}, {}, True),
+        ]
+        for marker, defaults, warns in fixtures:
+            with self.subTest(marker=marker, defaults=defaults), tempfile.TemporaryDirectory() as tmp:
+                tmp = Path(tmp)
+                run = make_run(tmp, lessons=[], figure="bounds", figures={"bounds": "figures/bounds.json"})
+                write(run / "figures" / "bounds.json", json.dumps({
+                    "a11y": {"description": "Marked plot endpoints."},
+                    "defaults": defaults,
+                    "elements": [marker],
+                }))
+                result = lint_plain(run)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual("WARN bounds: a11y describes marked plot bounds" in result.stdout,
+                                 warns, result.stdout)
+
     def test_wording_advisories_use_paired_fields_and_part_prompt(self):
         with tempfile.TemporaryDirectory() as td:
             run = make_run(Path(td), stem="Count the pages printed by then.", parts=[{

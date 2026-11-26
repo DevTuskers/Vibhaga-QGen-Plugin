@@ -86,10 +86,15 @@ def jobs_for(cfg):
     if not isinstance(cfg["figures"], bool):
         raise ValueError("Expected a figures boolean")
     kinds = ("content", "diagram") if cfg["figures"] else ("content",)
-    jobs = [
-        (kind, chunk["reports"][kind], batch_prompt(cfg, chunk, kind))
-        for chunk in cfg["chunks"] for kind in kinds
-    ]
+    jobs = []
+    for chunk in cfg["chunks"]:
+        selected = chunk.get("critics", list(kinds))
+        if (not isinstance(selected, list) or not selected
+                or any(kind not in kinds for kind in selected)
+                or len(set(selected)) != len(selected)):
+            raise ValueError("Chunk critics must be a nonempty, unique list of applicable critic kinds")
+        for kind in selected:
+            jobs.append((kind, chunk["reports"][kind], batch_prompt(cfg, chunk, kind)))
     if not jobs or (len(cfg["chunks"]) > 1 and any("questions" not in c for c in cfg["chunks"])):
         raise ValueError("Supply one batch or explicit question ranges for multiple chunks")
     return jobs

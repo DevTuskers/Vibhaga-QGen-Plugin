@@ -68,6 +68,7 @@ import importlib.util
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -96,6 +97,15 @@ READABLE_RES = (
 )
 DIGIT_TOKEN = re.compile(r"\d+(?:\.\d+)?")
 WORD_RE = re.compile(r"[^\W\d_]+")        # letters only, any script
+MATH_SPAN = re.compile(r"(?<!\\)(\$\$|\$)(?!\$)(.+?)(?<!\\)\1(?!\$)", re.S)
+BARE_ASSIGNMENT = re.compile(r"(?<![\w\\])[A-Za-z]\s*=\s*[−+-]?\d")
+NUMBER = r"[−-]?\d+(?:\.\d+)?"
+EN_RANGE = re.compile(rf"\b(?:between|from)\s+\$?({NUMBER})\$?(?:\s*[a-z]{{1,3}})?\s+(?:and|to)\s+\$?({NUMBER})", re.I)
+SI_RANGE = re.compile(rf"\$?({NUMBER})\$?(?:\s*[a-z]{{1,3}})?\s+සිට\s+\$?({NUMBER})")
+PROOF_REQUEST = re.compile(r"\b(?:explain why|give (?:a|the) (?:visual )?reason|justify your answer)\b", re.I)
+PHANTOM_MARK = re.compile(r"\bmarked (?:plot |window )?(?:bounds?|limits?|endpoints?)\b", re.I)
+REPAYMENT = re.compile(r"\b(?:repayment|instal[l]?ment|payment)\b", re.I)
+UNCHANGED = re.compile(r"\b(?:unchanged|stays? the same|remains? the same)\b", re.I)
 
 
 def figure_specs(specs) -> list:
@@ -413,6 +423,27 @@ def readable_values(claims_text: str) -> set[str]:
 
 def wording_warnings(q: dict):
     fields = dict(all_student_fields(q))
+    stem = q.get("stem") or ""
+    loan = all(re.search(rf"\b{word}\b", stem, re.I) for word in ("principal", "interest"))
+    math_ids = {False: set(), True: set()}
+    for where, text in fields.items():
+        math_ids[where.endswith("_si")].update(
+            m[2] for m in MATH_SPAN.finditer(text) if re.fullmatch("[A-Z]", m[2]))
+    for where, text in fields.items():
+        is_si = where.endswith("_si")
+        prose = MATH_SPAN.sub(" ", text)
+        if BARE_ASSIGNMENT.search(prose):
+            yield where, "put a bare variable assignment in inline math"
+        ids = math_ids[is_si]
+        bare = sorted(ids.intersection(re.findall(r"(?<!\w)[A-Z](?!\w)", prose)) - ({"A", "I"} if not is_si else set()))
+        if len(ids) >= 2 and bare:
+            yield where, f"consistent notation: use inline math for {', '.join(bare)} as elsewhere in the question"
+        if loan and where.endswith(".stem"):
+            for sentence in re.split(r"(?<=[.!?])\s+|\n", prose):
+                if (REPAYMENT.search(sentence) and UNCHANGED.search(sentence)
+                        and not re.search(r"\b(?:principal|interest|total)\b", sentence, re.I)):
+                    yield where, "specify whether principal, interest, or the total payment stays unchanged"
+                    break
     prepartitioned = (q.get("figure") and re.search(
         r"\b(?:split|partition(?:ed|s)?|subdivid(?:ed|es)|(?:rectangular|square) sections?)\b",
         q.get("stem") or "", re.I))
@@ -420,6 +451,14 @@ def wording_warnings(q: dict):
         if where.endswith("_si"):
             continue
         si = fields.get(where + "_si", "")
+        en_ranges = [r.replace("−", "-") for pair in EN_RANGE.findall(en) for r in pair]
+        si_ranges = [r.replace("−", "-") for pair in SI_RANGE.findall(si) for r in pair]
+        if en_ranges and si_ranges and en_ranges != si_ranges:
+            yield where + "_si", "explicit numeric range endpoints disagree with the English"
+        if where.endswith(".text") and PROOF_REQUEST.search(en):
+            final = fields.get(where.removesuffix(".text") + ".final")
+            if final and not WORD_RE.search(MATH_SPAN.sub("", final)):
+                yield where, "the prompt asks for a reason, but the final is math only"
         if (re.search(r"\b(?:finished|printed|completed) by (?:then|that (?:time|point))\b", en, re.I)
                 and re.search(r"ඒ වන විට[^.?!\n]{0,45}\sවන\s", si)):
             yield where + "_si", "check completed vs ongoing action against the English"
@@ -434,6 +473,78 @@ def wording_warnings(q: dict):
                 and re.search(r"\barea\b", en, re.I)
                 and re.search(r"\b(?:simplified|expanded) expression\b", en, re.I)):
             yield where, "check whether the pre-partitioned figure gives away the area method"
+
+
+def scaffold_key(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text).translate(str.maketrans({"−": "-", "–": "-", "×": "*"}))
+    text = re.sub(r"\^?\{(\d+)\}", r"\1", text)
+    return re.sub(r"[\s$\\^]", "", text).lower()
+
+
+def scaffold_warnings(q: dict, sources):
+    """Find an explicitly asked algebra operation whose exact expression recurs in a source."""
+    sources = [(name, {scaffold_key(m[2]) for m in MATH_SPAN.finditer(text)})
+               for name, text in sources if isinstance(text, str)]
+    for where, text in all_student_fields(q):
+        if not where.endswith(".text"):
+            continue
+        for match in re.finditer(r"\b(?:expand|factor(?:ise|ize)?|simplify)\s+(\$[^$\n]+\$)", text, re.I):
+            expression = scaffold_key(match[1])
+            if len(expression) < 5 or not re.search("[a-z]", expression):
+                continue
+            source = next((name for name, expressions in sources if expression in expressions), None)
+            if source:
+                yield where, f"exact algebra scaffold also appears in {source}; review task overlap"
+
+
+def staged_figure_uses(content: dict) -> dict:
+    """figure KEY → [staged ids] — where content.yaml attaches each `figures:` entry. A
+    question's `figure:` → `Q<n>`; a part's → `Q<n>.<label path joined by '.'>` — the ids
+    visual-check's staged-doc walk emits, so the check 'does the FILE stem equal the staged
+    id' can run before the audits. Keys never referenced return no ids (unused keys are
+    build-staged's call, not ours)."""
+    uses: dict[str, list[str]] = {}
+
+    def parts(nodes, prefix):
+        for p in nodes or []:
+            if not isinstance(p, dict):
+                continue
+            pid = f"{prefix}.{p.get('label')}"
+            if p.get("figure"):
+                uses.setdefault(p["figure"], []).append(pid)
+            parts(p.get("parts"), pid)
+
+    for i, q in enumerate(content.get("questions") or []):
+        if not isinstance(q, dict):
+            continue
+        n = q.get("n")
+        qid = f"Q{n}" if isinstance(n, int) and not isinstance(n, bool) else f"Q{i + 1}"
+        if q.get("figure"):
+            uses.setdefault(q["figure"], []).append(qid)
+        parts(q.get("parts"), qid)
+    return uses
+
+
+def figure_wording_warnings(run: Path, content: dict):
+    figures = content.get("figures") or {}
+    paths = {run / figures[key] for key in staged_figure_uses(content) if key in figures}
+    for path in sorted(paths):
+        if not path.is_file():
+            continue
+        figure = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(figure, dict) or not isinstance(figure.get("elements"), list):
+            continue
+        desc = (figure.get("a11y") or {}).get("description", "")
+        if not isinstance(desc, str) or not PHANTOM_MARK.search(desc):
+            continue
+        default_stroke_style = (figure.get("defaults") or {}).get("strokeStyle")
+        if not any(el.get("type") == "tickMark"
+                   or (el.get("type") == "point" and (el.get("r") is None or el["r"] > 0))
+                   or (el.get("type") == "line" and
+                       (el.get("stroke") or {}).get("style", default_stroke_style) == "dashed")
+                   or (el.get("type") == "text" and re.search(r"\b(?:bound|limit|window)\b", el.get("value", ""), re.I))
+                   for el in figure["elements"] if isinstance(el, dict)):
+            yield path.stem, "a11y describes marked plot bounds but there are no visible marker candidates"
 
 
 def lint(run: Path, args, log=print) -> tuple[int, int]:
@@ -452,6 +563,9 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
         for where, message in wording_warnings(q):
             warns += 1
             log(f"  WARN {where}: {message}")
+    for where, message in figure_wording_warnings(run, content):
+        warns += 1
+        log(f"  WARN {where}: {message}")
 
     # (a) not_taught probes must not appear in a question field — PER QUESTION by
     # default: a question answers only to the cards its own `lessons:` keys bind (a
@@ -588,11 +702,16 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
                     f"— teach the method, do not announce (S8 §4.1)")
 
     # (e) duplicate fingerprint — digits masked, Jaccard vs existing rows and bound card items
+    existing_scaffolds = []
     for path in getattr(args, "existing", []) or []:
         p = Path(path)
         if not p.is_file():
             die(f"--existing {path}: no such file")
         rows = load_existing(p)
+        for row in rows:
+            rid = row.get("question_id") or row.get("id") or "?"
+            for key in ("stem_excerpt", "question_text"):
+                existing_scaffolds.append((f"{p.name}:{rid}", row.get(key)))
         for q in questions:
             qt = mask_tokens(question_surface(q))
             for row in rows:
@@ -605,12 +724,14 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
                         f"masked) — the same task with new numbers is still a duplicate")
     for q in questions:
         qt = mask_tokens(question_surface(q))
+        scaffolds = list(existing_scaffolds)
         for key in (q.get("lessons") or []):
             if key not in cards:
                 continue
             gen = cards[key]["doc"].get("generated") or {}
             card_name = cards[key]["name"]
             for index, example in enumerate(gen.get("worked_examples") or [], 1):
+                scaffolds.append((f"{card_name} worked example {index}", example.get("excerpt")))
                 tokens = mask_tokens(example.get("excerpt") or "")
                 score = jaccard(qt, tokens)
                 if score >= 0.6:
@@ -622,6 +743,7 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
             for exercise in gen.get("exercises") or []:
                 heading = exercise.get("heading") or "exercise"
                 for index, item in enumerate(exercise.get("items") or [], 1):
+                    scaffolds.append((f"{card_name} exercise {heading} item {index}", item))
                     tokens = mask_tokens(item)
                     score = jaccard(qt, tokens)
                     if score >= 0.6:
@@ -629,6 +751,9 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
                         log(f"  WARN Q{q.get('n')} ≈ {card_name} exercise {heading} item "
                             f"{index} (Jaccard {score:.2f}, digits masked) — duplicate "
                             "lesson-item fingerprint")
+        for where, message in scaffold_warnings(q, scaffolds):
+            warns += 1
+            log(f"  WARN {where}: {message}")
     return fails, warns
 
 
