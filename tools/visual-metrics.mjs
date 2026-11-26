@@ -292,7 +292,7 @@ function elementArea(el) {
 
 /**
  * Is a paint value VISIBLE ink? Mirrors the failure direction of vdd-check: none/transparent and
- * alpha-0 (#rgba/#rrggbbaa trailing 00, functional `…, 0)` / `…/0)` / `0%`) are not paint; anything
+ * alpha-0 (#rgba/#rrggbbaa trailing 00, a fourth rgb/hsl component or explicit `/ 0`) are not paint; anything
  * unrecognised counts as paint so a weird value errs toward measuring (a fail surfaced to a human
  * rather than silently passed).
  */
@@ -301,7 +301,7 @@ export function paintVisible(value) {
   const s = String(value).trim().toLowerCase();
   if (!s || s === "none" || s === "transparent") return false;
   if (/^#[0-9a-f]{4}$|^#[0-9a-f]{8}$/.test(s)) return !/00$/.test(s);
-  const alpha = s.match(/^(?:rgba|hsla)\((?:[^,()]+,){3}\s*([\d.]+%?)\s*\)$/) ??
+  const alpha = s.match(/^(?:rgba?|hsla?)\((?:[^,()]+,){3}\s*([\d.]+%?)\s*\)$/) ??
     s.match(/^(?:rgba?|hsla?|lab|lch|oklab|oklch|color|color-mix)\(.*\/\s*([\d.]+%?)\s*\)$/);
   return !alpha || parseFloat(alpha[1]) !== 0;
 }
