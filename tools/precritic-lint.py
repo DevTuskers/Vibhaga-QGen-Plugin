@@ -493,12 +493,18 @@ def scaffold_tasks(text):
         "factor": r"factor(?:ise|ize)?|factor(?:isation|ization) of",
         "simplify": r"simplify|simplification of",
     }
-    start = 0
-    for span in MATH_SPAN.finditer(text):
-        prefix = text[start:span.start()]
-        start = span.end()
+    sinhala = {"expand": r"ප්‍රසාරණය\s+කරන්න",
+               "factor": r"සාධක\s*වලට\s+වෙන්\s+කරන්න",
+               "simplify": r"සුළු\s+කරන්න"}
+    spans = list(MATH_SPAN.finditer(text))
+    for i, span in enumerate(spans):
+        prefix = text[spans[i - 1].end() if i else 0:span.start()]
+        suffix = text[span.end():spans[i + 1].start() if i + 1 < len(spans) else len(text)]
         for task, verbs in operations.items():
-            if re.search(rf"\b(?:{verbs})\s+$", prefix, re.I):
+            instruction = sinhala[task]
+            if (re.search(rf"\b(?:{verbs})\s+$", prefix, re.I)
+                    or re.search(rf"{instruction}(?:[.:])?\s+$", prefix)
+                    or re.match(rf"\s+{instruction}(?=\W|$)", suffix)):
                 yield task, scaffold_key(span[2])
 
 
