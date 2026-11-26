@@ -1,4 +1,16 @@
 banned:
+  විස්තාරණය:
+    en: expansion
+    use: ප්‍රසාරණය
+    note: G11 L06, Binomial Expressions
+  හැරවුම් ලක්ෂ්‍ය:
+    en: turning point
+    use: හැරුම් ලක්ෂ්‍යය
+    note: G10 L20 and G11 L12, Graphs
+  උත්තාරණය:
+    en: translation (of a graph)
+    use: විස්ථාපනය
+    note: G10 L20, Graphs
   සමජාතීය පද:
     en: like terms
     use: සජාතීය පද

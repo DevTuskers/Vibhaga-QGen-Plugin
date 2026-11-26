@@ -2,6 +2,19 @@
 
 [Template selection and workflow](SKILL.md).
 
+## Lesson routing
+
+| Lesson or task | Builder to try first |
+|---|---|
+| G11 L08 — area between parallels | `parallel_area` |
+| G11 L23 — construction starting figure | `construction(stage="setup")` |
+| G10/G11 graphs of lines and quadratics | `function_graph`; `cartesian_plot` for guides and piecewise lines |
+| Grouped statistics: bars or adjusted frequencies | `histogram`; add `polygon=True` when the exercise needs the overlay |
+| Grouped statistics: cumulative frequencies | `ogive` |
+| Grouped statistics: standalone frequency polygon | `frequency_polygon` when available; do not label class boundaries as midpoints |
+
+## Builder reference
+
 **Graph labels:** `function_graph` accepts optional `x_step` and `y_step`
 (positive integers dividing their spans) and `x_label_side="below"|"above"`,
 `y_label_side="left"|"right"`. Numerals stay aligned to their ticks; the

@@ -28,7 +28,7 @@ forked or re-implemented and no gate is lowered:
              run-gate.sh's fields_py produces; any BLOCKED field fails the stage
           6. check-layout.py --fields <run>/fields.json — FAIL stops the build; WARN is logged
           7. visual-check.mjs staged.json --claims-dir figures --out DIR (default ../vc)
-          8. precritic-lint.py (runs when --card, --rubric or an existing*.json file is
+          8. precritic-lint.py (runs for figures or when --card, --rubric or an existing*.json file is
              present — every <run>/existing*.json is auto-passed as --existing)
   ship:   1. validate · 2. doc put --ledger · 3. doc get → compare questions against
              staged.json by question_id key-by-key (server-added `published`/`published_at`
@@ -360,10 +360,9 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
         if rc:
             return fail(gates, run, "visual-check", rc, vc_out_text)
 
-    # 8. pre-critic lint — runs when cards are bound, a rubric is asked for, or the run has
-    #    existing*.json dumps to dedup against (--card ⇒ --grade checked up front)
+    # 8. pre-critic lint includes emitted question figures without card inputs.
     existing = sorted(run.glob("existing*.json"))
-    if args.card or rubric or existing:
+    if fig_ids or args.card or rubric or existing:
         argv = [sys.executable, str(TOOLS / "precritic-lint.py"), str(run)]
         for c in args.card:
             argv += ["--card", c]
