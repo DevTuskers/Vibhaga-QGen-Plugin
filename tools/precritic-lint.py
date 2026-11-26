@@ -498,12 +498,12 @@ def scaffold_tasks(text):
                "simplify": r"සුළු\s+කරන්න"}
     spans = list(MATH_SPAN.finditer(text))
     for i, span in enumerate(spans):
-        prefix = text[spans[i - 1].end() if i else 0:span.start()]
-        suffix = text[span.end():spans[i + 1].start() if i + 1 < len(spans) else len(text)]
+        prefix = re.split(r"[.?!।]", text[spans[i - 1].end() if i else 0:span.start()])[-1]
+        suffix = re.split(r"[.?!।]", text[span.end():spans[i + 1].start() if i + 1 < len(spans) else len(text)], maxsplit=1)[0]
         for task, verbs in operations.items():
             instruction = sinhala[task]
             if (re.search(rf"\b(?:{verbs})\s+$", prefix, re.I)
-                    or re.search(rf"{instruction}(?:[.:])?\s+$", prefix)
+                    or re.search(rf"{instruction}:?\s+$", prefix)
                     or re.match(rf"\s+{instruction}(?=\W|$)", suffix)):
                 yield task, scaffold_key(span[2])
 

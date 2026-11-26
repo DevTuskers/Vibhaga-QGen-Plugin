@@ -851,6 +851,21 @@ class PrecriticLintTest(unittest.TestCase):
                     self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                     self.assertIn("FAIL Q1.a.text: exact algebra scaffold", result.stdout)
 
+    def test_sinhala_instruction_does_not_bind_the_next_sentence(self):
+        import yaml
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run(tmp, parts=[{"label": "a", "text": "Factor $t^2-169$."}])
+            path = tmp / "cards" / "07-Fractions.yaml"
+            card = yaml.safe_load(path.read_text())
+            card["generated"]["exercises"] = [{"items": [
+                "$x^2-49$ සාධකවලට වෙන් කරන්න. $t^2-169$ සඳහා අගය සොයන්න.",
+            ]}]
+            path.write_text(yaml.safe_dump(card, allow_unicode=True))
+            result = lint(run, tmp)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("exact algebra scaffold", result.stdout)
+
     def test_same_expression_in_a_different_exercise_task_does_not_block(self):
         import yaml
         with tempfile.TemporaryDirectory() as td:
