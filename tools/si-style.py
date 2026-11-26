@@ -43,7 +43,8 @@ def field_warnings(text: str) -> list[str]:
         warnings.append('more than one "වන අතර"')
     if PASSIVE.search(plain):
         warnings.append("passive construction")
-    for sentence in re.split(r"[.?!]+|\n\s*\n", plain):
+    prose = re.sub(r"(?m)^\s*\|.*\|[ \t]*$", "\n", plain)
+    for sentence in re.split(r"[.?!]+|\n\s*\n", prose):
         words = sentence.split()
         if len(words) > 30:
             warnings.append(f"sentence has {len(words)} words (max 30)")

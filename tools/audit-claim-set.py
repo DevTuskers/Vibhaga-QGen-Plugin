@@ -416,7 +416,7 @@ PREDICATES = {
     "collinear": "anchor", "angle": "anchor", "right": "anchor", "ratio": "anchor",
     "parallel": "anchor", "equal": "anchor", "on": "anchor", "inside": "anchor",
     "circle": "anchor", "arc": "anchor", "axis": "anchor", "tick": "anchor", "interval": "anchor",
-    "gradient": "anchor", "at": "anchor", "derive": "anchor",
+    "gradient": "anchor", "at": "anchor", "derive": "anchor", "scale-length": "anchor",
     "label": "text", "free-text": "text", "paint": "text", "none": "text",
     # ⚠️ `arrow` MOVED "text" -> "anchor" on 2026-08-30. It was `continue`d by the `kind == "text"` gate
     # above, so an `arrow P -> Q` claim was never even closure-checked — and it is the claim that carries
@@ -545,6 +545,13 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
     pending_intervals: list = []   # (cid, pred, kind, lo, hi, P, Q)
     pending_reads: list = []       # (cid, claim, P, value, X, Y) from `reads P v on XY`
 
+    scaled_sides: dict = {}
+    scale_declarations = [line for line in cs["meta"].get("scale", [])
+                          if line.startswith("to scale at x")]
+    scale_samples = [m[1] for line in scale_declarations
+                     if (m := re.match(r"^to scale at x = (\d+(?:\.\d+)?)(?![\w.])", line))]
+    sample = float(scale_samples[0]) if len(scale_declarations) == len(scale_samples) == 1 else None
+
     # 2. claims vs anchors — the check that finds a MISREAD with no other input.
     #    ⚠️ FAILS CLOSED: the final `else` is a failure, not a pass.
     for c in cs["claims"]:
@@ -559,7 +566,27 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
             stats["recognised_unverifiable"].append(cid)
             continue
 
-        if (m := re.match(r"^angle ([A-Z]) ([A-Z]) ([A-Z]) = (\d+(?:\.\d+)?)$", pred)):
+        if (m := re.fullmatch(r"scale-length ([A-Z])([A-Z]) = ([x\d. +\-]+)", pred)):
+            if not check(sample is not None and math.isfinite(sample) and sample > 0,
+                         f"{cid}: scale-length needs one positive `scale: to scale at x = …`", cid):
+                continue
+            p, q, expression = m.groups()
+            name = "".join(sorted((p, q)))
+            if not check(p != q and (p+q in cs["segments"] or q+p in cs["segments"])
+                         and name not in scaled_sides,
+                         f"{cid}: scale-length needs a distinct declared segment, once per side", cid):
+                continue
+            scalar = re.sub(r"(?<=[\d.])\s*x", "*x", expression)
+            length = arith(scalar.replace("x", f"({scale_samples[0]})"))
+            if not check(length is not None and math.isfinite(length) and length > 0,
+                         f"{cid}: {expression} must give a positive length at x = {sample:g}", cid):
+                continue
+            ends = pt(p, cid), pt(q, cid)
+            if all(ends):
+                units = dist(*ends) / length
+                if check(math.isfinite(units) and units > 0, f"{cid}: drawn length gives a positive scale", cid):
+                    scaled_sides[name] = (cid, units)
+        elif (m := re.match(r"^angle ([A-Z]) ([A-Z]) ([A-Z]) = (\d+(?:\.\d+)?)$", pred)):
             if ev != "measured":
                 stats["recognised_unverifiable"].append(cid)   # `printed`/`stem` MAY differ — `scale:`
                 continue
@@ -741,6 +768,15 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
             stats["unrecognised"].append((cid, pred))
             check(False, f"{cid}: predicate is recognised by name but its ARGUMENTS did not parse — "
                          f"{pred!r} was NOT checked. Match S6a §3.2's form exactly")
+
+    if scale_declarations or scaled_sides:
+        check(len(scaled_sides) >= 2, "common scale needs at least two `scale-length` sides")
+    if scaled_sides:
+        ref_id, reference = next(iter(scaled_sides.values()))
+        for cid, units in list(scaled_sides.values())[1:]:
+            check(abs(units - reference) / reference <= TOL_RATIO,
+                  f"{cid}: common scale disagrees with {ref_id} ({units:g} vs {reference:g} canvas units per unit)", cid)
+            stats["anchor_checked"] += 1
 
     # Deferred axis-riders: `tick`/`interval` are checked only once every `axis` claim is registered —
     # file order is not a dependency (a `tick` written before its `axis` is legal).

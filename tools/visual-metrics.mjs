@@ -13,8 +13,9 @@
  *   edge    — label bbox < 8 rendered px from the canvas edge
  *   stroke  — label bbox < 6 rendered px from a stroked primitive's EDGE (centreline − width/2)
  *   target  — label far from what it names: a label equal to a `point` element's label is measured
- *             bbox→point; a word label or an AREA label (`label "…" names region_…`) is skipped;
- *             any other label uses geom_u (nearest painted primitive). > 1.5·fontSizeU fails
+ *             bbox→point; standalone point letters must favour their own dot and cap the gap
+ *             from the box to that dot. Dimension labels are checked against their claimed segments;
+ *             unbound words and area labels are skipped, and other labels use nearest paint.
  *   arc     — an angle numeral/variable (^\d+(\.\d+)?°?$ | ^[a-z]°?$ | ^[α-ωθ]°?$) whose centre's polar
  *             angle from the vertex lies outside the DRAWN span of every arc / unlabelled angleMark
  *             within r + 1.5·fontSizeU (labelled angleMarks are skipped — the renderer places those)
@@ -25,6 +26,10 @@
 export const EDGE_MIN_PX = 8;
 export const STROKE_MIN_PX = 6;
 export const TARGET_FACTOR = 1.5;
+const GRAPH_POINT_GAP_FACTOR = 0.72;
+// The widest template search starts at 26u and can advance 36u, plus rendered-box slack.
+const POINT_GAP_MAX = 64;
+const TARGET_MARGIN = 0.25;
 // One shared bound — the same figure-taller-than-a-phone-screen limit vdd_templates.py's finish()
 // refuses at build time and vdd-check.mjs fails on the doc's canvas. Aspect is preserved from
 // canvas to render, so any of the three sees the same ratio.
@@ -70,7 +75,7 @@ export function parseClaimSet(text) {
   cs.allow = ((buf.allow ?? []).join(" ").match(/label:"[^"]*"|"[^"]*"|\S+/g) ?? [])
     .map((t) => t.replace(/^label:"(.*)"$/, "label:$1").replace(/^"|"$/g, ""));
   for (const l of buf.anchors ?? []) {
-    const m = l.trim().match(/^([A-Z])\s+(-?[\d.]+)\s+(-?[\d.]+)$/);
+    const m = l.trim().match(/^([A-Z]\d*)\s+(-?[\d.]+)\s+(-?[\d.]+)$/);
     if (m) cs.anchors[m[1]] = [Number(m[2]), Number(m[3])];
   }
   for (const l of buf.claims ?? []) {
@@ -91,6 +96,43 @@ const distPointToBox = (p, bb) =>
     Math.max(bb[0] - p[0], 0, p[0] - (bb[0] + bb[2])),
     Math.max(bb[1] - p[1], 0, p[1] - (bb[1] + bb[3])),
   );
+function recordedPointGap(meta, glyph) {
+  let scale = 1;
+  while (meta && typeof meta === "object") {
+    const gap = meta.pointLabelGaps?.[glyph];
+    if (Number.isFinite(gap)) return gap * scale;
+    if (meta.layoutMetadataSchema !== "vdd-layout-metadata-v1"
+        || meta.inputMetadataRole !== "INPUT_PROVENANCE" || !meta.inputMetadataPresent) break;
+    const step = meta.inputCanvasScale ?? 1;
+    if (!Number.isFinite(step) || step <= 0) break;
+    scale *= step;
+    meta = meta.inputMetadata;
+  }
+  return 0;
+}
+const distToSegment = (p, [a, b]) => {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy)));
+  return dist(p, [a[0] + t * dx, a[1] + t * dy]);
+};
+const dimensionToken = (s) => s?.replace(/[−–]/g, "-").replace(/\s+/g, "");
+const distBoxToSegment = (box, [a, b]) => {
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 2; i++) {
+    const delta = b[i] - a[i], min = box[i], max = min + box[i + 2];
+    if (!delta) {
+      if (a[i] < min || a[i] > max) hi = -1;
+      continue;
+    }
+    const enter = (min - a[i]) / delta, exit = (max - a[i]) / delta;
+    lo = Math.max(lo, Math.min(enter, exit));
+    hi = Math.min(hi, Math.max(enter, exit));
+  }
+  if (lo <= hi) return 0;
+  const [x, y, w, h] = box;
+  return Math.min(distPointToBox(a, box), distPointToBox(b, box),
+    ...[[x, y], [x + w, y], [x, y + h], [x + w, y + h]].map((p) => distToSegment(p, [a, b])));
+};
 
 // ── Arc semantics — MIRROR DiagramRenderer.tsx exactly (Admin src/components/diagram/): ────────────
 // · `arc` element → sweepArcPath (lines ~321–345): delta = end − start; `sweep:"cw"` forces the
@@ -316,18 +358,83 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
   // point is legitimately far from every outline, so it is not measured either (edge and stroke
   // still are); anything else's target is the nearest painted geometry.
   const areaLabels = new Set();
+  const claimPoints = new Map();
+  const claimSegments = new Map();
+  const segments = new Map((cs?.segments ?? [])
+    .filter((s) => /^[A-Z]{2}$/.test(s) && cs.anchors?.[s[0]] && cs.anchors?.[s[1]]
+      && dist(cs.anchors[s[0]], cs.anchors[s[1]]) > 0)
+    .map((s) => [s, [cs.anchors[s[0]], cs.anchors[s[1]]]]));
+  const marked = elements.filter((el) => el.type === "point" && el.r > 0).map((el) => el.at);
+  const segmentKey = (name) => segments.has(name) ? name : [...name].reverse().join("");
+  const axes = new Set((cs?.claims ?? []).filter((c) => c.pred === "axis")
+    .flatMap((c) => c.args.match(/^[A-Z]{2}(?=\s)/)?.[0] ?? [])
+    .map((s) => segments.has(s) ? s : [...s].reverse().join("")));
+  const coordinateGraph = axes.size >= 2;
   for (const c of cs?.claims ?? []) {
-    const m = c.pred === "label" && String(c.args).match(/^"(.*)" names (region_\S*)$/);
-    if (m) areaLabels.add(m[1]);
+    const scaled = c.pred === "scale-length" && String(c.args).match(/^([A-Z]{2}) = (.+)$/);
+    if (scaled && segments.has(segmentKey(scaled[1]))) {
+      const token = dimensionToken(scaled[2]);
+      const candidates = claimSegments.get(token) ?? [];
+      candidates.push(segmentKey(scaled[1]));
+      claimSegments.set(token, candidates);
+    }
+    const m = c.pred === "label" && String(c.args).match(/^"(.*)" names (\S+)$/);
+    if (!m) continue;
+    const [, glyph, name] = m;
+    if (name.startsWith("region_")) areaLabels.add(glyph);
+    const anchor = cs.anchors?.[name];
+    const dot = anchor && marked.find((pt) => dist(pt, anchor) < 1);
+    if (dot) {
+      const candidates = claimPoints.get(glyph) ?? [];
+      candidates.push(dot);
+      claimPoints.set(glyph, candidates);
+    }
+    const side = segmentKey(name);
+    if (segments.has(side) && !axes.has(side)) {
+      const token = dimensionToken(glyph);
+      const candidates = claimSegments.get(token) ?? [];
+      candidates.push(side);
+      claimSegments.set(token, candidates);
+    }
   }
   const targetOf = (l) => {
     if (l.bbox && pointByLabel.has(l.text))
       return { d: distPointToBox(pointByLabel.get(l.text), l.bbox), via: `point ${JSON.stringify(l.text)}` };
+    if (l.bbox) {
+      const [x, y, w, h] = l.bbox;
+      const centre = [x + w / 2, y + h / 2];
+      const points = claimPoints.get(l.text);
+      if (points?.length === 1) {
+        const own = dist(centre, points[0]);
+        const ambiguous = marked.some((pt) => dist(pt, points[0]) > 1
+          && dist(centre, pt) <= own + TARGET_MARGIN * l.fontSizeU);
+        const graphGap = GRAPH_POINT_GAP_FACTOR * l.fontSizeU;
+        const limit = coordinateGraph && graphGap > 0
+          ? Math.min(POINT_GAP_MAX, Math.max(graphGap, recordedPointGap(doc?.meta, l.text)))
+          : POINT_GAP_MAX;
+        return { d: distPointToBox(points[0], l.bbox),
+          via: `claimed point ${JSON.stringify(l.text)}`, ambiguous, limit };
+      }
+      if (WORD_LABEL_RE.test(l.text ?? "") || areaLabels.has(l.text)) return { d: null, skipped: true };
+      const sides = claimSegments.get(dimensionToken(l.latex)) ?? claimSegments.get(dimensionToken(l.text));
+      if (sides?.length) {
+        const intended = sides.map((s) => [s, distToSegment(centre, segments.get(s))])
+          .sort((a, b) => a[1] - b[1])[0][0];
+        const side = segments.get(intended);
+        const d = distToSegment(centre, side);
+        const [a, b] = side;
+        const ambiguous = [...segments].some(([name, [p, q]]) => name !== intended
+          && ![...intended].some((point) => name.includes(point))
+          && Math.abs((b[0] - a[0]) * (q[1] - p[1]) - (b[1] - a[1]) * (q[0] - p[0])) < 1
+          && distToSegment(centre, [p, q]) <= d + TARGET_MARGIN * l.fontSizeU);
+        return { d: distBoxToSegment(l.bbox, side), via: `claimed segment ${intended}`, ambiguous };
+      }
+    }
     if (WORD_LABEL_RE.test(l.text ?? "") || areaLabels.has(l.text)) return { d: null, skipped: true };
     return { d: l.geom_u ?? null, via: "the nearest painted geometry" };
   };
-  const targetBad = (l, tg) =>
-    !tg.skipped && tg.d != null && l.fontSizeU > 0 && tg.d > TARGET_FACTOR * l.fontSizeU;
+  const targetBad = (l, tg) => !tg.skipped && (tg.ambiguous || (tg.d != null
+    && (tg.limit != null ? tg.d > tg.limit : l.fontSizeU > 0 && tg.d > TARGET_FACTOR * l.fontSizeU)));
 
   // ONE target result per label, shared by the rows and the finding — the distance to the thing
   // a label names is a canvas-unit invariant, but the DOM box is re-measured at every width and
@@ -389,7 +496,13 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
     const tr = targetRes(l);
     if (targetBad(tr.l, tr.tg)) {
       if (!allow.has(`label:${l.text}`)) targetFails++;
-      declared("target", `label ${JSON.stringify(l.text)}: ${round1(tr.tg.d)}u from ${tr.tg.via} (> ${TARGET_FACTOR}× fontSize ${round1(tr.l.fontSizeU)}u)`, l.text);
+      const bound = tr.tg.limit == null
+        ? `${TARGET_FACTOR}× fontSize ${round1(tr.l.fontSizeU)}u`
+        : `${round1(tr.tg.limit)}u box gap`;
+      const reason = tr.tg.ambiguous
+        ? `could name another target near ${tr.tg.via}`
+        : `${round1(tr.tg.d)}u from ${tr.tg.via} (> ${bound})`;
+      declared("target", `label ${JSON.stringify(l.text)}: ${reason}`, l.text);
     }
   }
   const target = { fails: targetFails };

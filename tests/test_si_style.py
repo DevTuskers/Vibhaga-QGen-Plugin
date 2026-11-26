@@ -43,6 +43,12 @@ class SinhalaStyleTests(unittest.TestCase):
             "$$English XYZ කරුණාකර$$ `Latin` $cm$ A."),
             ["Latin word 'Latin'"])
 
+    def test_table_rows_are_not_counted_as_one_sentence(self):
+        table = "| අගය | ගණන |\n|---|---|\n" + "| පහ | තුන |\n" * 10
+        self.assertEqual(si_style.field_warnings(table), [])
+        prose = " ".join(["සිංහල"] * 31)
+        self.assertIn("sentence has 31 words (max 30)", si_style.field_warnings(prose + "\n\n" + table))
+
     def test_it_technical_terms_and_archaic_translations(self):
         # "මූසිකය" should trigger archaic IT term warning
         findings = si_style.field_warnings("පරිගණකයේ මූසිකය භාවිතයෙන්")

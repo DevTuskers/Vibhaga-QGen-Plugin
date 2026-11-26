@@ -1003,6 +1003,22 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
                       title=title or f"A {kind.replace('_', ' ')} figure",
                       description=description or f"A {kind.replace('_', ' ')} figure built from the stem's numbers.",
                       font_size=fs)
+    axis_segments = {m.group(1) for pred, _, _ in claims if (m := re.match(r"axis ([A-Z]{2})\s", pred))}
+    if len(axis_segments) >= 2:
+        dots = [el["at"] for el in elements if el["type"] == "point" and el.get("r", 0) > 0]
+        tied = {el.get("label") for el in elements if el["type"] == "point"}
+        seats = {}
+        for target, glyphs in named.items():
+            dot = next((pt for pt in dots if math.dist(pt, anchors[target]) < 1), None)
+            if dot is None:
+                continue
+            x, y = dot
+            for txt, x0, y0, x1, y1 in boxes:
+                if txt in glyphs and txt not in tied:
+                    gap = math.hypot(max(x0 - x, 0, x - x1), max(y0 - y, 0, y - y1))
+                    seats[txt] = round(gap + 2, 2)  # allow for renderer text-box measurement
+        if seats:
+            document["meta"] = {"pointLabelGaps": seats}
     return Built(figure_id=figure_id, doc=document, anchors=anchors, claims="\n".join(L) + "\n")
 
 
@@ -6120,30 +6136,61 @@ def _angle_text_kind(kind: str, t_, vertex: str):
 
 
 def _seat_side_label(kind: str, elements: list[dict], boxes: list, a: XY, b: XY,
-                     text: str, away: XY, clr: float, id_: str) -> dict:
+                     text: str, away: XY, clr: float, id_: str, *,
+                     keep_near: bool = False, start: float = 0.5) -> dict:
     """Seat a label off the side a-b on the half-plane facing `away`, walked along the
     side and pushed out until its box clears every stroke and seated label — the same
-    pocket search circle_parts uses for chord labels. Raises TemplateError."""
+    pocket search circle_parts uses for chord labels. `keep_near` tries both sides
+    if the initial seat misses the visual target window. Raises TemplateError."""
     mid0 = vc.lerp(a, b, 0.5)
     nx, ny = vc.normal(a, b)
     if ((away[0] - mid0[0]) * nx + (away[1] - mid0[1]) * ny) < 0:
         nx, ny = -nx, -ny
     strokes = stroke_segments(elements)
-    for t in (0.5, 0.4, 0.6, 0.35, 0.65, 0.3, 0.7):
-        m = vc.lerp(a, b, t)
-        half = _label_half_along(text, FS, nx, ny)
-        for k in range(12):
-            d = clr + half + 3.0 * k
-            cx, cy = m[0] + nx * d, m[1] + ny * d
-            box = (cx - _label_width(text, FS) / 2, cy - MID_UP * FS,
-                   cx + _label_width(text, FS) / 2, cy + MID_DOWN * FS)
-            if strokes and min(_seg_rect_dist(p, q, box) - w / 2
-                               for p, q, w in strokes) < clr:
-                continue
-            if any(_rect_gap(box, pb) < 2.0 for pb in boxes):
-                continue
-            el = vc.text((cx, cy), text, id=id_)
-            return el
+    fixed_boxes = label_boxes(elements) if keep_near else []
+    positions = (start, 0.5, 0.4, 0.6, 0.35, 0.65, 0.3, 0.7)
+    # The conservative glyph-width estimate needs extra slack for mostly horizontal gaps.
+    limit = 1.5 * FS - max(1.5, abs(nx) * len(text) * FS * 0.06)
+
+    def search(gap, offsets, ts, direction, close=False):
+        ux, uy = direction
+        half = _label_half_along(text, FS, ux, uy)
+        for t in dict.fromkeys(ts):
+            m = vc.lerp(a, b, t)
+            for k in offsets:
+                d = gap + half + k
+                cx, cy = m[0] + ux * d, m[1] + uy * d
+                box = _text_box(text, (cx, cy))
+                if close and _seg_rect_dist(a, b, box) > limit:
+                    break
+                if keep_near:
+                    _, _, width, _ = _fit_extent(strokes, [*fixed_boxes, (text, *box)])
+                    scale = min(1.0, PLATE_INNER / (width + 60.0))
+                    clearance = max(0 if close else clr, (STROKE_PX + SLACK_STROKE + 1.0) / scale)
+                    label_gap = 4.0 / scale
+                    others = (pb[1:] for pb in fixed_boxes)
+                else:
+                    clearance, label_gap = clr, 2.0
+                    others = boxes
+                if strokes and min(_seg_rect_dist(p, q, box) - w / 2
+                                   for p, q, w in strokes) < clearance:
+                    continue
+                if any(_rect_gap(box, pb) < label_gap for pb in others):
+                    continue
+                return vc.text((cx, cy), text, id=id_)
+        return None
+
+    seat = search(clr, range(0, 36, 3), positions, (nx, ny))
+    if keep_near and (seat is None or _seg_rect_dist(a, b, _text_box(text, seat["at"])) > limit):
+        ts = (*positions, 0.25, 0.75, 0.2, 0.8, 0.1, 0.9)
+        tx, ty = vc.unit(a, b)
+        for anchors_, direction in ((ts, (nx, ny)), (ts, (-nx, -ny)),
+                                    ((0.0,), (-tx, -ty)), ((1.0,), (tx, ty))):
+            near = search(STROKE_PX + SLACK_STROKE, range(20), anchors_, direction, close=True)
+            if near is not None:
+                return near
+    if seat is not None:
+        return seat
     raise TemplateError(f"{kind}: the side label {text!r} has no clear seat off "
                         f"{a}–{b} — spread the geometry or drop it")
 
@@ -7015,7 +7062,7 @@ def _circle_angles_once(*, figure_id, stem, ask, title, description, medium, poi
                 nx_, ny_ = vc.normal(P[l1], P[l2])
                 away = (mid_[0] + nx_ * 10.0, mid_[1] + ny_ * 10.0)
             el_ = _seat_side_label(kind, elements, boxes_, P[l1], P[l2], g_, away,
-                                   clr, f"fl{l1}{l2}")
+                                   clr, f"fl{l1}{l2}", keep_near=True)
             elements.append(el_)
             boxes_.append(_text_box(g_, el_["at"]))
             lab_targets[s_] = (l1, l2, g_, bool(mnum))
@@ -7453,7 +7500,7 @@ def _triangle_parallel_once(*, figure_id, stem, ask, title, description, medium,
                                 "'6 cm' or one lowercase letter")
         away = cen
         el = _seat_side_label(kind, elements, boxes, P[a_], P[b_], glyph, away,
-                              clr, f"sl{a_}{b_}")
+                              clr, f"sl{a_}{b_}", keep_near=True)
         elements.append(el)
         boxes.append(label_boxes([el], FS)[0][1:])
         printed[(a_, b_)] = glyph
@@ -12732,7 +12779,7 @@ def _marked_geometry_once(*, figure_id, stem, ask, title, description, medium, s
         else:
             away = cen
         el = _seat_side_label(kind, elements, boxes, P[a_], P[b_], glyph, away,
-                              clr, f"sl{a_}{b_}")
+                              clr, f"sl{a_}{b_}", keep_near=True)
         elements.append(el)
         boxes.append(label_boxes([el], FS)[0][1:])
         printed[canon] = glyph
@@ -18425,8 +18472,10 @@ def build_elevation_scene(*, figure_id, stem, post, sights, eyes=None,
         if not ts:
             continue
         xs = [P[e][0]] + [P[t][0] for t in ts]
-        elements.append(vc.line((min(xs) - 22.0, P[e][1]),
-                                   (max(xs) + 22.0, P[e][1]),
+        left = 8.0 if e in eyes and min(xs) == P[e][0] else 22.0
+        right = 8.0 if e in eyes and max(xs) == P[e][0] else 22.0
+        elements.append(vc.line((min(xs) - left, P[e][1]),
+                                   (max(xs) + right, P[e][1]),
                                    id=f'datum{e}', dashed=True))
     for nm in sorted(P):
         elements.append({'id': f'pt{nm}', 'type': 'point', 'at': vc.P(P[nm]),
@@ -18492,7 +18541,7 @@ def build_elevation_scene(*, figure_id, stem, post, sights, eyes=None,
         else:                                   # ground: seat below the baseline
             away = (mid_x, 200.0)
         el = _seat_side_label(kind, elements, boxes, P[a_], P[b_], glyph,
-                                 away, clr, f'lbl{key}')
+                                 away, clr, f'lbl{key}', keep_near=True)
         elements.append(el)
         boxes.append(label_boxes([el], FS)[0][1:])
         printed[key] = (glyph, a_, b_)
@@ -18505,7 +18554,7 @@ def build_elevation_scene(*, figure_id, stem, post, sights, eyes=None,
         else:
             away = (mid_x, 200.0)
         el = _seat_side_label(kind, elements, boxes, P[a_], P[b_], g_,
-                                 away, clr, f'unk{key}')
+                                 away, clr, f'unk{key}', keep_near=True)
         elements.append(el)
         boxes.append(label_boxes([el], FS)[0][1:])
         printed[key] = (g_, a_, b_)
@@ -18630,13 +18679,14 @@ def build_elevation_scene(*, figure_id, stem, post, sights, eyes=None,
 
 
 def _scn_seat_text(kind, elements, boxes, anchors, near, txt, id_, prefer=None,
-               free=()):
+                   free=(), point_label=False):
     """A deterministic seat for a drawn text — the counterpart of a floater for
     anchors ringed by dots/strokes where the 8-direction sweep starves. `near`
     is the spot the text belongs to (a point's anchor, a segment's midpoint);
     `anchors` is every named anchor — the label centre must beat every rival by
-    3.5 units. Sweeps 12 directions (least-crowded or `prefer` first) × 15
-    distances; a candidate wins only if its box clears every stroke by 9.5
+    the ownership margin. Sweeps 12 directions (least-crowded or `prefer` first) × 15
+    distances, with a finer search for crowded point letters. A candidate wins
+    only if its box clears every stroke by 11
     units and every seated label by 4 units — finish()'s rendered-px
     pre-flight (which measures label boxes as part of the canvas extent)
     re-checks edge clearance and stays the final word."""
@@ -18657,25 +18707,33 @@ def _scn_seat_text(kind, elements, boxes, anchors, near, txt, id_, prefer=None,
         base = math.degrees(math.atan2(p[1] - my, p[0] - mx))
     else:
         base = prefer
-    dirs = sorted(range(-180, 180, 30),
-                  key=lambda a: abs(((base - a) + 180) % 360 - 180))
-    for d in (14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 56, 62, 70, 82, 96):
-        for deg in dirs:
-            ux, uy = math.cos(math.radians(deg)), math.sin(math.radians(deg))
-            cx, cy = p[0] + ux * d, p[1] + uy * d
-            el = vc.text((cx, cy), txt, id=id_)
-            box = label_boxes([el], FS)[0][1:]
-            if strokes and min(_seg_rect_dist(a, b, box) - w / 2
-                               for a, b, w in strokes) < 11.0:
-                continue
-            if any(_rect_gap(box, pb) < 4.0 for pb in boxes):
-                continue
-            own = math.hypot(cx - p[0], cy - p[1])
-            if any(math.hypot(cx - o[0], cy - o[1]) - own < 3.5
-                   for o in others.values()):
-                continue
-            boxes.append(box)
-            return el
+
+    def dirs(step):
+        return sorted(range(-180, 180, step),
+                      key=lambda a: abs(((base - a) + 180) % 360 - 180))
+
+    coarse = (14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 56, 62, 70, 82, 96)
+    searches = [(coarse, dirs(30))]
+    if point_label:
+        searches.append((range(14, 65), dirs(10)))
+    own_margin = 0.25 * FS + 1.0 if point_label else 3.5
+    for d, deg in ((d, deg) for distances, directions in searches
+                   for d in distances for deg in directions):
+        ux, uy = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+        cx, cy = p[0] + ux * d, p[1] + uy * d
+        el = vc.text((cx, cy), txt, id=id_)
+        box = label_boxes([el], FS)[0][1:]
+        if strokes and min(_seg_rect_dist(a, b, box) - w / 2
+                           for a, b, w in strokes) < 11.0:
+            continue
+        if any(_rect_gap(box, pb) < 4.0 for pb in boxes):
+            continue
+        own = math.hypot(cx - p[0], cy - p[1])
+        if any(math.hypot(cx - o[0], cy - o[1]) - own < own_margin
+               for o in others.values()):
+            continue
+        boxes.append(box)
+        return el
     raise TemplateError(
         f'{kind}: the text {txt!r} has no clear seat — spread the geometry')
 
@@ -18683,7 +18741,7 @@ def _scn_seat_text(kind, elements, boxes, anchors, near, txt, id_, prefer=None,
 def _scn_seat_letter(kind, elements, boxes, anchors, nm, clr):
     """Seat the single-capital letter `nm` at its anchor via _scn_seat_text."""
     return _scn_seat_text(kind, elements, boxes, anchors, tuple(anchors[nm]), nm,
-                      f'lb{nm}')
+                          f'lb{nm}', point_label=True)
 
 
 def _scn_seat_angle_label(kind, elements, boxes, v, a_, b_, txt, r0, clr, far):

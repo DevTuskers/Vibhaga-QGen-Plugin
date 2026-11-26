@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { assess, parseClaimSet, arcDelta, angleMarkSpan, angleInSpan, paintVisible } from "../tools/visual-metrics.mjs";
+import { mapPoint, similarity, transformDocument } from "../tools/vdd-layout.mjs";
 
 // Synthetic measured labels only — every fixture below is invented; nothing mirrors a real figure.
 const L = (over = {}) => ({
@@ -15,6 +16,7 @@ const doc = (elements) => ({
 });
 const fails = (r) => r.findings.filter((f) => f.severity === "fail");
 const rules = (r) => new Set(fails(r).map((f) => f.rule));
+const axisClaims = '  K8 axis LR from 0 to 6 | inferred |\n  K9 axis BU from 0 to 6 | inferred |';
 
 test("claim-set parser: anchors, claims, allow, labels (vdd-check grammar)", () => {
   const cs = parseClaimSet(`# comment
@@ -105,10 +107,125 @@ test("target: a far point label fails even when it is short", () => {
   assert.ok(rules(r).has("target"));
 });
 
+test("target: claimed standalone point label is measured against its marked point", () => {
+  const d = doc([{ type: "point", at: [50, 50], r: 3 }]);
+  const claims = 'anchors:\n  A 50 50\nclaims:\n  K1 label "A" names A | inferred |\n' + axisClaims;
+  const assessAt = (bbox) => assess({ doc: d, claims, widths: W([L({ text: "A", bbox })]) });
+  assert.ok(rules(assessAt([62, 63, 12, 12])).has("target"));
+  assert.equal(assessAt([57, 56, 12, 12]).verdict, "PASS");
+});
+
+test("target: a graph label just outside the near-edge limit still floats", () => {
+  const d = doc([{ type: "point", at: [80, 80], r: 3 }]);
+  const claims = 'anchors:\n  B 80 80\nclaims:\n  K1 label "B" names B | inferred |\n' + axisClaims;
+  const assessAt = (bbox) => assess({ doc: d, claims, widths: W([L({ text: "B", bbox })]) });
+  assert.ok(rules(assessAt([90, 90, 12, 12])).has("target"));
+  assert.ok(fails(assessAt([93.25, 81.56, 11.5, 21.8]))
+    .some((f) => f.message.includes('13.3u from claimed point "B"')));
+  assert.equal(assessAt([90.25, 81.56, 11.5, 21.8]).verdict, "PASS");
+  assert.equal(assessAt([59, 61, 12, 12]).verdict, "PASS");
+});
+
+test("target: a clear locus label can sit farther away, but must still favour its dot", () => {
+  const d = doc([{ type: "point", at: [80, 60], r: 3 },
+    { type: "point", at: [98, 60], r: 3 }]);
+  const claims = 'anchors:\n  Q 80 60\nclaims:\n  K1 label "Q" names Q | inferred |';
+  const assessAt = (bbox) => assess({ doc: d, claims, widths: W([L({ text: "Q", bbox })]) });
+  assert.equal(assessAt([74, 29, 12, 12]).verdict, "PASS");
+  assert.equal(assessAt([74, 27, 12, 12]).verdict, "PASS");
+  assert.ok(fails(assessAt([83, 27, 12, 12])).some((f) => f.message.includes("another target")));
+});
+
+test("target: an angle-bisector label's near edge can be clear even when its centre is farther", () => {
+  const d = doc([{ type: "point", at: [80, 100], r: 3 }]);
+  const claims = 'anchors:\n  P 80 100\nclaims:\n  K1 label "P" names P | inferred |';
+  const result = assess({ doc: d, claims, widths: W([L({ text: "P", bbox: [74, 126, 12, 22] })]) });
+  assert.equal(result.verdict, "PASS");
+  assert.equal(result.labels[0].target_u, 26);
+});
+
+test("target: a graph's recorded builder seat permits only its bounded near-edge gap", () => {
+  const d = doc([{ type: "point", at: [80, 60], r: 3 }]);
+  d.meta = { pointLabelGaps: { B: 26 } };
+  const claims = 'anchors:\n  B 80 60\nclaims:\n  K1 label "B" names B | inferred |\n' + axisClaims;
+  const assessAt = (bbox) => assess({ doc: d, claims, widths: W([L({ text: "B", bbox })]) });
+  assert.equal(assessAt([105, 54, 12, 12]).verdict, "PASS");
+  assert.ok(rules(assessAt([107, 54, 12, 12])).has("target"));
+  d.meta.pointLabelGaps.B = 1000;
+  assert.ok(rules(assessAt([145, 54, 12, 12])).has("target"));
+});
+
+test("target: a reframed graph keeps its builder point-label gap in canvas units", () => {
+  const source = doc([
+    { id: "dotB", type: "point", at: [80, 60], r: 3 },
+    { id: "labelB", type: "text", at: [111, 60], value: "B" },
+  ]);
+  source.meta = { pointLabelGaps: { B: 26 } };
+  const matrix = similarity({ angleDegrees: 0, pivot: [0, 0], translation: [7, 9] });
+  const moved = transformDocument(source, matrix);
+  const assessSeat = (d, fontSizeU, gap) => {
+    const [x, y] = d.elements[0].at;
+    const claims = `anchors:\n  B ${x} ${y}\nclaims:\n  K1 label "B" names B | inferred |\n` + axisClaims;
+    return assess({ doc: d, claims, widths: W([L({
+      text: "B", fontSizeU, bbox: [x + gap, y - 6, 12, 12],
+    })]) });
+  };
+  assert.equal(assessSeat(source, 18, 25).verdict, "PASS");
+  assert.equal(moved.meta.pointLabelGaps, undefined);
+  assert.equal(assessSeat(moved, 18, 25).verdict, "PASS");
+  delete moved.meta.inputCanvasScale;
+  assert.equal(assessSeat(moved, 18, 25).verdict, "PASS");
+  const scale = similarity({ angleDegrees: 0, pivot: [0, 0], scale: 1.5 });
+  const reframed = transformDocument(moved, scale);
+  assert.deepEqual(reframed.elements[0].at, mapPoint(scale, moved.elements[0].at));
+  assert.equal(assessSeat(reframed, 27, 37.5).verdict, "PASS");
+  assert.ok(rules(assessSeat(reframed, 27, 40)).has("target"));
+});
+
+test("target: a detached standalone point label fails even beside unrelated geometry", () => {
+  const d = doc([{ type: "point", at: [50, 50], r: 3 },
+    { type: "line", points: [[187, 40], [187, 80]] }]);
+  const claims = 'anchors:\n  A 50 50\nclaims:\n  K1 label "A" names A | inferred |';
+  const label = L({ text: "A", bbox: [168, 44, 12, 12], geom_u: 7, stroke_u: 7 });
+  const result = assess({ doc: d, claims, widths: W([label]) });
+  assert.ok(fails(result).some((f) => f.message.includes('118u from claimed point "A"')));
+});
+
+test("target: a dimension between two disjoint parallel edges must favour its own edge", () => {
+  const claims = 'segments: AB CD\nanchors:\n  A 50 30\n  B 50 120\n  C 90 30\n  D 90 120'
+    + '\nclaims:\n  K1 scale-length CD = 4 | inferred |';
+  const assessAt = (bbox) => assess({ doc: doc([]), claims, widths: W([L({ text: "4", kind: "math", bbox })]) });
+  assert.ok(rules(assessAt([64, 66, 12, 12])).has("target"));
+  assert.equal(assessAt([73, 66, 12, 12]).verdict, "PASS");
+});
+
+test("target: a reversed scale-length binding still identifies the intended edge", () => {
+  const claims = 'segments: AB CD\nanchors:\n  A 50 30\n  B 50 120\n  C 90 30\n  D 90 120'
+    + '\nclaims:\n  K1 scale-length DC = 4 | inferred |';
+  const assessAt = (bbox) => assess({ claims, widths: W([L({ text: "4", bbox })]) });
+  assert.ok(fails(assessAt([64, 66, 12, 12])).some((f) => f.message.includes("another target")));
+  assert.equal(assessAt([73, 66, 12, 12]).verdict, "PASS");
+});
+
 test("target: a point label named like a word is STILL checked against its point", () => {
   const d = doc([{ id: "pZ", type: "point", at: [50, 50], r: 3, label: "Zed" }]);
   const r = assess({ doc: d, widths: W([L({ text: "Zed", bbox: [220, 220, 24, 12] })]) });
   assert.ok(rules(r).has("target"));
+});
+
+test("target: a dimension near unrelated geometry still fails far from its claimed edge", () => {
+  const claims = 'segments: CD\nanchors:\n  C 90 30\n  D 90 120'
+    + '\nclaims:\n  K1 scale-length CD = 4 | inferred |';
+  const assessAt = (bbox) => assess({ claims, widths: W([L({ text: "4", bbox, geom_u: 5 })]) });
+  assert.ok(fails(assessAt([164, 66, 12, 12])).some((f) => f.message.includes("claimed segment CD")));
+  assert.equal(assessAt([110, 66, 12, 12]).verdict, "PASS");
+});
+
+test("target: an axis title can sit by arrow paint beyond the measured axis", () => {
+  const claims = 'segments: AB\nanchors:\n  A 30 60\n  B 120 60'
+    + '\nclaims:\n  K1 axis AB from 0 to 9 | inferred |\n  K2 label "x" names AB | inferred |';
+  const label = L({ bbox: [150, 54, 12, 12], geom_u: 5 });
+  assert.equal(assess({ claims, widths: W([label]) }).verdict, "PASS");
 });
 
 test("target: a point label measured against ITS point, not the nearest paint", () => {

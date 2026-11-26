@@ -168,6 +168,8 @@ class LocusSceneTests(unittest.TestCase):
         m = b.anchors["M"]
         self.assertAlmostEqual(math.dist(m, b.anchors["A"]),
                                math.dist(m, b.anchors["B"]), places=6)
+        box = next(box for text, *box in vt.label_boxes(b.doc["elements"]) if text == "8 cm")
+        self.assertLessEqual(vt._seg_rect_dist(b.anchors["A"], b.anchors["B"], box), 1.5 * vt.FS)
 
     def test_parallel_offset_feet_and_distances(self):
         b = gg.build_locus_scene(figure_id="g9lo3", stem=STEM_OFFSET,

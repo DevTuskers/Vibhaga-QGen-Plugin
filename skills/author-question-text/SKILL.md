@@ -298,7 +298,7 @@ The Sinhala side is not a translation of the English. Write it as a Sinhala math
 4. **Sinhala word order.** Write the count after the noun with ක්: `පවුල් $3$ක්`, not `$3$ පවුල්`. Put the verb last. Ask questions with ද: `… කීය ද?`, `… කුමක් ද?`.
 5. **No calques.** Avoid "හි" chains copied from English "of" (`AC හි දිග හි අගය`). Write `AC පාදයේ දිග`. Do not open with කරුණාකර.
 6. **Read it alone.** Cover the English and read the Sinhala aloud. If a student would read a sentence twice, rewrite it.
-7. `tools/si-style.py` (run by `run-gates build`) warns on the mechanical signs of these. A warning is a prompt to reread, not proof of a defect.
+7. Read the Sinhala on its own, then check it against the English: distinguish completed counts from ongoing actions, and state rates directly in their units. `si-style.py` and `precritic-lint.py` flag some mechanical symptoms; they do not verify fluency.
 
 ## 6. Traps — stories with the catch
 

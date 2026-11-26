@@ -101,13 +101,14 @@ export const METADATA_CONTRACT = Object.freeze({
   inputMetadataRole:'INPUT_PROVENANCE',
   anchorsFrame:'STORED_OUTPUT_CANVAS',
   rawAnchorsFrame:'INPUT_VDD_CANVAS',
+  inputCanvasScale:'meta.inputCanvasScale converts lengths in the immediate input canvas to stored output canvas units.',
   inheritedMetadata:'meta.inputMetadata is the complete lossless JSON metadata snapshot of the immediate input document. inputMetadataPresent distinguishes absent metadata. Unknown keys, including non-frame metadata, are preserved here only; none are implicitly asserted to describe the output.',
   compatibility:'Consumers formerly reading inherited meta keys at the root must read meta.inputMetadata as input provenance, or explicitly re-author output metadata. Repeated transforms nest snapshots without flattening. Legacy bundles without this contract require regeneration; the loader does not guess their frames.',
   rawAnchorsMeaning:'.raw.anchors.json preserves the supplied INPUT_VDD_CANVAS sidecar bytes. It is not automatically raw PDF/page anchors; a PDF-to-input-VDD mapping is a separate caller responsibility.',
   normalization:'normalizeVdd leaves metadata unchanged. Anchors labeled STORED_OUTPUT_CANVAS continue to refer to stored geometry, not the normalized canvas.'
 });
-function outputMetadata(document, anchors) {
-  return {layoutMetadataSchema:METADATA_CONTRACT.schema,inputMetadataRole:METADATA_CONTRACT.inputMetadataRole,inputMetadataPresent:Object.hasOwn(document,'meta'),inputMetadata:Object.hasOwn(document,'meta')?copy(document.meta):{},anchorsFrame:METADATA_CONTRACT.anchorsFrame,...(anchors===undefined?{}:{anchors:copy(anchors)})};
+function outputMetadata(document, anchors, scale) {
+  return {layoutMetadataSchema:METADATA_CONTRACT.schema,inputMetadataRole:METADATA_CONTRACT.inputMetadataRole,inputMetadataPresent:Object.hasOwn(document,'meta'),inputMetadata:Object.hasOwn(document,'meta')?copy(document.meta):{},inputCanvasScale:scale,anchorsFrame:METADATA_CONTRACT.anchorsFrame,...(anchors===undefined?{}:{anchors:copy(anchors)})};
 }
 function inputDeclaresUnbounded(document) {
   let meta=document.meta;
@@ -122,6 +123,9 @@ function assertOutputMetadata(document, anchors) {
   const meta=document.meta;
   need(meta?.layoutMetadataSchema===METADATA_CONTRACT.schema && meta.inputMetadataRole===METADATA_CONTRACT.inputMetadataRole && typeof meta.inputMetadataPresent==='boolean' && Object.hasOwn(meta,'inputMetadata'),'output metadata contract missing; regenerate rather than guessing legacy metadata frames');
   need(meta.anchorsFrame===METADATA_CONTRACT.anchorsFrame && Object.hasOwn(meta,'anchors') && stable(meta.anchors)===stable(anchors),'stored output anchor frame/sidecar mismatch');
+}
+function compatibleMetadataContract(contract) {
+  return contract && stable({inputCanvasScale:METADATA_CONTRACT.inputCanvasScale,...contract})===stable(METADATA_CONTRACT);
 }
 export function transformDocument(document, matrix) {
   validateMatrix(matrix); finiteTree(document);
@@ -170,7 +174,7 @@ export function transformDocument(document, matrix) {
     }
     return el;
   });
-  d.meta=outputMetadata(document,document.meta?.anchors===undefined?undefined:transformAnchors(document.meta.anchors,matrix));
+  d.meta=outputMetadata(document,document.meta?.anchors===undefined?undefined:transformAnchors(document.meta.anchors,matrix),s);
   finiteTree(d);
   return d;
 }
@@ -755,7 +759,7 @@ export function loadOutputs(prefix) {
   }
   need(bytes.provenance,'missing provenance');
   const provenance=JSON.parse(bytes.provenance);need(provenance.approved,'bundle not layout-approved');
-  need(stable(manifest.metadataContract)===stable(METADATA_CONTRACT) && stable(provenance.metadataContract)===stable(METADATA_CONTRACT),'missing/incompatible metadata frame contract; regenerate legacy bundles, do not guess frames');
+  need(compatibleMetadataContract(manifest.metadataContract) && compatibleMetadataContract(provenance.metadataContract),'missing/incompatible metadata frame contract; regenerate legacy bundles, do not guess frames');
   const member=(documentBytes,anchorBytes,rawAnchors)=>{
     const document=JSON.parse(documentBytes),anchors=JSON.parse(anchorBytes);assertOutputMetadata(document,anchors);
     return {document,anchors,rawAnchors,rawAnchorsFrame:METADATA_CONTRACT.rawAnchorsFrame};

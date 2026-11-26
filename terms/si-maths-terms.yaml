@@ -1,4 +1,7 @@
 banned:
+  සමජාතීය පද:
+    en: like terms
+    use: සජාතීය පද
   අසම්භාව්‍ය:
     en: unlikely (event class)
     note: calque of 'unlikely'
@@ -11351,6 +11354,13 @@ terms:
         sources:
         - maths/grade-08/lessons/05-Algebraic-Expressions.md
         - maths/grade-08/scope-cards/05-Algebraic-Expressions.yaml
+      9:
+        si: සජාතීය වීජීය පද
+        alt:
+        - සජාතීය පද
+        sources:
+        - maths/grade-09/lessons/06-Algebraic-Expressions.md
+        - maths/grade-08/lessons/05-Algebraic-Expressions.md
   line of sight:
     grades:
       9:

@@ -1053,6 +1053,25 @@ class RenderedClearance(unittest.TestCase):
         dist = vt._seg_rect_dist(da[0], da[1], bx)
         self.assertLessEqual(dist, 1.5 * slh["fontSize"])
 
+    def test_dimension_labels_stay_near_their_claimed_side(self):
+        targets = {
+            "selftest-cafoot": {"4 cm": "AF"},
+            "selftest-elev-eye": {"1.6 m": "GE"},
+            "selftest-g9-ls-perp": {"8 cm": "AB"},
+            "selftest-mgtri": {"6 cm": "BM"},
+            "selftest-tpar": {"6 cm": "AX", "x": "XB"},
+        }
+        for spec in vt.SELF_TEST:
+            if spec["figure_id"] not in targets:
+                continue
+            kw = dict(spec)
+            b = vt.BUILDERS[kw.pop("template")](**kw)
+            boxes = {text: box for text, *box in vt.label_boxes(b.doc["elements"])}
+            for glyph, (a, z) in targets[b.figure_id].items():
+                with self.subTest(figure=b.figure_id, glyph=glyph):
+                    gap = vt._seg_rect_dist(b.anchors[a], b.anchors[z], boxes[glyph])
+                    self.assertLessEqual(gap, 1.5 * vt.FS)
+
 
 def _dot(id_, x, y):
     return {"type": "circle", "id": id_, "center": [x, y], "r": 4.0,
@@ -1594,6 +1613,17 @@ class CoordinatePlane(unittest.TestCase):
         self.assertIn("reads A 4 on OY | stem", b.claims)
         self.assertIn('label "x" names OX', b.claims)
         self.assertIn('label "y" names OY', b.claims)
+
+    def test_marked_point_gaps_follow_the_builder_seats(self):
+        b = vt.BUILDERS["coordinate_plane"](**self._sweep_spec(7, 7))
+        gaps = b.doc["meta"]["pointLabelGaps"]
+        self.assertEqual(set(gaps), set("ABCDE"))
+        dots = {el["id"][2:]: el["at"] for el in b.doc["elements"] if el["type"] == "point"}
+        for glyph, x0, y0, x1, y1 in vt.label_boxes(b.doc["elements"]):
+            if glyph in gaps:
+                x, y = dots[glyph]
+                gap = math.hypot(max(x0 - x, 0, x - x1), max(y0 - y, 0, y - y1))
+                self.assertAlmostEqual(gaps[glyph], gap + 2, delta=0.02)
 
     def test_join_sym_axis_guides_and_origin_label(self):
         b = self._b(points={"A": (3, 4), "B": (1, 2), "C": (5, 1)},
@@ -3236,7 +3266,8 @@ class IntegratedReviewRegressions(unittest.TestCase):
 
 class ByteIdentity(unittest.TestCase):
     """The floating-label machinery must not change any existing template's bytes —
-    sha256 over each self-test spec's three emitted files, captured on origin/main."""
+    sha256 over each self-test spec's three emitted files. The graph hashes include
+    the point-label clearance metadata; their diagram geometry and claims are unchanged."""
 
     GOLDEN = {
         "selftest-cuboid": "05f09debdef31ece88cfbc7ffc0036095112bab21c2ff513ffd1afa5b8f58c9c",
@@ -3262,7 +3293,7 @@ class ByteIdentity(unittest.TestCase):
         # W11 — generated when the three G7 templates landed
         # W12 — selftest-plane/grid regenerated: A3's cell-corner label seating moved the
         # point letters, A4's default cols/rows are the shape's exact extent
-        "selftest-plane": "f80cfd4e7d009043e3b9ad28b71051f239e6afd286e60f0469600e3ce65602cb",
+        "selftest-plane": "269c61a32526c2aa6f519ff8b7710dffa1132060e4b889aa02f6c2a84bf8ce93",
         "selftest-parallel": "a90ffb97dca6fe53f22f192f1b4dc989822ab6147a72ab3b012a00e00ec96861",
         "selftest-bars": "f6427cfc31e6a891bb820165618cf6c14598be4dd1fa3920f0a3e53155e684b0",
         # W12 A5 — generated when orientation="h" landed (the v spec's hash above is
@@ -3281,7 +3312,7 @@ class ByteIdentity(unittest.TestCase):
         "selftest-rtri2": "4bee604ae6ac55a4c6f31f9298898cfcd64c6f3148245f590d05c7df293fd39a",
         "selftest-cyc": "ce683dc4b715bd0a9cfc5b9826b9c7a0d775de21dc1fbc48e7fefa5549169dd7",
         "selftest-tan": "654d82cd00f56b4fe16014488bab99a9281569575a135a254aa81c03c97157ef",
-        "selftest-tpar": "cd4afcf42d89027b1ce485d449bd6e019437b62072fa0812ff5430b0f362a0c6",
+        "selftest-tpar": "b65406a745c467e78d49655a50c7750ced30b78b06e59f1d33243c04c5d7105d",
         "selftest-parea": "22bcbf0c54bf349926a1df9997de8c414050667aa736109543147670476ff559",
         # G11 round-2 — regenerated after the visual-initial label fixes moved
         # cone/cyl leader labels, graph/fline axis numerals, ineq tick numerals,
@@ -3289,8 +3320,8 @@ class ByteIdentity(unittest.TestCase):
         # cone/cyl re-pinned after the slant-dim + smaller dim-label changes (#59)
         "selftest-cone": "2d37bc1d6d662551841f1d824383665e87932621cd33eb5dd7b1d43d3d80a11e",
         "selftest-cyl": "520c52bf194f99545ecd056ba54049ccb4f5d43bd1593de5b60924224242e564",
-        "selftest-graph": "9e706817cc3f452789a66a5cbe20416bdeb13c096a7b28f0426d6429694e2cf0",
-        "selftest-fline": "23a9b1b569769a5af7b7d1e2e9e9a5a30d8bf461c632a243949a7aceb7b91db8",
+        "selftest-graph": "cb847257f57d77512077a701dae6b5a921ebdbf88a90def4422bba8278da7ade",
+        "selftest-fline": "cc7eea0a95decf7b9f725b275249dba9a6a0cac670441044fcec3612169b2940",
         "selftest-ineq": "43bf626ad2c9a79bc062b3a496e54ab33d1202b0720410cea9416d324d887feb",
         "selftest-ineq2": "66f2b038a56d767137d69d4f8de92055697e5b408cd3fa562312b81e25254d11",
         "selftest-hist": "5c57542d9307b17787ebff7c30353236e65ccbe9ecc47c67eff71c5ce03c7165",
@@ -3322,12 +3353,12 @@ class ByteIdentity(unittest.TestCase):
         "selftest-ogfig": "f567516f5ac2c0dc787cc10f4aac33e7526126a0287d5944ff23bae23d4c644c",
         "selftest-vrn3": "e429f8a7a298354ed6701685ffebaecb173882ec4523651ef180c7218cb5abb0",
         "selftest-cvess": "08202bf91edde8c110786685cc4de06012ffaaff6e1007399e3a57e8197394a3",
-        "selftest-mgtri": "1b2ab8c6072d01ea216b8eefaf4a4d3b887ba13a2c8928aebb07ca044c633c9d",
-        "selftest-mgpara": "972b01fc2eb06bdd92ff0795f5001b15018561ff2811b54e7ee1eab88ac27bad",
-        "selftest-mgtrap": "61065264cfc9c3016e1f2316004f915ba5720b80166a457f803867bf47d163ae",
+        "selftest-mgtri": "43d3a802d6b6fb0c6fe6a258fffeb34d7d087419f1c51d282952e9b9f005dca9",
+        "selftest-mgpara": "3ef96dd68cbc27a46f1476b9025959f5f2a84d9253309a0c11abcda4ddbddcbc",
+        "selftest-mgtrap": "74745199b5321fe1650bbdc03b660b24329d3e5f3e44ac10e7f4f8e15ba95fb7",
         "selftest-histadj": "005de7f479c1f085da424a64a15faf23596374fc0f52b3b8acb4546fcddda805",
-        "selftest-genquad": "fffe82ded70b2b4150e21251f10a546f2d9a031e62db40bad26df13371ee71d1",
-        "selftest-multi": "3d4d4acd3dd68b8c4f334f69ae7d3de332490565647eec37f2d07676e5af055b",
+        "selftest-genquad": "01f3a4f7cf37c3893d48835014eda21345601dce81d2819a7784036491b751d7",
+        "selftest-multi": "1ee61a6dbb90eedc7cb8e453389a5520e6038dd50458f8ad095db3a394591785",
         "selftest-reading-inscribed_circle": "b724be5ec2054e8f8a583c637b94b7807daddfa58f179c0344d9c1e7c325b5b5",
         "selftest-reading-venn_regions": "ff2583f8f00884f7e0bf4cfe16a02cd1906e79ee0de1ac89420598eb995de83b",
         "selftest-reading-solid_composite": "d609b632ff445eba680091e5c5ddb9a96dffaeb0127c6e6c1fb6bf51749499c1",
@@ -3345,13 +3376,13 @@ class ByteIdentity(unittest.TestCase):
         "selftest-sec": "06785c0d8bd89093b4e18b9d57578fdc3720c1c7c473ad1f46facdd23e0dc7d4",
         "selftest-semi": "494b7ee495b133e9bd432c72ac2a3d9339a76897176bf69e31752ca13995bd7b",
         "selftest-annu": "3ee6167d59da66858a25ebdf64e94403700e49aecc69a5c1523fc2f6a9a0fe07",
-        "selftest-cafoot": "9c06dc3b3aab5b414e50cbebda8e26d70f633fab1df5f9f222c318e3bc8fe276",
+        "selftest-cafoot": "33983b6bb7875ba19cba88bb6830f510addb321e6a387219a70901ab88e7a34c",
         "selftest-cax": "1c72bd9ecf8b07fa65275e9bb896c5cfd9505319a105a26d7217ca3e49516ec9",
         "selftest-vcomp": "cd596042f266b98ac93e2bcac4db2c648bb72ade19e03bc8660d9b4bf76bbbf6",
         "selftest-vcsh": "1dd9fb115595d103831b0c3174b0806621499982e6de559e329346b700535114",
         "selftest-cineq": "d01603d0bc30a983abd661159b65591a04df500fc7a7ddcb98163db9c8cf4646",
-        "selftest-cdt": "f214dacea5b23b152bbfb939ce0719aecce552550ae5fa54151a89c2b24d5bfe",
-        "selftest-cx3": "d95f59d8f75365ca01fe3938d6401848ba5a4c4daea5f9b5d36dbf671b5c2e98",
+        "selftest-cdt": "ddc0fd814fc4de3d8ea6c091a4a3163f91e3b3f11a45f1712fcb71df1471da3d",
+        "selftest-cx3": "9a7a1e7339461cd216f44e5c8c0dfc88bfaca4f7566f200c417c733da709f33e",
         "selftest-conv2-aas": "429ba1c5cfaf8fe8f4f143b716b4e74217db5e6b00c2212fb7e909859bc4145c",
         "selftest-conv2-aas-b": "06026c0fae0cd7a5ff0a797532f7bb6ad50b9d1afde6e65671e2479d6ec03d2c",
         "selftest-conv2-alternate": "38e03483801b44371197284bc8053f0861f8abbfa7625650555fe40ff19ec467",
@@ -3401,7 +3432,7 @@ class ByteIdentity(unittest.TestCase):
         # (process hash seed); builder now sorts ground anchors, making bytes
         # seed-stable. Rendered figure unchanged.
         "selftest-elev": "1560aeb34abcf706d80ef8f144a9581f0e545107ea686ab309bb200bffc673c8",
-        "selftest-elev-eye": "9e50d813e8d9296626ce8096a99c357325f6870bd6f7668c8de49670bb42db92",
+        "selftest-elev-eye": "a70b3efb80f279d0cd90a096d08a7b56cb2e942ad2d755644fe7a964b5ee62ea",
         "selftest-2cgeo": "4496435b5646ae77bc9271342194aa9938a69ec26fba07ba968becd7722d90ee",
         "selftest-2cgeo-touch": "63e0f76416d4508174725237ad891ecc20a316bb956210192a03eedf0561bf84",
         "selftest-2cgeo-angle": "b9790f7b9bfd59f0c680869df701253e7e817a78ca00d170fa9bc772046ec297",
@@ -3457,7 +3488,7 @@ class ByteIdentity(unittest.TestCase):
         "selftest-g9-ml-trans": "3a140e009a45fdbad815b90a608ec1f9f291c02a4c033bb149f94849de09fb91",
         "selftest-g9-ls-circle": "b141137d1978f9a682ea9e13d1085ccd35e7cded647eb7b164b6a3054dbbdea6",
         # Lead reverified renders: the 8 cm label belongs above AB, not AP.
-        "selftest-g9-ls-perp": "eb9e096bfbdde2a21d1e568d5a9dc0ae8fbf86c955e950db0bd8034a54d87dca",
+        "selftest-g9-ls-perp": "14a3c35c4478526b01019f88ffc2fef07e07bdd6efc551f6c709b6ca90948d0d",
         "selftest-g9-ls-offset": "a8f8fd7025ee4256438b47c7506255f69e8e523a6389f9bdc5e34cf902ffd558",
         "selftest-g9-ls-bis": "1372250e3b4968ae35d1ce5efd0443b11a3fc23dbb0241e43862bb6614e04d0c",
         "selftest-g9-pa-int": "d17e37a245bba183cc9a7ecce3a6a97b81bc8399d81625927c5a9ef9e284d52b",
@@ -3725,6 +3756,18 @@ class G11ContractTests(unittest.TestCase):
             sides={"AB": 8}, angles={"A": 60, "B": 60, "C": 60},
             ticks={"AB": 1, "BC": 1}, labels={"AB": "8 cm"})
         self.assertIn("ABC", b.claims)
+
+    def test_marked_geometry_side_label_clears_canvas_widened_by_vertex_letters(self):
+        spec = next(s for s in vt.SELF_TEST if s["figure_id"] == "selftest-mgtri")
+        b = vt.build_marked_geometry(
+            **{k: v for k, v in spec.items() if k != "template"}, base_px=192)
+        elements = b.doc["elements"]
+        strokes = vt.stroke_segments(elements)
+        without_vertices = [el for el in elements if not el.get("id", "").startswith("lbv")]
+        self.assertGreater(b.doc["canvas"]["width"],
+                           vt._fit_extent(strokes, vt.label_boxes(without_vertices))[2])
+        box = next(box for text, *box in vt.label_boxes(elements) if text == "6 cm")
+        self.assertLessEqual(vt._seg_rect_dist(b.anchors["M"], b.anchors["B"], box), 1.5 * vt.FS)
 
 
 class G10ContractTests(unittest.TestCase):
@@ -5045,6 +5088,12 @@ class TwoCircleGeometryTests(unittest.TestCase):
                                          stem='Radii 5 cm and 2 cm, centres 3 cm.',
                                          r1=5, r2=2, d=3)
         self.assertIn('collinear A B P', b.claims)      # internal touch
+        box = next((x0, y0, x1, y1) for text, x0, y0, x1, y1
+                   in vt.label_boxes(b.doc['elements']) if text == 'B')
+        x0, y0, x1, y1 = box
+        centre = ((x0 + x1) / 2, (y0 + y1) / 2)
+        self.assertGreater(math.dist(centre, b.anchors['P']) -
+                           math.dist(centre, b.anchors['B']), 0.25 * vt.FS)
 
     def test_topology_refusals(self):
         with self.assertRaises(vt.TemplateError):       # separate
