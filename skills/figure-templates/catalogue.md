@@ -6,7 +6,9 @@
 (positive integers dividing their spans) and `x_label_side="below"|"above"`,
 `y_label_side="left"|"right"`. Numerals stay aligned to their ticks; the
 builder may flip a whole axis or refuse if no clear arrangement exists.
-The numeral for zero binds to the shared origin. Both `function_graph`
+The numeral for zero binds to the shared origin and aligns with the x-axis
+numeral row. If the row cannot fit zero and the question does not need it,
+the shared origin is declared unlabelled. Both `function_graph`
 and `cartesian_plot` bind point labels and check arrowhead clearance;
 `solid` (cylinder/cone radius and height) and `solid_composite` bind dimension
 labels to their leaders. See the [hand-drawn API](finish-api.md) for the same

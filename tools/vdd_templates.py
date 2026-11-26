@@ -577,6 +577,14 @@ def _junctions(elements: list[dict], near: XY, reach: float) -> list[XY]:
     return [p for p in rivals if 2 < math.dist(p, near) <= reach]
 
 
+def _leader_stroke(a, b, leader):
+    return leader is not None and (list(a), list(b)) in (
+        (list(leader[0]), list(leader[1])), (list(leader[1]), list(leader[0])))
+
+
+DIMENSION_CALLOUT_PX = 40
+
+
 def _floater_bad(cbs: list[tuple], near: XY, rivals: list[XY], strokes: list[tuple],
                  others: list[tuple], regions: list[tuple], s: float, max_gap_px=None,
                  leader=None) -> int:
@@ -584,16 +592,16 @@ def _floater_bad(cbs: list[tuple], near: XY, rivals: list[XY], strokes: list[tup
     scale s — 1 stroke clearance · 2 label gap · 4 own-anchor · 8 same-region. `others` is
     every label box that is not this floater's (fixed labels + the other floaters')."""
     bad = 0
-    if strokes and min(_seg_rect_dist(a, b, cb[1:5]) - w / 2
-                       for a, b, w in strokes for cb in cbs
-                       ) * s < STROKE_PX + SLACK_STROKE:
+    if any((_seg_rect_dist(a, b, cb[1:5]) - w / 2) * s
+           < (3.0 + SLACK_STROKE if _leader_stroke(a, b, leader) else STROKE_PX + SLACK_STROKE)
+           for a, b, w in strokes for cb in cbs):
         bad |= 1
     if any(_rect_gap(cb[1:5], pb[1:5]) * s < 4.0 for cb in cbs for pb in others):
         bad |= 2
     ctr = _union_centre(cbs)
     own = math.hypot(ctr[0] - near[0], ctr[1] - near[1])
-    a, b = leader if leader else (near, near)
-    if max_gap_px is not None and min(_seg_rect_dist(a, b, box[1:5]) for box in cbs) * s > max_gap_px:
+    target = vc.lerp(*leader, 0.5) if leader else near
+    if max_gap_px is not None and min(_seg_rect_dist(target, target, box[1:5]) for box in cbs) * s > max_gap_px:
         bad |= 16
     if any((math.hypot(ctr[0] - o[0], ctr[1] - o[1]) - own) * s < OWN_PX for o in rivals):
         bad |= 4
@@ -614,8 +622,10 @@ def _search_floater(kind: str, el: dict, near: XY, gap: float, off: XY,
     size = float(el.get("fontSize", fs))
     tally = [0] * len(FLOAT_RULES)
     dirs = el.get("_dirs", FLOAT_DIRS)
-    for k in range(int(FLOAT_REACH / FLOAT_STEP) + 1):
-        d = gap + FLOAT_STEP * k
+    step = 2.0 if el.get("_leader_points") else FLOAT_STEP
+    count = int(FLOAT_REACH / step) + 1
+    for k in range(count):
+        d = gap + step * k
         for deg in dirs:
             ux, uy = math.cos(math.radians(deg)), math.sin(math.radians(deg))
             half = _label_half_along(str(el["value"]), size, ux, uy)
@@ -631,7 +641,7 @@ def _search_floater(kind: str, el: dict, near: XY, gap: float, off: XY,
             for i in range(len(FLOAT_RULES)):
                 if bad & (1 << i):
                     tally[i] += 1
-    n_cand = (int(FLOAT_REACH / FLOAT_STEP) + 1) * len(dirs)
+    n_cand = count * len(dirs)
     i = tally.index(max(tally))
     raise TemplateError(
         f"{kind}: floating label {el.get('value')!r} found no clear spot near "
@@ -682,11 +692,18 @@ def _place_floaters(kind: str, elements: list[dict], fs: float) -> None:
         return fixed + [b for f in floaters if f is not el for b in placed_of.get(id(f), [])]
 
     def place(el):
+        el.pop("_callout_box", None)
         near, gap, off, rivals = prep[id(el)]
         obstacles = hard_strokes if el.get("_soft_grid") else strokes
         try:
             return _search_floater(kind, el, near, gap, off, rivals, obstacles, others_of(el), regions, fs)
         except TemplateError:
+            if "_leader_points" in el:
+                callout = dict(el, _dirs=FLOAT_DIRS, _max_gap_px=DIMENSION_CALLOUT_PX)
+                at, cbs = _search_floater(kind, callout, near, max(gap, 11), off, [], obstacles,
+                                          others_of(el), [], fs)
+                el["_callout_box"] = cbs[0][1:5]
+                return at, cbs
             if "_point_target" not in el or not grid or el.get("_soft_grid"):
                 raise
             result = _search_floater(kind, el, near, gap, off, rivals, hard_strokes, others_of(el), regions, fs)
@@ -712,6 +729,16 @@ def _place_floaters(kind: str, elements: list[dict], fs: float) -> None:
             el["at"], el["_floater"], placed_of[id(el)] = at, list(at), cbs
         if not redo:
             break
+
+    for el in floaters:
+        if "_callout_box" not in el:
+            continue
+        near = el["_near"]
+        x0, y0, x1, y1 = el["_callout_box"]
+        edge = (min(max(near[0], x0), x1), min(max(near[1], y0), y1))
+        gap = math.dist(near, edge)
+        tip = vc.lerp(edge, near, min(1, 4.5 / gap)) if gap else near
+        elements.append(vc.line(near, tip, id=f"{el['id']}-callout", width=1.0))
 
 
 def _check_label_texts(elements: list[dict], extra: list[str], medium: str,
@@ -866,9 +893,19 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
             if leader.get("type") != "line" or math.dist(*leader["points"]) <= ON_TOL:
                 raise TemplateError(f"{kind}: dimension-label {el['id']} needs a drawn line {target}")
             el["_leader_points"] = leader["points"]
-            claims.append((f"dimension-label {target} {el['id']} {el['_max_gap_px']:g}",
-                           "inferred", "rendered dimension names this leader"))
+            a, b = leader["points"]
+            el["_near"] = vc.lerp(a, b, 0.5)
+            normal = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) - 90
+            angles = [normal, normal + 180]
+            angles.sort(key=lambda d: (round(math.sin(math.radians(d)), 6), -math.cos(math.radians(d))))
+            el["_dirs"] = angles
     _place_floaters(kind, elements, fs)      # `_near` texts get their `at` + `_floater` mark
+    by_id = {el["id"]: el for el in elements}
+    for el in elements:
+        if "_dimension_leader" in el:
+            callout = f" {el['id']}-callout" if "_callout_box" in el else ""
+            claims.append((f"dimension-label {el['_dimension_leader']} {el['id']} {el['_max_gap_px']:g}{callout}",
+                           "inferred", "rendered dimension names this leader"))
 
     # 1. fit — bbox over ALL ink (shape outlines incl. half the stroke) plus the label boxes
     # `owners` maps each label box back to its element, so a pre-flight refusal on a placed
@@ -930,9 +967,16 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
             return all(abs(p[i_] - _eat[i_] - o[i_]) < 0.25
                        for p, o in ((a, _ex[0]), (b, _ex[1]))
                        for i_ in (0, 1))
+        leader_id = owners[i].get("_dimension_leader")
+        leader_pts = by_id[leader_id]["points"] if leader_id else None
+        callout = by_id.get(f"{owners[i]['id']}-callout") if "_callout_box" in owners[i] else None
         worst = min((_seg_rect_dist(a, b, (x0, y0, x1, y1)) - w / 2
-                     for a, b, w in clear_strokes if not _is_own(a, b)),
+                     for a, b, w in clear_strokes if not _is_own(a, b)
+                     and not _leader_stroke(a, b, leader_pts)
+                     and not _leader_stroke(a, b, callout["points"] if callout else None)),
                     default=99) if clear_strokes else 99
+        if leader_pts and (_seg_rect_dist(*leader_pts, (x0, y0, x1, y1)) - 1) * scale_stroke < 3:
+            refuse_label(i, "the leader-clearance rule", f"{kind}: label {txt!r} overlaps its leader")
         if worst * scale_stroke < STROKE_PX + SLACK_STROKE:
             refuse_label(i, "the stroke-clearance rule",
                          f"{kind}: label {txt!r} is ~{worst * scale_stroke:.1f} rendered px "
@@ -2518,11 +2562,18 @@ def place_point_label(label_id: str, glyph: str, *, target: str, at: XY,
 
 
 def place_dimension_label(label_id: str, glyph: str, *, leader_id: str,
-                          near: XY, max_gap_px=26.0, size=None) -> dict:
+                          max_gap_px=18.0, size=None) -> dict:
     if not math.isfinite(max_gap_px) or max_gap_px <= 0:
         raise TemplateError("dimension label needs a positive rendered gap")
-    return dict(_float_label(label_id, glyph, near, gap=8, size=size),
+    return dict(_float_label(label_id, glyph, (0, 0), gap=4, size=size),
                 _dimension_leader=leader_id, _max_gap_px=max_gap_px)
+
+
+def _radius_dimension(elements, cx, y, rx, offset):
+    beyond = y + offset
+    for i, x in enumerate((cx, cx + rx)):
+        elements.append(vc.line((x, y), (x, beyond), id=f"radiusExt{i}", width=1.0))
+    return ((cx, beyond), (cx + rx, beyond), "radius")
 
 
 def axis_arrow(axis_id: str, start: XY, data_end: XY, *, traces=(),
@@ -8059,7 +8110,7 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
         elements.append(_ellipse_el((cx, bot), rx_, ry_, id="rimBf", a0=0, a1=180))
         elements.append(_ellipse_el((cx, bot), rx_, ry_, id="rimBb", a0=180, a1=360,
                                     dashed=True))
-        leaders.append(((cx, top), (cx + rx_ * 0.82, top - ry_ * 0.57), "radius"))
+        leaders.append(_radius_dimension(elements, cx, top, rx_, -ry_ - 19))
         leaders.append(((cx + rx_ + 26, top), (cx + rx_ + 26, bot), "height"))
         hidden.append("the bottom rim's back half")
     elif shape == "cone":
@@ -8075,7 +8126,7 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
             elements.append(vc.line((cx + rx_ + 16, by_), (cx + rx_ + 44, by_),
                                     id="hgtB", width=1.0))
             leaders.append(((cx + rx_ + 30, apex), (cx + rx_ + 30, by_), "height"))
-        leaders.append(((cx, by_), (cx + rx_, by_), "radius"))
+        leaders.append(_radius_dimension(elements, cx, by_, rx_, ry_ + 19))
         if "slant" in val:
             leaders.append(((cx, apex),
                             (cx + rx_ * 0.66, by_ + ry_ * 0.75), "slant"))
@@ -8138,8 +8189,7 @@ def build_solid(*, figure_id, stem, ask=None, title=None, description=None,
         else:
             anchor_pt = vc.lerp(a_, b2, 0.5)
             P[f"{dname[0].upper()}1"] = anchor_pt
-        label = (place_dimension_label(f"lb{dname}", glyph, leader_id=f"ld{dname}",
-                                       near=anchor_pt, size=13.0)
+        label = (place_dimension_label(f"lb{dname}", glyph, leader_id=f"ld{dname}", size=13.0)
                  if shape in ("cone", "cylinder") and dname in ("radius", "height")
                  else _float_label(f"lb{dname}", glyph, anchor_pt, gap=8, size=13.0))
         elements.append(label)
@@ -8336,117 +8386,121 @@ def build_function_graph(*, figure_id, stem, ask=None, title=None, description=N
     upx = float(unit_px)
     if not 20 <= upx <= 90:
         raise TemplateError(f"{kind}: unit_px must be 20–90")
-    ox = -x0 * upx
-    oy = y1 * upx
-    X = lambda v: ox + v * upx
-    Y = lambda v: oy - v * upx
-    elements: list[dict] = []
-    if grid:
-        for i in range(int(x0), int(x1) + 1):
-            elements.append(vc.line((X(i), Y(y1)), (X(i), Y(y0)), id=f"gv{i + 100}",
-                                    width=0.75))
-            elements[-1]["stroke"] = {"width": 0.75, "color": "#d1d5db"}
-        for j in range(int(y0), int(y1) + 1):
-            elements.append(vc.line((X(x0), Y(j)), (X(x1), Y(j)), id=f"gh{j + 100}",
-                                    width=0.75))
-            elements[-1]["stroke"] = {"width": 0.75, "color": "#d1d5db"}
-    trace_ids = ["curve"] if len(fs) == 1 else [f"curve{i}" for i in range(len(fs))]
-    elements.append(axis_arrow("axX", (X(x0) - 18, Y(0)), (X(x1), Y(0)), traces=trace_ids))
-    elements.append(axis_arrow("axY", (X(0), Y(y0) + 18), (X(0), Y(y1)), traces=trace_ids))
-    curve_pts = [[(X(x), Y(g(x))) for x in xs_] for _k, g, _v, _e in fs]
-    for axis, lo, hi, tick in (
-        ("x", x0, x1, lambda n: ((X(n), Y(0) - 5), (X(n), Y(0) + 5))),
-        ("y", y0, y1, lambda n: ((X(0) - 5, Y(n)), (X(0) + 5, Y(n)))),
-    ):
-        for n in range(int(lo), int(hi) + 1):
-            elements.append(vc.line(*tick(n), id=f"t{axis}{n + 100}", width=1.2))
+    def seat_plot(upx, omit_zero=False):
+        ox = -x0 * upx
+        oy = y1 * upx
+        X = lambda v: ox + v * upx
+        Y = lambda v: oy - v * upx
+        elements: list[dict] = []
+        if grid:
+            for i in range(int(x0), int(x1) + 1):
+                elements.append(vc.line((X(i), Y(y1)), (X(i), Y(y0)), id=f"gv{i + 100}",
+                                        width=0.75))
+                elements[-1]["stroke"] = {"width": 0.75, "color": "#d1d5db"}
+            for j in range(int(y0), int(y1) + 1):
+                elements.append(vc.line((X(x0), Y(j)), (X(x1), Y(j)), id=f"gh{j + 100}",
+                                        width=0.75))
+                elements[-1]["stroke"] = {"width": 0.75, "color": "#d1d5db"}
+        trace_ids = ["curve"] if len(fs) == 1 else [f"curve{i}" for i in range(len(fs))]
+        elements.append(axis_arrow("axX", (X(x0) - 18, Y(0)), (X(x1), Y(0)), traces=trace_ids))
+        elements.append(axis_arrow("axY", (X(0), Y(y0) + 18), (X(0), Y(y1)), traces=trace_ids))
+        curve_pts = [[(X(x), Y(g(x))) for x in xs_] for _k, g, _v, _e in fs]
+        for axis, lo, hi, tick in (
+            ("x", x0, x1, lambda n: ((X(n), Y(0) - 5), (X(n), Y(0) + 5))),
+            ("y", y0, y1, lambda n: ((X(0) - 5, Y(n)), (X(0) + 5, Y(n)))),
+        ):
+            for n in range(int(lo), int(hi) + 1):
+                elements.append(vc.line(*tick(n), id=f"t{axis}{n + 100}", width=1.2))
 
-    plot_strokes = stroke_segments([el for el in elements if not _grid_line(el)]) + [
-        (a, b, 2.0) for pp in curve_pts for a, b in zip(pp, pp[1:])]
-    if symmetry:
-        plot_strokes.append(((X(h_), Y(y0) + 6), (X(h_), Y(y1) - 6), 1.4))
-    width = max(X(x1) + 70, X(0) + 60) - min(X(x0) - 20, X(0) - 100)
-    clearance = _clearance_units(STROKE_PX + SLACK_STROKE, width + 60)
+        plot_strokes = stroke_segments([el for el in elements if not _grid_line(el)]) + [
+            (a, b, 2.0) for pp in curve_pts for a, b in zip(pp, pp[1:])]
+        if symmetry:
+            plot_strokes.append(((X(h_), Y(y0) + 6), (X(h_), Y(y1) - 6), 1.4))
+        width = max(X(x1) + 70, X(0) + 60) - min(X(x0) - 20, X(0) - 100)
+        clearance = _clearance_units(STROKE_PX + SLACK_STROKE, width + 60)
 
-    def steps(value, lo, hi, name):
-        span = int(hi - lo)
-        if value is not None:
-            if (not isinstance(value, (int, float)) or isinstance(value, bool)
-                    or not math.isfinite(value) or value < 1
-                    or int(value) != value or span % int(value)):
-                raise TemplateError(f"{kind}: {name} must be a positive integer dividing the axis span")
-            return [int(value)]
-        return [s for s in _NICE_STEPS if span % s == 0 and s * upx >= 16 + clearance]
+        def steps(value, lo, hi, name):
+            span = int(hi - lo)
+            if value is not None:
+                if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                        or not math.isfinite(value) or value < 1
+                        or int(value) != value or span % int(value)):
+                    raise TemplateError(f"{kind}: {name} must be a positive integer dividing the axis span")
+                return [int(value)]
+            return [s for s in _NICE_STEPS if span % s == 0 and s * upx >= 16 + clearance]
 
-    x_steps = steps(x_step, x0, x1, "x_step")
-    y_steps = steps(y_step, y0, y1, "y_step")
-    if x_label_side not in ("below", "above") or y_label_side not in ("left", "right"):
-        raise TemplateError(f"{kind}: x_label_side is below/above and y_label_side is left/right")
-    x_other = "above" if x_label_side == "below" else "below"
-    y_other = "right" if y_label_side == "left" else "left"
-    sides = [(x_label_side, y_label_side), (x_label_side, y_other),
-             (x_other, y_label_side), (x_other, y_other)]
+        x_steps = steps(x_step, x0, x1, "x_step")
+        y_steps = steps(y_step, y0, y1, "y_step")
+        if x_label_side not in ("below", "above") or y_label_side not in ("left", "right"):
+            raise TemplateError(f"{kind}: x_label_side is below/above and y_label_side is left/right")
+        x_other = "above" if x_label_side == "below" else "below"
+        y_other = "right" if y_label_side == "left" else "left"
+        sides = [(x_label_side, y_label_side), (x_label_side, y_other),
+                 (x_other, y_label_side), (x_other, y_other)]
 
-    def trial(sx, sy, xs, ys):
-        vx, vy = (1 if ys == "right" else -1), (1 if xs == "below" else -1)
-        seats, boxes, bindings = [], [], []
+        def trial(sx, sy, xs, ys, x_offset, *, omit_zero=False):
+            vx, vy = (1 if ys == "right" else -1), (1 if xs == "below" else -1)
+            seats, boxes, bindings = [], [], []
 
-        def add_seat(value, label_id, axis, side, tick_id, positions):
-            for x, y, align in positions:
-                cand = vc.text((x, y), f"{value:g}", size=15, id=label_id, align=align)
-                box = label_boxes([cand], 15)[0][1:]
-                if any(_rect_gap(box, old) < _clearance_units(4.5, width + 60) for old in boxes):
-                    continue
-                if any(_seg_rect_dist(a, b, box) - w / 2 < clearance
-                       for a, b, w in plot_strokes):
-                    continue
-                seats.append(cand)
-                boxes.append(box)
-                bindings.append(f"tick-label {axis} {value:g} {tick_id} {label_id} {side}")
-                return True
-            return False
+            def add_seat(value, label_id, axis, side, tick_id, positions):
+                for x, y, align in positions:
+                    cand = vc.text((x, y), f"{value:g}", size=15, id=label_id, align=align)
+                    box = label_boxes([cand], 15)[0][1:]
+                    if any(_rect_gap(box, old) < _clearance_units(4.5, width + 60) for old in boxes):
+                        continue
+                    if any(_seg_rect_dist(a, b, box) - w / 2 < clearance
+                           for a, b, w in plot_strokes):
+                        continue
+                    seats.append(cand)
+                    boxes.append(box)
+                    bindings.append(f"tick-label {axis} {value:g} {tick_id} {label_id} {side}")
+                    return True
+                return False
 
-        offsets = [clearance + d for d in range(12, 53, 4)]
-        for n in range(int(x0), int(x1) + 1, sx):
-            if n and not add_seat(n, f"nx{n + 100}", "LR", xs, f"tx{n + 100}",
-                                  [(X(n), Y(0) + vy * d, "middle") for d in offsets]):
+            offsets = [clearance + d for d in range(12, 53, 4)]
+            if not omit_zero and not add_seat(
+                    0, "lbo", "origin", f"{xs}-left", "tx100:ty100",
+                    [(X(0) - d, Y(0) + vy * x_offset, "middle")
+                     for d in range(6, math.ceil(upx), 1)]):
                 return None
-        for n in range(int(y0), int(y1) + 1, sy):
-            if n and not add_seat(n, f"ny{n + 100}", "BU", ys, f"ty{n + 100}",
-                                  [(X(0) + vx * d, Y(n), "start" if vx > 0 else "end")
-                                   for d in offsets]):
-                return None
-        zero_offsets = [clearance + d for d in range(5, 28, 2) if clearance + d < upx]
-        for zx, zy in ((xs, ys), *[pair for pair in sides if pair != (xs, ys)]):
-            oxs, oys = (1 if zy == "right" else -1), (1 if zx == "below" else -1)
-            if add_seat(0, "lbo", "origin", f"{zx}-{zy}", "tx100:ty100",
-                        [(X(0) + oxs * dx, Y(0) + oys * dy, "middle")
-                         for dx in zero_offsets for dy in zero_offsets]):
-                break
-        else:
-            if not add_seat(0, "lbo", "origin", xs, "tx100:ty100",
-                            [(X(0), Y(0) + vy * d, "middle") for d in offsets
-                             if d < min((abs(n) * upx for n in range(int(y0), int(y1) + 1, sy)
-                                         if n * vy < 0), default=math.inf)]):
-                return None
-        return seats, bindings
+            for n in range(int(x0), int(x1) + 1, sx):
+                if n and not add_seat(n, f"nx{n + 100}", "LR", xs, f"tx{n + 100}",
+                                      [(X(n), Y(0) + vy * x_offset, "middle")]):
+                    return None
+            for n in range(int(y0), int(y1) + 1, sy):
+                if n and not add_seat(n, f"ny{n + 100}", "BU", ys, f"ty{n + 100}",
+                                      [(X(0) + vx * d, Y(n), "start" if vx > 0 else "end")
+                                       for d in offsets]):
+                    return None
+            return seats, bindings
 
-    layout = None
-    for sx in x_steps:
-        for sy in y_steps:
-            for xs, ys in sides:
-                layout = trial(sx, sy, xs, ys)
-                if layout is not None:
-                    step_x, step_y = sx, sy
+        def find_layout():
+            for sx in x_steps:
+                for sy in y_steps:
+                    for xs, ys in sides:
+                        for d in range(12, max(53, math.ceil(2.5 * upx)), 2):
+                            layout = trial(sx, sy, xs, ys, clearance + d, omit_zero=omit_zero)
+                            if layout is not None:
+                                return sx, sy, layout
+            return None
+        return find_layout(), X, Y, elements, trace_ids, curve_pts
+
+    plot = seat_plot(upx)
+    if plot[0] is None:
+        for inc in (6, 12):
+            if upx + inc <= 90:
+                plot = seat_plot(upx + inc)
+                if plot[0] is not None:
                     break
-            if layout is not None:
-                break
-        if layout is not None:
-            break
-    if layout is None:
+    needs_origin = re.search(r"\borigin\b|මූල ලක්ෂ්‍ය|(?<![\d.])0(?![\d.])",
+                             " ".join((stem, str(ask or ""))), re.I)
+    if plot[0] is None and not needs_origin:
+        plot = seat_plot(upx, omit_zero=True)
+    selected, X, Y, elements, trace_ids, curve_pts = plot
+    if selected is None:
         raise TemplateError(f"{kind}: axis numerals cannot clear their own ticks on a common side — "
                             "increase unit_px or use a coarser x_step/y_step")
-    numerals, tick_bindings = layout
+    step_x, step_y, (numerals, tick_bindings) = selected
     elements.extend(numerals)
     for eid, pp in zip(trace_ids, curve_pts):
         elements.append(vc.polyline(pp, id=eid))
@@ -8486,6 +8540,8 @@ def build_function_graph(*, figure_id, stem, ask=None, title=None, description=N
     if any(el["type"] == "text" and el.get("value") == "0" for el in elements):
         add('label "0" names 0', "inferred" if fig_mode else "stem",
             "the origin numeral")
+    else:
+        add("origin unlabelled", "inferred", "the axes cross at zero without a separate numeral")
     for pred in tick_bindings:
         add(pred, "inferred", "this rendered numeral names this axis tick")
     for i in range(int(x0), int(x1) + 1, step_x):
@@ -11964,9 +12020,9 @@ def build_solid_composite(*, figure_id, stem, ask=None, title=None,
         elements.append(_ellipse_el((cx, bot), rx_, ry_, id="rimBb", a0=180, a1=360,
                                     dashed=True))
         elements.append(vc.circle((cx, bot - sr), sr, id="ball"))
-        leaders.append(((cx, top), (cx + rx_ * 0.82, top - ry_ * 0.57), "radius"))
+        leaders.append(_radius_dimension(elements, cx, top, rx_, -ry_ - 19))
         leaders.append(((cx + rx_ + 26, top), (cx + rx_ + 26, bot), "height"))
-        leaders.append(((cx, bot - sr), (cx - sr * 0.7, bot - sr - sr * 0.72),
+        leaders.append(((cx, bot - sr), (cx - sr, bot - sr),
                         "sphere_r"))
         hidden.append("the bottom rim's back half")
     else:
@@ -11981,8 +12037,11 @@ def build_solid_composite(*, figure_id, stem, ask=None, title=None,
         elements.append(vc.line((cx - rx_, by_), (cx, apex), id="slL"))
         elements.append(vc.line((cx + rx_, by_), (cx, apex), id="slR"))
         elements.append(_ellipse_el((cx, ly_), lr_, lry, id="liq"))
-        leaders.append(((cx, by_), (cx, apex), "height"))
-        leaders.append(((cx, by_), (cx + rx_, by_), "radius"))
+        hx = cx + rx_ + 26
+        elements.append(vc.line((cx + rx_, by_), (hx, by_), id="heightExt0", width=1.0))
+        elements.append(vc.line((cx, apex), (hx, apex), id="heightExt1", width=1.0))
+        leaders.append(((hx, by_), (hx, apex), "height"))
+        leaders.append(_radius_dimension(elements, cx, by_, rx_, -ry_ - 19))
         leaders.append(((cx - rx_ - 26, apex), (cx - rx_ - 26, ly_), "level"))
     for a_, b2, dname in leaders:
         elements.append(vc.line(a_, b2, id=f"ld{dname}", dashed=True))
@@ -11990,12 +12049,8 @@ def build_solid_composite(*, figure_id, stem, ask=None, title=None,
     for a_, b2, dname in leaders:
         v_ = val[dname]
         glyph = f"{v_:g} {unit}" if isinstance(v_, (int, float)) else str(v_)
-        ux_, uy_ = vc.unit(a_, b2)
-        anchor_pt = (b2[0] + ux_ * 10.0, b2[1] + uy_ * 10.0)
-        # the named point anchors ON its leader at the end nearest the label seat
-        P[dname[0].upper() + "1"] = b2
-        elements.append(place_dimension_label(f"lb{dname}", glyph, leader_id=f"ld{dname}",
-                                              near=anchor_pt, max_gap_px=28 if dname == "sphere_r" else 26))
+        P[dname[0].upper() + "1"] = vc.lerp(a_, b2, 0.5)
+        elements.append(place_dimension_label(f"lb{dname}", glyph, leader_id=f"ld{dname}", size=13))
     claims: list[tuple[str, str, str]] = []
 
     def add(pred, ev, note=""):

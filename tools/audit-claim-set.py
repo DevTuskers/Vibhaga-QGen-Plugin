@@ -419,6 +419,7 @@ PREDICATES = {
     "gradient": "anchor", "at": "anchor", "derive": "anchor", "scale-length": "anchor",
     "label": "text", "free-text": "text", "paint": "text", "none": "text",
     "tick-label": "text", "visible-mark": "text", "point-label": "text", "dimension-label": "text",
+    "origin": "text",
     "axis-clearance": "text",
     # ⚠️ `arrow` MOVED "text" -> "anchor" on 2026-08-30. It was `continue`d by the `kind == "text"` gate
     # above, so an `arrow P -> Q` claim was never even closure-checked — and it is the claim that carries
@@ -908,6 +909,18 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
     # numerals are always a defect; EXTRA printed numerals are only a defect when every axis is
     # stepped — an unstepped axis legitimately prints numerals no `tick` predicts (R6-7).
     stepped = [ax2 for ax2 in axes.values() if ax2["step"] is not None]
+    origins = [c for c in cs["claims"] if c["pred"].startswith("origin ")]
+    if origins:
+        zeroes = [tuple(l + (r - l) * -ax["v0"] / (ax["v1"] - ax["v0"])
+                        for l, r in zip(a[p], a[q]))
+                  for (p, q), ax in axes.items() if p in a and q in a
+                  and ax["v0"] <= 0 <= ax["v1"] and ax["v0"] != ax["v1"]]
+        if check(len(origins) == 1 and origins[0]["pred"] == "origin unlabelled"
+                 and len(axes) == len(zeroes) == 2 and dist(*zeroes) < 0.02
+                 and "0" not in cs["labels"]
+                 and not any(c["pred"].startswith("tick-label origin ") for c in cs["claims"]),
+                 "origin unlabelled requires two axes sharing zero and no zero glyph"):
+            all_expect.discard("0")
     if stepped:
         printed = {t for t in cs["labels"] if re.fullmatch(r"-?\d+(\.\d+)?", t)}
         # W11: a numeral glyph whose `label` claim names a NON-numeric target is a category or
@@ -984,7 +997,9 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
                   f"{c['id']}: axis-clearance needs an arrow id, positive rendered gap and trace ids", c["id"])
             continue
         if tok[0] in ("point-label", "dimension-label"):
-            good = len(tok) == 4 and all(re.fullmatch(r"[\w.-]+", word) for word in tok[1:3])
+            good = (len(tok) == 4 or (tok[0] == "dimension-label" and len(tok) == 5
+                    and re.fullmatch(r"[\w.-]+", tok[4]) and tok[4] not in tok[1:3]))
+            good = good and all(re.fullmatch(r"[\w.-]+", word) for word in tok[1:3])
             check(good and re.fullmatch(r"\d+(?:\.\d+)?", tok[3]) and float(tok[3]) > 0
                   and (tok[0] != "point-label" or tok[1] in a),
                   f"{c['id']}: label binding needs a declared target, element id and positive gap", c["id"])

@@ -16,9 +16,12 @@ vt.finish(kind=…, figure_id=<staged id>, stem=…, elements, anchors, points, 
   minor gridlines (`gv<N>`/`gh<N>`), it can sit over them in the grid accent ink.
   Override `quadrants` or `max_gap_px` (at the narrowest rendering, without
   counting enlargement beyond 1 px per canvas unit). For a dimension use
-  `place_dimension_label(id, glyph, leader_id="ldradius", near=midpoint)`: the gap
-  is measured to that line, not to nearby ink. The usual `label "…" names …`
-  inventory claim still applies.
+  `place_dimension_label(id, glyph, leader_id="ldradius")`: the gap
+  is measured to the drawn line's midpoint, not to its nearest endpoint.
+  Only the label's own leader may be as close as 3 rendered pixels; other
+  strokes need the usual clearance. If both sides are blocked,
+  `finish()` tries a short callout tethered to the midpoint. The usual
+  `label "…" names …` inventory claim still applies.
 - **Axis arrows** — use `axis_arrow(id, start, data_end, traces=["curve"])` to
   pad past the data without changing its domain. Name the drawn line/polyline IDs
   in `traces` so visual-check verifies clearance to the arrowhead.

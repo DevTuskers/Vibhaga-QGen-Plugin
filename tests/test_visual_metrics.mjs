@@ -57,6 +57,50 @@ test("bound point labels must prefer their own point to an unmarked crossing", (
   assert.ok(rules(at([13, 20, 10, 12])).has("target"));
 });
 
+test("a solid-composite label at the old seat fails its own leader midpoint", () => {
+  const fixtures = [
+    ["radius", "4 cm", [[77, 57.68], [129.48, 47.47]], [161.34, 24.6], [103.24, 36]],
+    ["height", "10 cm", [[167, 57.68], [167, 217.68]], [141.09, 254.67], [194, 137.68]],
+    ["sphere_r", "3 cm", [[77, 169.68], [43.4, 135.12]], [48.75, 99.29], [66, 137]],
+  ];
+  for (const [id, text, points, old, near] of fixtures) {
+    const d = doc([
+      { id: "ld" + id, type: "line", points, stroke: { width: 2, dash: [4, 4] } },
+      { id: "lb" + id, type: "text", at: old, value: text },
+    ]);
+    const claims = `claims:\n  K1 dimension-label ld${id} lb${id} 28 | inferred |`;
+    const seat = (at, strokes) => {
+      d.elements[1].at = at;
+      return assess({ doc: d, claims, widths: W([L({
+        text, elementId: "lb" + id, bbox: [at[0] - 14, at[1] - 7, 28, 14],
+        stroke_u: 4, strokeByElement: strokes,
+      })]) });
+    };
+    assert.ok(rules(seat(old, { ["ld" + id]: 4 })).has("target"), id);
+    assert.equal(seat(near, { ["ld" + id]: 4 }).verdict, "PASS", id);
+    assert.ok(rules(seat(near, { ["ld" + id]: 4, other: 4 })).has("stroke"), id);
+  }
+});
+
+test("origin zero is below-left on the x-label baseline, not on a displaced row", () => {
+  const d = doc([
+    { id: "tx0", type: "line", points: [[50, 125], [50, 135]] },
+    { id: "ty0", type: "line", points: [[45, 130], [55, 130]] },
+    { id: "tx2", type: "line", points: [[90, 125], [90, 135]] },
+    { id: "x2", type: "text", at: [90, 155], value: "2" },
+    { id: "zero", type: "text", at: [32, 155], value: "0" },
+  ]);
+  const claims = "anchors:\n  L 50 130\n  R 170 130\n  B 50 130\n  U 50 10\nclaims:\n"
+    + axisClaims + "\n  K10 tick-label LR 2 tx2 x2 below | inferred |"
+    + "\n  K11 tick-label origin 0 tx0:ty0 zero below-left | inferred |";
+  const numeral = L({ text: "2", elementId: "x2", bbox: [85, 147, 10, 12] });
+  const zero = L({ i: 1, text: "0", elementId: "zero", bbox: [27, 147, 10, 12] });
+  const check = (bbox) => assess({ doc: d, claims, widths: W([numeral, { ...zero, bbox }]) });
+  assert.equal(check(zero.bbox).verdict, "PASS");
+  assert.ok(rules(check([27, 165, 10, 12])).has("tick-label"));
+  assert.ok(rules(check([56, 147, 10, 12])).has("tick-label"));
+});
+
 test("a curve reaching the arrowhead fails a bound axis clearance", () => {
   const d = doc([
     { id: "x", type: "arrow", head: "end", points: [[20, 100], [220, 100]] },

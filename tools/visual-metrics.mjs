@@ -353,7 +353,7 @@ export function tickOwners(doc, cs) {
   return out;
 }
 
-function tickSeatWrong(owner, label, owners) {
+function tickSeatWrong(owner, label, owners, labels) {
   if (!owner.valid || !owner.side || !label.bbox) return true;
   const b = label.bbox;
   const centre = [b[0] + b[2] / 2, b[1] + b[3] / 2];
@@ -363,8 +363,20 @@ function tickSeatWrong(owner, label, owners) {
       (owner.side.includes("above") && b[1] + b[3] >= y) ||
       (owner.side.includes("below") && b[1] <= y)) return true;
   if (owner.axis === "origin") {
+    if (!owner.side.endsWith("-left")) return true;
+    const xLabels = [...owners.values()].filter((r) => r.valid && r.dimension === 0);
+    const yLabels = [...owners.values()].filter((r) => r.valid && r.dimension === 1);
+    const sameRow = xLabels.length && xLabels.every((r) => {
+      const other = labels.get(r.labelId)?.bbox;
+      return other && Math.abs(other[1] + other[3] - (b[1] + b[3])) <= 2;
+    });
+    const sameColumn = yLabels.length && yLabels.every((r) => {
+      const other = labels.get(r.labelId)?.bbox;
+      return other && Math.abs(other[0] + other[2] - (b[0] + b[2])) <= 2;
+    });
+    if (!sameRow && !sameColumn) return true;
     return [...owners.values()].some((r) => {
-      if (!r.valid || r.axis === "origin") return false;
+      if (!r.valid || r.axis === "origin" || (sameRow ? r.dimension !== 0 : r.dimension !== 1)) return false;
       const i = r.dimension;
       // Zero occupies a corner; its projection need not be centered but must
       // be less than one labelled interval from the axes' crossing.
@@ -510,9 +522,9 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
   const byElementId = new Map(elements.map((el) => [el.id, el]));
   const mobileScale = Math.min(1, ...widths.map((w) => w.pxPerUnit).filter((p) => p > 0));
   for (const c of cs?.claims ?? []) {
-    const [target, id, limit] = c.args.split(/\s+/);
+    const [target, id, limit, callout] = c.args.split(/\s+/);
     if (c.pred === "point-label") pointsById.set(id, [cs.anchors[target], Number(limit), target]);
-    if (c.pred === "dimension-label") dimensionsById.set(id, [byElementId.get(target), Number(limit), target]);
+    if (c.pred === "dimension-label") dimensionsById.set(id, [byElementId.get(target), Number(limit), target, callout]);
     if (c.pred === "axis-clearance") {
       const [arrow, gap, ...traces] = c.args.split(/\s+/);
       const scale = Math.min(...widths.map((w) => w.pxPerUnit).filter((p) => p > 0));
@@ -524,10 +536,10 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
   }
   const crossings = pointsById.size ? junctions(elements) : [];
   const ticks = tickOwners(doc, cs);
-  const targetOf = (l, ppu) => {
+  const targetOf = (l, ppu, labels) => {
     if (ticks.has(l.elementId)) {
       const tick = ticks.get(l.elementId);
-      return { d: null, via: `tick ${tick.axis}`, ambiguous: tickSeatWrong(tick, l, ticks) };
+      return { d: null, via: `tick ${tick.axis}`, ambiguous: labels && tickSeatWrong(tick, l, ticks, labels) };
     }
     const bound = pointsById.get(l.elementId);
     if (bound && l.bbox) {
@@ -541,10 +553,25 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
     }
     const dimension = dimensionsById.get(l.elementId);
     if (dimension && l.bbox) {
-      const [leader, limit, target] = dimension;
+      const [leader, limit, target, callout] = dimension;
       const via = `leader ${target}`;
       if (leader?.type !== "line" || !ppu) return { d: null, ambiguous: true, via };
-      return { d: distBoxToSegment(l.bbox, leader.points), limit: limit / mobileScale, via };
+      const [a, b] = leader.points;
+      const midpoint = a.map((v, i) => (v + b[i]) / 2);
+      if (callout) {
+        const connector = byElementId.get(callout);
+        const points = connector?.points;
+        if (connector?.type !== "line" ||
+            !paintVisible(connector.stroke?.color ?? doc.defaults?.strokeColor ?? "black") ||
+            (connector.stroke?.width ?? doc.defaults?.strokeWidth ?? 2) <= 0 ||
+            !points?.some((p) => dist(p, midpoint) <= 0.1))
+          return { d: null, ambiguous: true, via };
+        const tip = points.find((p) => dist(p, midpoint) > 0.1);
+        if (!tip || dist(tip, midpoint) * mobileScale > 40)
+          return { d: null, ambiguous: true, via };
+        return { d: distPointToBox(tip, l.bbox), limit: 8 / mobileScale, via };
+      }
+      return { d: distPointToBox(midpoint, l.bbox), limit: Math.min(limit, 18) / mobileScale, via };
     }
     if (l.bbox && pointByLabel.has(l.text))
       return { d: distPointToBox(pointByLabel.get(l.text), l.bbox), via: `point ${JSON.stringify(l.text)}` };
@@ -584,7 +611,7 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
   for (const w of widths) {
     const byId = new Map((w.labels ?? []).map((l) => [l.elementId, l]));
     for (const [id, owner] of ticks) {
-      if (tickSeatWrong(owner, byId.get(id) ?? {}, ticks))
+      if (tickSeatWrong(owner, byId.get(id) ?? {}, ticks, byId))
         push("tick-label", "fail",
           `label ${id}: ${owner.value} is not seated at its own ${owner.axis} tick on the ${owner.side} side at ${w.width}px`,
           String(owner.value));
@@ -617,11 +644,18 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
   const rows = [];
   for (const w of widths) {
     const ppu = w.pxPerUnit;
+    const labelsById = new Map((w.labels ?? []).map((l) => [l.elementId, l]));
     for (const l of w.labels ?? []) {
       const edge_px = l.edge_u == null || ppu == null ? null : l.edge_u * ppu;
+      const dimension = dimensionsById.get(l.elementId);
+      const relaxed = dimension && l.strokeByElement && ppu;
+      const soft = relaxed ? new Set([dimension[2], dimension[3]]) : null;
+      const rendered = relaxed ? Object.entries(l.strokeByElement).map(([id, u]) => [u * ppu, soft.has(id) ? 3 : STROKE_MIN_PX]) : [];
       const stroke_px = l.stroke_u == null || ppu == null ? null : l.stroke_u * ppu;
+      const violation = relaxed ? rendered.find(([gap, min]) => gap < min) :
+        stroke_px !== null && stroke_px < STROKE_MIN_PX ? [stroke_px, STROKE_MIN_PX] : null;
       const tr = pointsById.has(l.elementId) || dimensionsById.has(l.elementId) || ticks.has(l.elementId)
-        ? { l, tg: targetOf(l, ppu) } : targetRes(l);
+        ? { l, tg: targetOf(l, ppu, labelsById) } : targetRes(l);
       if ((pointsById.has(l.elementId) || dimensionsById.has(l.elementId)) && targetBad(l, tr.tg))
         declared("target", `label ${JSON.stringify(l.text)} is detached from or ambiguous at ${tr.tg.via} at ${w.width}px`, l.text);
       const row = {
@@ -637,15 +671,15 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
           ? "bound" : tr.tg.skipped ? "not-applicable" : "fallback",
         geom_u: round1(l.geom_u),
         fontSizeU: round1(l.fontSizeU),
-        ok: edge_px !== null && edge_px >= EDGE_MIN_PX && (stroke_px === null || stroke_px >= STROKE_MIN_PX) && !targetBad(tr.l, tr.tg),
+        ok: edge_px !== null && edge_px >= EDGE_MIN_PX && !violation && !targetBad(tr.l, tr.tg),
       };
       rows.push(row);
       if (edge_px === null)
         edgeOrStroke("edge", false, `label ${JSON.stringify(l.text)}: bbox unmeasurable at ${w.width}px — failing closed`, l.text);
       else if (edge_px < EDGE_MIN_PX)
         edgeOrStroke("edge", false, `label ${JSON.stringify(l.text)}: ${round1(edge_px)}px from the canvas edge at ${w.width}px (< ${EDGE_MIN_PX}px)`, l.text);
-      if (stroke_px !== null && stroke_px < STROKE_MIN_PX)
-        edgeOrStroke("stroke", false, `label ${JSON.stringify(l.text)}: ${round1(stroke_px)}px from stroke geometry at ${w.width}px (< ${STROKE_MIN_PX}px)`, l.text);
+      if (violation)
+        edgeOrStroke("stroke", false, `label ${JSON.stringify(l.text)}: ${round1(violation[0])}px from stroke geometry at ${w.width}px (< ${violation[1]}px)`, l.text);
     }
   }
 

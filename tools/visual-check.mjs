@@ -262,6 +262,7 @@ function measure(scope: ParentNode, docs?: any[]) {
       let group = ownG;
       while (group && group.parentElement !== svg) group = group.parentElement?.closest("g") ?? null;
       let edge_u = null, stroke_u = null, geom_u = null;
+      const strokeByElement: Record<string, number> = {};
       if (bbox && vb) {
         edge_u = Math.min(
           bbox[0] - vb.x, bbox[1] - vb.y,
@@ -280,7 +281,12 @@ function measure(scope: ParentNode, docs?: any[]) {
             if (dd < d) d = dd;
           }
           if (Number.isFinite(d)) {
-            if (p.stroked && !gridPrims.has(p.el as Element)) stroke = Math.min(stroke, d - p.halfStroke);
+            if (p.stroked && !gridPrims.has(p.el as Element)) {
+              const gap = d - p.halfStroke;
+              stroke = Math.min(stroke, gap);
+              const id = idsByGroup.get(p.el.closest("g")!) ?? "";
+              strokeByElement[id] = Math.min(strokeByElement[id] ?? Infinity, gap);
+            }
             geom = Math.min(geom, d);
           }
           if (p.filled) {
@@ -318,7 +324,7 @@ function measure(scope: ParentNode, docs?: any[]) {
           const u = parseFloat(cs.fontSize) / ((pxPerUnit || 0) * 1.21);
           return Number.isFinite(u) ? u : null;
         })(),
-        edge_u, stroke_u, geom_u };
+        edge_u, stroke_u, geom_u, strokeByElement };
     });
     return { index, svg: true,
       viewBox: vb ? [vb.x, vb.y, vb.width, vb.height] : null,
