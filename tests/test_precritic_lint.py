@@ -5,6 +5,7 @@ Synthetic fixtures only: a hand-written scope card (English filler, no real less
 <tmp>/cards/, a content.yaml with toy stems, and a synthetic claims file. --cards-dir keeps the
 corpus out of the loop entirely.
 """
+import json
 import subprocess
 import sys
 import tempfile
@@ -281,6 +282,30 @@ class PrecriticLintTest(unittest.TestCase):
             self.assertIn("WARN main: a11y describes marked plot bounds", result.stdout)
             self.assertIn("WARN endpoints: a11y describes marked plot bounds", result.stdout)
             self.assertIn("precritic-lint: 0 fail(s) · 2 warn(s)", result.stdout)
+
+    def test_marked_bounds_recognize_dashed_lines_and_default_point_radius(self):
+        line = {"type": "line", "points": [[0, 0], [0, 20]]}
+        point = {"type": "point", "at": [0, 0]}
+        fixtures = [
+            ({**line, "stroke": {"style": "dashed"}}, {}, False),
+            (line, {"strokeStyle": "dashed"}, False),
+            (point, {}, False),
+            ({**line, "stroke": {"style": "solid"}}, {"strokeStyle": "dashed"}, True),
+            ({**point, "r": 0}, {}, True),
+        ]
+        for marker, defaults, warns in fixtures:
+            with self.subTest(marker=marker, defaults=defaults), tempfile.TemporaryDirectory() as tmp:
+                tmp = Path(tmp)
+                run = make_run(tmp, lessons=[], figure="bounds", figures={"bounds": "figures/bounds.json"})
+                write(run / "figures" / "bounds.json", json.dumps({
+                    "a11y": {"description": "Marked plot endpoints."},
+                    "defaults": defaults,
+                    "elements": [marker],
+                }))
+                result = lint_plain(run)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual("WARN bounds: a11y describes marked plot bounds" in result.stdout,
+                                 warns, result.stdout)
 
     def test_wording_advisories_use_paired_fields_and_part_prompt(self):
         with tempfile.TemporaryDirectory() as td:

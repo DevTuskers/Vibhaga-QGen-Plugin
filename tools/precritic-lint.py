@@ -537,9 +537,11 @@ def figure_wording_warnings(run: Path, content: dict):
         desc = (figure.get("a11y") or {}).get("description", "")
         if not isinstance(desc, str) or not PHANTOM_MARK.search(desc):
             continue
-        if not any((el.get("type") in {"tickMark", "point"} and
-                    (el["type"] != "point" or el.get("r", 0) > 0))
-                   or (el.get("type") == "line" and (el.get("stroke") or {}).get("dash"))
+        default_stroke_style = (figure.get("defaults") or {}).get("strokeStyle")
+        if not any(el.get("type") == "tickMark"
+                   or (el.get("type") == "point" and (el.get("r") is None or el["r"] > 0))
+                   or (el.get("type") == "line" and
+                       (el.get("stroke") or {}).get("style", default_stroke_style) == "dashed")
                    or (el.get("type") == "text" and re.search(r"\b(?:bound|limit|window)\b", el.get("value", ""), re.I))
                    for el in figure["elements"] if isinstance(el, dict)):
             yield path.stem, "a11y describes marked plot bounds but there are no visible marker candidates"
