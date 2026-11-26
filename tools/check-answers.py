@@ -41,6 +41,7 @@ import math
 import re
 import signal
 import sys
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
@@ -251,6 +252,17 @@ LATEX_RE = re.compile(r"\\[a-zA-Z]+|[${}^_~]")
 WORKED_MATH = re.compile(r"\$\$(.*?)\$\$|\$([^$\n]+)\$|\\\((.*?)\\\)|\\\[(.*?)\\\]", re.S)
 WORKED_LITERAL = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)")
 WORKED_OPERATORS = re.compile(r"[\d.()+*/\s-]+")
+ROUNDING_PLACES = {"unit": 0, "whole number": 0, "ten": 1, "hundred": 2,
+                   "thousand": 3, "ten thousand": 4, "hundred thousand": 5,
+                   "million": 6, "tenth": -1, "hundredth": -2, "thousandth": -3}
+def _rounding_places(text):
+    places = {exp for name, exp in ROUNDING_PLACES.items()
+              if re.search(rf"\bnearest\s+{name}\b(?!\s+thousand)", text, re.I)}
+    for value in re.findall(r"\bnearest\s+(1[\d,\u2009\u202f]*|0\.0*1)(?!\w|\.\d)", text, re.I):
+        literal = re.sub(r"[,\u2009\u202f]", "", value)
+        if re.fullmatch(r"10*|0\.0*1", literal):
+            places.add(Decimal(literal).adjusted())
+    return places
 
 
 def _worked_normalise(text: str) -> str:
@@ -288,11 +300,18 @@ def check_worked_math(approach, approach_si):
     for field, text in (("approach", approach), ("approach_si", approach_si)):
         if not isinstance(text, str):
             continue
-        spans = [next(g for g in match.groups() if g is not None) for match in WORKED_MATH.finditer(text)]
-        spans.extend(line.strip().removesuffix(".").strip()
-                     for line in WORKED_MATH.sub("", text).splitlines()
-                     if re.match(r"\s*[\d.(+−-]", line))
-        for span in spans:
+        spans = []
+        place = None
+        for paragraph in re.split(r"\n\s*\n", text):
+            places = _rounding_places(paragraph)
+            if places:
+                place = next(iter(places)) if len(places) == 1 else None
+            spans.extend((next(g for g in match.groups() if g is not None), place)
+                         for match in WORKED_MATH.finditer(paragraph))
+            spans.extend((line.strip().removesuffix(".").strip(), place)
+                         for line in WORKED_MATH.sub("", paragraph).splitlines()
+                         if re.match(r"\s*[\d.(+−-]", line))
+        for span, place in spans:
             parts = re.split(r"\s*([=≈])\s*", _worked_normalise(span))
             for left, op, right in zip(parts[::2], parts[1::2], parts[2::2]):
                 link = f"{left} {op} {right}"
@@ -301,8 +320,14 @@ def check_worked_math(approach, approach_si):
                     if op == "≈":
                         if not WORKED_LITERAL.fullmatch(right):
                             raise Refuse("approximation has no stated decimal precision")
-                        places = len(right.partition(".")[2])
-                        ok = abs(a - b) <= 0.5 * 10 ** -places + math.ulp(float(b))
+                        exponent = place
+                        if exponent is None:
+                            if "." in right:
+                                exponent = -len(right.partition(".")[2])
+                            else:
+                                exponent = len(right) - len(right.rstrip("0")) if b else 0
+                        precision = Decimal(1).scaleb(exponent)
+                        ok = Decimal(str(a)).quantize(precision, rounding=ROUND_HALF_UP) == Decimal(right)
                     else:
                         ok = abs(a - b) <= 4 * max(math.ulp(a), math.ulp(b))
                 except (Refuse, ArithmeticError, SyntaxError, ValueError, TypeError, RecursionError):

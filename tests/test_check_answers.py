@@ -68,6 +68,28 @@ class CheckAnswersTest(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("1 checked · 0 false · 0 warn · 0 without check", r.stdout)
 
+    def test_worked_approximation_uses_trailing_zeros_or_explicit_place(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      1499 ≈ 1000
+
+      Round to the nearest 10.
+
+      1004 ≈ 1000
+
+      1049 ≈ 1000
+    approach_si: "$-1500 ≈ -2000$"
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("false worked arithmetic: 1049 ≈ 1000", r.stdout)
+            self.assertIn("worked arithmetic: 3 checked · 1 false · 0 unchecked", r.stdout)
+
     def test_false_check_fails(self):
         with tempfile.TemporaryDirectory() as td:
             run = write_run(Path(td), """\
