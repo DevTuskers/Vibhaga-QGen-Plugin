@@ -128,7 +128,7 @@ def write(p: Path, text: str) -> Path:
 
 
 def make_run(tmp: Path, stem: str = "Shade the strip.", parts=None, approach=None,
-             final=None, lessons=None, figure=None) -> Path:
+             final=None, lessons=None, figure=None, figures=None) -> Path:
     run = tmp / "run"
     run.mkdir(parents=True, exist_ok=True)
     q = {"n": 1, "lessons": lessons if lessons is not None else ["L07"], "stem": stem}
@@ -143,6 +143,7 @@ def make_run(tmp: Path, stem: str = "Shade the strip.", parts=None, approach=Non
     import yaml
     write(run / "content.yaml",
           yaml.safe_dump({"id_seed": "synthetic", "lessons": {"L07": "placeholder"},
+                          "figures": figures or {},
                           "questions": [with_si(q)]}, allow_unicode=True, sort_keys=False))
     cards = tmp / "cards"
     write(cards / "07-Fractions.yaml", CARD)
@@ -250,8 +251,9 @@ class PrecriticLintTest(unittest.TestCase):
     def test_exact_scaffold_and_phantom_bounds_are_advisories(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            run = make_run(tmp, parts=[{"label": "a", "text": "Expand $(t + 13)^4$.",
-                                       "approach": "Use repeated multiplication.", "final": "Done."}])
+            run = make_run(tmp, figure="curve", figures={"curve": "figures/curve.json", "marked": "figures/marked.json"},
+                           parts=[{"label": "a", "text": "Expand $(t + 13)^4$.",
+                                   "figure": "marked", "approach": "Use repeated multiplication.", "final": "Done."}])
             existing = write(tmp / "existing.json", '[{"id":"synthetic","stem_excerpt":"Verify the polynomial expansion of $(t+13)^{4}$ before substituting any values."}]')
             write(run / "figures" / "curve.json", '{"a11y":{"description":"The curve has marked plot endpoints."},"elements":[{"type":"polyline"}]}')
             write(run / "figures" / "marked.json", '{"a11y":{"description":"The curve has marked plot endpoints."},"elements":[{"type":"point","r":3}]}')
@@ -260,6 +262,25 @@ class PrecriticLintTest(unittest.TestCase):
             self.assertIn("exact algebra scaffold also appears in existing.json:synthetic", result.stdout)
             self.assertIn("WARN curve: a11y describes marked plot bounds", result.stdout)
             self.assertNotIn("WARN marked:", result.stdout)
+
+    def test_lints_only_figure_paths_referenced_by_questions_or_nested_parts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            run = make_run(tmp, lessons=[], figure="main", figures={"main": "figures/main.json",
+                           "nested": "diagrams/endpoints.json", "unused": "figures/unused.json"},
+                           parts=[{"label": "a", "text": "Read the plot.", "parts": [
+                               {"label": "i", "text": "Name the endpoints.", "figure": "nested",
+                                "approach": "Read the axis.", "final": "Done."}]}])
+            figure = '{"a11y":{"description":"Marked plot endpoints."},"elements":[]}'
+            write(run / "figures" / "main.json", figure)
+            write(run / "diagrams" / "endpoints.json", figure)
+            write(run / "figures" / "unused.json", "{")
+            write(run / "figures" / "abandoned.json", "{")
+            result = lint_plain(run)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("WARN main: a11y describes marked plot bounds", result.stdout)
+            self.assertIn("WARN endpoints: a11y describes marked plot bounds", result.stdout)
+            self.assertIn("precritic-lint: 0 fail(s) · 2 warn(s)", result.stdout)
 
     def test_wording_advisories_use_paired_fields_and_part_prompt(self):
         with tempfile.TemporaryDirectory() as td:

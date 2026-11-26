@@ -158,34 +158,6 @@ def figure_ids(run: Path, specs_path: Path, content: dict) -> tuple[list, list[t
     return spec_ids, hand
 
 
-def staged_figure_uses(content: dict) -> dict:
-    """figure KEY → [staged ids] — where content.yaml attaches each `figures:` entry. A
-    question's `figure:` → `Q<n>`; a part's → `Q<n>.<label path joined by '.'>` — the ids
-    visual-check's staged-doc walk emits, so the check 'does the FILE stem equal the staged
-    id' can run before the audits. Keys never referenced return no ids (unused keys are
-    build-staged's call, not ours)."""
-    uses: dict[str, list[str]] = {}
-
-    def parts(nodes, prefix):
-        for p in nodes or []:
-            if not isinstance(p, dict):
-                continue
-            pid = f"{prefix}.{p.get('label')}"
-            if p.get("figure"):
-                uses.setdefault(p["figure"], []).append(pid)
-            parts(p.get("parts"), pid)
-
-    for i, q in enumerate(content.get("questions") or []):
-        if not isinstance(q, dict):
-            continue
-        n = q.get("n")
-        qid = f"Q{n}" if isinstance(n, int) and not isinstance(n, bool) else f"Q{i + 1}"
-        if q.get("figure"):
-            uses.setdefault(q["figure"], []).append(qid)
-        parts(q.get("parts"), qid)
-    return uses
-
-
 def staged_fields(staged: dict) -> list[dict]:
     """[{id, field, text}] over a staged doc — the same field set run-gate.sh's fields_py
     produces for the markdown gate: question_text(+_sinhala), every answer's
@@ -303,7 +275,7 @@ def cmd_build(args, runner=run_cmd, log=print) -> int:
     #    First: the FILE stem must equal the staged id everywhere content.yaml uses it —
     #    visual-check (modes 1 and --session) resolves `<id>-claims.txt` by the staged id
     #    (`figures/pic.json` used as Q5's figure audits fine but assesses claims-less).
-    uses = staged_figure_uses(content_doc)
+    uses = pl.staged_figure_uses(content_doc)
     for key, val in (content_doc.get("figures") or {}).items():
         stem = Path(val).stem
         used_at = uses.get(key) or []

@@ -497,13 +497,43 @@ def scaffold_warnings(q: dict, sources):
                 yield where, f"exact algebra scaffold also appears in {source}; review task overlap"
 
 
-def figure_wording_warnings(figures_dir: Path):
-    for path in sorted(figures_dir.glob("*.json")):
-        if path.name.endswith(".anchors.json"):
+def staged_figure_uses(content: dict) -> dict:
+    """figure KEY → [staged ids] — where content.yaml attaches each `figures:` entry. A
+    question's `figure:` → `Q<n>`; a part's → `Q<n>.<label path joined by '.'>` — the ids
+    visual-check's staged-doc walk emits, so the check 'does the FILE stem equal the staged
+    id' can run before the audits. Keys never referenced return no ids (unused keys are
+    build-staged's call, not ours)."""
+    uses: dict[str, list[str]] = {}
+
+    def parts(nodes, prefix):
+        for p in nodes or []:
+            if not isinstance(p, dict):
+                continue
+            pid = f"{prefix}.{p.get('label')}"
+            if p.get("figure"):
+                uses.setdefault(p["figure"], []).append(pid)
+            parts(p.get("parts"), pid)
+
+    for i, q in enumerate(content.get("questions") or []):
+        if not isinstance(q, dict):
+            continue
+        n = q.get("n")
+        qid = f"Q{n}" if isinstance(n, int) and not isinstance(n, bool) else f"Q{i + 1}"
+        if q.get("figure"):
+            uses.setdefault(q["figure"], []).append(qid)
+        parts(q.get("parts"), qid)
+    return uses
+
+
+def figure_wording_warnings(run: Path, content: dict):
+    figures = content.get("figures") or {}
+    paths = {run / figures[key] for key in staged_figure_uses(content) if key in figures}
+    for path in sorted(paths):
+        if not path.is_file():
             continue
         figure = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(figure, dict) or not isinstance(figure.get("elements"), list):
-            continue  # anchors and other figure-side data
+            continue
         desc = (figure.get("a11y") or {}).get("description", "")
         if not isinstance(desc, str) or not PHANTOM_MARK.search(desc):
             continue
@@ -531,7 +561,7 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
         for where, message in wording_warnings(q):
             warns += 1
             log(f"  WARN {where}: {message}")
-    for where, message in figure_wording_warnings(run / "figures"):
+    for where, message in figure_wording_warnings(run, content):
         warns += 1
         log(f"  WARN {where}: {message}")
 
