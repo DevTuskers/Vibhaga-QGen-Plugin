@@ -9043,8 +9043,10 @@ def build_frequency_polygon(*, figure_id, stem, bounds, freqs, step, v_max,
         require_stem(stem, **{f"frequency{i}": f for i, f in enumerate(fs_)}, step=step, v_max=v_max)
     mids = [(a + b) / 2 for a, b in zip(bs, bs[1:])]
     lo, hi = bs[0] - widths[0] / 2, bs[-1] + widths[-1] / 2
-    X, Y = lambda v: (v - lo) / (hi - lo) * 300, lambda v: -v / v_max * 230
-    P = {"O": (0, 0), "X": (300, 0), "Y": (0, -230)}
+    tick_intervals = round(v_max / step)
+    height = max(230, 30 * tick_intervals)
+    X, Y = lambda v: (v - lo) / (hi - lo) * 300, lambda v: -v / v_max * height
+    P = {"O": (0, 0), "X": (300, 0), "Y": (0, -height)}
     positions = list(zip(mids, fs_))
     if closure == "zero_neighbours":
         positions = [(lo, 0), *positions, (hi, 0)]
@@ -9071,13 +9073,13 @@ def build_frequency_polygon(*, figure_id, stem, bounds, freqs, step, v_max,
         P[p] = (X(x), Y(fs_[i]))
         claims.extend([(f"reads {p} {x:g} on OX", "inferred", "class midpoint"),
                        (f"reads {p} {fs_[i]:g} on OY", "inferred", "class frequency")])
-    for i in range(round(v_max / step) + 1):
+    for i in range(tick_intervals + 1):
         y = Y(i * step)
         elements.append(vc.line((-4, y), (4, y), id=f"ty{i}", width=1))
         number(f"{i * step:g}", (-30, y), f"ny{i}", "end")
         claims.append((f"tick-label OY {i * step:g} ty{i} ny{i} left", "inferred", "frequency tick ownership"))
     elements.extend([vc.text((155, 70), "Class midpoint", id="xname"),
-                     vc.text((-38, -290), "Frequency", id="yname")])
+                     vc.text((-38, -height - 60), "Frequency", id="yname")])
     claims.extend([('label "Class midpoint" names OX', "inferred", "x-axis title"),
                    ('label "Frequency" names OY', "inferred", "y-axis title"),
                    ('describe "class midpoint readings are figure content"', "inferred", "readings are on the axes"),

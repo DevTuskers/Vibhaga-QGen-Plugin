@@ -4038,6 +4038,14 @@ class NewFigureProfiles(unittest.TestCase):
         self.assertIn('label "174°" names angle_sec0', shown.claims)
         self.assert_audits(shown)
 
+    def test_frequency_polygon_fits_ten_y_steps(self):
+        b = vt.build_frequency_polygon(figure_id="review2", stem="Read the plot.",
+                                       bounds=[0, 10, 20, 30], freqs=[2, 4, 8],
+                                       step=1, v_max=10, values="figure")
+        self.assertEqual([e["value"] for e in b.doc["elements"] if e["id"].startswith("ny")],
+                         [str(n) for n in range(11)])
+        self.assert_audits(b)
+
     def test_named_intersection_must_be_on_both_curves(self):
         args = dict(figure_id="new3", stem="Read the plot.", x_range=[-2, 4], values="figure",
                     curves={"first": {"m": 1, "c": 0}, "second": {"m": -1, "c": 4}})
