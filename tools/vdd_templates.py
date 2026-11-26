@@ -10634,6 +10634,13 @@ _CONSTRUCTION_STEPS = ("perp_bisector", "angle_bisector", "perp_at", "perp_from"
                        "circumcircle", "incircle", "excircle", "tangent_at",
                        "tangents_from", "triangle_sss", "triangle_sas",
                        "triangle_asa", "triangle_aas", "parallel_through")
+_CONSTRUCTION_ASK = re.compile(
+    r"(?:^|[.?!:]\s+)(?:use .*? to )?(?:construct\b|draw\b"
+    r"(?:(?!\b(?:conclusions?|inferences?)\b)(?:[^.!?:;\n]|\.(?=\d)))*?"
+    r"\b(?:lines?|segments?|circles?|arcs?|bisectors?|perpendiculars?|triangles?|"
+    r"locus|loci|tangents?|parallels?|angles?|rays?|chords?|polygons?|quadrilaterals?|"
+    r"rectangles?|squares?|radii|radius|diagrams?)\b)|නිර්මාණය කරන්න",
+    re.I)
 
 
 def _triangle_pts(ang: dict, base_px: float):
@@ -10673,8 +10680,7 @@ def build_construction(*, figure_id, stem, ask=None, title=None, description=Non
     if step not in _CONSTRUCTION_STEPS:
         raise TemplateError(f"{kind}: step must be one of {_CONSTRUCTION_STEPS}")
     tasks = (str(row[-1]) for row in ask if isinstance(row, (list, tuple)) and row) if ask else (stem,)
-    construction_task = any(re.search(r"(?:^|[.?!:]\s+)(?:use .*? to )?(?:construct|draw)\b|නිර්මාණය කරන්න",
-                                      task, re.I) for task in tasks)
+    construction_task = any(_CONSTRUCTION_ASK.search(task.strip()) for task in tasks)
     if construction_task and stage != "setup":
         raise TemplateError(f"{kind}: a construction ask requires explicit stage='setup'")
     if stage is None:

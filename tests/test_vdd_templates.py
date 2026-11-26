@@ -4089,6 +4089,18 @@ class NewFigureProfiles(unittest.TestCase):
         b = vt.build_construction(**args, stage="setup")
         self.assertFalse(any(e["type"] == "arc" for e in b.doc["elements"]))
 
+    def test_construction_distinguishes_geometric_draws_from_conclusions(self):
+        args = dict(figure_id="review-construction", stem="AB is 8 cm.",
+                    step="perp_bisector", length=8)
+        for task in ("  Construct its perpendicular bisector.",
+                     "Use a ruler to draw a 4.5 cm line perpendicular to AB."):
+            with self.subTest(task=task), self.assertRaisesRegex(vt.TemplateError, "requires explicit stage"):
+                vt.build_construction(**args, ask=[["a", task]])
+        for task in ("Draw a conclusion about the segment.", "Draw an inference from the diagram."):
+            with self.subTest(task=task):
+                b = vt.build_construction(**args, ask=[["a", task]])
+                self.assertTrue(any(e["type"] == "arc" for e in b.doc["elements"]))
+
     def test_locus_setup_combines_only_givens(self):
         b = vt.build_locus_scene(
             figure_id="new6", stem="The distance is 5 cm.", stage="setup",
