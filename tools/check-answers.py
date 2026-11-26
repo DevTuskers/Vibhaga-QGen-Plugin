@@ -41,7 +41,8 @@ import math
 import re
 import signal
 import sys
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
+from fractions import Fraction
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
@@ -287,7 +288,34 @@ def _worked_normalise(text: str) -> str:
     return text.replace("^", "**").replace("{", "(").replace("}", ")").strip()
 
 
-def _worked_value(text: str):
+def _worked_rational(node, source):
+    if isinstance(node, ast.Expression):
+        return _worked_rational(node.body, source)
+    if isinstance(node, ast.Constant):
+        value = Fraction(ast.get_source_segment(source, node))
+    elif isinstance(node, ast.UnaryOp):
+        operand = _worked_rational(node.operand, source)
+        value = -operand if isinstance(node.op, ast.USub) else operand
+    else:
+        a = _worked_rational(node.left, source)
+        b = _worked_rational(node.right, source)
+        if isinstance(node.op, ast.Pow):
+            if abs(b) > MAX_POW:
+                raise Refuse("worked exponent outside the permitted range")
+            if b.denominator == 1:
+                if max(a.numerator.bit_length(), a.denominator.bit_length()) * abs(b) > 16384:
+                    raise Refuse("worked fraction too large")
+                value = a ** b.numerator
+            else:
+                value = Fraction(str(_cap(float(a) ** float(b))))
+        else:
+            value = _BIN[type(node.op)](a, b)
+    if abs(value) > MAX_ABS or max(value.numerator.bit_length(), value.denominator.bit_length()) > 16384:
+        raise Refuse("worked fraction too large")
+    return value
+
+
+def _worked_value(text: str, *, exact=False):
     if len(text) > 400 or not WORKED_OPERATORS.fullmatch(text):
         raise Refuse("not closed arithmetic")
     tree = ast.parse(text, mode="eval")
@@ -296,7 +324,7 @@ def _worked_value(text: str):
                  ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
     if len(nodes) > MAX_NODES or any(not isinstance(node, operators) for node in nodes):
         raise Refuse("unsupported arithmetic")
-    return _eval(tree)
+    return _worked_rational(tree, text) if exact else _eval(tree)
 
 
 def check_worked_math(approach, approach_si):
@@ -322,7 +350,7 @@ def check_worked_math(approach, approach_si):
             for left, op, right in zip(parts[::2], parts[1::2], parts[2::2]):
                 link = f"{left} {op} {right}"
                 try:
-                    a, b = _worked_value(left), _worked_value(right)
+                    a, b = _worked_value(left, exact=op == "≈"), _worked_value(right, exact=op == "≈")
                     if op == "≈":
                         if not WORKED_LITERAL.fullmatch(right):
                             raise Refuse("approximation has no stated decimal precision")
@@ -332,8 +360,13 @@ def check_worked_math(approach, approach_si):
                                 exponent = -len(right.partition(".")[2])
                             else:
                                 exponent = len(right) - len(right.rstrip("0")) if b else 0
-                        precision = Decimal(1).scaleb(exponent)
-                        ok = Decimal(str(a)).quantize(precision, rounding=ROUND_HALF_UP) == Decimal(right)
+                        if not -400 <= exponent <= 15:
+                            raise Refuse("rounding place outside the permitted range")
+                        precision = Fraction(10) ** exponent
+                        scaled = abs(a) / precision
+                        n, remainder = divmod(scaled.numerator, scaled.denominator)
+                        rounded = (n + (2 * remainder >= scaled.denominator)) * precision
+                        ok = (-rounded if a < 0 else rounded) == b
                     else:
                         ok = abs(a - b) <= 4 * max(math.ulp(a), math.ulp(b))
                 except (Refuse, ArithmeticError, SyntaxError, ValueError, TypeError, RecursionError):

@@ -121,6 +121,24 @@ class CheckAnswersTest(unittest.TestCase):
             self.assertIn("false worked arithmetic: 1049 ≈ 1000", r.stdout)
             self.assertIn("worked arithmetic: 1 checked · 1 false · 0 unchecked", r.stdout)
 
+    def test_worked_rounding_evaluates_exact_arithmetic_before_half_up(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      $0.15 × 3 ≈ 0.5$.
+
+      $9 / 20 ≈ 0.5$.
+
+      $-0.15 × 3 ≈ -0.5$.
+    final: "0.5"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("worked arithmetic: 3 checked · 0 false · 0 unchecked", r.stdout)
+
     def test_false_check_fails(self):
         with tempfile.TemporaryDirectory() as td:
             run = write_run(Path(td), """\
