@@ -12081,14 +12081,34 @@ def build_solid_composite(*, figure_id, stem, ask=None, title=None,
         add(f'describe "{hd} is drawn dashed"', "inferred", "hidden outline")
     add("none tickMark parallelMark angleMark arrow shaded", "inferred",
         "outlines and dashed leaders only")
-    return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
-                  anchors=dict(P), points=list(P), segments=[], claims=claims,
-                  ask=ask, title=title or what.capitalize(),
-                  description=description or (what[0].upper() + what[1:] +
-                                            ", with its dimensions marked."),
-                  scale="proportions to scale where numeric; letter dims are "
-                        "representative",
-                  medium=medium)
+    def build():
+        return finish(kind=kind, figure_id=figure_id, stem=stem, elements=elements,
+                      anchors=dict(P), points=list(P), segments=[], claims=claims,
+                      ask=ask, title=title or what.capitalize(),
+                      description=description or (what[0].upper() + what[1:] +
+                                                  ", with its dimensions marked."),
+                      scale="proportions to scale where numeric; letter dims are "
+                            "representative",
+                      medium=medium)
+
+    try:
+        return build()
+    except TemplateError as exc:
+        ball_glyph = f"{val['sphere_r']:g} {unit}" if "sphere_r" in num else val.get("sphere_r")
+        if shape != "sphere_in_cylinder" or f"floating label {ball_glyph!r} found no clear spot" not in str(exc):
+            raise
+        leader = next(el for el in elements if el.get("id") == "ldsphere_r")
+        centre = (cx, bot - sr)
+        for degrees in (225, 315, 135, 45):
+            angle = math.radians(degrees)
+            end = (cx + sr * math.cos(angle), centre[1] + sr * math.sin(angle))
+            leader["points"] = [centre, end]
+            P["S1"] = vc.lerp(centre, end, 0.5)
+            try:
+                return build()
+            except TemplateError:
+                continue
+        raise
 
 
 _NET_SHAPES = ("square_pyramid",)
