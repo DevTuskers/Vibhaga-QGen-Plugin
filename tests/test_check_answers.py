@@ -77,11 +77,9 @@ class CheckAnswersTest(unittest.TestCase):
     approach: |
       1499 ≈ 1000
 
-      Round to the nearest 10.
+      1004 ≈ 1000 (nearest 10)
 
-      1004 ≈ 1000
-
-      1049 ≈ 1000
+      1049 ≈ 1000 (nearest 10)
     approach_si: "$-1500 ≈ -2000$"
     final: "1000"
 """)
@@ -89,6 +87,22 @@ class CheckAnswersTest(unittest.TestCase):
             self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
             self.assertIn("false worked arithmetic: 1049 ≈ 1000", r.stdout)
             self.assertIn("worked arithmetic: 3 checked · 1 false · 0 unchecked", r.stdout)
+
+    def test_worked_rounding_place_does_not_leak_to_a_later_approximation(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      Nearest 10: $1004 ≈ 1000$.
+
+      $1499 ≈ 1000$.
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("worked arithmetic: 2 checked · 0 false · 0 unchecked", r.stdout)
 
     def test_false_check_fails(self):
         with tempfile.TemporaryDirectory() as td:

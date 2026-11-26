@@ -301,17 +301,19 @@ def check_worked_math(approach, approach_si):
         if not isinstance(text, str):
             continue
         spans = []
-        place = None
-        for paragraph in re.split(r"\n\s*\n", text):
-            places = _rounding_places(paragraph)
-            if places:
-                place = next(iter(places)) if len(places) == 1 else None
-            spans.extend((next(g for g in match.groups() if g is not None), place)
-                         for match in WORKED_MATH.finditer(paragraph))
-            spans.extend((line.strip().removesuffix(".").strip(), place)
-                         for line in WORKED_MATH.sub("", paragraph).splitlines()
-                         if re.match(r"\s*[\d.(+−-]", line))
-        for span, place in spans:
+        for match in WORKED_MATH.finditer(text):
+            start = text.rfind("\n", 0, match.start()) + 1
+            end = text.find("\n", match.end())
+            spans.append((next(g for g in match.groups() if g is not None),
+                          text[start:end if end != -1 else len(text)]))
+        masked = WORKED_MATH.sub(lambda m: re.sub(r"[^\n]", " ", m[0]), text)
+        for original, line in zip(text.splitlines(), masked.splitlines()):
+            if re.match(r"\s*[\d.(+−-]", line):
+                arithmetic = re.split(r"\s*[(,;]\s*(?:to\s+the\s+)?nearest\b", line, maxsplit=1, flags=re.I)[0]
+                spans.append((arithmetic.strip().removesuffix(".").strip(), original))
+        for span, statement in spans:
+            places = _rounding_places(statement)
+            place = next(iter(places)) if len(places) == 1 else None
             parts = re.split(r"\s*([=≈])\s*", _worked_normalise(span))
             for left, op, right in zip(parts[::2], parts[1::2], parts[2::2]):
                 link = f"{left} {op} {right}"
