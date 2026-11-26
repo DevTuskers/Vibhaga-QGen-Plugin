@@ -60,6 +60,7 @@ LABEL_GAP = 18.0             # angleMark label gap (DiagramRenderer)
 EDGE_PX, STROKE_PX = 8.0, 6.0   # vdd-check rule: rendered px to canvas edge / to stroke edge
 _CLEARANCE = json.loads(Path(__file__).with_name("vdd-clearance.json").read_text())
 OWN_LEADER_MIN_PX = _CLEARANCE["ownLeaderMinPx"]
+TICK_MAX_GAP_PX = _CLEARANCE["tickMaxGapPx"]
 SLACK_EDGE, SLACK_STROKE = 1.0, 2.0   # the estimator errs — require the render limits plus slack
 # The narrowest render surface is the StudentPreview figure plate at 320 px: its content box is
 # 320 − 2×12 px padding − 2×1 px border = 294 px (measured: svg width = 294 on /diagtest). A canvas
@@ -8448,6 +8449,9 @@ def build_function_graph(*, figure_id, stem, ask=None, title=None, description=N
                 for x, y, align in positions:
                     cand = vc.text((x, y), f"{value:g}", size=15, id=label_id, align=align)
                     box = label_boxes([cand], 15)[0][1:]
+                    tick = (X(value) if axis == "LR" else X(0), Y(value) if axis == "BU" else Y(0))
+                    if _seg_rect_dist(tick, tick, box) > _clearance_units(TICK_MAX_GAP_PX, width + 60):
+                        continue
                     if any(_rect_gap(box, old) < _clearance_units(4.5, width + 60) for old in boxes):
                         continue
                     if any(_seg_rect_dist(a, b, box) - w / 2 < clearance

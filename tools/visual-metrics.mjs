@@ -25,7 +25,7 @@
  */
 import { readFileSync } from "node:fs";
 
-export const { ownLeaderMinPx: OWN_LEADER_MIN_PX } =
+export const { ownLeaderMinPx: OWN_LEADER_MIN_PX, tickMaxGapPx: TICK_MAX_GAP_PX } =
   JSON.parse(readFileSync(new URL("./vdd-clearance.json", import.meta.url), "utf8"));
 export const EDGE_MIN_PX = 8;
 export const STROKE_MIN_PX = 6;
@@ -357,11 +357,12 @@ export function tickOwners(doc, cs) {
   return out;
 }
 
-function tickSeatWrong(owner, label, owners, labels) {
+function tickSeatWrong(owner, label, owners, labels, scale) {
   if (!owner.valid || !owner.side || !label.bbox) return true;
   const b = label.bbox;
   const centre = [b[0] + b[2] / 2, b[1] + b[3] / 2];
   const [x, y] = owner.at;
+  if (distPointToBox(owner.at, b) * scale > TICK_MAX_GAP_PX) return true;
   if ((owner.side.includes("left") && b[0] + b[2] >= x) ||
       (owner.side.includes("right") && b[0] <= x) ||
       (owner.side.includes("above") && b[1] + b[3] >= y) ||
@@ -543,7 +544,7 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
   const targetOf = (l, ppu, labels) => {
     if (ticks.has(l.elementId)) {
       const tick = ticks.get(l.elementId);
-      return { d: null, via: `tick ${tick.axis}`, ambiguous: labels && tickSeatWrong(tick, l, ticks, labels) };
+      return { d: null, via: `tick ${tick.axis}`, ambiguous: labels && tickSeatWrong(tick, l, ticks, labels, mobileScale) };
     }
     const bound = pointsById.get(l.elementId);
     if (bound && l.bbox) {
@@ -615,7 +616,7 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
   for (const w of widths) {
     const byId = new Map((w.labels ?? []).map((l) => [l.elementId, l]));
     for (const [id, owner] of ticks) {
-      if (tickSeatWrong(owner, byId.get(id) ?? {}, ticks, byId))
+      if (tickSeatWrong(owner, byId.get(id) ?? {}, ticks, byId, mobileScale))
         push("tick-label", "fail",
           `label ${id}: ${owner.value} is not seated at its own ${owner.axis} tick on the ${owner.side} side at ${w.width}px`,
           String(owner.value));

@@ -42,6 +42,8 @@ ${axisClaims}
   const bad = assess({ doc: d, claims, widths: W([x2, { ...y2, bbox: [20, 64, 10, 12] }]) });
   assert.ok(rules(bad).has("tick-label"));
   assert.ok(rules(assess({ doc: d, claims, widths: W([x2]) })).has("tick-label"));
+  const distant = { ...x2, bbox: [85, 235, 10, 12] };
+  assert.ok(rules(assess({ doc: d, claims, widths: W([distant, y2]) })).has("tick-label"));
 });
 
 test("bound point labels must prefer their own point to an unmarked crossing", () => {

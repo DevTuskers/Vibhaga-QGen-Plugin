@@ -1,3 +1,4 @@
 {
-  "ownLeaderMinPx": 3
+  "ownLeaderMinPx": 3,
+  "tickMaxGapPx": 64
 }
