@@ -255,21 +255,35 @@ WORKED_LITERAL = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)")
 WORKED_OPERATORS = re.compile(r"[\d.()+*/\s-]+")
 ROUNDING_PLACES = {"unit": 0, "whole number": 0, "ten": 1, "hundred": 2,
                    "thousand": 3, "ten thousand": 4, "hundred thousand": 5,
-                   "million": 6, "tenth": -1, "hundredth": -2, "thousandth": -3}
+                   "million": 6, "tenth": -1, "hundredth": -2, "thousandth": -3,
+                   "ten thousandth": -4, "hundred thousandth": -5, "millionth": -6}
+ROUNDING_CUE = re.compile(r"\bnearest\b", re.I)
+ROUNDING_WORDS = re.compile(
+    r"(" + "|".join(re.escape(name).replace(r"\ ", r"\s+")
+                    for name in sorted(ROUNDING_PLACES, key=len, reverse=True)) + r")s?\b", re.I)
+ROUNDING_DEGREES = re.compile(r"\s*(?:\^\s*(?:\{\s*\\circ\s*\}|\\circ\b)|\\degree\b|°)")
 
 
 def _rounding_places(text):
-    text = _worked_normalise(WORKED_MATH.sub(lambda m: next(g for g in m.groups() if g is not None), text))
-    places = {exp for name, exp in ROUNDING_PLACES.items()
-              if re.search(rf"\bnearest\s+{name}s?\b(?!\s+thousands?\b)", text, re.I)}
-    for braced, bare in re.findall(r"\bnearest\s+10\s*\*\*\s*(?:\(\s*(-?\d{1,3})\s*\)|(-?\d{1,3}))(?!\w|\.\d)",
-                                   text, re.I):
-        places.add(int(braced or bare))
-    for value in re.findall(r"\bnearest\s+(1[\d,\u2009\u202f]*|0\.0*1)(?!\w|\.\d|\s*\*\*)", text, re.I):
-        literal = re.sub(r"[,\u2009\u202f]", "", value)
+    text = WORKED_MATH.sub(lambda m: next(g for g in m.groups() if g is not None), text)
+    text = _worked_normalise(ROUNDING_DEGREES.sub(" ", text))
+    return {_rounding_place(cue.lstrip()) for cue in ROUNDING_CUE.split(text)[1:]}
+
+
+def _rounding_place(cue):
+    word = ROUNDING_WORDS.match(cue)
+    if word:
+        return ROUNDING_PLACES[" ".join(word[1].lower().split())]
+    end = r"(?!\w|\.\d|\s*[-+*/^])"
+    power = re.match(r"10\s*\*\*\s*(?:\(\s*([+-]?\d{1,3})\s*\)|([+-]?\d{1,3}))" + end, cue)
+    if power:
+        return int(power[1] or power[2])
+    number = re.match(r"(1[\d,\u2009\u202f]*|0\.0*1)" + end, cue)
+    if number:
+        literal = re.sub(r"[,\u2009\u202f]", "", number[1])
         if re.fullmatch(r"10*|0\.0*1", literal):
-            places.add(Decimal(literal).adjusted())
-    return places
+            return Decimal(literal).adjusted()
+    return None
 
 
 def _worked_normalise(text: str) -> str:
@@ -329,23 +343,50 @@ def _worked_value(text: str, *, exact=False):
     return _worked_rational(tree, text) if exact else _eval(tree)
 
 
+def _unwrapped_worked_spans(line):
+    line = re.sub(r"&(?=\s*(?:\\approx\b|[≈=]))", " ", line)
+    for cell in re.split(r"[|&]", line):
+        cue, colon, computation = cell.partition(":")
+        if colon and ROUNDING_CUE.search(cue):
+            cell = computation
+        if re.match(r"\s*[\d.(+−-]", cell):
+            arithmetic = re.split(r"(?:\s*[(,;]\s*(?:to\s+the\s+)?|\s+to\s+the\s+)nearest\b",
+                                  cell, maxsplit=1, flags=re.I)[0]
+            yield arithmetic.strip().removesuffix(r"\\").strip().removesuffix(".").strip()
+
+
+def _scoped_worked_spans(text):
+    wrapped = {}
+    for match in WORKED_MATH.finditer(text):
+        group = next(i for i, value in enumerate(match.groups(), 1) if value is not None)
+        span = match[group]
+        line_no = text.count("\n", 0, match.start(group))
+        if "\n" in span and "&" in span:
+            for row_no, row in enumerate(span.split("\n"), line_no):
+                wrapped.setdefault(row_no, []).extend(_unwrapped_worked_spans(row))
+        else:
+            line_no += span[:len(span) - len(span.lstrip())].count("\n")
+            wrapped.setdefault(line_no, []).append(span)
+    masked = WORKED_MATH.sub(lambda m: re.sub(r"[^\n]", " ", m[0]), text)
+    inherited = set()
+    for i, (line, plain) in enumerate(zip(text.split("\n"), masked.split("\n"))):
+        if not line.strip():
+            inherited = set()
+            continue
+        spans = [*wrapped.get(i, ()), *_unwrapped_worked_spans(plain)]
+        places = _rounding_places(line)
+        if places:
+            inherited = places if not re.search(r"[≈=]|\\approx\b|[|&]", line) else set()
+        for span in spans:
+            yield span, places or inherited
+
+
 def check_worked_math(approach, approach_si):
     """Yield (field, status, link) for explicit adjacent arithmetic equalities."""
     for field, text in (("approach", approach), ("approach_si", approach_si)):
         if not isinstance(text, str):
             continue
-        spans = []
-        for step in re.split(r"\n\s*\n", text):
-            places = _rounding_places(step)
-            place = next(iter(places)) if len(places) == 1 else None
-            spans.extend((next(g for g in match.groups() if g is not None), place)
-                         for match in WORKED_MATH.finditer(step))
-            masked = WORKED_MATH.sub(lambda m: re.sub(r"[^\n]", " ", m[0]), step)
-            for line in masked.splitlines():
-                if re.match(r"\s*[\d.(+−-]", line):
-                    arithmetic = re.split(r"\s*[(,;]\s*(?:to\s+the\s+)?nearest\b", line, maxsplit=1, flags=re.I)[0]
-                    spans.append((arithmetic.strip().removesuffix(".").strip(), place))
-        for span, place in spans:
+        for span, places in _scoped_worked_spans(text):
             parts = re.split(r"\s*([=≈])\s*", _worked_normalise(span))
             for left, op, right in zip(parts[::2], parts[1::2], parts[2::2]):
                 link = f"{left} {op} {right}"
@@ -354,8 +395,11 @@ def check_worked_math(approach, approach_si):
                     if op == "≈":
                         if not WORKED_LITERAL.fullmatch(right):
                             raise Refuse("approximation has no stated decimal precision")
-                        exponent = place
-                        if exponent is None:
+                        if places:
+                            if len(places) != 1 or None in places:
+                                raise Refuse("rounding cue is unsupported or ambiguous")
+                            exponent = next(iter(places))
+                        else:
                             if "." in right:
                                 exponent = -len(right.partition(".")[2])
                             else:

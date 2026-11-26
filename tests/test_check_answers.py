@@ -163,6 +163,67 @@ class CheckAnswersTest(unittest.TestCase):
             self.assertIn("false worked arithmetic: 1499 ≈ 1500", r.stdout)
             self.assertIn("worked arithmetic: 2 checked · 3 false · 0 unchecked", r.stdout)
 
+    def test_worked_rounding_keeps_inline_cues_local_to_each_table_row(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      | nearest 10 | $1049 ≈ 1050$ |
+      | nearest 100 | $1049 ≈ 1050$ |
+      nearest 10 & $1049 ≈ 1000$
+      nearest 100 & $1049 ≈ 1000$
+      $1499 ≈ 1000$
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertEqual(r.stdout.count("false worked arithmetic: 1049 ≈ 1050"), 1)
+            self.assertEqual(r.stdout.count("false worked arithmetic: 1049 ≈ 1000"), 1)
+            self.assertIn("worked arithmetic: 3 checked · 2 false · 0 unchecked", r.stdout)
+
+    def test_worked_rounding_recognizes_degrees_and_longest_place_names(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      Nearest $10^\\circ$: $1049 ≈ 1000$.
+      Nearest 10°: $1049 ≈ 1000$.
+      Nearest $10\\degree$: $1049 ≈ 1000$.
+      Nearest ten thousandth: $1.23456 ≈ 1.2346$.
+      Nearest ten thousandths: $1.23456 ≈ 1.2346$.
+      Nearest hundred thousand: $149999 ≈ 100000$.
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertEqual(r.stdout.count("false worked arithmetic: 1049 ≈ 1000"), 3)
+            self.assertIn("worked arithmetic: 3 checked · 3 false · 0 unchecked", r.stdout)
+
+    def test_worked_rounding_reports_conflicting_and_unknown_places_as_unchecked(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      Nearest 10 or nearest 100: $1049 ≈ 1000$.
+      Nearest $10^{2+1}$: $1049 ≈ 1000$.
+      Nearest 3: $1049 ≈ 1000$.
+
+      To the nearest 10:
+      $1049 ≈ 1050$.
+      Nearest 100: $1049 ≈ 1000$.
+      $1499 ≈ 1000$.
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("worked arithmetic: 3 checked · 0 false · 3 unchecked", r.stdout)
+
     def test_worked_rounding_evaluates_exact_arithmetic_before_half_up(self):
         with tempfile.TemporaryDirectory() as td:
             run = write_run(Path(td), """\
