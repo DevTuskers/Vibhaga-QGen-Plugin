@@ -45,12 +45,218 @@ def run_tool(path) -> subprocess.CompletedProcess:
 
 
 class CheckAnswersTest(unittest.TestCase):
+    def test_worked_links_in_both_media_are_checked_even_without_final_check(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Compute."
+    approach: "500 ÷ 500 ≈ 0.099"
+    approach_si: 'ගණනය කරන්න: $1/3 \\approx 0.333 = 0.333$; $x = 2$.'
+    final: "1"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("FAIL Q1.approach: false worked arithmetic", r.stdout)
+            self.assertIn("UNCHECKED Q1.approach_si:", r.stdout)
+            self.assertIn("worked arithmetic: 2 checked · 1 false · 1 unchecked", r.stdout)
+
     def test_true_check_passes(self):
         with tempfile.TemporaryDirectory() as td:
             run = write_run(Path(td), BASE.split("questions:\n", 1)[1])
             r = run_tool(run)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("1 checked · 0 false · 0 warn · 0 without check", r.stdout)
+
+    def test_worked_approximation_uses_trailing_zeros_or_explicit_place(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      1499 ≈ 1000
+
+      1004 ≈ 1000 (nearest 10)
+
+      1049 ≈ 1000 (nearest 10)
+    approach_si: "$-1500 ≈ -2000$"
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("false worked arithmetic: 1049 ≈ 1000", r.stdout)
+            self.assertIn("worked arithmetic: 3 checked · 1 false · 0 unchecked", r.stdout)
+
+    def test_worked_rounding_place_does_not_leak_to_a_later_approximation(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      Nearest 10: $1004 ≈ 1000$.
+
+      $1499 ≈ 1000$.
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("worked arithmetic: 2 checked · 0 false · 0 unchecked", r.stdout)
+
+    def test_rounding_instruction_on_preceding_line_applies_only_within_its_step(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      To the nearest 10:
+      $1049 ≈ 1000$.
+
+      $1499 ≈ 1000$.
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("false worked arithmetic: 1049 ≈ 1000", r.stdout)
+            self.assertIn("worked arithmetic: 1 checked · 1 false · 0 unchecked", r.stdout)
+
+    def test_worked_rounding_accepts_math_wrapped_place(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      Nearest $10$: $1004 ≈ 1000$.
+
+      Nearest \\(10\\): $1049 ≈ 1000$.
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("false worked arithmetic: 1049 ≈ 1000", r.stdout)
+            self.assertIn("worked arithmetic: 1 checked · 1 false · 0 unchecked", r.stdout)
+
+    def test_worked_rounding_accepts_powers_and_plural_place_names(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      Nearest 10^2: $1049 ≈ 1050$.
+
+      Nearest $10^{2}$: $1049 ≈ 1000$.
+
+      Nearest hundreds: $1049 ≈ 1050$.
+
+      Nearest thousands: $1499 ≈ 1500$.
+
+      Nearest tenths: $1.04 ≈ 1.00$.
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertEqual(r.stdout.count("false worked arithmetic: 1049 ≈ 1050"), 2)
+            self.assertIn("false worked arithmetic: 1499 ≈ 1500", r.stdout)
+            self.assertIn("worked arithmetic: 2 checked · 3 false · 0 unchecked", r.stdout)
+
+    def test_worked_rounding_keeps_inline_cues_local_to_each_table_row(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      | nearest 10 | $1049 ≈ 1050$ |
+      | nearest 100 | $1049 ≈ 1050$ |
+      nearest 10 & $1049 ≈ 1000$
+      nearest 100 & $1049 ≈ 1000$
+      $1499 ≈ 1000$
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertEqual(r.stdout.count("false worked arithmetic: 1049 ≈ 1050"), 1)
+            self.assertEqual(r.stdout.count("false worked arithmetic: 1049 ≈ 1000"), 1)
+            self.assertIn("worked arithmetic: 3 checked · 2 false · 0 unchecked", r.stdout)
+
+    def test_worked_rounding_recognizes_degrees_and_longest_place_names(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      Nearest $10^\\circ$: $1049 ≈ 1000$.
+      Nearest 10°: $1049 ≈ 1000$.
+      Nearest $10\\degree$: $1049 ≈ 1000$.
+      Nearest ten thousandth: $1.23456 ≈ 1.2346$.
+      Nearest ten thousandths: $1.23456 ≈ 1.2346$.
+      Nearest hundred thousand: $149999 ≈ 100000$.
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertEqual(r.stdout.count("false worked arithmetic: 1049 ≈ 1000"), 3)
+            self.assertIn("worked arithmetic: 3 checked · 3 false · 0 unchecked", r.stdout)
+
+    def test_worked_rounding_reports_conflicting_and_unknown_places_as_unchecked(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      Nearest 10 or nearest 100: $1049 ≈ 1000$.
+      Nearest $10^{2+1}$: $1049 ≈ 1000$.
+      Nearest 3: $1049 ≈ 1000$.
+
+      To the nearest 10:
+      $1049 ≈ 1050$.
+      Nearest 100: $1049 ≈ 1000$.
+      $1499 ≈ 1000$.
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("worked arithmetic: 3 checked · 0 false · 3 unchecked", r.stdout)
+
+    def test_worked_rounding_recognizes_markdown_emphasis(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      *nearest 10*: $1049 ≈ 1000$.
+      _nearest $10$_: $1049 ≈ 1000$.
+      **nearest 100**: $1049 ≈ 1000$.
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("worked arithmetic: 1 checked · 2 false · 0 unchecked", r.stdout)
+
+    def test_worked_rounding_evaluates_exact_arithmetic_before_half_up(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      $0.15 × 3 ≈ 0.5$.
+
+      $9 / 20 ≈ 0.5$.
+
+      $-0.15 × 3 ≈ -0.5$.
+    final: "0.5"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("worked arithmetic: 3 checked · 0 false · 0 unchecked", r.stdout)
 
     def test_false_check_fails(self):
         with tempfile.TemporaryDirectory() as td:

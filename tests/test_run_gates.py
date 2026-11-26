@@ -203,9 +203,20 @@ class BuildTest(unittest.TestCase):
             self.assertEqual(json.loads((run / "gates.json").read_text()),
                              {"si-style": 0, "si-terms": 0, "unit-notation": 1})
 
-    def test_precritic_skipped_without_cards(self):
+    def test_precritic_checks_figures_without_cards(self):
         with tempfile.TemporaryDirectory() as td:
             run = make_run(Path(td))
+            stub = StubRunner()
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = rg.cmd_build(build_args(run), runner=stub)
+            self.assertEqual(rc, 0, out.getvalue())
+            self.assertTrue(any("precritic-lint" in " ".join(c) for c in stub.calls))
+
+    def test_precritic_skipped_without_cards_or_figures(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td))
+            (run / "specs" / "figures.json").write_text("[]")
             stub = StubRunner()
             out = io.StringIO()
             with redirect_stdout(out):

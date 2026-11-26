@@ -41,6 +41,8 @@ import math
 import re
 import signal
 import sys
+from decimal import Decimal
+from fractions import Fraction
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
@@ -248,6 +250,177 @@ NUM_RE = re.compile(r"\d+(?:\.\d+)?")
 LATEX_RE = re.compile(r"\\[a-zA-Z]+|[${}^_~]")
 
 
+WORKED_MATH = re.compile(r"\$\$(.*?)\$\$|\$([^$\n]+)\$|\\\((.*?)\\\)|\\\[(.*?)\\\]", re.S)
+WORKED_LITERAL = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)")
+WORKED_OPERATORS = re.compile(r"[\d.()+*/\s-]+")
+ROUNDING_PLACES = {"unit": 0, "whole number": 0, "ten": 1, "hundred": 2,
+                   "thousand": 3, "ten thousand": 4, "hundred thousand": 5,
+                   "million": 6, "tenth": -1, "hundredth": -2, "thousandth": -3,
+                   "ten thousandth": -4, "hundred thousandth": -5, "millionth": -6}
+ROUNDING_CUE = re.compile(r"\bnearest\b", re.I)
+ROUNDING_EMPHASIS = re.compile(r"(?<![\w*_])(\*\*|[*_])(?=\S)([^\n]+?)(?<=\S)\1(?![\w*_])")
+ROUNDING_WORDS = re.compile(
+    r"(" + "|".join(re.escape(name).replace(r"\ ", r"\s+")
+                    for name in sorted(ROUNDING_PLACES, key=len, reverse=True)) + r")s?\b", re.I)
+ROUNDING_DEGREES = re.compile(r"\s*(?:\^\s*(?:\{\s*\\circ\s*\}|\\circ\b)|\\degree\b|°)")
+
+
+def _rounding_places(text):
+    text = ROUNDING_EMPHASIS.sub(r"\2", text)
+    text = WORKED_MATH.sub(lambda m: next(g for g in m.groups() if g is not None), text)
+    text = _worked_normalise(ROUNDING_DEGREES.sub(" ", text))
+    return {_rounding_place(cue.lstrip()) for cue in ROUNDING_CUE.split(text)[1:]}
+
+
+def _rounding_place(cue):
+    word = ROUNDING_WORDS.match(cue)
+    if word:
+        return ROUNDING_PLACES[" ".join(word[1].lower().split())]
+    end = r"(?!\w|\.\d|\s*[-+*/^])"
+    power = re.match(r"10\s*\*\*\s*(?:\(\s*([+-]?\d{1,3})\s*\)|([+-]?\d{1,3}))" + end, cue)
+    if power:
+        return int(power[1] or power[2])
+    number = re.match(r"(1[\d,\u2009\u202f]*|0\.0*1)" + end, cue)
+    if number:
+        literal = re.sub(r"[,\u2009\u202f]", "", number[1])
+        if re.fullmatch(r"10*|0\.0*1", literal):
+            return Decimal(literal).adjusted()
+    return None
+
+
+def _worked_normalise(text: str) -> str:
+    text = text.translate(str.maketrans({"−": "-", "×": "*", "÷": "/", "·": "*"}))
+    text = re.sub(r"[⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+",
+                  lambda m: "**(" + m[0].translate(str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻", "0123456789-")) + ")",
+                  text)
+    text = re.sub(r"\\(?:times|cdot)\b", "*", text)
+    text = re.sub(r"\\div\b", "/", text)
+    text = re.sub(r"\\approx\b", "≈", text)
+    text = re.sub(r"\\(?:left|right)\b|\\[,;! ]", "", text)
+    frac = re.compile(r"\\(?:d?frac|tfrac)\s*\{([^{}]+)\}\s*\{([^{}]+)\}")
+    for _ in range(12):
+        expanded = frac.sub(r"((\1)/(\2))", text)
+        if expanded == text:
+            break
+        text = expanded
+    return text.replace("^", "**").replace("{", "(").replace("}", ")").strip()
+
+
+def _worked_rational(node, source):
+    if isinstance(node, ast.Expression):
+        return _worked_rational(node.body, source)
+    if isinstance(node, ast.Constant):
+        value = Fraction(ast.get_source_segment(source, node))
+    elif isinstance(node, ast.UnaryOp):
+        operand = _worked_rational(node.operand, source)
+        value = -operand if isinstance(node.op, ast.USub) else operand
+    else:
+        a = _worked_rational(node.left, source)
+        b = _worked_rational(node.right, source)
+        if isinstance(node.op, ast.Pow):
+            if abs(b) > MAX_POW:
+                raise Refuse("worked exponent outside the permitted range")
+            if b.denominator == 1:
+                if max(a.numerator.bit_length(), a.denominator.bit_length()) * abs(b) > 16384:
+                    raise Refuse("worked fraction too large")
+                value = a ** b.numerator
+            else:
+                value = Fraction(str(_cap(float(a) ** float(b))))
+        else:
+            value = _BIN[type(node.op)](a, b)
+    if abs(value) > MAX_ABS or max(value.numerator.bit_length(), value.denominator.bit_length()) > 16384:
+        raise Refuse("worked fraction too large")
+    return value
+
+
+def _worked_value(text: str, *, exact=False):
+    if len(text) > 400 or not WORKED_OPERATORS.fullmatch(text):
+        raise Refuse("not closed arithmetic")
+    tree = ast.parse(text, mode="eval")
+    nodes = list(ast.walk(tree))
+    operators = (ast.Expression, ast.Constant, ast.UnaryOp, ast.UAdd, ast.USub, ast.BinOp,
+                 ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
+    if len(nodes) > MAX_NODES or any(not isinstance(node, operators) for node in nodes):
+        raise Refuse("unsupported arithmetic")
+    return _worked_rational(tree, text) if exact else _eval(tree)
+
+
+def _unwrapped_worked_spans(line):
+    line = re.sub(r"&(?=\s*(?:\\approx\b|[≈=]))", " ", line)
+    for cell in re.split(r"[|&]", line):
+        cue, colon, computation = cell.partition(":")
+        if colon and ROUNDING_CUE.search(cue):
+            cell = computation
+        if re.match(r"\s*[\d.(+−-]", cell):
+            arithmetic = re.split(r"(?:\s*[(,;]\s*(?:to\s+the\s+)?|\s+to\s+the\s+)nearest\b",
+                                  cell, maxsplit=1, flags=re.I)[0]
+            yield arithmetic.strip().removesuffix(r"\\").strip().removesuffix(".").strip()
+
+
+def _scoped_worked_spans(text):
+    wrapped = {}
+    for match in WORKED_MATH.finditer(text):
+        group = next(i for i, value in enumerate(match.groups(), 1) if value is not None)
+        span = match[group]
+        line_no = text.count("\n", 0, match.start(group))
+        if "\n" in span and "&" in span:
+            for row_no, row in enumerate(span.split("\n"), line_no):
+                wrapped.setdefault(row_no, []).extend(_unwrapped_worked_spans(row))
+        else:
+            line_no += span[:len(span) - len(span.lstrip())].count("\n")
+            wrapped.setdefault(line_no, []).append(span)
+    masked = WORKED_MATH.sub(lambda m: re.sub(r"[^\n]", " ", m[0]), text)
+    inherited = set()
+    for i, (line, plain) in enumerate(zip(text.split("\n"), masked.split("\n"))):
+        if not line.strip():
+            inherited = set()
+            continue
+        spans = [*wrapped.get(i, ()), *_unwrapped_worked_spans(plain)]
+        places = _rounding_places(line)
+        if places:
+            inherited = places if not re.search(r"[≈=]|\\approx\b|[|&]", line) else set()
+        for span in spans:
+            yield span, places or inherited
+
+
+def check_worked_math(approach, approach_si):
+    """Yield (field, status, link) for explicit adjacent arithmetic equalities."""
+    for field, text in (("approach", approach), ("approach_si", approach_si)):
+        if not isinstance(text, str):
+            continue
+        for span, places in _scoped_worked_spans(text):
+            parts = re.split(r"\s*([=≈])\s*", _worked_normalise(span))
+            for left, op, right in zip(parts[::2], parts[1::2], parts[2::2]):
+                link = f"{left} {op} {right}"
+                try:
+                    a, b = _worked_value(left, exact=op == "≈"), _worked_value(right, exact=op == "≈")
+                    if op == "≈":
+                        if not WORKED_LITERAL.fullmatch(right):
+                            raise Refuse("approximation has no stated decimal precision")
+                        if places:
+                            if len(places) != 1 or None in places:
+                                raise Refuse("rounding cue is unsupported or ambiguous")
+                            exponent = next(iter(places))
+                        else:
+                            if "." in right:
+                                exponent = -len(right.partition(".")[2])
+                            else:
+                                exponent = len(right) - len(right.rstrip("0")) if b else 0
+                        if not -400 <= exponent <= 15:
+                            raise Refuse("rounding place outside the permitted range")
+                        precision = Fraction(10) ** exponent
+                        scaled = abs(a) / precision
+                        n, remainder = divmod(scaled.numerator, scaled.denominator)
+                        rounded = (n + (2 * remainder >= scaled.denominator)) * precision
+                        ok = (-rounded if a < 0 else rounded) == b
+                    else:
+                        ok = abs(a - b) <= 4 * max(math.ulp(a), math.ulp(b))
+                except (Refuse, ArithmeticError, SyntaxError, ValueError, TypeError, RecursionError):
+                    yield field, "unchecked", link
+                else:
+                    yield field, "ok" if ok else "false", link
+
+
 def final_numbers(final: str) -> list[float]:
     return [float(m) for m in NUM_RE.findall(LATEX_RE.sub(" ", final or ""))]
 
@@ -316,7 +489,14 @@ def main() -> int:
         die("content: 'questions' must be a list")
 
     checked = false = warns = missing = unchecked = 0
+    worked = dict.fromkeys(("ok", "false", "unchecked"), 0)
     for name, node in leaves(spec):
+        for field, status, link in check_worked_math(node.get("approach"), node.get("approach_si")):
+            worked[status] += 1
+            if status == "false":
+                print(f"FAIL {name}.{field}: false worked arithmetic: {link}")
+            elif status == "unchecked":
+                print(f"UNCHECKED {name}.{field}: unsupported worked arithmetic: {link}")
         expr = node.get("check")
         if expr is None:
             missing += 1
@@ -363,7 +543,9 @@ def main() -> int:
                     print(f"WARN {name}: final number {num:g} not covered by check")
     print(f"check-answers: {checked} checked · {false} false · {warns} warn · "
           f"{missing} without check · {unchecked} unchecked (check: none)")
-    return 1 if false else 0
+    print(f"worked arithmetic: {worked['ok']} checked · {worked['false']} false · "
+          f"{worked['unchecked']} unchecked")
+    return 1 if false or worked["false"] else 0
 
 
 if __name__ == "__main__":

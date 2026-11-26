@@ -103,7 +103,13 @@ NUMBER = r"[−-]?\d+(?:\.\d+)?"
 EN_RANGE = re.compile(rf"\b(?:between|from)\s+\$?({NUMBER})\$?(?:\s*[a-z]{{1,3}})?\s+(?:and|to)\s+\$?({NUMBER})", re.I)
 SI_RANGE = re.compile(rf"\$?({NUMBER})\$?(?:\s*[a-z]{{1,3}})?\s+සිට\s+\$?({NUMBER})")
 PROOF_REQUEST = re.compile(r"\b(?:explain why|give (?:a|the) (?:visual )?reason|justify your answer)\b", re.I)
-PHANTOM_MARK = re.compile(r"\bmarked (?:plot |window )?(?:bounds?|limits?|endpoints?)\b", re.I)
+BOUND_MARK = re.compile(r"\b(?:marked (?:plot |window )?(?:bounds?|limits?|endpoints?)|bound markers?)\b", re.I)
+GRAPH_FEATURES = {
+    "vertex": r"\b(?:vertex|turning point)\b|හැරුම් ලක්ෂ්‍ය",
+    "root": r"\b(?:roots?|zeros?|x[ -]intercepts?|crosses the x[ -]axis)\b|මූලයන්?",
+    "y-intercept": r"\b(?:y[ -]intercept|crosses the y[ -]axis)\b|y අන්තඃඛණ්ඩ",
+}
+FEATURE_NUMBER = r"[+-]?(?:\d+(?:\.\d+)?|\.\d+)"
 REPAYMENT = re.compile(r"\b(?:repayment|instal[l]?ment|payment)\b", re.I)
 UNCHANGED = re.compile(r"\b(?:unchanged|stays? the same|remains? the same)\b", re.I)
 
@@ -481,20 +487,41 @@ def scaffold_key(text: str) -> str:
     return re.sub(r"[\s$\\^]", "", text).lower()
 
 
-def scaffold_warnings(q: dict, sources):
+def scaffold_tasks(text):
+    operations = {
+        "expand": r"expand|expansion of",
+        "factor": r"factor(?:ise|ize)?|factor(?:isation|ization) of",
+        "simplify": r"simplify|simplification of",
+    }
+    sinhala = {"expand": r"ප්‍රසාරණය\s+කරන්න",
+               "factor": r"සාධක\s*වලට\s+වෙන්\s+කරන්න",
+               "simplify": r"සුළු\s+කරන්න"}
+    spans = list(MATH_SPAN.finditer(text))
+    for i, span in enumerate(spans):
+        prefix = re.split(r"[.?!।]", text[spans[i - 1].end() if i else 0:span.start()])[-1]
+        suffix = re.split(r"[.?!।]", text[span.end():spans[i + 1].start() if i + 1 < len(spans) else len(text)], maxsplit=1)[0]
+        for task, verbs in operations.items():
+            instruction = sinhala[task]
+            if (re.search(rf"\b(?:{verbs})\s+$", prefix, re.I)
+                    or re.search(rf"{instruction}:?\s+$", prefix)
+                    or re.match(rf"\s+{instruction}(?=\W|$)", suffix)):
+                yield task, scaffold_key(span[2])
+
+
+def scaffold_matches(q: dict, sources):
     """Find an explicitly asked algebra operation whose exact expression recurs in a source."""
-    sources = [(name, {scaffold_key(m[2]) for m in MATH_SPAN.finditer(text)})
-               for name, text in sources if isinstance(text, str)]
+    sources = [(name, is_exercise, set(scaffold_tasks(text)))
+               for name, text, is_exercise in sources if isinstance(text, str)]
     for where, text in all_student_fields(q):
         if not where.endswith(".text"):
             continue
-        for match in re.finditer(r"\b(?:expand|factor(?:ise|ize)?|simplify)\s+(\$[^$\n]+\$)", text, re.I):
-            expression = scaffold_key(match[1])
+        for task, expression in scaffold_tasks(text):
             if len(expression) < 5 or not re.search("[a-z]", expression):
                 continue
-            source = next((name for name, expressions in sources if expression in expressions), None)
-            if source:
-                yield where, f"exact algebra scaffold also appears in {source}; review task overlap"
+            hits = [(name, hard) for name, hard, tasks in sources if (task, expression) in tasks]
+            if hits:
+                source, hard = max(hits, key=lambda hit: hit[1])
+                yield where, hard, f"exact algebra scaffold also appears in {source}; review task overlap"
 
 
 def staged_figure_uses(content: dict) -> dict:
@@ -525,26 +552,169 @@ def staged_figure_uses(content: dict) -> dict:
     return uses
 
 
-def figure_wording_warnings(run: Path, content: dict):
+def _feature_values(text, kind):
+    text = str(text or "").replace("−", "-").replace("–", "-").replace("$", "")
+    pair_pattern = rf"\(\s*({FEATURE_NUMBER})\s*,\s*({FEATURE_NUMBER})\s*\)"
+    pairs = {tuple(map(float, pair)) for pair in re.findall(pair_pattern, text)}
+    if kind == "vertex":
+        return pairs
+    coordinates = {(x,) for x, y in pairs if y == 0} if kind == "root" else {(y,) for x, y in pairs if x == 0}
+    return coordinates | {(float(n),) for n in re.findall(FEATURE_NUMBER, re.sub(pair_pattern, "", text))}
+
+
+def _described_values(text, kind):
+    pattern = "|".join(f"(?P<{key.replace('-', '_')}>{words})" for key, words in GRAPH_FEATURES.items())
+    for clause in re.split(r";|\n|(?<=[.])\s+", text):
+        features = list(re.finditer(pattern, clause, re.I))
+        for i, match in enumerate(features):
+            if match.lastgroup == kind.replace("-", "_"):
+                end = features[i + 1].start() if i + 1 < len(features) else len(clause)
+                yield from _feature_values(clause[match.end():end], kind)
+
+
+def _visible_element(el):
+    return (isinstance(el, dict) and el.get("opacity", 1) != 0
+            and (el.get("stroke") or {}).get("width", 1) != 0
+            and (el.get("stroke") or {}).get("color") not in ("none", "transparent"))
+
+
+def _marker_matches(el, feature, claims):
+    axis, value = feature.get("axis"), feature.get("value")
+    if axis not in ("x", "y") or not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    axes = re.findall(r"\baxis ([A-Z])([A-Z]) from (" + FEATURE_NUMBER + r") to (" + FEATURE_NUMBER + ")", claims)
+    anchors = {p: (float(x), float(y)) for p, x, y in re.findall(
+        rf"^\s*([A-Z])\s+({FEATURE_NUMBER})\s+({FEATURE_NUMBER})\s*$", claims, re.M)}
+    i = 0 if axis == "x" else 1
+    for a, b, start, end in axes:
+        if a not in anchors or b not in anchors or anchors[a][i] == anchors[b][i]:
+            continue
+        if abs(anchors[a][1 - i] - anchors[b][1 - i]) > 0.1 or float(start) == float(end):
+            continue
+        t = (value - float(start)) / (float(end) - float(start))
+        if not 0 <= t <= 1:
+            continue
+        position = anchors[a][i] + t * (anchors[b][i] - anchors[a][i])
+        if el.get("type") == "line":
+            points = el.get("points") or []
+            if len(points) == 2 and points[0] != points[1] and all(abs(p[i] - position) <= 1 for p in points):
+                return True
+        if feature.get("kind") == "bound-marker" and el.get("type") == "point" and el.get("r", 3) > 0:
+            if len(el.get("at") or ()) == 2 and abs(el["at"][i] - position) <= 1:
+                return True
+    return False
+
+
+def figure_contract_findings(run: Path, content: dict):
     figures = content.get("figures") or {}
-    paths = {run / figures[key] for key in staged_figure_uses(content) if key in figures}
-    for path in sorted(paths):
+    contracts = content.get("figure_features") or {}
+    if not isinstance(contracts, dict):
+        yield True, "figure_features", "must map figure keys to lists of typed visible features"
+        return
+    for key in contracts.keys() - figures.keys():
+        yield True, key, "visible feature contract names an unknown figure"
+    inventory = {}
+    seen = {}
+    descriptions = {}
+    for key in sorted(staged_figure_uses(content).keys() & figures.keys()):
+        path = run / figures[key]
         if not path.is_file():
             continue
         figure = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(figure, dict) or not isinstance(figure.get("elements"), list):
             continue
-        desc = (figure.get("a11y") or {}).get("description", "")
-        if not isinstance(desc, str) or not PHANTOM_MARK.search(desc):
-            continue
-        default_stroke_style = (figure.get("defaults") or {}).get("strokeStyle")
-        if not any(el.get("type") == "tickMark"
-                   or (el.get("type") == "point" and (el.get("r") is None or el["r"] > 0))
-                   or (el.get("type") == "line" and
-                       (el.get("stroke") or {}).get("style", default_stroke_style) == "dashed")
-                   or (el.get("type") == "text" and re.search(r"\b(?:bound|limit|window)\b", el.get("value", ""), re.I))
-                   for el in figure["elements"] if isinstance(el, dict)):
-            yield path.stem, "a11y describes marked plot bounds but there are no visible marker candidates"
+        claim_file = path.with_name(f"{path.stem}-claims.txt")
+        if not claim_file.is_file():
+            claim_file = run / "figures" / f"{path.stem}-claims.txt"
+        claims = claim_file.read_text(encoding="utf-8") if claim_file.is_file() else ""
+        elements = {el.get("id"): el for el in figure["elements"] if _visible_element(el)}
+        point_names = {el.get("label") for el in elements.values()
+                       if el.get("type") == "point"}
+        text_names = {el.get("value") for el in elements.values() if el.get("type") == "text"}
+        point_names |= {point for point in re.findall(r'\blabel "([A-Z])" names \1\b', claims)
+                        if point in text_names}
+        slots = {("point", point): False for point in point_names
+                 if isinstance(point, str) and re.fullmatch(r"[A-Z]", point) and point != "O"}
+        if "O" in point_names:
+            slots["point", "O"] = True
+        declarations = contracts.get(key, [])
+        if not isinstance(declarations, list):
+            yield True, key, "figure_features must be a list"
+            declarations = []
+        for feature in declarations:
+            if not isinstance(feature, dict) or not isinstance(feature.get("id"), str):
+                yield True, key, "each feature needs an id and a kind"
+                continue
+            kind, name = feature.get("kind"), feature["id"]
+            if kind == "point" and (kind, name) in slots:
+                slots[kind, name] |= feature.get("decorative") is True
+            elif kind in ("guide", "bound-marker") and (el := elements.get(feature.get("element"))) \
+                    and _marker_matches(el, feature, claims):
+                slots[kind, name] = True
+            else:
+                yield True, key, f"{kind} {name}: feature does not bind to its specific visible element"
+        a11y = figure.get("a11y") or {}
+        description = " ".join(str(a11y.get(k) or "") for k in ("title", "description"))
+        if BOUND_MARK.search(description) and not any(k == "bound-marker" for k, _ in slots):
+            yield True, path.stem, "a11y describes marked plot bounds without a typed visible bound-marker"
+        inventory[key], descriptions[key], seen[key] = slots, description, set()
+
+    def walk(node, path, visible, givens):
+        own = node.get("figure")
+        if own in inventory:
+            visible = (*visible, own)
+        pair = node.get("figure_refs")
+        if pair is not None and (not isinstance(pair, dict)
+                                 or set(pair) != {"english", "sinhala"}
+                                 or any(not isinstance(value, list) for value in pair.values())):
+            yield True, path, "figure_refs needs both english and sinhala lists"
+            pair = None
+        referenced = {}
+        for medium, suffix in (("english", ""), ("sinhala", "_si")):
+            prompt = str(node.get(("text" if "label" in node else "stem") + suffix) or "")
+            referenced[medium] = set()
+            for ref in (pair or {}).get(medium, []):
+                if not isinstance(ref, dict) or not all(isinstance(ref.get(f), str) for f in ("figure", "kind", "id")):
+                    yield True, path, f"{medium}: each figure reference needs figure, kind, and id"
+                    continue
+                key, kind, name = ref["figure"], ref["kind"], ref["id"]
+                if key not in visible or (kind, name) not in inventory[key]:
+                    yield True, path, f"{medium}: no visible {kind} {name} on figure {key}"
+                    continue
+                referenced[medium].add((key, kind, name))
+                seen[key].add((kind, name))
+            for key in visible:
+                for kind, name in inventory[key]:
+                    if kind == "point" and re.search(rf"(?<!\w){re.escape(name)}(?!\w)", prompt):
+                        seen[key].add((kind, name))
+        if pair is not None and referenced["english"] != referenced["sinhala"]:
+            yield True, path, "English and Sinhala figure_refs must bind the same visible features"
+
+        asks = node.get("figure_asks", [])
+        if not isinstance(asks, list) or any(not isinstance(a, str) or a not in GRAPH_FEATURES for a in asks):
+            yield True, path, "figure_asks must list vertex, root or y-intercept feature types"
+            asks = []
+        prompt = " ".join(str(node.get(k) or "") for k in ("text", "text_si", "stem", "stem_si"))
+        for kind, pattern in GRAPH_FEATURES.items():
+            if kind not in asks and not re.search(pattern, prompt, re.I):
+                continue
+            finals = set().union(*(_feature_values(node.get(k), kind) for k in ("final", "final_si")))
+            for key in visible:
+                leaked = set(_described_values(descriptions[key], kind)) & finals
+                if leaked - set(_described_values(givens, kind)):
+                    yield True, path, f"{key} a11y reveals the asked {kind} answer (T125)"
+        for child in node.get("parts") or []:
+            if isinstance(child, dict):
+                yield from walk(child, f"{path}.{child.get('label')}", visible, givens)
+
+    for q in content["questions"]:
+        if isinstance(q, dict):
+            givens = " ".join(str(q.get(k) or "") for k in ("stem", "stem_si"))
+            yield from walk(q, f"Q{q.get('n')}", (), givens)
+    for key, slots in inventory.items():
+        for kind, name in sorted(slots.keys() - seen[key]):
+            if not slots[kind, name]:
+                yield False, key, f"unused named point {name}; reference it or mark it decorative"
 
 
 def lint(run: Path, args, log=print) -> tuple[int, int]:
@@ -563,9 +733,10 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
         for where, message in wording_warnings(q):
             warns += 1
             log(f"  WARN {where}: {message}")
-    for where, message in figure_wording_warnings(run, content):
-        warns += 1
-        log(f"  WARN {where}: {message}")
+    for hard, where, message in figure_contract_findings(run, content):
+        fails += int(hard)
+        warns += int(not hard)
+        log(f"  {'FAIL' if hard else 'WARN'} {where}: {message}")
 
     # (a) not_taught probes must not appear in a question field — PER QUESTION by
     # default: a question answers only to the cards its own `lessons:` keys bind (a
@@ -711,7 +882,7 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
         for row in rows:
             rid = row.get("question_id") or row.get("id") or "?"
             for key in ("stem_excerpt", "question_text"):
-                existing_scaffolds.append((f"{p.name}:{rid}", row.get(key)))
+                existing_scaffolds.append((f"{p.name}:{rid}", row.get(key), False))
         for q in questions:
             qt = mask_tokens(question_surface(q))
             for row in rows:
@@ -731,7 +902,7 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
             gen = cards[key]["doc"].get("generated") or {}
             card_name = cards[key]["name"]
             for index, example in enumerate(gen.get("worked_examples") or [], 1):
-                scaffolds.append((f"{card_name} worked example {index}", example.get("excerpt")))
+                scaffolds.append((f"{card_name} worked example {index}", example.get("excerpt"), False))
                 tokens = mask_tokens(example.get("excerpt") or "")
                 score = jaccard(qt, tokens)
                 if score >= 0.6:
@@ -743,7 +914,7 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
             for exercise in gen.get("exercises") or []:
                 heading = exercise.get("heading") or "exercise"
                 for index, item in enumerate(exercise.get("items") or [], 1):
-                    scaffolds.append((f"{card_name} exercise {heading} item {index}", item))
+                    scaffolds.append((f"{card_name} exercise {heading} item {index}", item, True))
                     tokens = mask_tokens(item)
                     score = jaccard(qt, tokens)
                     if score >= 0.6:
@@ -751,9 +922,10 @@ def lint(run: Path, args, log=print) -> tuple[int, int]:
                         log(f"  WARN Q{q.get('n')} ≈ {card_name} exercise {heading} item "
                             f"{index} (Jaccard {score:.2f}, digits masked) — duplicate "
                             "lesson-item fingerprint")
-        for where, message in scaffold_warnings(q, scaffolds):
-            warns += 1
-            log(f"  WARN {where}: {message}")
+        for where, hard, message in scaffold_matches(q, scaffolds):
+            fails += int(hard)
+            warns += int(not hard)
+            log(f"  {'FAIL' if hard else 'WARN'} {where}: {message}")
     return fails, warns
 
 
