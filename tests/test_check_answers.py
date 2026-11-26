@@ -139,6 +139,30 @@ class CheckAnswersTest(unittest.TestCase):
             self.assertIn("false worked arithmetic: 1049 ≈ 1000", r.stdout)
             self.assertIn("worked arithmetic: 1 checked · 1 false · 0 unchecked", r.stdout)
 
+    def test_worked_rounding_accepts_powers_and_plural_place_names(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      Nearest 10^2: $1049 ≈ 1050$.
+
+      Nearest $10^{2}$: $1049 ≈ 1000$.
+
+      Nearest hundreds: $1049 ≈ 1050$.
+
+      Nearest thousands: $1499 ≈ 1500$.
+
+      Nearest tenths: $1.04 ≈ 1.00$.
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertEqual(r.stdout.count("false worked arithmetic: 1049 ≈ 1050"), 2)
+            self.assertIn("false worked arithmetic: 1499 ≈ 1500", r.stdout)
+            self.assertIn("worked arithmetic: 2 checked · 3 false · 0 unchecked", r.stdout)
+
     def test_worked_rounding_evaluates_exact_arithmetic_before_half_up(self):
         with tempfile.TemporaryDirectory() as td:
             run = write_run(Path(td), """\

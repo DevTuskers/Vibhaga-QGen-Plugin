@@ -259,11 +259,13 @@ ROUNDING_PLACES = {"unit": 0, "whole number": 0, "ten": 1, "hundred": 2,
 
 
 def _rounding_places(text):
-    text = WORKED_MATH.sub(lambda m: _worked_normalise(next(g for g in m.groups() if g is not None)),
-                           text)
+    text = _worked_normalise(WORKED_MATH.sub(lambda m: next(g for g in m.groups() if g is not None), text))
     places = {exp for name, exp in ROUNDING_PLACES.items()
-              if re.search(rf"\bnearest\s+{name}\b(?!\s+thousand)", text, re.I)}
-    for value in re.findall(r"\bnearest\s+(1[\d,\u2009\u202f]*|0\.0*1)(?!\w|\.\d)", text, re.I):
+              if re.search(rf"\bnearest\s+{name}s?\b(?!\s+thousands?\b)", text, re.I)}
+    for braced, bare in re.findall(r"\bnearest\s+10\s*\*\*\s*(?:\(\s*(-?\d{1,3})\s*\)|(-?\d{1,3}))(?!\w|\.\d)",
+                                   text, re.I):
+        places.add(int(braced or bare))
+    for value in re.findall(r"\bnearest\s+(1[\d,\u2009\u202f]*|0\.0*1)(?!\w|\.\d|\s*\*\*)", text, re.I):
         literal = re.sub(r"[,\u2009\u202f]", "", value)
         if re.fullmatch(r"10*|0\.0*1", literal):
             places.add(Decimal(literal).adjusted())
