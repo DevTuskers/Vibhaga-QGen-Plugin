@@ -344,6 +344,18 @@ class PrecriticLintTest(unittest.TestCase):
             result = lint_plain(run)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_bilingual_refs_bind_labels_on_zero_radius_points(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = make_run(Path(td), lessons=[], figure="corner",
+                           figures={"corner": "figures/corner.json"},
+                           parts=[{"label": "a", "text": "Name corner A.",
+                                   "figure_refs": {lang: [{"figure": "corner", "kind": "point", "id": "A"}]
+                                                   for lang in ("english", "sinhala")}}])
+            write(run / "figures" / "corner.json",
+                  '{"elements":[{"id":"a","type":"point","label":"A","at":[30,30],"r":0}]}')
+            result = lint_plain(run)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_wording_advisories_use_paired_fields_and_part_prompt(self):
         with tempfile.TemporaryDirectory() as td:
             run = make_run(Path(td), stem="Count the pages printed by then.", parts=[{

@@ -609,7 +609,7 @@ def figure_contract_findings(run: Path, content: dict):
         claims = claim_file.read_text(encoding="utf-8") if claim_file.is_file() else ""
         elements = {el.get("id"): el for el in figure["elements"] if _visible_element(el)}
         point_names = {el.get("label") for el in elements.values()
-                       if el.get("type") == "point" and el.get("r", 3) > 0}
+                       if el.get("type") == "point"}
         text_names = {el.get("value") for el in elements.values() if el.get("type") == "text"}
         point_names |= {point for point in re.findall(r'\blabel "([A-Z])" names \1\b', claims)
                         if point in text_names}
