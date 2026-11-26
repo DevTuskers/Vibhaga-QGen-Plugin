@@ -10637,9 +10637,10 @@ _CONSTRUCTION_STEPS = ("perp_bisector", "angle_bisector", "perp_at", "perp_from"
 _CONSTRUCTION_ASK = re.compile(
     r"(?:^|[.?!:]\s+)(?:use .*? to )?(?:construct\b|draw\b"
     r"(?:(?!\b(?:conclusions?|inferences?)\b)(?:[^.!?:;\n]|\.(?=\d)))*?"
-    r"\b(?:lines?|segments?|circles?|arcs?|bisectors?|perpendiculars?|triangles?|"
+    r"\b(?:lines?|segments?|(?:in|circum|ex)?circles?|arcs?|bisectors?|perpendiculars?|triangles?|"
     r"locus|loci|tangents?|parallels?|angles?|rays?|chords?|polygons?|quadrilaterals?|"
-    r"rectangles?|squares?|radii|radius|diagrams?)\b)|නිර්මාණය කරන්න",
+    r"rectangles?|squares?|radii|radius|diagrams?|centroids?|(?:ortho|in|circum|ex)cent(?:re|er)s?|"
+    r"medians?|altitudes?|midpoints?)\b)|නිර්මාණය කරන්න",
     re.I)
 
 
@@ -10668,9 +10669,10 @@ def build_construction(*, figure_id, stem, ask=None, title=None, description=Non
     Numeric givens remain stem-only. `length` (segment steps) and `angle` / `angles` (angle and
     triangle steps) are stem numbers; `base_px`, `r_px`, `at_deg`, `op` (the
     external point's distance in radii) are canvas choices declared inferred.
-    `stage` = "completed" (default) draws the FINISHED construction — use it for
-    identify/explain questions, never for construct-it-yourself ones; "setup"
-    draws only the givens (no compass work, no result) for those.
+    `stage` = "completed" draws the FINISHED construction; "setup" draws only the
+    givens (no compass work, no result). Construction asks require an explicit
+    stage; use "setup" for construct-it-yourself questions and "completed" for
+    identify/explain questions. Other asks default to "completed".
     `incircle`/`excircle` refuse — with an honest TemplateError — a triangle
     whose incentre letter cannot be seated clear inside its circle or ring,
     or whose contact letter cannot clear the excircle's own outline (very
@@ -10681,9 +10683,9 @@ def build_construction(*, figure_id, stem, ask=None, title=None, description=Non
         raise TemplateError(f"{kind}: step must be one of {_CONSTRUCTION_STEPS}")
     tasks = (str(row[-1]) for row in ask if isinstance(row, (list, tuple)) and row) if ask else (stem,)
     construction_task = any(_CONSTRUCTION_ASK.search(task.strip()) for task in tasks)
-    if construction_task and stage != "setup":
-        raise TemplateError(f"{kind}: a construction ask requires explicit stage='setup'")
     if stage is None:
+        if construction_task:
+            raise TemplateError(f"{kind}: a construction ask requires explicit stage='setup' or stage='completed'")
         stage = "completed"
     if stage not in ("setup", "completed"):
         raise TemplateError(f"{kind}: stage must be 'setup' or 'completed'")

@@ -4070,15 +4070,16 @@ class NewFigureProfiles(unittest.TestCase):
         with self.assertRaisesRegex(vt.TemplateError, "does not form a parallelogram"):
             vt.build_parallel_area(**args, draw=[list("ABC")], parallelogram=True)
 
-    def test_construction_ask_requires_setup(self):
+    def test_construction_ask_requires_explicit_stage(self):
         args = dict(figure_id="new5", stem="AB is 8 cm.",
                     ask=[["a", "Construct the perpendicular bisector."]],
                     step="perp_bisector", length=8)
-        for stage in (None, "completed"):
-            with self.assertRaisesRegex(vt.TemplateError, "requires explicit stage"):
-                vt.build_construction(**args, stage=stage)
+        with self.assertRaisesRegex(vt.TemplateError, "requires explicit stage"):
+            vt.build_construction(**args)
         b = vt.build_construction(**args, stage="setup")
         self.assertFalse(any(e["type"] == "arc" for e in b.doc["elements"]))
+        b = vt.build_construction(**args, stage="completed")
+        self.assertTrue(any(e["type"] == "arc" for e in b.doc["elements"]))
 
     def test_construction_in_later_part_requires_setup(self):
         args = dict(figure_id="review1", stem="AB is 8 cm.",
@@ -4100,6 +4101,19 @@ class NewFigureProfiles(unittest.TestCase):
             with self.subTest(task=task):
                 b = vt.build_construction(**args, ask=[["a", task]])
                 self.assertTrue(any(e["type"] == "arc" for e in b.doc["elements"]))
+
+    def test_named_construction_objects_require_explicit_stage(self):
+        args = dict(figure_id="review-incircle", stem="ABC has angles of 60 degrees each.",
+                    step="incircle", angles={"A": 60, "B": 60, "C": 60})
+        for target in ("incircle", "circumcircle", "excircle", "inscribed circle", "circumscribed circle",
+                       "centroid", "orthocentre", "orthocenter", "incentre", "circumcentre", "median"):
+            with self.subTest(target=target), self.assertRaisesRegex(vt.TemplateError, "requires explicit stage"):
+                vt.build_construction(**args, ask=[["a", f"Draw its {target}."]])
+        ask = [["a", "Draw its incircle."]]
+        setup = vt.build_construction(**args, ask=ask, stage="setup")
+        completed = vt.build_construction(**args, ask=ask, stage="completed")
+        self.assertFalse(any(e["type"] == "circle" for e in setup.doc["elements"]))
+        self.assertTrue(any(e["type"] == "circle" for e in completed.doc["elements"]))
 
     def test_locus_setup_combines_only_givens(self):
         b = vt.build_locus_scene(
