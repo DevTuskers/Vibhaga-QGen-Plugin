@@ -4072,6 +4072,15 @@ class NewFigureProfiles(unittest.TestCase):
         b = vt.build_construction(**args, stage="setup")
         self.assertFalse(any(e["type"] == "arc" for e in b.doc["elements"]))
 
+    def test_construction_in_later_part_requires_setup(self):
+        args = dict(figure_id="review1", stem="AB is 8 cm.",
+                    ask=[["a", "Name the segment"], ["b", "Construct its perpendicular bisector."]],
+                    step="perp_bisector", length=8)
+        with self.assertRaisesRegex(vt.TemplateError, "requires explicit stage"):
+            vt.build_construction(**args)
+        b = vt.build_construction(**args, stage="setup")
+        self.assertFalse(any(e["type"] == "arc" for e in b.doc["elements"]))
+
     def test_locus_setup_combines_only_givens(self):
         b = vt.build_locus_scene(
             figure_id="new6", stem="The distance is 5 cm.", stage="setup",

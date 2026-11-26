@@ -10658,9 +10658,9 @@ def build_construction(*, figure_id, stem, ask=None, title=None, description=Non
     vc.reset_ids()
     if step not in _CONSTRUCTION_STEPS:
         raise TemplateError(f"{kind}: step must be one of {_CONSTRUCTION_STEPS}")
-    task = " ".join(str(row[-1]) for row in ask if isinstance(row, (list, tuple)) and row) if ask else stem
-    construction_task = re.search(r"(?:^|[.?!:]\s+)(?:use .*? to )?(?:construct|draw)\b|නිර්මාණය කරන්න",
-                                  task, re.I)
+    tasks = (str(row[-1]) for row in ask if isinstance(row, (list, tuple)) and row) if ask else (stem,)
+    construction_task = any(re.search(r"(?:^|[.?!:]\s+)(?:use .*? to )?(?:construct|draw)\b|නිර්මාණය කරන්න",
+                                      task, re.I) for task in tasks)
     if construction_task and stage != "setup":
         raise TemplateError(f"{kind}: a construction ask requires explicit stage='setup'")
     if stage is None:
