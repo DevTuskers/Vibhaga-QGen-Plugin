@@ -258,6 +258,7 @@ ROUNDING_PLACES = {"unit": 0, "whole number": 0, "ten": 1, "hundred": 2,
                    "million": 6, "tenth": -1, "hundredth": -2, "thousandth": -3,
                    "ten thousandth": -4, "hundred thousandth": -5, "millionth": -6}
 ROUNDING_CUE = re.compile(r"\bnearest\b", re.I)
+ROUNDING_EMPHASIS = re.compile(r"(?<![\w*_])(\*\*|[*_])(?=\S)([^\n]+?)(?<=\S)\1(?![\w*_])")
 ROUNDING_WORDS = re.compile(
     r"(" + "|".join(re.escape(name).replace(r"\ ", r"\s+")
                     for name in sorted(ROUNDING_PLACES, key=len, reverse=True)) + r")s?\b", re.I)
@@ -265,6 +266,7 @@ ROUNDING_DEGREES = re.compile(r"\s*(?:\^\s*(?:\{\s*\\circ\s*\}|\\circ\b)|\\degre
 
 
 def _rounding_places(text):
+    text = ROUNDING_EMPHASIS.sub(r"\2", text)
     text = WORKED_MATH.sub(lambda m: next(g for g in m.groups() if g is not None), text)
     text = _worked_normalise(ROUNDING_DEGREES.sub(" ", text))
     return {_rounding_place(cue.lstrip()) for cue in ROUNDING_CUE.split(text)[1:]}

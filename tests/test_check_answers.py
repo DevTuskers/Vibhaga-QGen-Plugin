@@ -224,6 +224,22 @@ class CheckAnswersTest(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("worked arithmetic: 3 checked · 0 false · 3 unchecked", r.stdout)
 
+    def test_worked_rounding_recognizes_markdown_emphasis(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      *nearest 10*: $1049 ≈ 1000$.
+      _nearest $10$_: $1049 ≈ 1000$.
+      **nearest 100**: $1049 ≈ 1000$.
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("worked arithmetic: 1 checked · 2 false · 0 unchecked", r.stdout)
+
     def test_worked_rounding_evaluates_exact_arithmetic_before_half_up(self):
         with tempfile.TemporaryDirectory() as td:
             run = write_run(Path(td), """\
