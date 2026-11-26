@@ -487,18 +487,32 @@ def scaffold_key(text: str) -> str:
     return re.sub(r"[\s$\\^]", "", text).lower()
 
 
+def scaffold_tasks(text):
+    operations = {
+        "expand": r"expand|expansion of",
+        "factor": r"factor(?:ise|ize)?|factor(?:isation|ization) of",
+        "simplify": r"simplify|simplification of",
+    }
+    start = 0
+    for span in MATH_SPAN.finditer(text):
+        prefix = text[start:span.start()]
+        start = span.end()
+        for task, verbs in operations.items():
+            if re.search(rf"\b(?:{verbs})\s+$", prefix, re.I):
+                yield task, scaffold_key(span[2])
+
+
 def scaffold_matches(q: dict, sources):
     """Find an explicitly asked algebra operation whose exact expression recurs in a source."""
-    sources = [(name, is_exercise, {scaffold_key(m[2]) for m in MATH_SPAN.finditer(text)})
+    sources = [(name, is_exercise, set(scaffold_tasks(text)))
                for name, text, is_exercise in sources if isinstance(text, str)]
     for where, text in all_student_fields(q):
         if not where.endswith(".text"):
             continue
-        for match in re.finditer(r"\b(?:expand|factor(?:ise|ize)?|simplify)\s+(\$[^$\n]+\$)", text, re.I):
-            expression = scaffold_key(match[1])
+        for task, expression in scaffold_tasks(text):
             if len(expression) < 5 or not re.search("[a-z]", expression):
                 continue
-            hits = [(name, hard) for name, hard, expressions in sources if expression in expressions]
+            hits = [(name, hard) for name, hard, tasks in sources if (task, expression) in tasks]
             if hits:
                 source, hard = max(hits, key=lambda hit: hit[1])
                 yield where, hard, f"exact algebra scaffold also appears in {source}; review task overlap"

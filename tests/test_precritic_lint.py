@@ -836,6 +836,19 @@ class PrecriticLintTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     # ---- usage ---------------------------------------------------------------
+    def test_same_expression_in_a_different_exercise_task_does_not_block(self):
+        import yaml
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run(tmp, parts=[{"label": "a", "text": "Factor $t^2-169$."}])
+            path = tmp / "cards" / "07-Fractions.yaml"
+            card = yaml.safe_load(path.read_text())
+            card["generated"]["exercises"] = [{"items": ["Evaluate $t^2-169$ at $t=5$."]}]
+            path.write_text(yaml.safe_dump(card))
+            result = lint(run, tmp)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("exact algebra scaffold", result.stdout)
+
     def test_sinhala_in_text_command_fails(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
