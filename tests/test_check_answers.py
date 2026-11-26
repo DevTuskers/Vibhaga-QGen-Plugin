@@ -104,6 +104,24 @@ class CheckAnswersTest(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("worked arithmetic: 2 checked · 0 false · 0 unchecked", r.stdout)
 
+    def test_rounding_instruction_on_preceding_line_applies_only_within_its_step(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Round."
+    approach: |
+      To the nearest 10:
+      $1049 ≈ 1000$.
+
+      $1499 ≈ 1000$.
+    final: "1000"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("false worked arithmetic: 1049 ≈ 1000", r.stdout)
+            self.assertIn("worked arithmetic: 1 checked · 1 false · 0 unchecked", r.stdout)
+
     def test_worked_rounding_accepts_math_wrapped_place(self):
         with tempfile.TemporaryDirectory() as td:
             run = write_run(Path(td), """\
