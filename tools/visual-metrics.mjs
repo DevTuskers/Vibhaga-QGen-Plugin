@@ -315,6 +315,13 @@ function hasVisibleFill(el, defaults) {
   return op > 0;
 }
 
+export function visibleLine(el, defaults) {
+  return el?.type === "line" && el.display !== "none" && el.style?.display !== "none" &&
+    (el.opacity ?? defaults?.opacity ?? 1) > 0 && (el.stroke?.opacity ?? 1) > 0 &&
+    (el.stroke?.width ?? defaults?.strokeWidth ?? 2) > 0 &&
+    paintVisible(el.stroke?.color ?? defaults?.strokeColor ?? "black");
+}
+
 export function tickOwners(doc, cs) {
   const elements = new Map((doc?.elements ?? []).map((el) => [el.id, el]));
   const axes = new Map();
@@ -323,7 +330,8 @@ export function tickOwners(doc, cs) {
     if (a && cs.anchors[a[1]] && cs.anchors[a[2]])
       axes.set(a.slice(1, 3).join(""), [cs.anchors[a[1]], cs.anchors[a[2]], +a[3], +a[4]]);
   }
-  const midpoint = (el) => el?.type === "line" ? el.points[0].map((v, i) => (v + el.points[1][i]) / 2) : null;
+  const midpoint = (el) => visibleLine(el, doc?.defaults)
+    ? el.points[0].map((v, i) => (v + el.points[1][i]) / 2) : null;
   const out = new Map();
   for (const c of cs?.claims ?? []) {
     if (c.pred !== "tick-label") continue;
@@ -561,15 +569,13 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
     if (dimension && l.bbox) {
       const [leader, limit, target, callout] = dimension;
       const via = `leader ${target}`;
-      if (leader?.type !== "line" || !ppu) return { d: null, ambiguous: true, via };
+      if (!visibleLine(leader, doc?.defaults) || !ppu) return { d: null, ambiguous: true, via };
       const [a, b] = leader.points;
       const midpoint = a.map((v, i) => (v + b[i]) / 2);
       if (callout) {
         const connector = byElementId.get(callout);
         const points = connector?.points;
-        if (connector?.type !== "line" ||
-            !paintVisible(connector.stroke?.color ?? doc.defaults?.strokeColor ?? "black") ||
-            (connector.stroke?.width ?? doc.defaults?.strokeWidth ?? 2) <= 0 ||
+        if (!visibleLine(connector, doc?.defaults) ||
             !points?.some((p) => dist(p, midpoint) <= 0.1))
           return { d: null, ambiguous: true, via };
         const tip = points.find((p) => dist(p, midpoint) > 0.1);

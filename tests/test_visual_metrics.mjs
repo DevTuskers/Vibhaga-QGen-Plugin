@@ -134,6 +134,30 @@ test("a curve reaching the arrowhead fails a bound axis clearance", () => {
   assert.ok(rules(measure()).has("axis-clearance"));
 });
 
+test("an invisible line cannot back a tick or dimension binding", () => {
+  const d = doc([
+    { id: "tx2", type: "line", points: [[90, 125], [90, 135]] },
+    { id: "x2", type: "text", value: "2" },
+    { id: "leader", type: "line", points: [[160, 100], [240, 100]] },
+  ]);
+  const claims = "anchors:\n  L 50 130\n  R 170 130\n  B 50 130\n  U 50 10\nclaims:\n"
+    + axisClaims + "\n  K10 tick-label LR 2 tx2 x2 below | inferred |"
+    + "\n  K11 dimension-label leader dim 18 | inferred |";
+  const check = () => assess({ doc: d, claims, widths: W([
+    L({ text: "2", elementId: "x2", bbox: [85, 147, 10, 12] }),
+    L({ i: 1, text: "4 cm", elementId: "dim", bbox: [189, 105, 22, 12] }),
+  ]) });
+  assert.equal(check().verdict, "PASS");
+  for (const hidden of [{ opacity: 0 }, { stroke: { color: "none" } }, { display: "none" }]) {
+    const [tick, label, leader] = d.elements;
+    d.elements = [{ ...tick, ...hidden }, label, { ...leader, ...hidden }];
+    const result = rules(check());
+    assert.ok(result.has("tick-label"));
+    assert.ok(result.has("target"));
+    d.elements = [tick, label, leader];
+  }
+});
+
 test("claim-set parser: anchors, claims, allow, labels (vdd-check grammar)", () => {
   const cs = parseClaimSet(`# comment
 labels: "9 : 4" ratio
