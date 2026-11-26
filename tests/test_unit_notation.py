@@ -31,6 +31,25 @@ questions:
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("unit-notation: 0 fail(s)", result.stdout)
 
+    def test_rejects_spelled_out_units_after_numeric_math_with_reporting_cues(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_content(Path(tmp), r"""
+questions:
+  - n: 1
+    stem_si: '$\frac{3}{4}$ වර්ග මීටර ලෙස'
+  - n: 2
+    stem_si: '$-\dfrac{7}{8}$ වර්ග මීටරවලින්'
+  - n: 3
+    stem_si: '$3/4$ වර්ග මීටර ලෙස'
+  - n: 4
+    stem_si: '$0.75$ වර්ග මීටර ලෙස'
+""")
+            result = self.run_tool(path)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        for n, math in enumerate((r"\frac{3}{4}", r"-\dfrac{7}{8}", "3/4", "0.75"), 1):
+            self.assertIn(f"FAIL Q{n} stem_si: ${math}$ වර්ග මීටර", result.stdout)
+        self.assertIn("unit-notation: 4 fail(s)", result.stdout)
+
     def test_rejects_prefixed_unit_words_after_numbers(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = write_content(Path(tmp), """\
