@@ -123,11 +123,11 @@ def check_bilingual(en, si, where, si_key):
         die(f"{where}: {problem}")
 
 
-Q_KEYS = {"n", "lessons", "stem", "stem_si", "figure", "approach", "approach_si", "final",
+Q_KEYS = {"n", "lessons", "stem", "stem_si", "figure", "figure_refs", "figure_asks", "approach", "approach_si", "final",
           "final_si", "parts", "check", "level", "blueprint_id", "blueprint_seed", "difficulty"}
-P_KEYS = {"label", "text", "text_si", "figure", "approach", "approach_si", "final", "final_si",
+P_KEYS = {"label", "text", "text_si", "figure", "figure_refs", "figure_asks", "approach", "approach_si", "final", "final_si",
           "parts", "check", "level"}
-TOP_KEYS = {"id_seed", "difficulty", "lessons", "figures", "questions"}
+TOP_KEYS = {"id_seed", "difficulty", "lessons", "figures", "figure_features", "questions"}
 DIFFICULTIES = {"easy", "medium", "hard"}
 
 

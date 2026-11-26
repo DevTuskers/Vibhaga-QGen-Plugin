@@ -248,6 +248,69 @@ NUM_RE = re.compile(r"\d+(?:\.\d+)?")
 LATEX_RE = re.compile(r"\\[a-zA-Z]+|[${}^_~]")
 
 
+WORKED_MATH = re.compile(r"\$\$(.*?)\$\$|\$([^$\n]+)\$|\\\((.*?)\\\)|\\\[(.*?)\\\]", re.S)
+WORKED_LITERAL = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)")
+WORKED_OPERATORS = re.compile(r"[\d.()+*/\s-]+")
+
+
+def _worked_normalise(text: str) -> str:
+    text = text.translate(str.maketrans({"−": "-", "×": "*", "÷": "/", "·": "*"}))
+    text = re.sub(r"[⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+",
+                  lambda m: "**(" + m[0].translate(str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻", "0123456789-")) + ")",
+                  text)
+    text = re.sub(r"\\(?:times|cdot)\b", "*", text)
+    text = re.sub(r"\\div\b", "/", text)
+    text = re.sub(r"\\approx\b", "≈", text)
+    text = re.sub(r"\\(?:left|right)\b|\\[,;! ]", "", text)
+    frac = re.compile(r"\\(?:d?frac|tfrac)\s*\{([^{}]+)\}\s*\{([^{}]+)\}")
+    for _ in range(12):
+        expanded = frac.sub(r"((\1)/(\2))", text)
+        if expanded == text:
+            break
+        text = expanded
+    return text.replace("^", "**").replace("{", "(").replace("}", ")").strip()
+
+
+def _worked_value(text: str):
+    if len(text) > 400 or not WORKED_OPERATORS.fullmatch(text):
+        raise Refuse("not closed arithmetic")
+    tree = ast.parse(text, mode="eval")
+    nodes = list(ast.walk(tree))
+    operators = (ast.Expression, ast.Constant, ast.UnaryOp, ast.UAdd, ast.USub, ast.BinOp,
+                 ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
+    if len(nodes) > MAX_NODES or any(not isinstance(node, operators) for node in nodes):
+        raise Refuse("unsupported arithmetic")
+    return _eval(tree)
+
+
+def check_worked_math(approach, approach_si):
+    """Yield (field, status, link) for explicit adjacent arithmetic equalities."""
+    for field, text in (("approach", approach), ("approach_si", approach_si)):
+        if not isinstance(text, str):
+            continue
+        spans = [next(g for g in match.groups() if g is not None) for match in WORKED_MATH.finditer(text)]
+        spans.extend(line.strip().removesuffix(".").strip()
+                     for line in WORKED_MATH.sub("", text).splitlines()
+                     if re.match(r"\s*[\d.(+−-]", line))
+        for span in spans:
+            parts = re.split(r"\s*([=≈])\s*", _worked_normalise(span))
+            for left, op, right in zip(parts[::2], parts[1::2], parts[2::2]):
+                link = f"{left} {op} {right}"
+                try:
+                    a, b = _worked_value(left), _worked_value(right)
+                    if op == "≈":
+                        if not WORKED_LITERAL.fullmatch(right):
+                            raise Refuse("approximation has no stated decimal precision")
+                        places = len(right.partition(".")[2])
+                        ok = abs(a - b) <= 0.5 * 10 ** -places + math.ulp(float(b))
+                    else:
+                        ok = abs(a - b) <= 4 * max(math.ulp(a), math.ulp(b))
+                except (Refuse, ArithmeticError, SyntaxError, ValueError, TypeError, RecursionError):
+                    yield field, "unchecked", link
+                else:
+                    yield field, "ok" if ok else "false", link
+
+
 def final_numbers(final: str) -> list[float]:
     return [float(m) for m in NUM_RE.findall(LATEX_RE.sub(" ", final or ""))]
 
@@ -316,7 +379,14 @@ def main() -> int:
         die("content: 'questions' must be a list")
 
     checked = false = warns = missing = unchecked = 0
+    worked = dict.fromkeys(("ok", "false", "unchecked"), 0)
     for name, node in leaves(spec):
+        for field, status, link in check_worked_math(node.get("approach"), node.get("approach_si")):
+            worked[status] += 1
+            if status == "false":
+                print(f"FAIL {name}.{field}: false worked arithmetic: {link}")
+            elif status == "unchecked":
+                print(f"UNCHECKED {name}.{field}: unsupported worked arithmetic: {link}")
         expr = node.get("check")
         if expr is None:
             missing += 1
@@ -363,7 +433,9 @@ def main() -> int:
                     print(f"WARN {name}: final number {num:g} not covered by check")
     print(f"check-answers: {checked} checked · {false} false · {warns} warn · "
           f"{missing} without check · {unchecked} unchecked (check: none)")
-    return 1 if false else 0
+    print(f"worked arithmetic: {worked['ok']} checked · {worked['false']} false · "
+          f"{worked['unchecked']} unchecked")
+    return 1 if false or worked["false"] else 0
 
 
 if __name__ == "__main__":

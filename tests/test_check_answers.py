@@ -45,6 +45,22 @@ def run_tool(path) -> subprocess.CompletedProcess:
 
 
 class CheckAnswersTest(unittest.TestCase):
+    def test_worked_links_in_both_media_are_checked_even_without_final_check(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = write_run(Path(td), """\
+  - n: 1
+    lessons: [L01]
+    stem: "Compute."
+    approach: "500 ÷ 500 ≈ 0.099"
+    approach_si: 'ගණනය කරන්න: $1/3 \\approx 0.333 = 0.333$; $x = 2$.'
+    final: "1"
+""")
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("FAIL Q1.approach: false worked arithmetic", r.stdout)
+            self.assertIn("UNCHECKED Q1.approach_si:", r.stdout)
+            self.assertIn("worked arithmetic: 2 checked · 1 false · 1 unchecked", r.stdout)
+
     def test_true_check_passes(self):
         with tempfile.TemporaryDirectory() as td:
             run = write_run(Path(td), BASE.split("questions:\n", 1)[1])

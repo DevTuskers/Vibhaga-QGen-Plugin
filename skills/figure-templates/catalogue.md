@@ -2,6 +2,19 @@
 
 [Template selection and workflow](SKILL.md).
 
+## Lesson routing
+
+| Lesson or task | Builder to try first |
+|---|---|
+| G11 L08 — area between parallels | `parallel_area` |
+| G11 L23 — construction starting figure | `construction(stage="setup")` |
+| G10/G11 graphs of lines and quadratics | `function_graph`; `cartesian_plot` for guides and piecewise lines |
+| Grouped statistics: bars or adjusted frequencies | `histogram`; add `polygon=True` when the exercise needs the overlay |
+| Grouped statistics: cumulative frequencies | `ogive` |
+| Grouped statistics: standalone frequency polygon | `frequency_polygon` when available; do not label class boundaries as midpoints |
+
+## Builder reference
+
 | template | you pass | stem-checked | the claim set emits | limits |
 |---|---|---|---|---|
 | `elevation_scene` | `post=('F','T')`, `sights=[{from,to,angle,kind,side}]` ≤2, `eyes={E:ground}`?, `heights`/`distances` (stem keys), `unknowns`, `labels`, `unit` | every numeric given; depression is declared by `kind="depression"` with a positive angle magnitude | `right` post/eye posts, `angle H <from> <to> = v` on the datum end (real capital anchor), `parallel` datum∥ground, `on` mid-ground points, `derive` complement, `label` per letter/numeral, `none` | arcs are owned by the horizontal datum, never the ground; under/over-determined or contradictory givens refuse; 3+ sights/observers refuse |

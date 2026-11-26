@@ -249,7 +249,7 @@ class PrecriticLintTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("precritic-lint: 0 fail(s) · 0 warn(s)", result.stdout)
 
-    def test_exact_scaffold_and_phantom_bounds_are_advisories(self):
+    def test_existing_scaffold_warns_but_unbound_a11y_markers_fail(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             run = make_run(tmp, figure="curve", figures={"curve": "figures/curve.json", "marked": "figures/marked.json"},
@@ -259,10 +259,10 @@ class PrecriticLintTest(unittest.TestCase):
             write(run / "figures" / "curve.json", '{"a11y":{"description":"The curve has marked plot endpoints."},"elements":[{"type":"polyline"}]}')
             write(run / "figures" / "marked.json", '{"a11y":{"description":"The curve has marked plot endpoints."},"elements":[{"type":"point","r":3}]}')
             result = lint(run, tmp, "--existing", str(existing))
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("exact algebra scaffold also appears in existing.json:synthetic", result.stdout)
-            self.assertIn("WARN curve: a11y describes marked plot bounds", result.stdout)
-            self.assertNotIn("WARN marked:", result.stdout)
+            self.assertIn("FAIL curve: a11y describes marked plot bounds", result.stdout)
+            self.assertIn("FAIL marked: a11y describes marked plot bounds", result.stdout)
 
     def test_lints_only_figure_paths_referenced_by_questions_or_nested_parts(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -278,34 +278,71 @@ class PrecriticLintTest(unittest.TestCase):
             write(run / "figures" / "unused.json", "{")
             write(run / "figures" / "abandoned.json", "{")
             result = lint_plain(run)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("WARN main: a11y describes marked plot bounds", result.stdout)
-            self.assertIn("WARN endpoints: a11y describes marked plot bounds", result.stdout)
-            self.assertIn("precritic-lint: 0 fail(s) · 2 warn(s)", result.stdout)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("FAIL main: a11y describes marked plot bounds", result.stdout)
+            self.assertIn("FAIL endpoints: a11y describes marked plot bounds", result.stdout)
+            self.assertIn("precritic-lint: 2 fail(s) · 0 warn(s)", result.stdout)
 
-    def test_marked_bounds_recognize_dashed_lines_and_default_point_radius(self):
-        line = {"type": "line", "points": [[0, 0], [0, 20]]}
-        point = {"type": "point", "at": [0, 0]}
+    def test_bound_marker_must_bind_the_named_element_at_the_declared_value(self):
+        line = {"id": "end", "type": "line", "points": [[0, 0], [0, 20]]}
+        point = {"id": "end", "type": "point", "at": [0, 0]}
         fixtures = [
             ({**line, "stroke": {"style": "dashed"}}, {}, False),
             (line, {"strokeStyle": "dashed"}, False),
             (point, {}, False),
-            ({**line, "stroke": {"style": "solid"}}, {"strokeStyle": "dashed"}, True),
+            ({**line, "points": [[10, 0], [10, 20]]}, {}, True),
             ({**point, "r": 0}, {}, True),
         ]
-        for marker, defaults, warns in fixtures:
+        for marker, defaults, fails in fixtures:
             with self.subTest(marker=marker, defaults=defaults), tempfile.TemporaryDirectory() as tmp:
                 tmp = Path(tmp)
                 run = make_run(tmp, lessons=[], figure="bounds", figures={"bounds": "figures/bounds.json"})
+                import yaml
+                content = run / "content.yaml"
+                data = yaml.safe_load(content.read_text())
+                data["figure_features"] = {"bounds": [
+                    {"kind": "bound-marker", "id": "left", "axis": "x", "value": 0, "element": "end"}]}
+                content.write_text(yaml.safe_dump(data))
+                write(run / "figures" / "bounds-claims.txt",
+                      "anchors:\n  L 0 0\n  R 40 0\nclaims:\n  K1 axis LR from 0 to 4 | inferred |")
                 write(run / "figures" / "bounds.json", json.dumps({
                     "a11y": {"description": "Marked plot endpoints."},
                     "defaults": defaults,
                     "elements": [marker],
                 }))
                 result = lint_plain(run)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertEqual("WARN bounds: a11y describes marked plot bounds" in result.stdout,
-                                 warns, result.stdout)
+                self.assertEqual(result.returncode, int(fails), result.stdout + result.stderr)
+                self.assertEqual("FAIL bounds: a11y describes marked plot bounds" in result.stdout,
+                                 fails, result.stdout)
+
+    def test_question_a11y_and_bilingual_figure_refs_bind_emitted_figure(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            en = {"figure": "curve", "kind": "point", "id": "P"}
+            si = {**en, "id": "Z"}
+            run = make_run(tmp, lessons=[], figure="curve", figures={"curve": "figures/curve.json"},
+                           parts=[{"label": "a", "text": "Read the vertex at P.", "final": "$(-2, 7)$",
+                                   "figure_refs": {"english": [en], "sinhala": [si]}}])
+            write(run / "figures" / "curve.json", json.dumps({
+                "a11y": {"description": "The vertex is at (-2, 7)."},
+                "elements": [{"id": "p", "type": "point", "label": "P", "r": 2},
+                             {"id": "q", "type": "point", "label": "Q", "r": 2}]}))
+            result = lint_plain(run)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("sinhala: no visible point Z", result.stdout)
+            self.assertIn("a11y reveals the asked vertex answer", result.stdout)
+            self.assertIn("unused named point Q", result.stdout)
+
+    def test_figure_a11y_does_not_treat_an_already_given_vertex_as_a_spoiler(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run(tmp, lessons=[], figure="curve", figures={"curve": "figures/curve.json"},
+                           stem="The vertex is at (2, 7).",
+                           parts=[{"label": "a", "text": "Use the vertex to explain symmetry.", "final": "$(2,7)$"}])
+            write(run / "figures" / "curve.json",
+                  '{"a11y":{"description":"Vertex (2, 7)."},"elements":[]}')
+            result = lint_plain(run)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_wording_advisories_use_paired_fields_and_part_prompt(self):
         with tempfile.TemporaryDirectory() as td:
@@ -763,6 +800,28 @@ class PrecriticLintTest(unittest.TestCase):
             self.assertIn("Jaccard 1.00, digits masked", r.stdout)
             self.assertNotIn("Shade 8 of 9 cells", r.stdout)
             self.assertNotIn("Shade 3 of 5 cells", r.stdout)
+
+    def test_same_algebra_scaffold_in_an_exercise_blocks_but_a_given_does_not(self):
+        import yaml
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            run = make_run(tmp, parts=[{"label": "a", "text": "Expand $(t + 13)^4$."}])
+            path = tmp / "cards" / "07-Fractions.yaml"
+            card = yaml.safe_load(path.read_text())
+            card["generated"]["exercises"] = [{"heading": "Synthetic", "items": [
+                "Find the expansion of $(t+13)^{4}$.",
+                "Compare $28$ to the answer from the first part.",
+            ]}]
+            path.write_text(yaml.safe_dump(card))
+            result = lint(run, tmp)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("FAIL Q1.a.text: exact algebra scaffold", result.stdout)
+            content = run / "content.yaml"
+            doc = yaml.safe_load(content.read_text())
+            doc["questions"][0]["parts"][0]["text"] = "Find the degree of $(t+13)^4$."
+            content.write_text(yaml.safe_dump(doc))
+            result = lint(run, tmp)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     # ---- usage ---------------------------------------------------------------
     def test_sinhala_in_text_command_fails(self):

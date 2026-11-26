@@ -190,6 +190,14 @@ same two checkout paths in the critic's spawn prompt.
    Record the target lesson coverage and band split. Sketch N primary lines plus max(2, ceil(N/4))
    reserves in priority order. Tag every candidate with its lessons and difficulty band:
    `Q<n> · lessons: <keys> · band: <easy | medium | hard> · <skill / section> · <R/M/H per part> · signal: S<k> · students: <why it is interesting> · teachers: <what it adds> · closest: <question_id> (<score>) — differs because <task, not numbers> · figure: <template | hand-draw | none>`
+   Name the exact builder in the plan (see the [lesson routing index](../figure-templates/catalogue.md#lesson-routing)).
+   Use `finish()` only after writing why no listed builder can represent the givens without showing the answer.
+   For each figure, record a givens table in `notes.md`:
+
+   | Feature or value | Drawn | Stem-only | Asked in |
+   |---|---|---|---|
+   | Each point, mark, measurement or reading | Element/point ID or — | Where given in both media or — | Part label or — |
+
    The signal's data picks the task chain (creative-signals §6); a lesson task retold in a new story is still a
    copy. Each `plan-items.yaml` item carries `signal: S<k>` too.
    **Similarity check (decision 0026), before step 4.** Sketch each candidate as `{key, stem, parts}` with a stable
@@ -242,6 +250,16 @@ same two checkout paths in the critic's spawn prompt.
      leaf `approach`/`approach_si`, `final`/`final_si` — the Sinhala side natural everyday Sinhala, the
      English side plain school English, same numbers/steps; maths-only text (`$x = 4$`) may be identical
      (author-question-text §0.6). `build-staged.py` refuses a missing or copied side.
+   - **Figure references** — for every stem or part that refers to the figure, write paired
+     `figure_refs: {english: [...], sinhala: [...]}` lists; each entry is
+     `{figure: <content figure key>, kind: point, id: P}` (or `guide` / `bound-marker`).
+     The figure must be attached to the part or one of its ancestors. Add its guides and
+     bounds in top-level `figure_features: {<figure key>: [...]}` as
+     `{kind: bound-marker, id: right, element: boundR, axis: x, value: 4}`; the VDD
+     element must be at the claimed axis value. Exempt a decorative point with
+     `{kind: point, id: T, decorative: true}`. List graph readings in
+     `figure_asks: [vertex, root, y-intercept]` as applicable, and keep the question
+     figure's actual accessibility title and description free of those answer values.
    - **Structure** — [`structure-question-parts`](../structure-question-parts/SKILL.md) §0 + §2: bare unique labels,
      depth ≤ 2. Choose `id_seed`, `n` and labels once — they are the row identity.
    - **Answers** — [`author-question-answers`](../author-question-answers/SKILL.md) §3 (independent derivation + a
