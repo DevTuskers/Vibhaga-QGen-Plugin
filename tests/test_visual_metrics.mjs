@@ -103,6 +103,25 @@ test("origin zero is below-left on the x-label baseline, not on a displaced row"
   assert.ok(rules(check([56, 147, 10, 12])).has("tick-label"));
 });
 
+test("origin zero may use the y-label column only near the crossing", () => {
+  const d = doc([
+    { id: "tx0", type: "line", points: [[50, 125], [50, 135]] },
+    { id: "ty0", type: "line", points: [[45, 130], [55, 130]] },
+    { id: "ty2", type: "line", points: [[45, 90], [55, 90]] },
+    { id: "y2", type: "text", value: "2" },
+    { id: "zero", type: "text", value: "0" },
+  ]);
+  const claims = "anchors:\n  L 50 130\n  R 170 130\n  B 50 130\n  U 50 10\nclaims:\n"
+    + axisClaims + "\n  K10 tick-label BU 2 ty2 y2 left | inferred |"
+    + "\n  K11 tick-label origin 0 tx0:ty0 zero below-left | inferred |";
+  const y2 = L({ text: "2", elementId: "y2", bbox: [20, 84, 10, 12] });
+  const seat = (y) => assess({ doc: d, claims, widths: W([y2,
+    L({ i: 1, text: "0", elementId: "zero", bbox: [20, y, 10, 12] }),
+  ]) });
+  assert.equal(seat(138).verdict, "PASS");
+  assert.ok(rules(seat(170)).has("tick-label"));
+});
+
 test("a curve reaching the arrowhead fails a bound axis clearance", () => {
   const d = doc([
     { id: "x", type: "arrow", head: "end", points: [[20, 100], [220, 100]] },

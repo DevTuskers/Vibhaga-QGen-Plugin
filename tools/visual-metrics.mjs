@@ -379,7 +379,8 @@ function tickSeatWrong(owner, label, owners, labels, scale) {
       const other = labels.get(r.labelId)?.bbox;
       return other && Math.abs(other[0] + other[2] - (b[0] + b[2])) <= 2;
     });
-    if (!sameRow && !sameColumn) return true;
+    const nearOriginY = Math.max(b[1] - y, y - b[1] - b[3], 0) <= b[3];
+    if (!sameRow && !(sameColumn && nearOriginY)) return true;
     return [...owners.values()].some((r) => {
       if (!r.valid || r.axis === "origin" || (sameRow ? r.dimension !== 0 : r.dimension !== 1)) return false;
       const i = r.dimension;
