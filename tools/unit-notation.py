@@ -36,7 +36,9 @@ UNIT_AFTER_MATH = re.compile(
     rf"^\s*(?P<unit>{UNIT_WITH_PREFIX}|{UNIT_ABBREVIATION})(?!\w)"
 )
 QUANTITY_SYMBOL = re.compile(r"[A-Za-z](?:_(?:[A-Za-z0-9]|\{[A-Za-z0-9]+\}))?")
+MATH_UNIT_SUFFIX = re.compile(r"(?<!\\)\\(?:text|mathrm)\{\s*(?:mm|cm|m|km|mg|g|kg|m[lL]|[lL])\s*\}$")
 REPORTING_UNIT = re.compile(r"^\s+ලෙස\b")
+CONVERSION_UNIT = re.compile(r"^\s+බවට\b")
 TRANSLITERATED_UNIT = re.compile(r"(?<!\w)(?P<unit>ක්ම්|ක්මී|ම්ම්|ක්ග්|ම්ග්|ම්ල්)(?!\w)")
 
 
@@ -78,9 +80,13 @@ def field_hits(text: str) -> list[str]:
                 prose = segments[index + 1]
                 after = UNIT_AFTER_MATH.match(prose)
                 if after:
-                    if (QUANTITY_SYMBOL.fullmatch(segment[1:-1].strip())
-                            and (REPORTING_UNIT.match(prose[after.end():])
-                                 or after["unit"].endswith("වලින්"))):
+                    formula = segment[1:-1].strip()
+                    following = prose[after.end():]
+                    report = REPORTING_UNIT.match(following)
+                    if (QUANTITY_SYMBOL.fullmatch(formula)
+                            and (report or after["unit"].endswith("වලින්"))):
+                        continue
+                    if MATH_UNIT_SUFFIX.search(formula) and (report or CONVERSION_UNIT.match(following)):
                         continue
                     matches.append(f"{segment}{after.group(0)}")
     return matches

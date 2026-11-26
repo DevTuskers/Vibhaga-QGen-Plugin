@@ -31,6 +31,36 @@ questions:
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("unit-notation: 0 fail(s)", result.stdout)
 
+    def test_accepts_conversion_and_reporting_targets_after_an_existing_unit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_content(Path(tmp), r"""
+questions:
+  - n: 1
+    stem_si: '$4\text{ m}$ සෙන්ටිමීටර බවට හරවන්න'
+  - n: 2
+    stem_si: '$\frac{3}{4}\,\mathrm{kg}$ ග්‍රෑම් ලෙස දක්වන්න'
+""")
+            result = self.run_tool(path)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("unit-notation: 0 fail(s)", result.stdout)
+
+    def test_rejects_a_second_unit_without_a_cue_or_without_a_real_unit_suffix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_content(Path(tmp), r"""
+questions:
+  - n: 1
+    stem_si: '$4\text{ m}$ සෙන්ටිමීටර'
+  - n: 2
+    stem_si: '$4\text{ units}$ සෙන්ටිමීටර බවට හරවන්න'
+  - n: 3
+    stem_si: '$4\text{ m}+2$ සෙන්ටිමීටර බවට හරවන්න'
+  - n: 4
+    stem_si: '$4$ සෙන්ටිමීටර බවට හරවන්න'
+""")
+            result = self.run_tool(path)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("unit-notation: 4 fail(s)", result.stdout)
+
     def test_rejects_spelled_out_units_after_numeric_math_with_reporting_cues(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = write_content(Path(tmp), r"""
