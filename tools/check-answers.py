@@ -255,7 +255,11 @@ WORKED_OPERATORS = re.compile(r"[\d.()+*/\s-]+")
 ROUNDING_PLACES = {"unit": 0, "whole number": 0, "ten": 1, "hundred": 2,
                    "thousand": 3, "ten thousand": 4, "hundred thousand": 5,
                    "million": 6, "tenth": -1, "hundredth": -2, "thousandth": -3}
+
+
 def _rounding_places(text):
+    text = WORKED_MATH.sub(lambda m: _worked_normalise(next(g for g in m.groups() if g is not None)),
+                           text)
     places = {exp for name, exp in ROUNDING_PLACES.items()
               if re.search(rf"\bnearest\s+{name}\b(?!\s+thousand)", text, re.I)}
     for value in re.findall(r"\bnearest\s+(1[\d,\u2009\u202f]*|0\.0*1)(?!\w|\.\d)", text, re.I):
