@@ -23,6 +23,10 @@
  *             claimed cells (`shaded N of M cells` + 0.5 × `describe "…half shaded…"`)
  *   font    — KaTeX math labels mixed with <text> labels, or >1 computed fontFamily among texts
  */
+import { readFileSync } from "node:fs";
+
+export const { ownLeaderMinPx: OWN_LEADER_MIN_PX } =
+  JSON.parse(readFileSync(new URL("./vdd-clearance.json", import.meta.url), "utf8"));
 export const EDGE_MIN_PX = 8;
 export const STROKE_MIN_PX = 6;
 export const TARGET_FACTOR = 1.5;
@@ -650,7 +654,7 @@ export function assess({ doc = null, claims = null, widths = [], fontsByWidth = 
       const dimension = dimensionsById.get(l.elementId);
       const relaxed = dimension && l.strokeByElement && ppu;
       const soft = relaxed ? new Set([dimension[2], dimension[3]]) : null;
-      const rendered = relaxed ? Object.entries(l.strokeByElement).map(([id, u]) => [u * ppu, soft.has(id) ? 3 : STROKE_MIN_PX]) : [];
+      const rendered = relaxed ? Object.entries(l.strokeByElement).map(([id, u]) => [u * ppu, soft.has(id) ? OWN_LEADER_MIN_PX : STROKE_MIN_PX]) : [];
       const stroke_px = l.stroke_u == null || ppu == null ? null : l.stroke_u * ppu;
       const violation = relaxed ? rendered.find(([gap, min]) => gap < min) :
         stroke_px !== null && stroke_px < STROKE_MIN_PX ? [stroke_px, STROKE_MIN_PX] : null;

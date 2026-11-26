@@ -58,6 +58,8 @@ MARGIN = 12.0                # canvas margin around ALL ink, canvas units
 CHAR_EM = 0.62               # measured label advance; the renderer measured 0.53–0.69 em/char
 LABEL_GAP = 18.0             # angleMark label gap (DiagramRenderer)
 EDGE_PX, STROKE_PX = 8.0, 6.0   # vdd-check rule: rendered px to canvas edge / to stroke edge
+_CLEARANCE = json.loads(Path(__file__).with_name("vdd-clearance.json").read_text())
+OWN_LEADER_MIN_PX = _CLEARANCE["ownLeaderMinPx"]
 SLACK_EDGE, SLACK_STROKE = 1.0, 2.0   # the estimator errs — require the render limits plus slack
 # The narrowest render surface is the StudentPreview figure plate at 320 px: its content box is
 # 320 − 2×12 px padding − 2×1 px border = 294 px (measured: svg width = 294 on /diagtest). A canvas
@@ -593,7 +595,7 @@ def _floater_bad(cbs: list[tuple], near: XY, rivals: list[XY], strokes: list[tup
     every label box that is not this floater's (fixed labels + the other floaters')."""
     bad = 0
     if any((_seg_rect_dist(a, b, cb[1:5]) - w / 2) * s
-           < (3.0 + SLACK_STROKE if _leader_stroke(a, b, leader) else STROKE_PX + SLACK_STROKE)
+           < (OWN_LEADER_MIN_PX + SLACK_STROKE if _leader_stroke(a, b, leader) else STROKE_PX + SLACK_STROKE)
            for a, b, w in strokes for cb in cbs):
         bad |= 1
     if any(_rect_gap(cb[1:5], pb[1:5]) * s < 4.0 for cb in cbs for pb in others):
@@ -975,7 +977,7 @@ def finish(*, kind: str, figure_id: str, stem: str, elements: list[dict],
                      and not _leader_stroke(a, b, leader_pts)
                      and not _leader_stroke(a, b, callout["points"] if callout else None)),
                     default=99) if clear_strokes else 99
-        if leader_pts and (_seg_rect_dist(*leader_pts, (x0, y0, x1, y1)) - 1) * scale_stroke < 3:
+        if leader_pts and (_seg_rect_dist(*leader_pts, (x0, y0, x1, y1)) - 1) * scale_stroke < OWN_LEADER_MIN_PX:
             refuse_label(i, "the leader-clearance rule", f"{kind}: label {txt!r} overlaps its leader")
         if worst * scale_stroke < STROKE_PX + SLACK_STROKE:
             refuse_label(i, "the stroke-clearance rule",
