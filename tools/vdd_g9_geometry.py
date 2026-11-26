@@ -690,6 +690,62 @@ def build_marked_lines(*, figure_id, stem, profile,
 
 
 
+def _build_locus_setup(vt, figure_id, stem, constraints, ask, title, description, medium):
+    if not isinstance(constraints, (list, tuple)) or not 1 <= len(constraints) <= 4:
+        raise vt.TemplateError("locus_scene: setup needs 1–4 constraints")
+    counts = {"circle": 1, "perp_bisector": 2, "parallel_offset": 2, "angle_bisector": 3}
+    anchors, elements, claims, segments = {}, [], [], []
+    for constraint in constraints:
+        if not isinstance(constraint, dict) or set(constraint) - {"kind", "points", "distance"}:
+            raise vt.TemplateError("locus_scene: setup constraint is {kind, points, distance?}")
+        kind, points = constraint.get("kind"), constraint.get("points")
+        if not isinstance(kind, str) or kind not in counts or not isinstance(points, dict) or len(points) != counts[kind]:
+            raise vt.TemplateError("locus_scene: supply the centre, segment ends, or vertex and arm ends")
+        names = list(points)
+        if any(not isinstance(n, str) or not _LETTER.fullmatch(n) for n in names):
+            raise vt.TemplateError("locus_scene: setup points need capital letters")
+        if kind in ("circle", "parallel_offset"):
+            d = _num(kind, "distance", constraint.get("distance"))
+            if d <= 0:
+                raise vt.TemplateError("locus_scene: distance must be positive")
+            vt.require_stem(stem, distance=d)
+        elif "distance" in constraint:
+            raise vt.TemplateError("locus_scene: this setup constraint does not take a distance")
+        for name, xy in points.items():
+            if not isinstance(xy, (list, tuple)) or len(xy) != 2:
+                raise vt.TemplateError("locus_scene: setup point must be (x, y)")
+            at = tuple(_num(kind, name, v) for v in xy)
+            if name in anchors and anchors[name] != at:
+                raise vt.TemplateError(f"locus_scene: contradictory coordinates for {name}")
+            if any(n != name and math.dist(at, p) < 1 for n, p in anchors.items()):
+                raise vt.TemplateError("locus_scene: different setup letters cannot coincide")
+            anchors[name] = at
+        edges = [(names[0], name) for name in names[1:]]
+        if kind == "angle_bisector":
+            (x, y), (a, b), (c, d) = (anchors[n] for n in names)
+            if abs((a - x) * (d - y) - (b - y) * (c - x)) < 1e-6:
+                raise vt.TemplateError("locus_scene: angle setup arms cannot be collinear")
+        for a, b in edges:
+            if a + b not in segments and b + a not in segments:
+                segments.append(a + b)
+                elements.append(vc.line(anchors[a], anchors[b], id=f"given{a}{b}"))
+        claims.append((f'describe "the {kind.replace("_", " ")} setup shows only the given points and arms"',
+                       "inferred", "the locus itself is left for the student"))
+    for name, at in anchors.items():
+        elements.append({"type": "point", "id": f"pt{name}", "at": vc.P(at), "r": 3})
+        elements.append(vt.place_point_label(f"lb{name}", name, target=name, at=at))
+        claims.append((f'label "{name}" names {name}', "inferred", "a given point"))
+    claims.extend([(f"derive {' + '.join(map(str, (len(anchors), len(segments))))} = {len(anchors) + len(segments)}",
+                    "inferred", "count of distinct given points and segments"),
+                   ("none tickMark parallelMark angleMark shaded arrow dashed", "inferred", "no solution curves or marks")])
+    return vt.finish(kind="locus_scene", figure_id=figure_id, stem=stem, ask=ask,
+                     elements=elements, anchors=anchors, points=list(anchors),
+                     segments=segments, claims=claims, medium=medium,
+                     title=title or "Locus construction setup",
+                     description=description or "The given points and lines for a locus construction.",
+                     scale="setup reference geometry")
+
+
 def build_locus_scene(*, figure_id, stem, kind=None,
                       centre="O", vertex="V",
                       segment=("A", "B"), line_deg=0.0, radius=None, distance=None,
@@ -697,7 +753,7 @@ def build_locus_scene(*, figure_id, stem, kind=None,
                       arms=None, samples=None,
                       draw_length=170.0,
                       values="stem", ask=None, title=None, description=None,
-                      medium="english"):
+                      medium="english", stage="completed", constraints=None):
     """A locus figure with COMPUTED sample points, feet and midpoint.
 
     `kind` is one of:
@@ -730,6 +786,12 @@ def build_locus_scene(*, figure_id, stem, kind=None,
     """
     import vdd_templates as vt
     TemplateError = vt.TemplateError
+    if stage not in ("setup", "completed") or (stage == "completed" and constraints is not None):
+        raise TemplateError("locus_scene: constraints are for stage='setup'")
+    if stage == "setup":
+        if kind is not None or samples is not None:
+            raise TemplateError("locus_scene: setup uses constraints instead of a completed kind or samples")
+        return _build_locus_setup(vt, figure_id, stem, constraints, ask, title, description, medium)
     if kind not in ("circle", "perp_bisector", "parallel_offset", "angle_bisector"):
         raise TemplateError(f"locus_scene: kind must be circle|perp_bisector|"
                             f"parallel_offset|angle_bisector — got {kind!r}")

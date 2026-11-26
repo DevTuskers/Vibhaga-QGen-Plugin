@@ -3820,6 +3820,7 @@ class G10ContractTests(unittest.TestCase):
             vt.build_pie_chart(
                 figure_id="g10-piesum",
                 stem="Sectors of 90, 120 and 100 degrees.",
+                angle_display="hidden",
                 sectors=[{"label": "A", "angle": 90}, {"label": "B", "angle": 120},
                          {"label": "C", "angle": 100}])
 
@@ -3828,6 +3829,7 @@ class G10ContractTests(unittest.TestCase):
             vt.build_pie_chart(
                 figure_id="g10-piethin",
                 stem="Sectors of 5, 175 and 180 degrees.",
+                angle_display="hidden",
                 sectors=[{"label": "A", "angle": 5}, {"label": "B", "angle": 175},
                          {"label": "C", "angle": 180}])
 
@@ -3839,7 +3841,7 @@ class G10ContractTests(unittest.TestCase):
             ask=[["a", "the likeliest outcome"]],
             sectors=[{"label": "A", "angle": 90}, {"label": "B", "angle": 120},
                      {"label": "A", "angle": 150}],
-            angle_labels=True, arrow={"deg": 30})
+            angle_display="given", arrow={"deg": 30})
         self.assertEqual(b.claims.count('label "A" names'), 1)
         self.assertIn("the arrow is the spinner needle — it is not a sector "
                       "boundary", b.claims)
@@ -3954,7 +3956,7 @@ class G10ContractTests(unittest.TestCase):
                         vt.build_pie_chart(
                             figure_id="g10-symbol", ask=[["a", "the outcome"]],
                             stem="A spinner has sectors of 90, 120 and 150 degrees.",
-                            values=mode, angle_labels=True, arrow={"deg": 30},
+                            values=mode, angle_display="given", arrow={"deg": 30},
                             sectors=[{"label": glyph, "angle": 90},
                                      {"label": "B", "angle": 120},
                                      {"label": "A", "angle": 150}])
@@ -3969,7 +3971,7 @@ class G10ContractTests(unittest.TestCase):
                         vt.build_pie_chart(
                             figure_id="g10-cut", ask=[["a", "the outcome"]],
                             stem="Sectors of 90, 120 and 150 degrees.",
-                            start=start, arrow={"deg": bearing},
+                            start=start, angle_display="hidden", arrow={"deg": bearing},
                             sectors=[{"label": "A", "angle": 90},
                                      {"label": "B", "angle": 120},
                                      {"label": "A", "angle": 150}])
@@ -4006,6 +4008,140 @@ class G10ContractTests(unittest.TestCase):
         self.assertIn('label "90°" names angle_sec0', b.claims)
         self.assertIn('label "120°" names angle_sec1', b.claims)
         self.assertIn('label "150°" names angle_sec2', b.claims)
+
+
+class NewFigureProfiles(unittest.TestCase):
+    def assert_audits(self, figure):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = audit(figure.claims, tmp)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_frequency_polygon_ticks_only_at_midpoints(self):
+        b = vt.build_frequency_polygon(figure_id="new1", stem="Read the plot.",
+                                       bounds=list(range(0, 71, 10)), freqs=[2, 3, 5, 2, 6, 8, 4],
+                                       step=2, v_max=10, values="figure")
+        self.assertEqual([e["value"] for e in b.doc["elements"] if e["id"].startswith("nx")],
+                         [str(n) for n in range(5, 70, 10)])
+        trace = next(e["points"] for e in b.doc["elements"] if e["id"] == "fpoly")
+        self.assertEqual(len(trace), 9)
+        self.assertEqual(trace[0][1], trace[-1][1])
+        self.assert_audits(b)
+
+    def test_angle_input_requires_an_explicit_display(self):
+        args = dict(figure_id="new2", stem="The angles are 174, 150 and 36 degrees.", r_px=180,
+                    sectors=[{"label": n, "angle": a} for n, a in zip("ABC", (174, 150, 36))])
+        with self.assertRaisesRegex(vt.TemplateError, "require angle_display"):
+            vt.build_pie_chart(**args)
+        hidden = vt.build_pie_chart(**args, angle_display="hidden")
+        self.assertIn("deliberately unlabelled", hidden.claims)
+        shown = vt.build_pie_chart(**args, angle_display="given")
+        self.assertIn('label "174°" names angle_sec0', shown.claims)
+        self.assert_audits(shown)
+
+    def test_frequency_polygon_fits_ten_y_steps(self):
+        b = vt.build_frequency_polygon(figure_id="review2", stem="Read the plot.",
+                                       bounds=[0, 10, 20, 30], freqs=[2, 4, 8],
+                                       step=1, v_max=10, values="figure")
+        self.assertEqual([e["value"] for e in b.doc["elements"] if e["id"].startswith("ny")],
+                         [str(n) for n in range(11)])
+        self.assert_audits(b)
+
+    def test_named_intersection_must_be_on_both_curves(self):
+        args = dict(figure_id="new3", stem="Read the plot.", x_range=[-2, 4], values="figure",
+                    curves={"first": {"m": 1, "c": 0}, "second": {"m": -1, "c": 4}})
+        p = {"name": "P", "at": [1, 1], "curves": ["first", "second"], "show_label": False}
+        with self.assertRaisesRegex(vt.TemplateError, "both named curves"):
+            vt.build_function_graph(**args, intersections=[p])
+        b = vt.build_function_graph(**args, intersections=[dict(p, at=[2, 2])])
+        self.assertIn("marked", b.claims)
+        self.assertNotIn('label "P"', b.claims)
+        self.assert_audits(b)
+
+    def test_parallel_area_enforces_base_and_shape(self):
+        args = dict(figure_id="new4", stem="Read the figures.",
+                    upper={"A": 0, "B": 80}, lower={"D": 30, "C": 110})
+        b = vt.build_parallel_area(**args, draw=[list("ABCD")], base="AB", parallelogram=True)
+        self.assertIn("parallel BC DA", b.claims)
+        self.assert_audits(b)
+        b = vt.build_parallel_area(**args, draw=[list("ABC"), list("ABD")], base="AB", same_base=True)
+        self.assertIn("outlines share base AB", b.claims)
+        with self.assertRaisesRegex(vt.TemplateError, "do not share"):
+            vt.build_parallel_area(**args, draw=[list("ABC"), list("BCD")], base="AB", same_base=True)
+        with self.assertRaisesRegex(vt.TemplateError, "does not form a parallelogram"):
+            vt.build_parallel_area(**args, draw=[list("ABC")], parallelogram=True)
+
+    def test_construction_ask_requires_explicit_stage(self):
+        args = dict(figure_id="new5", stem="AB is 8 cm.",
+                    ask=[["a", "Construct the perpendicular bisector."]],
+                    step="perp_bisector", length=8)
+        with self.assertRaisesRegex(vt.TemplateError, "requires explicit stage"):
+            vt.build_construction(**args)
+        b = vt.build_construction(**args, stage="setup")
+        self.assertFalse(any(e["type"] == "arc" for e in b.doc["elements"]))
+        b = vt.build_construction(**args, stage="completed")
+        self.assertTrue(any(e["type"] == "arc" for e in b.doc["elements"]))
+
+    def test_construction_in_later_part_requires_setup(self):
+        args = dict(figure_id="review1", stem="AB is 8 cm.",
+                    ask=[["a", "Name the segment"], ["b", "Construct its perpendicular bisector."]],
+                    step="perp_bisector", length=8)
+        with self.assertRaisesRegex(vt.TemplateError, "requires explicit stage"):
+            vt.build_construction(**args)
+        b = vt.build_construction(**args, stage="setup")
+        self.assertFalse(any(e["type"] == "arc" for e in b.doc["elements"]))
+
+    def test_construction_distinguishes_geometric_draws_from_conclusions(self):
+        args = dict(figure_id="review-construction", stem="AB is 8 cm.",
+                    step="perp_bisector", length=8)
+        for task in ("  Construct its perpendicular bisector.",
+                     "Use a ruler to draw a 4.5 cm line perpendicular to AB."):
+            with self.subTest(task=task), self.assertRaisesRegex(vt.TemplateError, "requires explicit stage"):
+                vt.build_construction(**args, ask=[["a", task]])
+        for task in ("Draw a conclusion about the segment.", "Draw an inference from the diagram."):
+            with self.subTest(task=task):
+                b = vt.build_construction(**args, ask=[["a", task]])
+                self.assertTrue(any(e["type"] == "arc" for e in b.doc["elements"]))
+
+    def test_named_construction_objects_require_explicit_stage(self):
+        args = dict(figure_id="review-incircle", stem="ABC has angles of 60 degrees each.",
+                    step="incircle", angles={"A": 60, "B": 60, "C": 60})
+        for target in ("incircle", "circumcircle", "excircle", "inscribed circle", "circumscribed circle",
+                       "centroid", "orthocentre", "orthocenter", "incentre", "circumcentre", "median"):
+            with self.subTest(target=target), self.assertRaisesRegex(vt.TemplateError, "requires explicit stage"):
+                vt.build_construction(**args, ask=[["a", f"Draw its {target}."]])
+        ask = [["a", "Draw its incircle."]]
+        setup = vt.build_construction(**args, ask=ask, stage="setup")
+        completed = vt.build_construction(**args, ask=ask, stage="completed")
+        self.assertFalse(any(e["type"] == "circle" for e in setup.doc["elements"]))
+        self.assertTrue(any(e["type"] == "circle" for e in completed.doc["elements"]))
+
+    def test_locus_setup_combines_only_givens(self):
+        b = vt.build_locus_scene(
+            figure_id="new6", stem="The distance is 5 cm.", stage="setup",
+            constraints=[{"kind": "circle", "points": {"O": [50, 100]}, "distance": 5},
+                         {"kind": "perp_bisector", "points": {"A": [0, 0], "B": [160, 0]}}])
+        self.assertEqual({e["type"] for e in b.doc["elements"]}, {"line", "point", "text"})
+        self.assertIn("no solution curves or marks", b.claims)
+        self.assert_audits(b)
+
+    def test_scale_bar_uses_same_scale_as_plan(self):
+        b = vt.build_scale_drawing(
+            figure_id="new7", stem="Read the plan.", scale_bar=10, show="both",
+            scale={"drawn": 1, "drawn_unit": "cm", "real": 5, "real_unit": "m"},
+            plan={"points": {"A": [0, 0], "B": [6, 0], "C": [6, 4]}, "segments": ["AB", "BC", "CA"]})
+        lengths = {e["id"]: math.dist(*e["points"]) for e in b.doc["elements"] if e["type"] == "line"}
+        self.assertAlmostEqual(lengths["planAB"] / lengths["scalebar"], 3)
+        self.assertIn('label "10 m"', b.claims)
+        self.assert_audits(b)
+
+    def test_scale_drawing_audits_a_million_to_one_conversion(self):
+        b = vt.build_scale_drawing(
+            figure_id="review3", stem="Read the plan.",
+            scale={"drawn": 1, "drawn_unit": "cm", "real": 1_000_000, "real_unit": "cm"},
+            plan={"points": {"A": [0, 0], "B": [6, 0], "C": [6, 4]}, "segments": ["AB", "BC"]})
+        self.assertIn("derive 1000000 / 1 = 1000000", b.claims)
+        self.assertIn("Scale: 1 cm : 1\u2009000\u2009000 cm", b.claims)
+        self.assert_audits(b)
 
 
 class G10ExtendedContractTests(unittest.TestCase):

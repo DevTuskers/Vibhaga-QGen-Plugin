@@ -7758,7 +7758,8 @@ def _triangle_parallel_once(*, figure_id, stem, ask, title, description, medium,
 
 def build_parallel_area(*, figure_id, stem, ask=None, title=None, description=None,
                         medium="english", upper, lower, draw, gap=110.0,
-                        distance=None, unit="cm", values="stem"):
+                        distance=None, unit="cm", values="stem", base=None,
+                        same_base=False, parallelogram=False):
     """Two horizontal parallel lines with named points on each and figure outlines
     drawn between them. `upper`/`lower` = {"P": x, "Q": x} — 2–4 points per line by
     canvas x (≥28 apart). `draw` = [["P","Q","R"], …] — each row joins the named points
@@ -7839,6 +7840,33 @@ def build_parallel_area(*, figure_id, stem, ask=None, title=None, description=No
         figures.append(list(row))
     if not figures:
         raise TemplateError(f"{kind}: `draw` needs at least one figure")
+    if not isinstance(same_base, bool) or not isinstance(parallelogram, bool):
+        raise TemplateError(f"{kind}: same_base and parallelogram are boolean constraints")
+    figure_edges = [{frozenset((a, b)) for a, b in zip(row, row[1:] + row[:1])}
+                    for row in figures]
+    if base is not None:
+        if not isinstance(base, (str, list, tuple)) or len(base) != 2 or any(
+                not isinstance(p, str) or p not in allpts for p in base) or base[0] == base[1]:
+            raise TemplateError(f"{kind}: base must name two distinct drawn points")
+        if (base[0] in upper) != (base[1] in upper) or not any(
+                frozenset(base) in edges for edges in figure_edges):
+            raise TemplateError(f"{kind}: base must be a drawn edge on one parallel")
+    if same_base:
+        if len(figures) < 2:
+            raise TemplateError(f"{kind}: same_base needs at least two outlines")
+        common = set.intersection(*figure_edges)
+        common = {edge for edge in common if edge <= upper.keys() or edge <= lower.keys()}
+        if base is None and len(common) == 1:
+            base = sorted(next(iter(common)))
+        if base is None or frozenset(base) not in common:
+            raise TemplateError(f"{kind}: outlines do not share the requested base")
+    if parallelogram:
+        for row in figures:
+            if len(row) != 4 or not math.isclose(
+                    allpts[row[0]][0] + allpts[row[2]][0],
+                    allpts[row[1]][0] + allpts[row[3]][0], abs_tol=0.02, rel_tol=0
+            ) or allpts[row[0]][1] + allpts[row[2]][1] != allpts[row[1]][1] + allpts[row[3]][1]:
+                raise TemplateError(f"{kind}: {' '.join(row)} does not form a parallelogram")
     xs = [p[0] for p in allpts.values()]
     x0, x1 = min(xs) - 90.0, max(xs) + 90.0
     up_nm = "".join(sorted(upper, key=lambda n: upper[n]))
@@ -7914,17 +7942,26 @@ def build_parallel_area(*, figure_id, stem, ask=None, title=None, description=No
         ups_f = [n for n in row if n in upper]
         los_f = [n for n in row if n in lower]
         base_line = "upper" if len(ups_f) >= 2 else "lower"
-        base = ups_f if base_line == "upper" else los_f
+        row_base = ups_f if base_line == "upper" else los_f
         apex = los_f if base_line == "upper" else ups_f
-        shape = "triangle" if len(row) == 3 else "quadrilateral"
-        if len(base) >= 2:
-            add(f'describe "{shape} {"".join(row)} has base {"".join(sorted(base))} on '
+        if base is not None and frozenset(base) in figure_edges[i]:
+            row_base = list(base)
+            base_line = "upper" if base[0] in upper else "lower"
+            apex = los_f if base_line == "upper" else ups_f
+        shape = "triangle" if len(row) == 3 else "parallelogram" if parallelogram else "quadrilateral"
+        if parallelogram:
+            add(f"parallel {row[0]}{row[1]} {row[2]}{row[3]}", "inferred", "opposite sides")
+            add(f"parallel {row[1]}{row[2]} {row[3]}{row[0]}", "inferred", "opposite sides")
+        if len(row_base) >= 2:
+            add(f'describe "{shape} {"".join(row)} has base {"".join(sorted(row_base))} on '
                 f'the {base_line} line and {"vertices" if len(apex) > 1 else "vertex"} '
                 f'{"".join(sorted(apex))} on the other — it stands between the '
                 'parallels"', "inferred", "the drawn figure")
         else:
             add(f'describe "{shape} {"".join(row)} is drawn between the parallel '
                 'lines"', "inferred", "the drawn figure")
+    if same_base:
+        add(f'describe "the outlines share base {"".join(sorted(base))}"', "inferred", "the shared edge")
     if dist_spec:
         v_, u_ = dist_spec
         add(f'describe "M is the foot of the perpendicular on the upper line, '
@@ -8248,7 +8285,8 @@ def build_function_graph(*, figure_id, stem, ask=None, title=None, description=N
                          medium="english", curve=None, x_range, y_range=None,
                          points=None, vertex=None, symmetry=False, grid=True,
                          unit_px=42.0, curves=None, values="stem", x_step=None,
-                         y_step=None, x_label_side="below", y_label_side="left"):
+                         y_step=None, x_label_side="below", y_label_side="left",
+                         intersections=None):
     """Numbered axes (both directions) with drawn curve(s). `curve` = {"m","c"}
     for the line y = mx + c, {"a","h","k"} for the parabola y = a(x−h)² + k, or
     {"a","b","c"} for the general form y = ax² + bx + c (the vertex is computed —
@@ -8274,9 +8312,13 @@ def build_function_graph(*, figure_id, stem, ask=None, title=None, description=N
     fig_mode = values == "figure"
     if (curve is None) == (curves is None):
         raise TemplateError(f"{kind}: pass exactly one of `curve` or `curves`")
-    specs = [curve] if curve is not None else list(curves)
+    names = list(curves) if isinstance(curves, dict) else []
+    if names and any(not isinstance(n, str) or not FIG_ID.fullmatch(n) for n in names):
+        raise TemplateError(f"{kind}: curve names must be identifier tokens")
+    specs = [curve] if curve is not None else list(curves.values() if isinstance(curves, dict) else curves)
     if not specs or len(specs) > 4 or not all(isinstance(s_, dict) for s_ in specs):
-        raise TemplateError(f"{kind}: `curves` is a list of 1–4 curve dicts")
+        raise TemplateError(f"{kind}: `curves` is a list or named map of 1–4 curve dicts")
+    names = names or [f"curve{i + 1}" for i in range(len(specs))]
     fs: list[tuple] = []   # (kind, function, vertex (h,k)|None, equation words)
     for s_ in specs:
         if set(s_) == {"m", "c"}:
@@ -8386,6 +8428,28 @@ def build_function_graph(*, figure_id, stem, ask=None, title=None, description=N
         marks[vertex] = (h_, k_)
     if symmetry and kind_f != "quadratic":
         raise TemplateError(f"{kind}: symmetry=True only suits a parabola")
+    crossings, hidden = {}, set()
+    if intersections is not None and not isinstance(intersections, (list, tuple)):
+        raise TemplateError(f"{kind}: intersections must be a list of point specifications")
+    for item in intersections or ():
+        if not isinstance(item, dict) or set(item) - {"name", "at", "curves", "show_label"}:
+            raise TemplateError(f"{kind}: intersection is {{name, at, curves, show_label?}}")
+        name, at, pair = item.get("name"), item.get("at"), item.get("curves")
+        show = item.get("show_label", True)
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Z]", name) or name in {*marks, "L", "R", "B", "U"}:
+            raise TemplateError(f"{kind}: intersection needs a fresh capital name")
+        if not isinstance(pair, (list, tuple)) or len(pair) != 2 or pair[0] == pair[1] or any(n not in names for n in pair):
+            raise TemplateError(f"{kind}: intersection {name} needs two distinct named curves")
+        if not isinstance(at, (list, tuple)) or len(at) != 2 or not isinstance(show, bool):
+            raise TemplateError(f"{kind}: intersection {name} needs (x, y) and optional boolean show_label")
+        x, y = map(_finite_number, at)
+        if not (x0 <= x <= x1 and y0 <= y <= y1) or any(
+                not math.isclose(fs[names.index(n)][1](x), y, abs_tol=1e-7, rel_tol=0)
+                for n in pair):
+            raise TemplateError(f"{kind}: intersection {name} must be in range and on both named curves")
+        marks[name], crossings[name] = (x, y), pair
+        if not show:
+            hidden.add(name)
     upx = float(unit_px)
     if not 20 <= upx <= 90:
         raise TemplateError(f"{kind}: unit_px must be 20–90")
@@ -8518,7 +8582,8 @@ def build_function_graph(*, figure_id, stem, ask=None, title=None, description=N
     for nm, (xv, yv) in marks.items():
         P[nm] = (X(xv), Y(yv))
         elements.append({"id": f"pt{nm}", "type": "point", "at": vc.P(P[nm]), "r": 3.5})
-        elements.append(place_point_label(f"lb{nm}", nm, target=nm, at=P[nm]))
+        if nm not in hidden:
+            elements.append(place_point_label(f"lb{nm}", nm, target=nm, at=P[nm]))
     elements.append(vc.text((X(x1) + 52, Y(0) + 10), "x", id="lbx"))
     elements.append(vc.text((X(0) + 26, Y(y1) - 44), "y", id="lby"))
     claims: list[tuple[str, str, str]] = []
@@ -8570,10 +8635,10 @@ def build_function_graph(*, figure_id, stem, ask=None, title=None, description=N
     for nm, (xv, yv) in marks.items():
         add(f"reads {nm} {xv:g} on LR", "inferred", f"{nm}'s x coordinate")
         add(f"reads {nm} {yv:g} on BU", "inferred", f"{nm}'s y coordinate")
-        add(f'label "{nm}" names {nm}', "inferred",
-            "a marked point on the curve")
-        add(f'describe "{nm} lies on the curve at ({xv:g}, {yv:g})"', "inferred",
-            "the drawn dot")
+        if nm not in hidden:
+            add(f'label "{nm}" names {nm}', "inferred", "a marked point on the curve")
+        where = f"curves {' and '.join(crossings[nm])}" if nm in crossings else "the curve"
+        add(f'describe "{nm} lies on {where} at ({xv:g}, {yv:g})"', "inferred", "the drawn dot")
     if vertex:
         add(f'describe "{vertex} is the {"minimum" if a_ > 0 else "maximum"} point — '
             f'the vertex at ({h_:g}, {k_:g})"',
@@ -8592,9 +8657,9 @@ def build_function_graph(*, figure_id, stem, ask=None, title=None, description=N
                                "axis step plus gridlines is the honest drawing "
                                "(S6b §3.4)"] if len(elements) > 32 else None),
                   description=description or (
-                      ("A parabola" if kind_f == "quadratic" else "A straight line") +
+                      ("Several curves" if crossings else "A parabola" if kind_f == "quadratic" else "A straight line") +
                       " drawn on numbered x and y axes" +
-                      (f", {', '.join(marks)} marked." if marks else ".")),
+                      (f", {', '.join(n for n in marks if n not in hidden)} marked." if marks.keys() - hidden else ".")),
                   scale="to scale — the axes are true linear maps",
                   medium=medium)
 
@@ -8960,6 +9025,167 @@ def build_histogram(*, figure_id, stem, ask=None, title=None, description=None,
                                "line per grid/axis stroke is the honest drawing "
                                "(S6b §3.4)"] if elements_n > 32 else None),
                   medium=medium)
+
+
+def build_frequency_polygon(*, figure_id, stem, bounds, freqs, step, v_max,
+                            ask=None, title=None, description=None, medium="english",
+                            values="stem", x_ticks="midpoints", closure="zero_neighbours"):
+    """Join class midpoints at their frequencies, with optional zero neighbours."""
+    kind = "frequency_polygon"
+    if values not in ("stem", "figure") or x_ticks != "midpoints" or closure not in ("zero_neighbours", "none"):
+        raise TemplateError(f"{kind}: expected midpoint ticks, values stem/figure and closure zero_neighbours/none")
+    if not isinstance(bounds, (list, tuple)) or not 3 <= len(bounds) <= 9:
+        raise TemplateError(f"{kind}: supply 3–9 class boundaries")
+    if not isinstance(freqs, (list, tuple)) or len(freqs) != len(bounds) - 1:
+        raise TemplateError(f"{kind}: supply one frequency per class")
+    bs, fs_ = list(map(_finite_number, bounds)), list(map(_finite_number, freqs))
+    step, v_max = _finite_number(step), _finite_number(v_max)
+    widths = [b - a for a, b in zip(bs, bs[1:])]
+    if min(widths) <= 0 or step <= 0 or v_max <= 0 or not math.isclose(v_max / step, round(v_max / step)) \
+            or not 2 <= round(v_max / step) <= 10 or any(not 0 <= f <= v_max for f in fs_):
+        raise TemplateError(f"{kind}: use increasing bounds, in-range frequencies and 2–10 positive y steps")
+    if values == "stem":
+        require_stem_signed(stem, **{f"bound{i}": b for i, b in enumerate(bs)})
+        require_stem(stem, **{f"frequency{i}": f for i, f in enumerate(fs_)}, step=step, v_max=v_max)
+    mids = [(a + b) / 2 for a, b in zip(bs, bs[1:])]
+    lo, hi = bs[0] - widths[0] / 2, bs[-1] + widths[-1] / 2
+    tick_intervals = round(v_max / step)
+    height = max(230, 30 * tick_intervals)
+    X, Y = lambda v: (v - lo) / (hi - lo) * 300, lambda v: -v / v_max * height
+    P = {"O": (0, 0), "X": (300, 0), "Y": (0, -height)}
+    positions = list(zip(mids, fs_))
+    if closure == "zero_neighbours":
+        positions = [(lo, 0), *positions, (hi, 0)]
+    elements = [
+        axis_arrow("axX", (-14, 0), P["X"], traces=["fpoly"]),
+        axis_arrow("axY", (0, 14), P["Y"], traces=["fpoly"]),
+        vc.polyline([(X(x), Y(y)) for x, y in positions], id="fpoly"),
+    ]
+    claims = [(f"axis OX from {lo:g} to {hi:g}", "inferred", "linear class midpoint scale"),
+              (f"axis OY from 0 to {v_max:g}", "inferred", "frequency scale"),
+              (f"tick OY step {step:g}", "inferred", "frequency ticks")]
+    labelled = set()
+
+    def number(glyph, at, id_, align):
+        elements.append(vc.text(at, glyph, id=id_, size=14, align=align))
+        if glyph not in labelled:
+            claims.append((f'label "{glyph}" names {glyph}', "inferred", "an axis numeral"))
+            labelled.add(glyph)
+
+    for i, x in enumerate(mids):
+        elements.append(vc.line((X(x), -4), (X(x), 4), id=f"tx{i}", width=1))
+        number(f"{x:g}", (X(x), 32), f"nx{i}", "middle")
+        p = f"M{i + 1}"
+        P[p] = (X(x), Y(fs_[i]))
+        claims.extend([(f"reads {p} {x:g} on OX", "inferred", "class midpoint"),
+                       (f"reads {p} {fs_[i]:g} on OY", "inferred", "class frequency")])
+    for i in range(tick_intervals + 1):
+        y = Y(i * step)
+        elements.append(vc.line((-4, y), (4, y), id=f"ty{i}", width=1))
+        number(f"{i * step:g}", (-30, y), f"ny{i}", "end")
+        claims.append((f"tick-label OY {i * step:g} ty{i} ny{i} left", "inferred", "frequency tick ownership"))
+    elements.extend([vc.text((155, 70), "Class midpoint", id="xname"),
+                     vc.text((-38, -height - 60), "Frequency", id="yname")])
+    claims.extend([('label "Class midpoint" names OX', "inferred", "x-axis title"),
+                   ('label "Frequency" names OY', "inferred", "y-axis title"),
+                   ('describe "class midpoint readings are figure content"', "inferred", "readings are on the axes"),
+                   (f"derive {bs[0]:g} + {bs[1]:g} = {_num_exact(2 * mids[0])}", "inferred", "twice the first midpoint"),
+                   ("none tickMark parallelMark angleMark shaded dashed", "inferred", "axes and frequency trace")])
+    return finish(kind=kind, figure_id=figure_id, stem=stem, ask=ask, medium=medium,
+                  elements=elements, points=list(P), anchors=P, segments=["OX", "OY"], claims=claims,
+                  title=title or "Frequency polygon", description=description or
+                  "A joined line on class midpoint and frequency axes.",
+                  budget=len(elements) if len(elements) > 32 else None, scale="linear axes")
+
+
+def build_scale_drawing(*, figure_id, stem, scale, plan, scale_bar=None, show="scale",
+                        ask=None, title=None, description=None, medium="english"):
+    """Draw named plan segments and an optional bar using one real-to-plan scale."""
+    kind = "scale_drawing"
+    if not isinstance(scale, dict) or set(scale) != {"drawn", "real", "drawn_unit", "real_unit"}:
+        raise TemplateError(f"{kind}: scale is {{drawn, real, drawn_unit, real_unit}}")
+    drawn, real = (_finite_number(scale[k]) for k in ("drawn", "real"))
+    drawn_unit, real_unit = scale["drawn_unit"], scale["real_unit"]
+    if min(drawn, real) <= 0 or any(not isinstance(u, str) or not re.fullmatch(r"[A-Za-z]{1,5}", u)
+                                    for u in (drawn_unit, real_unit)):
+        raise TemplateError(f"{kind}: use a positive scale and short English unit symbols")
+    if show not in ("scale", "bar", "both", "none"):
+        raise TemplateError(f"{kind}: show is scale, bar, both or none")
+    if (scale_bar is None) != (show not in ("bar", "both")):
+        raise TemplateError(f"{kind}: specify a real-unit scale_bar exactly when showing the bar")
+    if not isinstance(plan, dict) or set(plan) != {"points", "segments"}:
+        raise TemplateError(f"{kind}: plan is {{points, segments}} in drawn units")
+    points, segments = plan["points"], plan["segments"]
+    if not isinstance(points, dict) or not 2 <= len(points) <= 10 or any(
+            not isinstance(n, str) or not re.fullmatch(r"[A-Z]", n) for n in points):
+        raise TemplateError(f"{kind}: use 2–10 capital point names")
+    if not isinstance(segments, (list, tuple)) or not segments or any(
+            not isinstance(s, str) or len(s) != 2 or s[0] == s[1] or any(n not in points for n in s)
+            for s in segments):
+        raise TemplateError(f"{kind}: segments must name pairs of declared points")
+    if len({frozenset(s) for s in segments}) != len(segments):
+        raise TemplateError(f"{kind}: a segment cannot repeat")
+    if len(segments) + bool(scale_bar) < 2:
+        raise TemplateError(f"{kind}: draw at least two segments counting the scale bar")
+    coords = {}
+    for n, xy in points.items():
+        if not isinstance(xy, (list, tuple)) or len(xy) != 2:
+            raise TemplateError(f"{kind}: point {n} needs two drawn coordinates")
+        coords[n] = tuple(map(_finite_number, xy))
+    if len(set(coords.values())) != len(points):
+        raise TemplateError(f"{kind}: plan points cannot coincide")
+    width = max(x for x, _ in coords.values()) - min(x for x, _ in coords.values())
+    height = max(y for _, y in coords.values()) - min(y for _, y in coords.values())
+    bar = _finite_number(scale_bar) if scale_bar is not None else 0
+    if scale_bar is not None and bar <= 0:
+        raise TemplateError(f"{kind}: scale_bar length must be positive")
+    bar_drawn = bar / real * drawn
+    def decimal(value):
+        return format(Decimal(_num_exact(value)), "f")
+
+    def display(value):
+        return f"{int(value):,}".replace(",", "\u2009") if value.is_integer() else decimal(value)
+
+    ppu = min(300 / max(width, bar_drawn) if width or bar_drawn else math.inf,
+              220 / height if height else math.inf)
+    vc.reset_ids()
+    anchors = {n: (x * ppu, -y * ppu) for n, (x, y) in coords.items()}
+    elements = [vc.line(anchors[a], anchors[b], id=f"plan{a}{b}") for a, b in segments]
+    claims = []
+    for n, xy in anchors.items():
+        elements.append({"type": "point", "id": f"pt{n}", "at": vc.P(xy), "r": 3})
+        elements.append(place_point_label(f"lb{n}", n, target=n, at=xy))
+        claims.append((f'label "{n}" names {n}', "inferred", "plan point"))
+    audit_segments = list(segments)
+    left = min(x for x, _ in anchors.values())
+    bottom = max(y for _, y in anchors.values())
+    if bar:
+        a, b = [n for n in "ZYXWVUTSRQPONMLKJIHGFEDCBA" if n not in anchors][:2]
+        anchors[a], anchors[b] = (left, bottom + 60), (left + bar_drawn * ppu, bottom + 60)
+        audit_segments.append(a + b)
+        elements.append(vc.line(anchors[a], anchors[b], id="scalebar", width=3))
+        for n in (a, b):
+            x, y = anchors[n]
+            elements.append(vc.line((x, y - 5), (x, y + 5), id=f"bartick{n}"))
+        glyph = f"{display(bar)} {real_unit}"
+        elements.append(vc.text(((anchors[a][0] + anchors[b][0]) / 2, bottom + 88), glyph, id="barlabel"))
+        claims.append((f'label "{glyph}" names {a}{b}', "inferred", "bar length in real units"))
+        claims.append((f"scale-length {a}{b} = {_num_exact(bar_drawn)}", "inferred", "bar length in drawn units"))
+    if show in ("scale", "both"):
+        glyph = f"Scale: {display(drawn)} {drawn_unit} : {display(real)} {real_unit}"
+        elements.append(vc.text((left, bottom + (122 if bar else 48)), glyph, id="ratio", align="start"))
+        claims.append((f'label "{glyph}" names common_scale', "inferred", "the common drawing scale"))
+    for a, b in segments:
+        claims.append((f"scale-length {a}{b} = {_num_exact(math.dist(coords[a], coords[b]))}", "inferred",
+                       "segment length in drawn units"))
+    claims.extend([(f"derive {decimal(real)} / {decimal(drawn)} = {decimal(real / drawn)}",
+                    "inferred", f"{real_unit} per {drawn_unit}"),
+                   ("none tickMark parallelMark angleMark shaded arrow dashed", "inferred", "plan lines and labels")])
+    return finish(kind=kind, figure_id=figure_id, stem=stem, ask=ask, medium=medium,
+                  elements=elements, points=list(anchors), anchors=anchors, segments=audit_segments, claims=claims,
+                  title=title or "Scale drawing", description=description or "A plan drawn to one scale.",
+                  budget=len(elements) if len(elements) > 32 else None,
+                  scale=f"to scale at x = {_num_exact(ppu)} canvas units per {drawn_unit}")
 
 
 def build_tree_diagram(*, figure_id, stem, ask=None, title=None, description=None,
@@ -10408,6 +10634,14 @@ _CONSTRUCTION_STEPS = ("perp_bisector", "angle_bisector", "perp_at", "perp_from"
                        "circumcircle", "incircle", "excircle", "tangent_at",
                        "tangents_from", "triangle_sss", "triangle_sas",
                        "triangle_asa", "triangle_aas", "parallel_through")
+_CONSTRUCTION_ASK = re.compile(
+    r"(?:^|[.?!:]\s+)(?:use .*? to )?(?:construct\b|draw\b"
+    r"(?:(?!\b(?:conclusions?|inferences?)\b)(?:[^.!?:;\n]|\.(?=\d)))*?"
+    r"\b(?:lines?|segments?|(?:in|circum|ex)?circles?|arcs?|bisectors?|perpendiculars?|triangles?|"
+    r"locus|loci|tangents?|parallels?|angles?|rays?|chords?|polygons?|quadrilaterals?|"
+    r"rectangles?|squares?|radii|radius|diagrams?|centroids?|(?:ortho|in|circum|ex)cent(?:re|er)s?|"
+    r"medians?|altitudes?|midpoints?)\b)|නිර්මාණය කරන්න",
+    re.I)
 
 
 def _triangle_pts(ang: dict, base_px: float):
@@ -10420,7 +10654,7 @@ def _triangle_pts(ang: dict, base_px: float):
 def build_construction(*, figure_id, stem, ask=None, title=None, description=None,
                        medium="english", step, length=None, angle=None, angles=None,
                        base_px=None, r_px=None, at_deg=None, op=None,
-                       stage="completed", sides=None, offset=None, method=None):
+                       stage=None, sides=None, offset=None, method=None):
     """A ruler-and-compass construction figure: the finished line/circle is drawn
     solid and the compass work as dashed arcs — exactly the marks the corpus's
     construction crops show. `step` is one of perp_bisector | angle_bisector |
@@ -10435,9 +10669,10 @@ def build_construction(*, figure_id, stem, ask=None, title=None, description=Non
     Numeric givens remain stem-only. `length` (segment steps) and `angle` / `angles` (angle and
     triangle steps) are stem numbers; `base_px`, `r_px`, `at_deg`, `op` (the
     external point's distance in radii) are canvas choices declared inferred.
-    `stage` = "completed" (default) draws the FINISHED construction — use it for
-    identify/explain questions, never for construct-it-yourself ones; "setup"
-    draws only the givens (no compass work, no result) for those.
+    `stage` = "completed" draws the FINISHED construction; "setup" draws only the
+    givens (no compass work, no result). Construction asks require an explicit
+    stage; use "setup" for construct-it-yourself questions and "completed" for
+    identify/explain questions. Other asks default to "completed".
     `incircle`/`excircle` refuse — with an honest TemplateError — a triangle
     whose incentre letter cannot be seated clear inside its circle or ring,
     or whose contact letter cannot clear the excircle's own outline (very
@@ -10446,6 +10681,12 @@ def build_construction(*, figure_id, stem, ask=None, title=None, description=Non
     vc.reset_ids()
     if step not in _CONSTRUCTION_STEPS:
         raise TemplateError(f"{kind}: step must be one of {_CONSTRUCTION_STEPS}")
+    tasks = (str(row[-1]) for row in ask if isinstance(row, (list, tuple)) and row) if ask else (stem,)
+    construction_task = any(_CONSTRUCTION_ASK.search(task.strip()) for task in tasks)
+    if stage is None:
+        if construction_task:
+            raise TemplateError(f"{kind}: a construction ask requires explicit stage='setup' or stage='completed'")
+        stage = "completed"
     if stage not in ("setup", "completed"):
         raise TemplateError(f"{kind}: stage must be 'setup' or 'completed'")
     if method is not None and method not in ("corresponding", "alternate", "rhombus"):
@@ -13126,7 +13367,7 @@ _PIE_FILLS = ("#e5e7eb", "#d1d5db", "#f3f4f6", "#9ca3af")
 
 def build_pie_chart(*, figure_id, stem, ask=None, title=None, description=None,
                     medium="english", sectors, start=-90.0, arrow=None,
-                    angle_labels=False, r_px=130.0, values="stem"):
+                    angle_display=None, angle_labels=None, r_px=130.0, values="stem"):
     """A pie chart / probability spinner. `sectors` = [{"label": "<glyph>",
     "count": n}…] or [{"label": "<glyph>", "angle": deg}…] — every sector the
     same key; counts partition by count/total × 360, explicit angles must sum
@@ -13135,8 +13376,8 @@ def build_pie_chart(*, figure_id, stem, ask=None, title=None, description=None,
     of 1–8 Latin letters (never a number; O/T are reserved for the centre and
     needle) and may repeat across sectors (a spinner's duplicated outcome) —
     one `label` claim binds it, a `describe` says how often it prints.
-    `angle_labels=True` prints each sector's central angle inside it and needs
-    whole-degree sectors. `arrow={"deg": d}` draws a spinner needle from the
+    Angle-input pies require `angle_display="given"|"hidden"`. The former
+    prints whole-degree central angles. `arrow={"deg": d}` draws a spinner needle from the
     centre — explicitly not data, independent of the boundaries and never
     coincident with one. A sector under 8° refuses rather than distort."""
     kind = "pie_chart"
@@ -13156,8 +13397,10 @@ def build_pie_chart(*, figure_id, stem, ask=None, title=None, description=None,
                                   not isinstance(arrow.get("deg"), bool) and
                                   math.isfinite(arrow["deg"])):
         raise TemplateError(f"{kind}: arrow needs a numeric 'deg' — the needle's bearing")
-    if not isinstance(angle_labels, bool):
+    if angle_labels is not None and not isinstance(angle_labels, bool):
         raise TemplateError(f"{kind}: angle_labels is a bool")
+    if angle_display not in (None, "given", "hidden") or (angle_display is not None and angle_labels is not None):
+        raise TemplateError(f"{kind}: use angle_display='given' or 'hidden', without angle_labels")
     keys = set()
     labels_of: list[str] = []
     raw: list[tuple[str, float]] = []
@@ -13189,6 +13432,9 @@ def build_pie_chart(*, figure_id, stem, ask=None, title=None, description=None,
         raise TemplateError(f"{kind}: every sector uses the same key — all 'count' "
                             "or all 'angle'")
     mode = next(iter(keys))
+    if mode == "angle" and angle_display is None:
+        raise TemplateError(f"{kind}: angle-input pies require angle_display='given' or 'hidden'")
+    angle_labels = angle_display == "given" if angle_display is not None else bool(angle_labels)
     if values == "stem":
         require_stem(stem, **{f"sector {i} {mode}": v for i, (_l, v) in enumerate(raw)})
     total = sum(v for _l, v in raw)
@@ -13246,9 +13492,9 @@ def build_pie_chart(*, figure_id, stem, ask=None, title=None, description=None,
     def ang_in(p, s, e):
         return (_angle_of(p, Oxy) - s) % 360.0 <= e - s + 1e-9
 
-    def seat(text, s, e, rhos):
+    def seats(text, s, e, rhos, fractions=(0.5, 0.42, 0.58, 0.35, 0.65, 0.27, 0.73)):
         for rho in rhos:
-            for f_ in (0.5, 0.42, 0.58, 0.35, 0.65, 0.27, 0.73):
+            for f_ in fractions:
                 at = on_circle_point(Oxy, rho * r_px, s + (e - s) * f_)
                 box = _text_box(text, at)
                 if not _box_vs_circle(box, Oxy, r_px, True, clr):
@@ -13258,26 +13504,38 @@ def build_pie_chart(*, figure_id, stem, ask=None, title=None, description=None,
                     continue
                 if all(_seg_rect_dist(p, q, box) - w / 2 >= clr for p, q, w in strokes) \
                         and all(_rect_gap(box, o) >= gap_l for o in boxes):
-                    return at
-        return None
+                    yield at
 
     label_targets: dict[str, str] = {}
+    angles_placed = {}
     if angle_labels:
         for i, d_ in enumerate(degs):
             g_ = f"{d_:g}°"
-            at = seat(g_, bounds[i], bounds[i] + d_,
-                      (0.5, 0.56, 0.44, 0.62, 0.38, 0.3, 0.68))
+            at = next(seats(g_, bounds[i], bounds[i] + d_,
+                            (0.5, 0.56, 0.44, 0.62, 0.38, 0.3, 0.68, 0.74, 0.8)), None)
             if at is None:
                 raise TemplateError(f"{kind}: the angle numeral {g_!r} has no clear "
-                                    "seat in its sector — drop angle_labels or widen "
-                                    "the sectors")
+                                    "seat in its sector — increase r_px or use angle_display='hidden' "
+                                    "if the question does not need printed angles")
             elements.append(vc.text(at, g_, id=f"pa{i}"))
-            boxes.append(_text_box(g_, at))
+            angle_box = _text_box(g_, at)
+            boxes.append(angle_box)
+            angles_placed[i] = (elements[-1], g_, angle_box)
             label_targets.setdefault(g_, f"angle_sec{i}")
     for i, (lab, d_) in enumerate(zip(labels_of, degs)):
-        at = seat(lab, bounds[i], bounds[i] + d_,
-                  (0.82, 0.75, 0.68, 0.88, 0.6) if angle_labels else
-                  (0.6, 0.68, 0.52, 0.76, 0.44))
+        s, e = bounds[i], bounds[i] + d_
+        at = next(seats(lab, s, e, (0.82, 0.75, 0.68, 0.88, 0.6) if angle_labels else
+                        (0.6, 0.68, 0.52, 0.76, 0.44)), None)
+        if at is None and angle_labels:
+            angle_el, glyph, angle_box = angles_placed[i]
+            boxes.remove(angle_box)
+            for angle_at in seats(glyph, s, e, (j / 50 for j in range(20, 45))):
+                boxes.append(_text_box(glyph, angle_at))
+                at = next(seats(lab, s, e, (j / 50 for j in range(20, 45))), None)
+                if at is not None:
+                    angle_el["at"] = vc.P(angle_at)
+                    break
+                boxes.pop()
         if at is None:
             raise TemplateError(f"{kind}: the label {lab!r} has no clear seat in its "
                                 f"{d_:g}° sector — merge small categories or shorten the "
@@ -13324,6 +13582,9 @@ def build_pie_chart(*, figure_id, stem, ask=None, title=None, description=None,
     if angle_labels:
         add('describe "each sector prints its central angle in degrees"', "inferred",
             "the angle numerals")
+    elif angle_display == "hidden":
+        add('describe "the sector angles are deliberately unlabelled"', "inferred",
+            "the angle display choice")
     if arrow is not None:
         add("arrow O -> T", "inferred",
             "the spinner needle from the centre — independent of the sector boundaries")
@@ -16504,6 +16765,8 @@ def _validate_numeric_inputs(fn):
                 continue
             if name == "step" and fn.__name__ == "build_construction":
                 continue
+            if name == "base" and fn.__name__ == "build_parallel_area":
+                continue
             if name == "angles" and fn.__name__ in ("build_right_triangle", "build_circle_angles",
                                                     "build_rays_from_point"):
                 continue
@@ -19359,7 +19622,7 @@ BUILDERS = {fn.__name__[6:]: fn for fn in
              build_venn_sets, build_circle_parts, build_right_triangle,
              build_circle_angles, build_triangle_parallel, build_parallel_area,
              build_solid, build_function_graph, build_inequality_line,
-             build_histogram, build_tree_diagram, build_pythagoras_squares,
+             build_histogram, build_frequency_polygon, build_scale_drawing, build_tree_diagram, build_pythagoras_squares,
              build_ogive, build_outcome_grid, build_two_circle_tangents,
              build_construction, build_inscribed_circle, build_venn_regions,
              build_solid_composite, build_net, build_marked_geometry,
@@ -19413,6 +19676,8 @@ function_graph      m,c or a,h,k; x_range, y_range when given                  c
 inequality_line     v0, v1; every dot/endpoint value                           dots=[ints] | interval={"a","b"|"left"|"right","open_a","open_b"} — filled/open endpoint circles, thick solution line
 histogram           bounds + freqs when values="stem"; step, v_max   bounds=[b0…bn], freqs, step, v_max, values="stem"|"figure", adjusted (unequal widths → heights = freq×narrowest/class width, area ∝ frequency), polygon, x_title, y_title
 tree_diagram        every numerator/denominator                              stages=[stage1, stage2|{outcome:[(o,p)]}] — branches sum to 1, fraction labels "a/b"
+frequency_polygon   bounds, freqs, step and v_max when values="stem"         x_ticks="midpoints", closure="zero_neighbours"|"none"
+scale_drawing       none — plan coordinates set the scale                   scale={drawn,real,drawn_unit,real_unit}, plan={points,segments}, scale_bar?, show="scale"|"bar"|"both"|"none"
 pythagoras_squares  every numeric side                                       names, right, up, legs={"AB":3|"x"}, unit, labels={side:False}, grid (integer sides only), leg_px?, mirror
 ogive               bounds + cum_freqs when values="stem"; step, v_max         bounds=[b0…bn], cum_freqs (len n+1, non-decreasing), step, v_max, values="stem"|"figure", guide={"y","name"}, x_title, y_title
 outcome_grid        none — the marked cells are figure content                rows, cols (2–8 header tokens each), marks="all"|[[col,row]…], outline={"cols":[c0,c1],"rows":[r0,r1]}, events=[{"cells":[[c,r]…],"style":oval|box|circle,"label","arrow"}] — true cell-set contours (diagonal capsule, multi-region; an oval that would swallow a non-member refuses), cell
@@ -19433,7 +19698,7 @@ marked_geometry     every numeric side/angle/length label (skipped when values="
                     arcs/angle_labels or marks=[{at,arms,arcs,label,reflex?}],
                     labels={seg:"6 cm"|"x"}, values="stem"|"figure", unit, base_px?
                     — all marks re-validated against the computed geometry
-pie_chart           every count/angle when values="stem"              sectors=[{"label","count"}|{"label","angle"}] 2–10 (angles sum 360; label = 1–8 Latin letters, O/T reserved), start?, angle_labels (whole degrees only), arrow={"deg"} (spinner needle, not data, never on a cut), r_px? — a glyph may repeat across sectors (one claim binds it); sectors <8° refuse
+pie_chart           every count/angle when values="stem"              sectors=[{"label","count"}|{"label","angle"}] 2–10 (angles sum 360; label = 1–8 Latin letters, O/T reserved), start?, angle_display="given"|"hidden" (required for angles; given needs whole degrees), arrow={"deg"} (spinner needle, not data, never on a cut), r_px? — a glyph may repeat across sectors (one claim binds it); sectors <8° refuse
 sector              radius, angle, inner; every numeric label when values="stem"
                     angle (0–360 excl: 180=semicircle, 90=quadrant), radius, inner? (annular sector),
                     labels={"radius"|"radius_b"|"arc"|"angle"} or {"radial"|"radial_b"|"arc"|"inner_arc"|"angle"},
@@ -19960,7 +20225,7 @@ SELF_TEST = [
      "ask": [["a", "the likeliest outcome"]],
      "sectors": [{"label": "A", "angle": 90}, {"label": "B", "angle": 120},
                  {"label": "A", "angle": 150}],
-     "angle_labels": True, "arrow": {"deg": 30}},
+     "angle_display": "given", "arrow": {"deg": 30}},
     {"template": "sector", "figure_id": "selftest-sec",
      "stem": "A sector of a circle has radius 7 cm and an angle of 60 degrees "
              "at the centre; its arc is marked l. (a) Find the arc length.",
