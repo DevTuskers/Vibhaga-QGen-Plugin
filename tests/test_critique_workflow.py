@@ -1,10 +1,12 @@
 import asyncio
 import json
+import os
 import runpy
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "skills/generate/critique-workflow.py"
@@ -25,9 +27,16 @@ class CritiqueWorkflowTests(unittest.TestCase):
         self.script = self.root / "skills/generate/critique-workflow.py"
         self.script.parent.mkdir(parents=True)
         shutil.copyfile(SCRIPT, self.script)
+        tools = self.root / "tools"
+        tools.mkdir()
+        (tools / "run-gates.py").touch()
         self.events = []
         self.logs = []
         self.fails = None
+        env = patch.dict(os.environ, {"HOME": temp.name})
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("VIBHAGA_QGEN_ROOT", None)
 
     def run_round(self, config):
         self.config.write_text(json.dumps({"plugin": str(self.root), **config}), encoding="utf-8")
@@ -91,6 +100,35 @@ class CritiqueWorkflowTests(unittest.TestCase):
         self.run_round(self.batch(figures=False))
         self.assertEqual(len(self.events), 2)
         self.assertIn("qgen-critic.md", self.events[1][0])
+
+    def test_detached_copy_uses_home_checkout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            checkout = home / "repos/Vibhaga-QGen-Plugin"
+            checkout.parent.mkdir()
+            shutil.move(self.root / "wt", checkout / "wt")
+            self.root = checkout
+            self.config = checkout / "wt/current-critique.json"
+            self.critic = checkout / "wt/test/critic"
+            self.script = home / "tmp/critique-workflow.py"
+            self.script.parent.mkdir()
+            shutil.copyfile(SCRIPT, self.script)
+            with patch.dict(os.environ, {"HOME": directory}):
+                self.run_round(self.batch(figures=True))
+        self.assertEqual(self.events[:2], ["register", "parallel"])
+
+    def test_detached_copy_can_use_explicit_checkout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.script = Path(directory) / "critique-workflow.py"
+            shutil.copyfile(SCRIPT, self.script)
+            with patch.dict(os.environ, {"VIBHAGA_QGEN_ROOT": str(self.root)}):
+                self.run_round(self.batch(figures=False))
+        self.assertEqual(len(self.events), 2)
+
+    def test_mismatched_checkout_stops_before_agents(self):
+        with self.assertRaisesRegex(ValueError, "plugin path must match"):
+            self.run_round({**self.batch(figures=False), "plugin": str(self.root / "other")})
+        self.assertEqual(self.events, ["register"])
 
     def test_agent_error_logged_and_fails_round(self):
         self.fails = "diagram"
