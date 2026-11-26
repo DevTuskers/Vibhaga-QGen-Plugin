@@ -56,7 +56,7 @@
  */
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
-import { ASPECT_MAX, paintVisible } from "./visual-metrics.mjs";
+import { ASPECT_MAX, paintVisible, tickOwners } from "./visual-metrics.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -328,6 +328,9 @@ function checkDocument(doc, cs, canvasAnchors) {
     const extra = labelsInDoc.filter((s) => !cs.labels.includes(s));
     if (extra.length) notes.push(`⚠️ labels on the drawing that the claim set does not list (declare as departures unless they are 'not to scale'): ${extra.map((s) => JSON.stringify(s)).join(" ")}`);
     const A = canvasAnchors;
+    for (const [id, owner] of tickOwners(d, { ...cs, anchors: A })) {
+      if (!owner.valid) fails.push(`tick-label: ${id} does not name a drawn tick at its claimed axis value`);
+    }
     const anchored = Object.keys(A);
     const missingAnch = cs.points.filter((p) => !A[p]);
     if (missingAnch.length) fails.push(`coverage: no canvas anchor for point(s) ${missingAnch.join(" ")} — pass --anchors, set meta.anchors, or add a label-only point element`);
@@ -363,6 +366,30 @@ function checkDocument(doc, cs, canvasAnchors) {
       if (["line", "polyline", "arrow"].includes(el.type)) return strokeVisible(el);
       return true;
     };
+    const onLine = (pt, a, b) => offLine(a, pt, b) * len(a, b) <= 0.5;
+    const onRay = (pt, a, b) => len(pt, a) > 0.01 && onLine(pt, a, b) &&
+      (pt[0] - a[0]) * (b[0] - a[0]) + (pt[1] - a[1]) * (b[1] - a[1]) > 0;
+    for (const c of cs.claims.filter((claim) => claim.pred === "visible-mark")) {
+      const [kind, n, ...targets] = c.args.split(/\s+/);
+      for (const target of targets) {
+        const pts = [...target].map((name) => A[name]);
+        const matched = pts.every(Boolean) && d.elements.some((el) => {
+          if (!strokeVisible(el)) return false;
+          if (kind === "right") {
+            if (el.type !== "angleMark" || el.variant !== "right" || !(el.r > 0) || +n !== 1 ||
+                len(el.vertex, pts[1]) > 0.5) return false;
+            return (onRay(el.from, pts[1], pts[0]) && onRay(el.to, pts[1], pts[2])) ||
+              (onRay(el.to, pts[1], pts[0]) && onRay(el.from, pts[1], pts[2]));
+          }
+          if (el.type !== ({ parallel: "parallelMark", equal: "tickMark" })[kind] ||
+              (el.count ?? 1) !== +n || !(el.size ?? 8) || len(...el.on) <= 0.01) return false;
+          const t = el.at ?? 0.5;
+          const p = el.on[0].map((v, i) => v + t * (el.on[1][i] - v));
+          return el.on.every((v) => onLine(v, ...pts)) && onSegment(p, ...pts, 0.005);
+        });
+        if (!matched) fails.push(`visible-mark: ${c.id} expected ${n} ${kind} mark(s) on ${target}`);
+      }
+    }
     const strokes = d.elements.map((el, index) => {
       if (!["line", "polyline", "polygon", "arrow"].includes(el.type)) return null;
       if (!strokeVisible(el)) return null;
@@ -706,6 +733,12 @@ async function selfTest() {
   const anchors = { A: [60, 40], B: [60, 220], C: [240, 220] };
   let ok = true; const t = (name, cond) => { console.log(`${cond ? "PASS" : "FAIL"}  ${name}`); if (!cond) ok = false; };
   const good = checkDocument(tri, cs, anchors);
+  const withMark = { ...cs, claims: [...cs.claims, { id: "K9", pred: "visible-mark", args: "right 1 ABC" }] };
+  t("declared right mark paints on the claimed vertex and arms",
+    !checkDocument(tri, withMark, anchors).fails.some((f) => f.startsWith("visible-mark:")));
+  const noMark = { ...tri, elements: tri.elements.filter((el) => el.id !== "rB") };
+  t("deleting the declared right mark fails even though the underlying geometry is still right",
+    checkDocument(noMark, withMark, anchors).fails.some((f) => f.startsWith("visible-mark:")));
   t("correct triangle: 0 failures", good.fails.length === 0);
   t("numeric: 3 claims compared", good.numeric.length === 3);
   const noAB = { ...tri, elements: tri.elements.filter((e) => e.id !== "AB") };

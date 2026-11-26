@@ -18,6 +18,57 @@ const fails = (r) => r.findings.filter((f) => f.severity === "fail");
 const rules = (r) => new Set(fails(r).map((f) => f.rule));
 const axisClaims = '  K8 axis LR from 0 to 6 | inferred |\n  K9 axis BU from 0 to 6 | inferred |';
 
+test("tick ownership distinguishes the same numeral on both axes and rejects a wrong seat", () => {
+  const d = doc([
+    { id: "tx2", type: "line", points: [[90, 125], [90, 135]] },
+    { id: "ty2", type: "line", points: [[45, 90], [55, 90]] },
+    { id: "x2", type: "text", at: [90, 153], value: "2" },
+    { id: "y2", type: "text", at: [25, 90], value: "2" },
+  ]);
+  const claims = `anchors:
+    L 50 130
+    R 170 130
+    B 50 130
+    U 50 10
+claims:
+${axisClaims}
+  K10 tick-label LR 2 tx2 x2 below | inferred |
+  K11 tick-label BU 2 ty2 y2 left | inferred |`;
+  const x2 = L({ text: "2", elementId: "x2", bbox: [85, 147, 10, 12] });
+  const y2 = L({ i: 1, text: "2", elementId: "y2", bbox: [20, 84, 10, 12] });
+  const good = assess({ doc: d, claims, widths: W([x2, y2]) });
+  assert.equal(good.verdict, "PASS");
+  assert.ok(good.labels.every((l) => l.binding === "bound"));
+  const bad = assess({ doc: d, claims, widths: W([x2, { ...y2, bbox: [20, 64, 10, 12] }]) });
+  assert.ok(rules(bad).has("tick-label"));
+  assert.ok(rules(assess({ doc: d, claims, widths: W([x2]) })).has("tick-label"));
+});
+
+test("bound point labels must prefer their own point to an unmarked crossing", () => {
+  const d = doc([
+    { id: "dot", type: "point", at: [50, 50], r: 3 },
+    { id: "first", type: "line", points: [[75, 20], [75, 110]] },
+    { id: "second", type: "line", points: [[20, 75], [110, 75]] },
+  ]);
+  const claims = 'anchors:\n D 50 50\nclaims:\n K1 point-label D d 32 | inferred |';
+  const at = (bbox) => assess({ doc: d, claims, widths: W([L({ text: "D", elementId: "d", bbox })]) });
+  assert.equal(at([38, 25, 10, 12]).verdict, "PASS");
+  assert.ok(rules(at([63, 57, 10, 12])).has("target"));
+  assert.ok(rules(at([13, 20, 10, 12])).has("target"));
+});
+
+test("a curve reaching the arrowhead fails a bound axis clearance", () => {
+  const d = doc([
+    { id: "x", type: "arrow", head: "end", points: [[20, 100], [220, 100]] },
+    { id: "curve", type: "polyline", points: [[40, 170], [194, 100]] },
+  ]);
+  const claims = "claims:\n K1 axis-clearance x 4 curve | inferred |";
+  const measure = () => assess({ doc: d, claims, widths: W([]) });
+  assert.equal(measure().verdict, "PASS");
+  d.elements[1].points[1][0] = 212;
+  assert.ok(rules(measure()).has("axis-clearance"));
+});
+
 test("claim-set parser: anchors, claims, allow, labels (vdd-check grammar)", () => {
   const cs = parseClaimSet(`# comment
 labels: "9 : 4" ratio

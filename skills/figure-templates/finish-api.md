@@ -10,6 +10,24 @@ vt.finish(kind=…, figure_id=<staged id>, stem=…, elements, anchors, points, 
           budget=None, departures=None, ambiguous=None, contested=None)
 ```
 
+- **Bound labels** — use `place_point_label(id, glyph, target="P", at=anchors["P"])`
+  for a letter at a dot, outline vertex, or crossing. It tries adjacent quadrants
+  and rejects seats that favour a different junction. If it cannot clear structural
+  minor gridlines (`gv<N>`/`gh<N>`), it can sit over them in the grid accent ink.
+  Override `quadrants` or `max_gap_px` (at the narrowest rendering, without
+  counting enlargement beyond 1 px per canvas unit). For a dimension use
+  `place_dimension_label(id, glyph, leader_id="ldradius", near=midpoint)`: the gap
+  is measured to that line, not to nearby ink. The usual `label "…" names …`
+  inventory claim still applies.
+- **Axis arrows** — use `axis_arrow(id, start, data_end, traces=["curve"])` to
+  pad past the data without changing its domain. Name the drawn line/polyline IDs
+  in `traces` so visual-check verifies clearance to the arrowhead.
+- **Explicit marks and ticks** — add `visible-mark parallel 1 AB CD`,
+  `visible-mark equal 2 AB CD`, or `visible-mark right 1 ABC` for claimed
+  paint. These supplement, not replace, the corresponding geometry claims.
+  For plot numerals use `tick-label LR 8 tx108 nx108 below` (ordered axis
+  anchors, value, tick ID, text ID, side); bind zero to the common origin
+  with `tick-label origin 0 tx100:ty100 lbo below-left`.
 - **Floating labels** — put `"_near": [x, y]` (the anchor it labels, element coords) and
   optional `"_gap"` (units from the anchor to the box's near edge, default 14) on a `text`
   element; its `at` is ignored and finish() places it: 16 directions × `_gap…_gap+36`,

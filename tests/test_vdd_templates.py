@@ -3063,6 +3063,21 @@ class G11Templates(unittest.TestCase):
                                     points={"P": [0, -3]}, grid=False, unit_px=36)
         self._ok(b)
 
+    def test_fg_explicit_steps_and_instance_bindings(self):
+        b = vt.build_function_graph(
+            figure_id="fg1-bind", stem="Read the graph.", curve={"m": 0, "c": 1},
+            x_range=[-4, 4], y_range=[-4, 4], x_step=2, y_step=2,
+            x_label_side="below", y_label_side="left", grid=False, values="figure",
+        )
+        self.assertIn("tick-label LR 2 tx102 nx102 below", b.claims)
+        self.assertIn("tick-label BU 2 ty102 ny102 left", b.claims)
+        self.assertIn("tick-label origin 0 tx100:ty100 lbo", b.claims)
+        self.assertIn("axis-clearance axX 4 curve", b.claims)
+        els = {el["id"]: el for el in b.doc["elements"]}
+        self.assertEqual(els["tx102"]["points"][0][0], els["nx102"]["at"][0])
+        self.assertEqual(els["ty102"]["points"][0][1], els["ny102"]["at"][1])
+        self._ok(b)
+
     def test_fg_refuses_point_off_curve(self):
         with self.assertRaises(vt.TemplateError) as cm:
             vt.build_function_graph(figure_id="g3",
@@ -3313,15 +3328,15 @@ class ByteIdentity(unittest.TestCase):
         "selftest-cyc": "ce683dc4b715bd0a9cfc5b9826b9c7a0d775de21dc1fbc48e7fefa5549169dd7",
         "selftest-tan": "654d82cd00f56b4fe16014488bab99a9281569575a135a254aa81c03c97157ef",
         "selftest-tpar": "b65406a745c467e78d49655a50c7750ced30b78b06e59f1d33243c04c5d7105d",
-        "selftest-parea": "22bcbf0c54bf349926a1df9997de8c414050667aa736109543147670476ff559",
+        "selftest-parea": "71d5d781097757d5ab0d948ef5d4b5e9f3649d1c6af63a15eafbc4b2fa726528",
         # G11 round-2 — regenerated after the visual-initial label fixes moved
         # cone/cyl leader labels, graph/fline axis numerals, ineq tick numerals,
         # hist axis numerals, tree terminal labels and psq edge labels
         # cone/cyl re-pinned after the slant-dim + smaller dim-label changes (#59)
-        "selftest-cone": "2d37bc1d6d662551841f1d824383665e87932621cd33eb5dd7b1d43d3d80a11e",
-        "selftest-cyl": "520c52bf194f99545ecd056ba54049ccb4f5d43bd1593de5b60924224242e564",
-        "selftest-graph": "cb847257f57d77512077a701dae6b5a921ebdbf88a90def4422bba8278da7ade",
-        "selftest-fline": "cc7eea0a95decf7b9f725b275249dba9a6a0cac670441044fcec3612169b2940",
+        "selftest-cone": "7206afa5022d75468342d5992869e3cd29847deb6018926505a2db7c45b79485",
+        "selftest-cyl": "d6b531348431c4538ea5c327460a358e610ffb21a00a26b274a3ecf6b68ecadc",
+        "selftest-graph": "a20e686ef50b1b9742f430ceff4cf51aa0820b5a87e3cf4451cb5a3dfff1f753",
+        "selftest-fline": "e14e9fd212e4df79307998633c73c7841900363e6777ef1f598d38040b73b9c4",
         "selftest-ineq": "43bf626ad2c9a79bc062b3a496e54ab33d1202b0720410cea9416d324d887feb",
         "selftest-ineq2": "66f2b038a56d767137d69d4f8de92055697e5b408cd3fa562312b81e25254d11",
         "selftest-hist": "5c57542d9307b17787ebff7c30353236e65ccbe9ecc47c67eff71c5ce03c7165",
@@ -3340,7 +3355,7 @@ class ByteIdentity(unittest.TestCase):
         "selftest-incr": "cbee11786b84b5a303838abc0e46dba212d1f2694cbb1fbabdb2503b83898b88",
         "selftest-vrshade": "0c57ecd548fb922158fb44a30c1598c02153886e8a3045147e75def3c4f9fdf3",
         "selftest-vrnest": "1e30615a6ac1a584c9dddf3a3d42bcc073424930a5c6642ab04bb4567033bdd2",
-        "selftest-scyl": "47a7b9f8e5ef7f06bb87a713d2723ac6fe643d6b118c3eda098a40dadeb63e04",
+        "selftest-scyl": "f678050c3d321a91431ccaa362dcd355723932dbbb9a79a5725f1ae91da8c21d",
         "selftest-net": "5e377beea6ae67232eef6fe9fd36ea8910b9ea5b1abeb813baaf6b2cae432848",
         # G11 — generated when the new-family semantic fixes, marked_geometry and
         # the histogram-adjusted / general-quadratic / multi-curve additions landed
@@ -3352,16 +3367,16 @@ class ByteIdentity(unittest.TestCase):
         "selftest-cset": "008200192542da005db31f5dae3259bbc8daeb9b680f0b5a97387de695a1ad5f",
         "selftest-ogfig": "f567516f5ac2c0dc787cc10f4aac33e7526126a0287d5944ff23bae23d4c644c",
         "selftest-vrn3": "e429f8a7a298354ed6701685ffebaecb173882ec4523651ef180c7218cb5abb0",
-        "selftest-cvess": "08202bf91edde8c110786685cc4de06012ffaaff6e1007399e3a57e8197394a3",
+        "selftest-cvess": "e62997dbfc6e9ff5f1d3aea5261ddfdc07e9ac62c58bd257526819bc390ec1ac",
         "selftest-mgtri": "43d3a802d6b6fb0c6fe6a258fffeb34d7d087419f1c51d282952e9b9f005dca9",
         "selftest-mgpara": "3ef96dd68cbc27a46f1476b9025959f5f2a84d9253309a0c11abcda4ddbddcbc",
         "selftest-mgtrap": "74745199b5321fe1650bbdc03b660b24329d3e5f3e44ac10e7f4f8e15ba95fb7",
         "selftest-histadj": "005de7f479c1f085da424a64a15faf23596374fc0f52b3b8acb4546fcddda805",
-        "selftest-genquad": "01f3a4f7cf37c3893d48835014eda21345601dce81d2819a7784036491b751d7",
-        "selftest-multi": "1ee61a6dbb90eedc7cb8e453389a5520e6038dd50458f8ad095db3a394591785",
+        "selftest-genquad": "1a6126cd51009dbf479fbd7632c50452129fe6c4c67304f6ef906bc3bf06b070",
+        "selftest-multi": "8801413cdee31c3a77c648e985a366b9430d74b5c08c39f5fddec113bc1bf52f",
         "selftest-reading-inscribed_circle": "b724be5ec2054e8f8a583c637b94b7807daddfa58f179c0344d9c1e7c325b5b5",
         "selftest-reading-venn_regions": "ff2583f8f00884f7e0bf4cfe16a02cd1906e79ee0de1ac89420598eb995de83b",
-        "selftest-reading-solid_composite": "d609b632ff445eba680091e5c5ddb9a96dffaeb0127c6e6c1fb6bf51749499c1",
+        "selftest-reading-solid_composite": "047aee2a7f6021b4ef5e18388e63dcb64dccdac3102547fc1bc0e2999c3526c7",
         "selftest-reading-net": "a36e29fef2b602a9b3026e42d5a8c153f1ec39135787776c5f82ee35ef1d2394",
         "selftest-hist-5-stem": "894379231dfc517188679cd50c68d9352f884518464e10395fc025e8c876ff4a",
         "selftest-hist-5-figure": "2d7abd2061b5e8530a618f3f7ad656bb4d9bd86573852835aa0fadefcb7b95e1",
@@ -3380,9 +3395,9 @@ class ByteIdentity(unittest.TestCase):
         "selftest-cax": "1c72bd9ecf8b07fa65275e9bb896c5cfd9505319a105a26d7217ca3e49516ec9",
         "selftest-vcomp": "cd596042f266b98ac93e2bcac4db2c648bb72ade19e03bc8660d9b4bf76bbbf6",
         "selftest-vcsh": "1dd9fb115595d103831b0c3174b0806621499982e6de559e329346b700535114",
-        "selftest-cineq": "d01603d0bc30a983abd661159b65591a04df500fc7a7ddcb98163db9c8cf4646",
-        "selftest-cdt": "ddc0fd814fc4de3d8ea6c091a4a3163f91e3b3f11a45f1712fcb71df1471da3d",
-        "selftest-cx3": "9a7a1e7339461cd216f44e5c8c0dfc88bfaca4f7566f200c417c733da709f33e",
+        "selftest-cineq": "8f0243208b49802334cb85ab7161fa468689052916859fdc9d2d5390f520a861",
+        "selftest-cdt": "d81b99e311b07aeb1af71a3c480f66b539ee889ef08b3a5378c137a2c1c12a33",
+        "selftest-cx3": "378c28944ba7dadbdd9a08fb127e2f9cf221082907edc581c5fa3dd3d5539eb6",
         "selftest-conv2-aas": "429ba1c5cfaf8fe8f4f143b716b4e74217db5e6b00c2212fb7e909859bc4145c",
         "selftest-conv2-aas-b": "06026c0fae0cd7a5ff0a797532f7bb6ad50b9d1afde6e65671e2479d6ec03d2c",
         "selftest-conv2-alternate": "38e03483801b44371197284bc8053f0861f8abbfa7625650555fe40ff19ec467",

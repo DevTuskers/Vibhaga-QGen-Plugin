@@ -418,6 +418,8 @@ PREDICATES = {
     "circle": "anchor", "arc": "anchor", "axis": "anchor", "tick": "anchor", "interval": "anchor",
     "gradient": "anchor", "at": "anchor", "derive": "anchor", "scale-length": "anchor",
     "label": "text", "free-text": "text", "paint": "text", "none": "text",
+    "tick-label": "text", "visible-mark": "text", "point-label": "text", "dimension-label": "text",
+    "axis-clearance": "text",
     # ⚠️ `arrow` MOVED "text" -> "anchor" on 2026-08-30. It was `continue`d by the `kind == "text"` gate
     # above, so an `arrow P -> Q` claim was never even closure-checked — and it is the claim that carries
     # the MOVE on an answer-side figure, i.e. the one check 2c has to project onto the scale. It still
@@ -518,7 +520,8 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
         check(p in a, f"point {p} has an anchor")
     named = set()
     for c in cs["claims"]:
-        if not c["pred"].startswith(("label ", "free-text ", "none ", "describe ")):
+        if not c["pred"].startswith(("label ", "free-text ", "none ", "describe ", "tick-label ",
+                                     "point-label ", "dimension-label ", "axis-clearance ")):
             # [A-Z]\d* — W11 figure points may be digit-suffixed (bar-top anchors T1..Tn)
             named |= set(re.findall(r"(?<![A-Za-z])[A-Z]\d*(?![A-Za-z])", c["pred"]))
     unknown = sorted(named - set(cs["points"]))
@@ -916,6 +919,8 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
                             and re.fullmatch(r"-?\d+(\.\d+)?", m2[1])
                             and not re.fullmatch(r"-?\d+(\.\d+)?", m2[2])}
         printed -= bound_nonnumeric
+        if any(c["pred"].startswith("tick-label origin 0 ") for c in cs["claims"]):
+            all_expect.add("0")
         if len(stepped) == len(axes):
             check(printed == all_expect,
                   f"axes: the numeric labels must be the union of every axis's arithmetic "
@@ -926,6 +931,74 @@ def audit(cs: dict) -> tuple[list[str], int, dict]:
                   f"axes: the stepped axes' numerals must all be printed — missing "
                   f"{sorted(all_expect - printed) or 'none'} (extra numerals may belong to an "
                   f"unstepped axis, which no `tick` predicts)")
+    tick_label_ids, tick_label_slots = set(), set()
+    tick_label_sides = {}
+    for c in cs["claims"]:
+        if not c["pred"].startswith("tick-label "):
+            continue
+        cid = c["id"]
+        m = re.fullmatch(
+            r"tick-label (origin|[A-Z]{2}) (-?\d+(?:\.\d+)?) "
+            r"([\w.-]+(?::[\w.-]+)?) ([\w.-]+) (above|below|left|right|(?:above|below)-(?:left|right))",
+            c["pred"],
+        )
+        if not check(bool(m), f"{cid}: invalid tick-label binding", cid):
+            continue
+        axis, val, tick_ids, label_id, side = m.groups()
+        v = float(val)
+        slot = (axis, v)
+        check(label_id not in tick_label_ids and slot not in tick_label_slots,
+              f"{cid}: a tick-label label id and axis/value slot must each be unique", cid)
+        tick_label_ids.add(label_id)
+        tick_label_slots.add(slot)
+        check(f"{v:g}" in cs["labels"], f"{cid}: its numeral {v:g} is not listed in labels", cid)
+        if axis == "origin":
+            check(v == 0 and len(set(tick_ids.split(":"))) == 2 and side.startswith(("above", "below")),
+                  f"{cid}: an origin binding needs zero, two distinct tick ids and a vertical side", cid)
+            continue
+        ax = axes.get(tuple(axis))
+        if not check(ax is not None and ax["step"] is not None,
+                     f"{cid}: tick-label needs a declared, stepped axis {axis}", cid):
+            continue
+        n = (v - ax["v0"]) / ax["step"]
+        end = (ax["v1"] - ax["v0"]) / ax["step"]
+        check(0 <= n <= end and abs(n - round(n)) < 1e-6,
+              f"{cid}: {v:g} is not on the tick sequence for {axis}", cid)
+        check(":" not in tick_ids and "-" not in side and tick_label_sides.setdefault(axis, side) == side,
+              f"{cid}: tick-label needs a single tick id and consistent side on {axis}", cid)
+    for axis in tick_label_sides:
+        ax = axes[tuple(axis)]
+        expected = {ax["v0"] + i * ax["step"]
+                    for i in range(round((ax["v1"] - ax["v0"]) / ax["step"]) + 1)}
+        expected.discard(0)
+        missing = sorted(v for v in expected if not any(
+            a_id == axis and math.isclose(v, actual, abs_tol=1e-6)
+            for a_id, actual in tick_label_slots))
+        check(not missing, f"tick-label: {axis} is missing bindings for {missing}")
+
+    for c in cs["claims"]:
+        tok = c["pred"].split()
+        if tok[0] == "axis-clearance":
+            check(len(tok) >= 4 and re.fullmatch(r"\d+(?:\.\d+)?", tok[2]) and float(tok[2]) > 0
+                  and all(re.fullmatch(r"[\w.-]+", word) for word in [tok[1], *tok[3:]]),
+                  f"{c['id']}: axis-clearance needs an arrow id, positive rendered gap and trace ids", c["id"])
+            continue
+        if tok[0] in ("point-label", "dimension-label"):
+            good = len(tok) == 4 and all(re.fullmatch(r"[\w.-]+", word) for word in tok[1:3])
+            check(good and re.fullmatch(r"\d+(?:\.\d+)?", tok[3]) and float(tok[3]) > 0
+                  and (tok[0] != "point-label" or tok[1] in a),
+                  f"{c['id']}: label binding needs a declared target, element id and positive gap", c["id"])
+            continue
+        if tok[0] != "visible-mark":
+            continue
+        right = len(tok) == 4 and tok[1:3] == ["right", "1"]
+        grouped = len(tok) >= 5 and tok[1] in ("parallel", "equal") and tok[2] in ("1", "2", "3")
+        check((right and re.fullmatch(r"[A-Z]{3}", tok[3])) or
+              (grouped and len(set(tok[3:])) == len(tok[3:])
+               and all(t in cs["segments"] or t[::-1] in cs["segments"] for t in tok[3:])),
+              f"{c['id']}: visible-mark needs a right-angle vertex and arms or a group of declared segments",
+              c["id"])
+
     unchecked_ats = sorted(cid2 for cid2, _, _ in ats if cid2 not in checked_ats)
     check(not unchecked_ats,
           f"every `at` claim has an `axis` to check against, the same way `tick`/`interval` do"

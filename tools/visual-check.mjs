@@ -172,11 +172,13 @@ const PRIM_SEL = "line,polyline,polygon,path,circle,rect,ellipse";
 function paintOn(v: string): boolean { return !!v && v !== "none" && v !== "transparent" && v !== "rgba(0, 0, 0, 0)"; }
 
 /** Measure every [role=img] figure under scope — one entry each (per-width hosts in batch mode). */
-function measure(scope: ParentNode) {
+function measure(scope: ParentNode, docs?: any[]) {
   const hosts = [...scope.querySelectorAll('[role="img"]')] as HTMLElement[];
+  let nextDoc = 0;
   return hosts.map((host, index) => {
     const svg = host.querySelector("svg");
     if (!svg) return { index, svg: false, ariaLabel: host.getAttribute("aria-label") ?? null, labels: [] };
+    const doc = docs ? docs[nextDoc++] : g.__vcDoc;
     const vb = (svg as SVGSVGElement).viewBox?.baseVal;
     const srect = svg.getBoundingClientRect();
     const pxPerUnit = vb && vb.width ? srect.width / vb.width : null;
@@ -218,14 +220,16 @@ function measure(scope: ParentNode) {
     // 2026-10-04: a letter may sit over them); they still count for geom_u, whose
     // proximity is exactly what keeps a fallback letter attached. Same positional
     // g-to-element mapping vdd-check's render pass uses — a count mismatch exempts nothing.
-    const docEls = ((g.__vcDoc?.elements ?? []) as any[]).map((el: any, i: number) => ({ el, index: i }));
+    const docEls = ((doc?.elements ?? []) as any[]).map((el: any, i: number) => ({ el, index: i }));
     if (docEls.some(({ el }: any) => typeof el.z === "number"))
       docEls.sort((a: any, b: any) => (a.el.z ?? 0) - (b.el.z ?? 0) || a.index - b.index);
     const shapeEls = docEls.filter(({ el }: any) => el.type !== "math");
     const gEls = [...svg.children].filter((e) => e.tagName.toLowerCase() === "g");
+    const idsByGroup = new Map<Element, string>();
     const gridPrims = new Set<Element>();
     if (gEls.length === shapeEls.length)
       shapeEls.forEach(({ el }: any, i: number) => {
+        idsByGroup.set(gEls[i], el.id);
         if (el.type === "line" && /^g[vh][0-9]+$/.test(String(el.id ?? "")))
           for (const n of gEls[i].querySelectorAll(PRIM_SEL)) gridPrims.add(n);
       });
@@ -244,10 +248,10 @@ function measure(scope: ParentNode) {
     // nearest at disambiguates two math elements carrying the same latex; a residual collision
     // only misreports if they also differ in fontSize — nearest wins, noted here);
     // fontSizeOf semantics mirrored: el.fontSize ?? defaults.fontSize ?? 18.
-    const mathEls = ((g.__vcDoc?.elements ?? []) as any[])
+    const mathEls = ((doc?.elements ?? []) as any[])
       .filter((el) => el.type === "math")
       .map((el) => ({ latex: String(el.latex).trim(), at: el.at,
-        fs: el.fontSize ?? g.__vcDoc?.defaults?.fontSize ?? 18 }));
+        fs: el.fontSize ?? doc?.defaults?.fontSize ?? 18 }));
     const labels = labelEls.map(({ e, kind }, i) => {
       const bbox = boxOf(e);
       const cs = getComputedStyle(e);
@@ -255,6 +259,8 @@ function measure(scope: ParentNode) {
       const text = (html ? html.textContent : e.textContent || "").trim();
       const latex = kind === "math" ? e.querySelector("annotation")?.textContent?.trim() ?? undefined : undefined;
       const ownG = e.closest("g");
+      let group = ownG;
+      while (group && group.parentElement !== svg) group = group.parentElement?.closest("g") ?? null;
       let edge_u = null, stroke_u = null, geom_u = null;
       if (bbox && vb) {
         edge_u = Math.min(
@@ -293,7 +299,7 @@ function measure(scope: ParentNode) {
         stroke_u = stroke === Infinity ? null : stroke;
         geom_u = geom === Infinity ? null : geom;
       }
-      return { i, text, latex, kind, bbox,
+      return { i, text, latex, kind, bbox, elementId: group ? idsByGroup.get(group) : undefined,
         fontFamily: cs.fontFamily,
         // For svg <text> cs.fontSize IS in user units (geometry properties report unscaled — the
         // viewBox→px scale lives on the CTM). For math overlays it is CSS px =
@@ -594,6 +600,12 @@ async function runBatch(figures, { out, widths, themes, headed }) {
   return figures;
 }
 
+function bindingWarnings(result) {
+  return result.verdict === "PASS" && result.labels.some((l) => l.binding === "fallback") &&
+    !result.labels.some((l) => l.binding === "bound")
+    ? ["PASS has no bound labels; fallback measures proximity, not target ownership."] : [];
+}
+
 function figureLine(fig, pad) {
   const a = fig.result;
   const failsOf = (rule) => a.findings.filter((f) => f.rule === rule && f.severity === "fail");
@@ -605,6 +617,7 @@ function figureLine(fig, pad) {
   const minS = a.labels.reduce((m, l) => Math.min(m, l.stroke_px ?? Infinity), Infinity);
   parts.push(`labels ${uniq} (min edge ${minE === Infinity ? "—" : minE + "px"}, min stroke ${minS === Infinity ? "—" : minS + "px"})`);
   parts.push(`target ${failsOf("target").length ? `${failsOf("target").length} fail` : "ok"}`);
+  if (bindingWarnings(a).length) parts.push("WARN no bound labels");
   parts.push(`arc ${a.arcs ? (failsOf("arc").length ? `${failsOf("arc").length} fail` : "ok") : "—"}`);
   const shadedF = failsOf("shaded");
   parts.push(`shaded ${a.shaded ? (shadedF.length ? `measured ${a.shaded.measured} ≠ claimed ${a.shaded.claimed}` : "ok") : "—"}`);
@@ -669,8 +682,9 @@ async function batchMode() {
       source: f.source,
       verdict: f.result.verdict,
       findings: f.result.findings,
-      labels: f.result.labels.map(({ i, text, kind, width, edge_px, stroke_px, target_u, ok }) =>
-        ({ i, text, kind, width, edge_px, stroke_px, target_u, ok })),
+      labels: f.result.labels.map(({ i, text, kind, width, edge_px, stroke_px, target_u, target_via, binding, ok }) =>
+        ({ i, text, kind, width, edge_px, stroke_px, target_u, target_via, binding, ok })),
+      warnings: bindingWarnings(f.result),
       shaded: f.result.shaded,
       font: f.result.font,
       arcs: f.result.arcs,
@@ -893,11 +907,12 @@ async function sessionMode() {
           };
         });
         const clipped = !(clip.noScroll && clip.svgsInside);
-        const measured = await port.evaluate((el) => window.__vc.measure(el));
         // --staged: pair each rendered figure with the staged doc's figure by position among
         // the svg-bearing hosts (m.index counts svg-less plates too — see pairRenderedFigures);
         // the same claims then drive assess() exactly as in mode 1.
         const qFigs = stagedFile ? (figsByQ.get(n) ?? []) : null;
+        const measured = await port.evaluate((el, docs) => window.__vc.measure(el, docs ?? undefined),
+          qFigs?.map((f) => f.parsed) ?? null);
         const pairs = pairRenderedFigures(measured, qFigs);
         if (qFigs && qFigs.length !== pairs.length)
           console.log(`  WARN Q${n}: ${qFigs.length} staged figure(s) but ${pairs.length} rendered — claims resolved by position`);
@@ -908,7 +923,10 @@ async function sessionMode() {
         if (fails.length || clipped) anyFail = true;
         const verdict = clipped ? "CLIPPED FAIL" : fails.length ? "FAIL" : "PASS";
         shots.push({ question: n, theme, verdict, figures: results.length,
-                     findings: fails.map((f) => f.message), png });
+                     findings: fails.map((f) => f.message), png,
+                     bindings: results.map((r, i) => ({ id: pairs[i].fig?.id ?? null,
+                       warnings: bindingWarnings(r),
+                       labels: r.labels.map(({ text, target_via, binding }) => ({ text, target_via, binding })) })) });
         console.log(`Q${n}  ${verdict}  ${theme} · figures ${results.length} · findings ${fails.length}${fails.length ? " — " + fails.map((f) => f.message).join("; ") : ""}  → ${png}`);
         if (needH > vp.height) await page.setViewportSize(vp); // put the viewport back
         await region.getByRole("button", { name: "Close preview" }).click().catch(() => {});
