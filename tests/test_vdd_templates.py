@@ -4108,6 +4108,15 @@ class NewFigureProfiles(unittest.TestCase):
         self.assertIn('label "10 m"', b.claims)
         self.assert_audits(b)
 
+    def test_scale_drawing_audits_a_million_to_one_conversion(self):
+        b = vt.build_scale_drawing(
+            figure_id="review3", stem="Read the plan.",
+            scale={"drawn": 1, "drawn_unit": "cm", "real": 1_000_000, "real_unit": "cm"},
+            plan={"points": {"A": [0, 0], "B": [6, 0], "C": [6, 4]}, "segments": ["AB", "BC"]})
+        self.assertIn("derive 1000000 / 1 = 1000000", b.claims)
+        self.assertIn("Scale: 1 cm : 1\u2009000\u2009000 cm", b.claims)
+        self.assert_audits(b)
+
 
 class G10ExtendedContractTests(unittest.TestCase):
     """Regressions for the bounded G10 gaps 3/8/10-11 — circle_angles chord

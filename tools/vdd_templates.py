@@ -9134,6 +9134,12 @@ def build_scale_drawing(*, figure_id, stem, scale, plan, scale_bar=None, show="s
     if scale_bar is not None and bar <= 0:
         raise TemplateError(f"{kind}: scale_bar length must be positive")
     bar_drawn = bar / real * drawn
+    def decimal(value):
+        return format(Decimal(_num_exact(value)), "f")
+
+    def display(value):
+        return f"{int(value):,}".replace(",", "\u2009") if value.is_integer() else decimal(value)
+
     ppu = min(300 / max(width, bar_drawn) if width or bar_drawn else math.inf,
               220 / height if height else math.inf)
     vc.reset_ids()
@@ -9155,18 +9161,18 @@ def build_scale_drawing(*, figure_id, stem, scale, plan, scale_bar=None, show="s
         for n in (a, b):
             x, y = anchors[n]
             elements.append(vc.line((x, y - 5), (x, y + 5), id=f"bartick{n}"))
-        glyph = f"{bar:g} {real_unit}"
+        glyph = f"{display(bar)} {real_unit}"
         elements.append(vc.text(((anchors[a][0] + anchors[b][0]) / 2, bottom + 88), glyph, id="barlabel"))
         claims.append((f'label "{glyph}" names {a}{b}', "inferred", "bar length in real units"))
         claims.append((f"scale-length {a}{b} = {_num_exact(bar_drawn)}", "inferred", "bar length in drawn units"))
     if show in ("scale", "both"):
-        glyph = f"Scale: {drawn:g} {drawn_unit} : {real:g} {real_unit}"
+        glyph = f"Scale: {display(drawn)} {drawn_unit} : {display(real)} {real_unit}"
         elements.append(vc.text((left, bottom + (122 if bar else 48)), glyph, id="ratio", align="start"))
         claims.append((f'label "{glyph}" names common_scale', "inferred", "the common drawing scale"))
     for a, b in segments:
         claims.append((f"scale-length {a}{b} = {_num_exact(math.dist(coords[a], coords[b]))}", "inferred",
                        "segment length in drawn units"))
-    claims.extend([(f"derive {real:g} / {drawn:g} = {_num_exact(real / drawn)}",
+    claims.extend([(f"derive {decimal(real)} / {decimal(drawn)} = {decimal(real / drawn)}",
                     "inferred", f"{real_unit} per {drawn_unit}"),
                    ("none tickMark parallelMark angleMark shaded arrow dashed", "inferred", "plan lines and labels")])
     return finish(kind=kind, figure_id=figure_id, stem=stem, ask=ask, medium=medium,
