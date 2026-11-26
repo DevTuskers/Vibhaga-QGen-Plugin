@@ -24,7 +24,7 @@ UNIT_ABBREVIATION = (
 )
 UNIT_WITH_PREFIX = rf"(?:(?:ඝන|වර්ග)\s+)?{WORD_UNIT}"
 UNIT_AFTER_DIGIT = re.compile(
-    rf"(?<!\d)\d+(?:[.,]\d+)?\s*(?P<unit>{WORD_UNIT}|{UNIT_ABBREVIATION})(?!\w)"
+    rf"(?<!\d)\d+(?:[.,]\d+)?\s*(?P<unit>{UNIT_WITH_PREFIX}|{UNIT_ABBREVIATION})(?!\w)"
 )
 UNIT_BEFORE_DIGIT = re.compile(
     rf"(?<!\w)(?P<unit>{UNIT_WITH_PREFIX})\s+\d+(?:[.,]\d+)?"
@@ -33,7 +33,7 @@ UNIT_BEFORE_MATH = re.compile(
     rf"(?<!\w)(?P<unit>{UNIT_WITH_PREFIX})\s+$"
 )
 UNIT_AFTER_MATH = re.compile(
-    rf"^\s*(?P<unit>{WORD_UNIT}|{UNIT_ABBREVIATION})(?!\w)"
+    rf"^\s*(?P<unit>{UNIT_WITH_PREFIX}|{UNIT_ABBREVIATION})(?!\w)"
 )
 TRANSLITERATED_UNIT = re.compile(r"(?<!\w)(?P<unit>ක්ම්|ක්මී|ම්ම්|ක්ග්|ම්ග්|ම්ල්)(?!\w)")
 

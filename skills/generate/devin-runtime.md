@@ -46,7 +46,9 @@ path, plus `reports.diagram` when `figures` is true. For a split batch provide `
 `[first, last]` (inclusive, ≤12 questions) for each chunk. On re-runs supply the same chunk's
 prior critic outputs in `previous.content` and, when applicable, `previous.diagram` (each
 `{"report": "<path>", "rows": "<rows dir or hashes.txt>" }`). Carry unchanged chunks per
-[step 14](SKILL.md#batch-critique-and-fixes). Assign different report directories per critic,
+[step 14](SKILL.md#batch-critique-and-fixes). When only some critic inputs changed in a chunk,
+set its optional `critics` list (e.g. `["content"]`) and supply reports and previous inputs only
+for those critics; otherwise the chunk runs all applicable critics. Assign different report directories per critic,
 chunk and round: for example, `wt/<topic>/critic/r1/content/r1.md` and
 `wt/<topic>/critic/r1/diagram/diagram-r1.md`. This isolates their SQL row caches and preserves
 previous-round evidence.

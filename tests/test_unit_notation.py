@@ -18,6 +18,18 @@ def write_content(run: Path, body: str) -> Path:
 
 
 class UnitNotationTest(unittest.TestCase):
+    def test_rejects_prefixed_unit_words_after_numbers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_content(Path(tmp), """\
+questions:
+  - n: 1
+    stem_si: "14 වර්ග මීටර්"
+    final_si: "$23$ ඝන සෙන්ටිමීටර්"
+""")
+            result = self.run_tool(path)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("unit-notation: 2 fail(s)", result.stdout)
+
     def run_tool(self, path: Path):
         return subprocess.run([sys.executable, str(TOOL), str(path)],
                               capture_output=True, text=True, check=False)

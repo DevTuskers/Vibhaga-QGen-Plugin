@@ -8,6 +8,8 @@ This plugin generates questions from the lesson corpus, not from source papers. 
 2026-11-25: Split long trap and skill references out of the run instructions and archived
 the migration tables and generation history. No workflow or validation rules changed.
 
+2026-11-26: Grade 11 mixed run — 20 bilingual Medium questions (41 answer parts; 10 diagrams), published flagged; Q2/Q2b/Q3 passed; two plan rounds and three batch rounds, final critics satisfied. Added optional per-chunk critic selection and precritic wording, scaffold, and figure-description checks.
+
 ## Archive — not required before a generation run
 
 - <a name="tools"></a>[Tools](migration/archive/history.md#tools)

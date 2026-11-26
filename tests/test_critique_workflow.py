@@ -101,6 +101,25 @@ class CritiqueWorkflowTests(unittest.TestCase):
         self.assertEqual(len(self.events), 2)
         self.assertIn("qgen-critic.md", self.events[1][0])
 
+    def test_split_batch_carries_one_diagram_critic(self):
+        config = self.batch(figures=True)
+        first = {
+            "questions": [1, 12],
+            "critics": ["content"],
+            "reports": {"content": str(self.critic / "first/content/r2.md")},
+            "previous": {"content": {"report": "/test/first/previous.md", "rows": "/test/first/rows"}},
+        }
+        config["chunks"].insert(0, first)
+        self.run_round(config)
+        registered, parallel, (first_content, _), (second_content, _), (second_diagram, _) = self.events
+        self.assertEqual((registered, parallel), ("register", "parallel"))
+        self.assertIn("Chunk: questions 1..12. Previous report: /test/first/previous.md. "
+                      "Previous rows: /test/first/rows.", first_content)
+        self.assertIn("qgen-critic.md", first_content)
+        self.assertIn("qgen-critic.md", second_content)
+        self.assertIn("qgen-diagram-critic.md", second_diagram)
+        self.assertIn("Chunk: questions 13..24.", second_diagram)
+
     def test_detached_copy_uses_home_checkout(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
