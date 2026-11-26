@@ -301,10 +301,9 @@ export function paintVisible(value) {
   const s = String(value).trim().toLowerCase();
   if (!s || s === "none" || s === "transparent") return false;
   if (/^#[0-9a-f]{4}$|^#[0-9a-f]{8}$/.test(s)) return !/00$/.test(s);
-  const alpha = s.match(/(?:,|\/)\s*([\d.]+%?)\s*\)$/);
-  if (alpha && /^(?:rgba?|hsla?|lab|lch|oklab|oklch|color|color-mix)\(/.test(s) && parseFloat(alpha[1]) === 0)
-    return false;
-  return true;
+  const alpha = s.match(/^(?:rgba|hsla)\((?:[^,()]+,){3}\s*([\d.]+%?)\s*\)$/) ??
+    s.match(/^(?:rgba?|hsla?|lab|lch|oklab|oklch|color|color-mix)\(.*\/\s*([\d.]+%?)\s*\)$/);
+  return !alpha || parseFloat(alpha[1]) !== 0;
 }
 
 /** Effective fill visibility on an element (fill.opacity × element.opacity × defaults.opacity > 0). */
