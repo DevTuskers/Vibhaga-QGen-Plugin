@@ -35,6 +35,8 @@ UNIT_BEFORE_MATH = re.compile(
 UNIT_AFTER_MATH = re.compile(
     rf"^\s*(?P<unit>{UNIT_WITH_PREFIX}|{UNIT_ABBREVIATION})(?!\w)"
 )
+NUMERAL = re.compile(r"[+\-−]?\d+(?:[.,]\d+)?")
+REPORTING_UNIT = re.compile(r"^\s+ලෙස\b")
 TRANSLITERATED_UNIT = re.compile(r"(?<!\w)(?P<unit>ක්ම්|ක්මී|ම්ම්|ක්ග්|ම්ග්|ම්ල්)(?!\w)")
 
 
@@ -73,8 +75,13 @@ def field_hits(text: str) -> list[str]:
                 if before:
                     matches.append(f"{before.group('unit')} {segment}")
             if index + 1 < len(segments):
-                after = UNIT_AFTER_MATH.match(segments[index + 1])
+                prose = segments[index + 1]
+                after = UNIT_AFTER_MATH.match(prose)
                 if after:
+                    if (not NUMERAL.fullmatch(segment[1:-1].strip())
+                            and (REPORTING_UNIT.match(prose[after.end():])
+                                 or after["unit"].endswith("වලින්"))):
+                        continue
                     matches.append(f"{segment}{after.group(0)}")
     return matches
 

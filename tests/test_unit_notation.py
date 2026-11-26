@@ -18,6 +18,19 @@ def write_content(run: Path, body: str) -> Path:
 
 
 class UnitNotationTest(unittest.TestCase):
+    def test_accepts_units_requested_for_a_symbol_in_prose(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_content(Path(tmp), """\
+questions:
+  - n: 1
+    stem_si: "$A$ වර්ග මීටර ලෙස දක්වන්න."
+  - n: 2
+    stem_si: "$V_1$ ඝන සෙන්ටිමීටරවලින් දක්වන්න."
+""")
+            result = self.run_tool(path)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("unit-notation: 0 fail(s)", result.stdout)
+
     def test_rejects_prefixed_unit_words_after_numbers(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = write_content(Path(tmp), """\
