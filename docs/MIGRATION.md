@@ -14,6 +14,8 @@ the migration tables and generation history. No workflow or validation rules cha
 
 2026-11-27: Grade 10 mixed run — 20 bilingual Medium questions (40 answer parts; 8 diagrams: L27 Constructions, L16 Parallelograms II, L28 Surface Area and Volume, L31 Scale Diagrams; 12 figureless: L02 Square Root, L04 Binomial Expressions, L11 LCM of Algebraic Expressions, L24 Algebraic Inequalities, L21 Rate, L22 Formulae), published flagged to session 1b394519-84c4-4733-8a70-6b39530be574. Q2/Q2b/Q3/T77 passed, visual 6-rule standard verified (8/8 PASS), batch content critic satisfied (20/20 clean). Grade 10 length directives strictly enforced (practical/real-world context, structured paragraphs <= 240 chars, approaches <= 180 chars).
 
+2026-11-27: Grade 11 mixed run — 20 bilingual Medium questions (60 answer parts; 8 diagrams: L11 Mid-point Theorem, L21 Tangents, L18 Surface Area and Volume of Solids, L24 Sets; 12 figureless: L01 Real Numbers, L03 Quadratic Equations, L07 Algebraic Fractions, L12 Graphs, L14 Inequalities, L15 Frequency Distributions), published flagged to session ed360eed-9e86-4ab8-8223-e37f2d4e640b. Q2/Q2b/Q3/T77 passed, visual 6-rule standard verified (8/8 PASS across 320/375/768 px light/dark), independent diagram critic satisfied (0 Blocker, 0 Major), independent content critic satisfied (20/20 clean, 0 Blocker, 0 Major). Grade 11 comprehensive O/L exam-length scenarios strictly enforced with chunked paragraphs <= 240 chars, approaches <= 180 chars, and 0 banned MT terms.
+
 ## Archive — not required before a generation run
 
 - <a name="tools"></a>[Tools](migration/archive/history.md#tools)
