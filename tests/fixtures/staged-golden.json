@@ -50,7 +50,7 @@
      "sub_answer": {
       "sub_answer_id": "6c7ffab5-8ff9-5151-b71f-13b16c2c0a21",
       "approach": "$2(10+4)$",
-      "approach_sinhala": "$2(10+4)$",
+      "approach_sinhala": "ගණනය කරන්න.\n\n$2(10+4)$",
       "final_answer_latex": "$28\\,\\text{cm}$",
       "final_answer_latex_sinhala": "$28\\,\\text{cm}$"
      },
@@ -74,7 +74,7 @@
        "sub_answer": {
         "sub_answer_id": "dba4b631-4810-50e3-aecf-16567087a149",
         "approach": "$10/2$",
-        "approach_sinhala": "$10/2$",
+        "approach_sinhala": "ගණනය කරන්න.\n\n$10/2$",
         "final_answer_latex": "$5\\,\\text{cm}$",
         "final_answer_latex_sinhala": "$5\\,\\text{cm}$"
        },
@@ -90,7 +90,7 @@
        "sub_answer": {
         "sub_answer_id": "61559668-c71d-573e-9f12-dd3e76926e85",
         "approach": "$4 \\times 5$",
-        "approach_sinhala": "$4 \\times 5$",
+        "approach_sinhala": "ගණනය කරන්න.\n\n$4 \\times 5$",
         "final_answer_latex": "$20\\,\\text{cm}$",
         "final_answer_latex_sinhala": "$20\\,\\text{cm}$"
        },

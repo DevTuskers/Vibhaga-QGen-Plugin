@@ -103,7 +103,9 @@ def bilingual_problem(en, si, si_key):
     build-staged wraps it in `die` below (same rule, never copied). `si` is required; the ENGLISH
     side must hold no Sinhala codepoint; the `_si` side must be Sinhala — unless it is the identical
     maths-only text (identical to `en` AND no Latin word outside the `$…$`/`$$…$$` spans, e.g.
-    `$x = 4$` — the same string serves both media)."""
+    `$x = 4$` — the same string serves both media). An approach never shares: publish stores an
+    identical `approach_si` as NULL and queries.sql Q2b then reads `approach_no_sinhala` — start the
+    Sinhala side with a Sinhala lead sentence instead."""
     if not isinstance(si, str) or not si.strip():
         return (f"'{si_key}' is required — every student text is authored in English AND Sinhala")
     if isinstance(en, str) and SINHALA_CHAR.search(en):
@@ -113,6 +115,9 @@ def bilingual_problem(en, si, si_key):
         return None
     en_text = en if isinstance(en, str) else ""
     if si.strip() == en_text.strip() and not LATIN_WORD.search(MATH_SPAN.sub("", si)):
+        if si_key == "approach_si":
+            return (f"'{si_key}' is identical maths-only text — publish stores it as NULL and Q2b "
+                    f"fails; add a Sinhala lead sentence")
         return None  # shared maths-only — stored once in `_english`, both media read it
     return f"'{si_key}' is a copy of English prose / not Sinhala"
 

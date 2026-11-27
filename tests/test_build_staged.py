@@ -442,7 +442,8 @@ class BuildStagedTest(unittest.TestCase):
 
 class BilingualTest(unittest.TestCase):
     """The 0024 contract: every student field carries its *_si twin; build-staged refuses a
-    missing, a Sinhala-in-English, or a copied side (identical maths-only allowed)."""
+    missing, a Sinhala-in-English, or a copied side (identical maths-only allowed
+    except in an approach)."""
     K = BuildStagedTest
 
     def write_spec(self, spec, tmp):
@@ -494,6 +495,13 @@ class BilingualTest(unittest.TestCase):
             a = json.loads(out2.read_text())["questions"][0]["answers"][0]
             self.assertEqual(a["approach_sinhala"], BASE["questions"][0]["approach_si"])
             self.assertEqual(a["final_answer_latex_sinhala"], BASE["questions"][0]["final_si"])
+
+    def test_refuses_identical_maths_only_approach(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = self.good()
+            leaf = spec["questions"][0]["parts"][0]["parts"][0]
+            leaf["approach"] = leaf["approach_si"] = "$2 + 3 = 5$"
+            self.assert_refuses(spec, tmp, "identical maths-only")
 
     def test_refuses_each_missing_si(self):
         for pop in ("stem_si",):
