@@ -26,7 +26,7 @@ No figures unless a question needs one. Never re-read a skill or corpus file alr
    See [T143–T154](../../docs/TRAPS.md). Tips: Hard Q stems may leave R only as part (a) and must end on an H
    leaf; `number_line` takes only non-negative endpoints and needs every drawn number (incl. step `1`) written in
    the stem — write `$0, 1, 2, \ldots, 8$`; a maths-only `approach_si` identical to English fails Q2b
-   (`part_approach_no_sinhala`) — always add a Sinhala sentence to the approach. Easy pictograph parts are ONE read (one row, or a given count → its row); reading two rows and adding is M. A "Is X correct? Show your working" part is H — in a Medium batch ask the computation instead ("how many more …", "find the wrong entry").
+   (`part_approach_no_sinhala`; `build-staged.py` now refuses it) — always add a Sinhala sentence to the approach. Easy pictograph parts are ONE read (one row, or a given count → its row); reading two rows and adding is M. A "Is X correct? Show your working" part is H — in a Medium batch ask the computation instead ("how many more …", "find the wrong entry").
 3b. **Plan critic** — follow [Plan-stage critic](#plan-stage-critic): select N OK candidates that meet the
    requested lesson/band mix before rewriting. At most two rounds, the second only for replacements. Never author unreviewed lines.
 4. Write `$A/content.yaml` (bilingual, readable layout, required `difficulty: easy|medium|hard`; questions may override it; `check:` on every leaf).
@@ -249,7 +249,7 @@ same two checkout paths in the critic's spawn prompt.
      approach and final is authored in BOTH English and Sinhala: `stem`/`stem_si`, part `text`/`text_si`,
      leaf `approach`/`approach_si`, `final`/`final_si` — the Sinhala side natural everyday Sinhala, the
      English side plain school English, same numbers/steps; maths-only text (`$x = 4$`) may be identical
-     (author-question-text §0.6). `build-staged.py` refuses a missing or copied side.
+     except in an approach (author-question-text §0.6). `build-staged.py` refuses a missing or copied side.
    - **Figure references** — for every stem or part that refers to the figure, write paired
      `figure_refs: {english: [...], sinhala: [...]}` lists; each entry is
      `{figure: <content figure key>, kind: point, id: P}` (or `guide` / `bound-marker`).

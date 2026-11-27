@@ -23,7 +23,7 @@ questions:
         text: "Find its perimeter."
         text_si: "එහි පරිමිතිය සොයන්න."
         approach: "$2(10+4)$"
-        approach_si: "$2(10+4)$"
+        approach_si: "ගණනය කරන්න.\n\n$2(10+4)$"
         final: "$28\\,\\text{cm}$"
         final_si: "$28\\,\\text{cm}$"
       - label: b
@@ -34,14 +34,14 @@ questions:
             text: "Find the side of each square."
             text_si: "එක් වර්ගයක පාදයේ දිග සොයන්න."
             approach: "$10/2$"
-            approach_si: "$10/2$"
+            approach_si: "ගණනය කරන්න.\n\n$10/2$"
             final: "$5\\,\\text{cm}$"
             final_si: "$5\\,\\text{cm}$"
           - label: ii
             text: "Find the perimeter of one square."
             text_si: "එක් වර්ගයක පරිමිතිය සොයන්න."
             approach: "$4 \\times 5$"
-            approach_si: "$4 \\times 5$"
+            approach_si: "ගණනය කරන්න.\n\n$4 \\times 5$"
             final: "$20\\,\\text{cm}$"
             final_si: "$20\\,\\text{cm}$"
   - n: 3

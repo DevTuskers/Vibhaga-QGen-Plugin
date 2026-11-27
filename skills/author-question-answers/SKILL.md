@@ -136,8 +136,8 @@ For Sinhala `approach` and `final`, follow [Writing natural Sinhala](../author-q
 - **Teach, don't announce.** The north star is learning, not answer-checking. Never open with an announcement banner ('Answer:', 'Solution:', 'පිළිතුර:', 'විසඳුම:'). The approach teaches the method step-by-step; the final answer belongs in `final`/`final_si`. `precritic-lint.py` blocks any approach opening with an announcement prefix.
 - **Formal register and natural grammar.** Use formal written Sinhala (e.g. 'නැත', never spoken 'නැහැ'). Follow standard terminology in `terms/si-maths-terms.yaml` (e.g. 'ජ්‍යාය', 'ආපාතනය කරන', 'දිගංශය', 'ඒකාන්තර වෘත්ත ඛණ්ඩ ප්‍රමේයය').
 - **Write both languages (0024).** `approach` in plain school English AND `approach_si` in natural
-  everyday Sinhala — same steps, same numbers. Same for `final`/`final_si`; identical maths-only text
-  (`$x = 4$`) may be shared. Plain text, maths in `$…$`, **never Sinhala inside `\text{}`** (`precritic-lint.py` blocks this as FAIL).
+  everyday Sinhala — same steps, same numbers. Same for `final`/`final_si`; an identical maths-only `final`
+  (`$x = 4$`) may be shared, an approach never (`build-staged.py` refuses it; Q2b would fail). Plain text, maths in `$…$`, **never Sinhala inside `\text{}`** (`precritic-lint.py` blocks this as FAIL).
 - **Never** put in it: provenance, "the scheme says", your confidence, a reference to another
   question, or an apology.
 
