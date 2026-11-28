@@ -96,6 +96,20 @@ class CheckAnswersTest(unittest.TestCase):
                     self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
                     self.assertIn("1 checked · 0 false · 0 warn", r.stdout)
 
+    def test_nested_sequence_comparison_stops_at_first_difference(self):
+        with tempfile.TemporaryDirectory() as td:
+            questions = BASE.split("questions:\n", 1)[1]
+            checks = (
+                "[1] + [[[0] * 999] * 999] * 999 != [2] + [[[0] * 999] * 999] * 999",
+                "[1] + [[[0] * 999] * 999] * 999 < [2] + [[[0] * 999] * 999] * 999",
+                "([round(2 ** 0.5, 2)],) <= ([1.41],)",
+            )
+            for check in checks:
+                with self.subTest(check=check):
+                    run = write_run(Path(td), questions.replace("40 * 23 == 920", check).replace("$920$", "$1$"))
+                    r = run_tool(run)
+                    self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
     def test_worked_approximation_uses_trailing_zeros_or_explicit_place(self):
         with tempfile.TemporaryDirectory() as td:
             run = write_run(Path(td), """\

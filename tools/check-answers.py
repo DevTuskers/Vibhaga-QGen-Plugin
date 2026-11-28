@@ -142,13 +142,26 @@ def _promote_numbers(a, b):
     return a, b
 
 
-def _comparison_operands(a, b):
-    if type(a) is type(b) and isinstance(a, (list, tuple)):
-        pairs = [_comparison_operands(left, right) for left, right in zip(a, b)]
-        size = len(pairs)
-        return (type(a)([left for left, _ in pairs] + list(a[size:])),
-                type(b)([right for _, right in pairs] + list(b[size:])))
-    return _promote_numbers(a, b)
+def _compare(op, a, b):
+    equal_sequences = set()
+
+    def compare(kind, left, right):
+        if type(left) is type(right) and isinstance(left, (list, tuple)):
+            if kind in (ast.Eq, ast.NotEq) and len(left) != len(right):
+                return kind is ast.NotEq
+            key = (id(left), id(right))
+            if left is not right and key not in equal_sequences:
+                for x, y in zip(left, right):
+                    if x is not y and not compare(ast.Eq, x, y):
+                        if kind in (ast.Eq, ast.NotEq):
+                            return kind is ast.NotEq
+                        return compare(kind, x, y)
+                if len(left) == len(right):
+                    equal_sequences.add(key)
+            return _CMP[kind](len(left), len(right))
+        return _CMP[kind](*_promote_numbers(left, right))
+
+    return compare(op, a, b)
 
 
 def _eval_node(node, source):
@@ -228,12 +241,12 @@ def _eval_node(node, source):
     if isinstance(node, ast.Compare):
         left = evaluate(node.left)
         for op, comp in zip(node.ops, node.comparators):
-            f = _CMP.get(type(op))
-            if f is None:
+            kind = type(op)
+            if kind not in _CMP:
                 raise Refuse(f"comparison {type(op).__name__}")
             right = evaluate(comp)
-            pair = _comparison_operands(left, right) if source is not None else (left, right)
-            if not f(*pair):
+            matches = _compare(kind, left, right) if source is not None else _CMP[kind](left, right)
+            if not matches:
                 return False
             left = right
         return True
