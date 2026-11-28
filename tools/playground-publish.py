@@ -56,7 +56,7 @@ Usage (from anywhere; credentials + URLs are read at run time from Vibhaga-Admin
                             [--k 5] [--exclude-batch-id SID] [--out F]     # read-only: k nearest published questions (0026)
   playground-publish.py embeddings-refresh [--grade N|--exam SLUG] [--subject S] [--limit 100] [--max-calls 20] [--dry-run]
                                                                            # embed missing/stale vectors; no scope = backfill
-  playground-publish.py families upsert --variants variants.yaml --metadata family-metadata.json
+  playground-publish.py families upsert --variants variants.yaml --metadata family-metadata.json [--status draft|active|retired]
   playground-publish.py --self-test                                        # NO network: runs test_playground_publish.py
 
   every network subcommand: --env PATH (default: Vibhaga-Admin/.env.local, found by walking up) · --cred-prefix VIBHAGA_ADMIN
@@ -411,7 +411,10 @@ def load_questions_file(path: Path) -> list:
     return qs
 
 
-def family_registration_body(variants_path: Path, metadata_path: Path) -> dict:
+FAMILY_STATUSES = ("draft", "active", "retired")
+
+
+def family_registration_body(variants_path: Path, metadata_path: Path, status: str | None = None) -> dict:
     import yaml
     try:
         ledger = yaml.safe_load(variants_path.read_text(encoding="utf-8"))
@@ -434,7 +437,10 @@ def family_registration_body(variants_path: Path, metadata_path: Path) -> dict:
             or not _auth.valid_uuid(lesson_id) or band not in DIFFICULTIES or type(cap) is not int
             or not len(variants) <= cap <= 2_147_483_647):
         raise Refuse("invalid family key, lesson, band or cap in the expansion ledger", 2)
-    return {**metadata, "family_key": family_key, "lesson_id": lesson_id.lower(), "band": band, "variant_cap": cap}
+    if status is not None and status not in FAMILY_STATUSES:
+        raise Refuse(f"--status must be one of {', '.join(FAMILY_STATUSES)}", 2)
+    body = {**metadata, "family_key": family_key, "lesson_id": lesson_id.lower(), "band": band, "variant_cap": cap}
+    return body if status is None else {**body, "status": status}
 
 
 def cmd_family_upsert(api: PlaygroundApi, body: dict, log=print) -> int:
@@ -1329,6 +1335,7 @@ def main(argv=None) -> int:
     qs = qsub.add_parser("show", parents=[common]); qs.add_argument("question_id"); qs.add_argument("--out")
     families = sub.add_parser("families"); fsub = families.add_subparsers(dest="sub", required=True)
     fu = fsub.add_parser("upsert", parents=[common]); fu.add_argument("--variants", type=Path, required=True); fu.add_argument("--metadata", type=Path, required=True)
+    fu.add_argument("--status", choices=FAMILY_STATUSES, help="omit to keep the API default (draft on create, unchanged on update)")
     cv = sub.add_parser("coverage", parents=[common]); cv.add_argument("--grade", type=int); cv.add_argument("--exam"); cv.add_argument("--subject")
     cv.add_argument("--status", choices=["published", "draft", "all"]); cv.add_argument("--needs-human-review", choices=["true", "false"])
     cv.add_argument("--medium", choices=MEDIUMS); cv.add_argument("--band", choices=[*DIFFICULTIES, "none"])
@@ -1354,7 +1361,7 @@ def main(argv=None) -> int:
         if getattr(a, "lesson_id", None): a.lesson_id = ",".join(parse_uuid_list(a.lesson_id, "--lesson-id"))
         if a.cmd == "session" and a.sub == "create" and Path(a.ledger).suffix != ".json":
             raise Refuse("--ledger must have a .json suffix", 2)
-        family_body = family_registration_body(a.variants, a.metadata) if a.cmd == "families" else None
+        family_body = family_registration_body(a.variants, a.metadata, a.status) if a.cmd == "families" else None
         env_path = Path(a.env) if getattr(a, "env", None) else (Path(os.environ["VIBHAGA_ADMIN_ENV"]) if os.environ.get("VIBHAGA_ADMIN_ENV") else None) \
             or _pub.find_up("Vibhaga-Admin/.env.local", HERE) or _pub.find_up("Vibhaga-Admin/.env.local", Path.cwd())
         if not env_path or not env_path.exists():
