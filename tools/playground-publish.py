@@ -56,6 +56,7 @@ Usage (from anywhere; credentials + URLs are read at run time from Vibhaga-Admin
                             [--k 5] [--exclude-batch-id SID] [--out F]     # read-only: k nearest published questions (0026)
   playground-publish.py embeddings-refresh [--grade N|--exam SLUG] [--subject S] [--limit 100] [--max-calls 20] [--dry-run]
                                                                            # embed missing/stale vectors; no scope = backfill
+  playground-publish.py families upsert --variants variants.yaml --metadata family-metadata.json
   playground-publish.py --self-test                                        # NO network: runs test_playground_publish.py
 
   every network subcommand: --env PATH (default: Vibhaga-Admin/.env.local, found by walking up) · --cred-prefix VIBHAGA_ADMIN
@@ -121,6 +122,13 @@ class PlaygroundApi(_pub.Api):
 
     def create_session(self, meta: dict) -> dict:
         return checked_session(self._pg("POST", "/v1/admin/playground/sessions", meta, ok=(201,)))
+
+    def upsert_family(self, body: dict) -> dict:
+        family = self._pg("POST", "/v1/admin/families", body, ok=(200, 201))
+        if (not isinstance(family, dict) or not _auth.valid_uuid(family.get("family_id"))
+                or any(family.get(key) != body[key] for key in ("lesson_id", "family_key"))):
+            raise Refuse("malformed or mismatched family response (body withheld)", 5)
+        return family
 
     def get_session(self, sid: str) -> dict:
         return checked_session(self._pg("GET", f"/v1/admin/playground/sessions/{sid}"))
@@ -401,6 +409,39 @@ def load_questions_file(path: Path) -> list:
     if not isinstance(qs, list) or any(not isinstance(q, dict) or not q.get("question_id") for q in qs):
         raise Refuse("staged file must be {questions:[…]} or a bare list of questions with question_id", 2)
     return qs
+
+
+def family_registration_body(variants_path: Path, metadata_path: Path) -> dict:
+    import yaml
+    try:
+        ledger = yaml.safe_load(variants_path.read_text(encoding="utf-8"))
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        variants = ledger["variants"]
+        first = variants[0]
+        identity_fields = ("family_id", "lesson_id", "band", "variant_cap")
+        family_key, lesson_id, band, cap = (first[field] for field in identity_fields)
+        if not isinstance(variants, list) or any(
+                any(row[field] != first[field] for field in identity_fields) for row in variants):
+            raise ValueError
+    except (OSError, TypeError, KeyError, IndexError, ValueError, yaml.YAMLError):
+        raise Refuse("expected one nonempty family-expand ledger and a JSON metadata object", 2) from None
+    fields = {"title", "title_si", "description", "description_si", "task_chain", "representation",
+              "unknown_direction", "format", "creative_rationale"}
+    if (not isinstance(metadata, dict) or set(metadata) != fields
+            or any(not isinstance(value, str) or not value.strip() for value in metadata.values())):
+        raise Refuse(f"family metadata requires exactly these nonblank fields: {', '.join(sorted(fields))}", 2)
+    if (not isinstance(family_key, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", family_key)
+            or not _auth.valid_uuid(lesson_id) or band not in DIFFICULTIES or type(cap) is not int
+            or not len(variants) <= cap <= 2_147_483_647):
+        raise Refuse("invalid family key, lesson, band or cap in the expansion ledger", 2)
+    return {**metadata, "family_key": family_key, "lesson_id": lesson_id.lower(), "band": band, "variant_cap": cap}
+
+
+def cmd_family_upsert(api: PlaygroundApi, body: dict, log=print) -> int:
+    api.fresh_token("families:upsert")
+    row = api.upsert_family(body)
+    log(f"family upsert: {row['family_key']} → {row['family_id']}")
+    return 0
 
 
 def load_ids_file(path: Path) -> list[str]:
@@ -1286,6 +1327,8 @@ def main(argv=None) -> int:
     ql.add_argument("--subject"); ql.add_argument("--medium", choices=MEDIUMS); ql.add_argument("--batch-id"); ql.add_argument("--q"); ql.add_argument("--limit", type=int)
     ql.add_argument("--all", action="store_true", dest="fetch_all"); ql.add_argument("--out")
     qs = qsub.add_parser("show", parents=[common]); qs.add_argument("question_id"); qs.add_argument("--out")
+    families = sub.add_parser("families"); fsub = families.add_subparsers(dest="sub", required=True)
+    fu = fsub.add_parser("upsert", parents=[common]); fu.add_argument("--variants", type=Path, required=True); fu.add_argument("--metadata", type=Path, required=True)
     cv = sub.add_parser("coverage", parents=[common]); cv.add_argument("--grade", type=int); cv.add_argument("--exam"); cv.add_argument("--subject")
     cv.add_argument("--status", choices=["published", "draft", "all"]); cv.add_argument("--needs-human-review", choices=["true", "false"])
     cv.add_argument("--medium", choices=MEDIUMS); cv.add_argument("--band", choices=[*DIFFICULTIES, "none"])
@@ -1311,6 +1354,7 @@ def main(argv=None) -> int:
         if getattr(a, "lesson_id", None): a.lesson_id = ",".join(parse_uuid_list(a.lesson_id, "--lesson-id"))
         if a.cmd == "session" and a.sub == "create" and Path(a.ledger).suffix != ".json":
             raise Refuse("--ledger must have a .json suffix", 2)
+        family_body = family_registration_body(a.variants, a.metadata) if a.cmd == "families" else None
         env_path = Path(a.env) if getattr(a, "env", None) else (Path(os.environ["VIBHAGA_ADMIN_ENV"]) if os.environ.get("VIBHAGA_ADMIN_ENV") else None) \
             or _pub.find_up("Vibhaga-Admin/.env.local", HERE) or _pub.find_up("Vibhaga-Admin/.env.local", Path.cwd())
         if not env_path or not env_path.exists():
@@ -1320,10 +1364,12 @@ def main(argv=None) -> int:
         # print no hint at all; writes get the auto-Q3 or the PENDING line).
         write = (a.cmd == "session" and a.sub in ("create", "archive", "update")) or \
                 (a.cmd == "doc" and a.sub == "put") or \
-                a.cmd in ("publish", "unpublish", "flag-review")
+                a.cmd in ("publish", "unpublish", "flag-review", "families")
         created: dict = {}
 
         def go() -> int:
+            if family_body is not None:
+                return cmd_family_upsert(api, family_body)
             if a.cmd == "session":
                 if a.sub == "create": return cmd_session_create(api, a.name, a.scope, a.lessons, a.difficulty, Path(a.ledger), sid_out=created)
                 if a.sub == "show": return cmd_session_show(api, a.sid)

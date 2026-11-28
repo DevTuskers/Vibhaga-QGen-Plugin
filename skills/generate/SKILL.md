@@ -97,7 +97,7 @@ per-row build, visual, validation, flagged publish and SQL proof gates remain in
    dedup sheet for legacy or otherwise unmapped rows. Do not treat rows missing from the index as covered.
    A fresh `family plan` critic approves or replaces each family, not each variant. Auto-continue on
    replacements up to four family plan rounds; at cap proceed only with OK families and report any
-   shortfall. Record a per-lesson variant budget and a provisional cap of 30 per family; check both
+   shortfall. Record a per-lesson variant budget and use the default cap of 30 per family; check both
    against prior and planned rows before expansion.
 3. **Expand.** Write exact solver expressions, a separate check for every answer leaf, and one set of
    bilingual templates per approved family (see [synthetic spec](../../tests/fixtures/scaled-family.yaml)).
@@ -114,6 +114,13 @@ per-row build, visual, validation, flagged publish and SQL proof gates remain in
    usual independent diagram review still applies to every published figure, in chunks if needed.
    The sample replaces the per-row **content** critic, not the all-row SQL/staged reconciliation and
    bilingual proofs. Publish everything flagged-only; no sampled result clears a human review flag.
+5. **Register and publish.** After the sample passes, save a private `family-metadata.json` per family
+   with `title`, `title_si`, `description`, `description_si`, `task_chain`, `representation`,
+   `unknown_direction`, `format` and `creative_rationale` from the approved plan and blueprint.
+   Run `python3 tools/playground-publish.py families upsert --variants <variants.yaml> --metadata <family-metadata.json>`
+   for each family before the ship gates. This reuses the normal admin credentials and takes the
+   lesson, key, band and cap from the expansion ledger. Expansion and build already carry the
+   ledger's key as `family_key` into each staged question; never strip it when merging families.
 
 Devin cloud: use the [Devin runtime](devin-runtime.md) modes for blueprint, family plan and family sample.
 

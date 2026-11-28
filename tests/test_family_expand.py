@@ -44,8 +44,11 @@ class FamilyExpandTests(unittest.TestCase):
             [sys.executable, ROOT / "tools/build-staged.py", self.content, "--out", staged],
             capture_output=True, text=True)
         self.assertEqual(subprocess_result.returncode, 0, subprocess_result.stderr)
-        staged_ids = [q["question_id"] for q in json.loads(staged.read_text())["questions"]]
+        staged_rows = json.loads(staged.read_text())["questions"]
+        staged_ids = [q["question_id"] for q in staged_rows]
         self.assertEqual(staged_ids, [row["question_id"] for row in data["variants"]])
+        self.assertEqual([q["family_key"] for q in staged_rows], [row["family_id"] for row in data["variants"]])
+        self.assertEqual({row["variant_cap"] for row in data["variants"]}, {30})
         answer_result = subprocess.run([sys.executable, ROOT / "tools/check-answers.py", self.content],
                                        capture_output=True, text=True)
         self.assertEqual(answer_result.returncode, 0, answer_result.stdout + answer_result.stderr)

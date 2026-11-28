@@ -193,6 +193,8 @@ def expand(spec, count, seed, first, history=()):
     family, cell = spec.get("id"), spec.get("cell_id")
     if not all(isinstance(x, str) and bp.BP_ID_RE.fullmatch(x) for x in (family, cell)):
         raise ValueError("id and cell_id must be lowercase keys")
+    if len(family) > 80:
+        raise ValueError("family id must not exceed 80 characters")
     count, first = positive_int(count, "count"), positive_int(first, "first question number")
     limit = positive_int(spec.get("variant_limit", 30), "variant_limit")
     colliding = [row for row in history if row["family_id"] == family]
@@ -206,7 +208,7 @@ def expand(spec, count, seed, first, history=()):
     question, figure = spec.get("question"), spec.get("figure")
     if not isinstance(question, dict) or question.get("lessons") != list(lessons):
         raise ValueError("question.lessons must name the sole lesson key")
-    if {"n", "blueprint_id", "blueprint_seed", "figure", "difficulty"} & set(question):
+    if {"n", "blueprint_id", "blueprint_seed", "figure", "difficulty", "family_key"} & set(question):
         raise ValueError("question may not override generated numbers, blueprint keys, figure or difficulty")
     if figure is not None and (not isinstance(figure, dict) or not isinstance(figure.get("template"), str)):
         raise ValueError("figure needs a VDD template")
@@ -261,11 +263,12 @@ def expand(spec, count, seed, first, history=()):
             bind_figure_refs(item, fig.get("figure_id"), fid)
             figures.append({**fig, "figure_id": fid, "stem": fig.get("stem") or item["stem"]})
             item["figure"] = fid
-        questions.append({"n": n, "difficulty": difficulty, **item})
         ledger.append({"family_id": family, "cell_id": cell, "n": n, "seed": seed,
+                       "lesson_id": next(iter(lessons.values())), "band": difficulty, "variant_cap": limit,
                        "question_id": bs.q_id(id_seed.strip(), f"q{n}"),
                        "params": params, "number_key": list(number_key), "surface_sha256": surface,
                        "answers": {name: str(value) for name, value in answers.items()}})
+        questions.append({"n": n, "difficulty": difficulty, "family_key": ledger[-1]["family_id"], **item})
         seen_numbers.add(number_key)
         seen_surface.add(surface)
         if len(questions) == count:
