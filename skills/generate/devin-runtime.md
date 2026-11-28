@@ -33,13 +33,19 @@ active; resume a workflow only with its original config. Archive the config in t
 directory before replacing it if you may need to resume. The lead reads the reports and fixes
 between rounds, then writes a new config and starts a **new** workflow run, not a resume.
 
-Common keys: `stage` (`plan` or `batch`), `round` (integer starting at 1), `plugin`
+Common keys: `stage` (`plan`, `batch`, `blueprint` or `sample`), `round` (integer starting at 1), `plugin`
 (checkout path). Stage-specific keys:
 
 | Stage | Required | Optional |
 | --- | --- | --- |
 | `plan` | `plan` object with `items`, `similar`, `dedup`, `signals` (paths) and `cards` (list of scope-card paths); `reports`: `{"plan": "<path>"}` | `previous`: `{"plan": {"report": "<path>"}}` |
 | `batch` | `batch_id`, `corpus`, `db_env`, `vc`, `figures` (boolean), `chunks` (list of objects below) | `admin` and `web` together for non-sibling checkouts |
+| `blueprint` | `mode: "families"`, `blueprint`, `card` (paths); `reports: {"blueprint": "<path>"}` | `previous: {"blueprint": {"report": "<path>"}}` |
+| `sample` | `mode: "families"`, `content`, `card` (paths), `families`, `ledgers` (lists of paths); `reports: {"sample": "<path>"}` | `visual` (path), `previous: {"sample": {"report": "<path>"}}` |
+
+For scaled family plans set `mode: "families"` and add `plan.blueprint` (approved blueprint) and
+`plan.families` (reviewed live family index). Quick plans default to two rounds; scaled family
+plans allow up to four without an owner gate. The parent starts each round as a new workflow.
 
 A typical batch has a single chunk. For each chunk set `reports.content` to its report file
 path, plus `reports.diagram` when `figures` is true. For a split batch provide `questions` as
@@ -53,7 +59,8 @@ chunk and round: for example, `wt/<topic>/critic/r1/content/r1.md` and
 `wt/<topic>/critic/r1/diagram/diagram-r1.md`. This isolates their SQL row caches and preserves
 previous-round evidence.
 
-A plan round starts one `Mode: plan` critic. A batch round starts content and diagram critics
+A plan round starts one `Mode: plan` or `Mode: family plan` critic. A blueprint or sample round starts
+one critic in the matching scaled mode. A batch round starts content and diagram critics
 concurrently when figures exist, otherwise only content. The workflow logs verdict/counts
 and report paths (plus REPLACE keys for plan rounds). Read the actual reports before deciding
 what to keep or fix. An agent error or missing/incomplete report is not SATISFIED; report it,

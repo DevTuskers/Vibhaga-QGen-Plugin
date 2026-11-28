@@ -73,6 +73,50 @@ Optional generation history: [docs/MIGRATION.md](../../docs/migration/archive/hi
 
 ---
 
+## Scaled run (families)
+
+Use this opt-in route for one lesson at a time, aiming for 50–100 questions from multiple families.
+For small bespoke batches use Quick run. The [non-negotiables](#0-non-negotiables-read-first) and all
+per-row build, visual, validation, flagged publish and SQL proof gates remain in force.
+
+1. **Blueprint.** Use one published lesson and its scope card as in Quick run. Run
+   `python3 tools/lesson-blueprint.py build <card.yaml> --out <blueprint.yaml>`. Fill feasible cells:
+   skill × task chain × word/table/graph/diagram × forward/reverse/find-error/justify/decide ×
+   easy/medium/hard × structured/MCQ/short. Pick formats the current staging and student surfaces
+   support; a blueprint cell does not grant an unsupported format. Do not enumerate the Cartesian product.
+   Map a lesson-only live-row dump to its `cell_id` per row (omit if not yet mapped); run
+   `python3 tools/lesson-blueprint.py check <blueprint.yaml> --coverage <mapped-rows.yaml>`.
+   Have a fresh plan critic approve the blueprint (mode `lesson blueprint`); reuse that revision until
+   the card or authored cells change. Update coverage without re-approving the same revision.
+2. **Family plan critique.** Plan one line per new family with a stable Q-key, cell ID, task chain,
+   proposed variant count, difficulty evidence and a sourced signal plus the student/teacher rubric.
+   Maintain a reusable grade context bank; choose one kept signal for each family plan. Contexts may be
+   clearly fictional (“suppose”), with plausible invented quantities; figures asserted as real are sourced.
+   Run the family tier of [Copy check](#copy-check) against the card and live chains. Keep a private
+   indexed list of reviewed live families, with each chain's row IDs; give the critic that index and a
+   dedup sheet for legacy or otherwise unmapped rows. Do not treat rows missing from the index as covered.
+   A fresh `family plan` critic approves or replaces each family, not each variant. Auto-continue on
+   replacements up to four family plan rounds; at cap proceed only with OK families and report any
+   shortfall. Record a per-lesson variant budget and a provisional cap of 30 per family; check both
+   against prior and planned rows before expansion.
+3. **Expand.** Write exact solver expressions, a separate check for every answer leaf, and one set of
+   bilingual templates per approved family (see [synthetic spec](../../tests/fixtures/scaled-family.yaml)).
+   Run `python3 tools/family-expand.py <family.yaml> --count <N> --seed <seed> --first <first-Q> --out <content.yaml> --ledger <variants.yaml>`.
+   Pass `--prior-ledger` for each available prior or pending ledger to check exact repeats and the family
+   cap. For a VDD template, also pass `--figures-out <specs/figures.json>`. Use one `id_seed` and disjoint
+   question-number ranges for the session; merge the family outputs' questions and figure maps and
+   concatenate their figure spec lists. Keep each ledger and sample list in private run files. Apply the
+   variant tier of Copy check to the combined renderings, then run build and all pre-publish checks.
+4. **Sample critique.** Before publishing, a fresh `family sample` critic reviews the solver and ledger
+   sample, max(3, ceil(10%)) per family capped at its size, drawn by the expander's seed. Give paths to
+   the specs, ledgers, prepared content and scope card, not actor notes or suggestions. Fix a major
+   finding at the family level, re-expand affected rows, re-run mechanical gates and re-sample. The
+   usual independent diagram review still applies to every published figure, in chunks if needed.
+   The sample replaces the per-row **content** critic, not the all-row SQL/staged reconciliation and
+   bilingual proofs. Publish everything flagged-only; no sampled result clears a human review flag.
+
+Devin cloud: use the [Devin runtime](devin-runtime.md) modes for blueprint, family plan and family sample.
+
 ## 0. Non-negotiables (read first)
 
 1. **The lesson comes from your own checkout of `Vibhaga-Maths-Corpus`, never from the API.** There is no lesson-content
@@ -104,9 +148,9 @@ Optional generation history: [docs/MIGRATION.md](../../docs/migration/archive/hi
 10. **Production runs never repair tools.** On tool friction mid-run (a refusal you route around, a flag that is
     missing, a gate that skipped), write ONE line to `wt/<topic>/FRICTION.md` — `symptom · workaround · suspected
     fix` — and continue with the workaround. Tool fixes land in a separate tooling session and their own PR.
-11. **Blueprint variants: at most one per batch** (owner ruling 2026-10-03). A question family reused with new
-    numbers counts as distinct across sessions but never twice in one session — vary the task, not only the digits
-    (precritic-lint `--existing` watches for exactly this).
+11. **Single-item blueprints: at most one per batch** (owner ruling 2026-10-03). The existing
+    `tools/blueprint.py` contract is unchanged (`precritic-lint --existing` watches for it).
+    The separate scaled-family route records family provenance in its ledger, not `blueprint_id`.
 
 ## 1. Stable facts — and how to re-verify them
 
@@ -464,6 +508,11 @@ The critic grades every part against this table (profile §3) — keep it and th
 
 *What counts as a copy (shared definition; the sighted plan critic reads source items).*
 
+**Quick run questions and scaled family plans:** use strict task-chain novelty. A textbook worked
+example or exercise can inspire a family only when changing the unknown, representation or format
+makes the actual chain novel. Mapped live rows can be represented by a reviewed family index in the
+scaled path; the critic still checks every unmapped row and the card's source items.
+
 A planned or written question is a **copy** when its task chain (what the student is asked to do, step by step) matches any one of the following. Changing the numbers, names or story does not stop it being a copy.
 1. any live row tagged with the same lesson (every row, read in full — not only the `similar` top 5),
 2. any of the card's `worked_examples`, `exercises` or `activities`,
@@ -475,6 +524,13 @@ the **task** differs.
 A new real-world context from [`creative-signals`](../creative-signals/SKILL.md) does not by itself make a question new;
 the task chain does.
 A match on one part only, where the other parts are new, is a scaffold echo (MINOR). A match on the whole question, or on every part, is a copy (MAJOR).
+
+**Scaled variants of an approved family:** the shared chain is intentional. Check near-duplicate
+surface wording/data against other variants and pending/live rows, not task-chain identity. Use
+embedding candidates at a recorded pilot threshold and inspect exact given-number tuple reuse
+(including legacy rows absent from the ledger). Embeddings are advisory, not a replacement for
+inspection; reject confirmed surface duplicates and repeated number tuples within a family. Vary the
+numbers, context, unknown or representation only where the approved reasoning chain still holds.
 
 ### Difficulty bands
 
@@ -488,8 +544,11 @@ For an Easy question, "new" means one of these: a context the lesson does not us
 
 ### Room left and stop rule
 
-- **Room left, not just row count.** Have the plan critic check the dedup sheet, not the writer. If the live rows already use every card section task and every `difficulty_hooks` entry at the target band, the lesson is **full**. Skip it and take the next thin lesson.
-- **Stop rule.** At most two [plan rounds](#plan-stage-critic). Discard still-REPLACE candidates and select from the OK pool as above.
+- **Scaled room and stop.** Count uncovered approved blueprint cells per band, not used difficulty hooks.
+  Separately count space in approved families within their caps and the lesson budget. Run up to four
+  family plan rounds without awaiting owner approval between rounds. Do not expand a REPLACE family.
+- **Quick room left, not just row count.** Have the plan critic check the dedup sheet, not the writer. If the live rows already use every card section task and every `difficulty_hooks` entry at the target band, the lesson is **full**. Skip it and take the next thin lesson.
+- **Quick stop rule.** At most two [plan rounds](#plan-stage-critic). Discard still-REPLACE candidates and select from the OK pool as above.
   After two copy MAJORs on one slot (plan or batch), stop rewriting it. Use an eligible alternative from a different
   lesson only when it preserves that mix (`playground-publish.py session update <sid> --lessons …` adds a lesson
   after session creation), or drop the question and report the shortfall to the owner. This never allows a third plan round.

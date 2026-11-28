@@ -67,19 +67,38 @@ def batch_prompt(cfg, chunk, kind):
 
 def jobs_for(cfg):
     stage, round_number = cfg["stage"], cfg["round"]
-    if stage not in ("plan", "batch") or type(round_number) is not int:
-        raise ValueError("Expected plan or batch stage and an integer round")
-    if not 1 <= round_number <= (2 if stage == "plan" else 3):
+    mode = cfg.get("mode", "quick")
+    if stage not in ("plan", "batch", "blueprint", "sample") or type(round_number) is not int:
+        raise ValueError("Expected plan, batch, blueprint or sample stage and an integer round")
+    if mode not in ("quick", "families") or (stage in ("blueprint", "sample") and mode != "families"):
+        raise ValueError("Expected quick or families mode; blueprint and sample require families mode")
+    limit = {"plan": 4 if mode == "families" else 2, "batch": 3, "blueprint": 4, "sample": 3}
+    if not 1 <= round_number <= limit[stage]:
         raise ValueError(f"{stage} critique round limit exceeded")
+    if stage == "blueprint":
+        report = cfg["reports"]["blueprint"]
+        return [("blueprint", report, (
+            f"Mode: lesson blueprint\nPaths: blueprint {cfg['blueprint']}; card {cfg['card']}; "
+            f"write the report to {report}."
+        ) + previous_prompt(cfg.get("previous", {}).get("blueprint", {})))]
+    if stage == "sample":
+        report = cfg["reports"]["sample"]
+        return [("sample", report, (
+            f"Mode: family sample\nPaths: content {cfg['content']}; "
+            f"family specs {json.dumps(cfg['families'])}; ledgers {json.dumps(cfg['ledgers'])}; "
+            f"card {cfg['card']}; visual evidence {cfg.get('visual', 'none')}; write the report to {report}."
+        ) + previous_prompt(cfg.get("previous", {}).get("sample", {})))]
     if stage == "plan":
         report = cfg["reports"]["plan"]
         plan = cfg["plan"]
         prompt = (
-            "Mode: plan\n"
-            f"Critique the plan per your profile. Paths: plan-items {plan['items']}; "
+            ("Mode: family plan\n" if mode == "families" else "Mode: plan\n")
+            + f"Critique the plan per your profile. Paths: plan-items {plan['items']}; "
             f"similar-plan {plan['similar']}; dedup-sheet {plan['dedup']}; signals {plan['signals']}; "
             f"cards {json.dumps(plan['cards'], sort_keys=True)}; write the report to {report}."
         )
+        if mode == "families":
+            prompt += f" Approved lesson blueprint: {plan['blueprint']}; mapped live family index: {plan['families']}."
         prompt += previous_prompt(cfg.get("previous", {}).get("plan", {}))
         return [("plan", report, prompt)]
 
@@ -107,7 +126,7 @@ async def critique(cfg, kind, report, prompt):
         f"Read-only critique: write only reports and supporting outputs inside {Path(report).parent}; "
         "do not switch branches, restart shells, or run qgen-setup."
     )
-    if kind != "plan":
+    if kind in ("content", "diagram"):
         instructions += " If needed, set VIBHAGA_ADMIN_ENV=/dev/shm/qgen-admin.env; do not read or print secrets."
     properties = dict(SCHEMA)
     if kind == "plan":
@@ -122,7 +141,7 @@ async def critique(cfg, kind, report, prompt):
             # "when Devin uses that plugin in a cloud session, I need it to use the shared_vm.
             # I.e all the sub-agents should run in the parents machines. Also there it should use dynamic workflows."
             vm_mode="shared",
-            soft_time_limit_minutes=15 if kind == "plan" else 25,
+            soft_time_limit_minutes=15 if kind in ("plan", "blueprint") else 25,
         )
     except WorkflowAgentError as exc:
         return {"report_path": report, "error": str(exc)}
