@@ -85,6 +85,37 @@ class FamilyExpandTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue((self.work / "figures/Q9.json").is_file())
 
+    def test_bilingual_figure_refs_bind_to_the_variant_on_nested_parts(self):
+        spec = yaml.safe_load(FIXTURE.read_text())
+        question = spec["question"]
+        answer_keys = ("approach", "approach_si", "final", "final_si", "check", "level")
+        refs = {language: [{"figure": "corner", "kind": "point", "id": "A"}]
+                for language in ("english", "sinhala")}
+        question["figure_refs"] = refs
+        question["parts"] = [{
+            "label": "a", "text": "Use the diagram.", "text_si": "රූපය භාවිත කරන්න.",
+            "parts": [{"label": "i", "text": "Find the width.", "text_si": "පළල සොයන්න.",
+                       "figure_refs": refs, **{key: question.pop(key) for key in answer_keys}}],
+        }]
+        figure_dir = self.work / "figures"
+        path, figures = self.work / "family.yaml", self.work / "figures.json"
+        for alias in ({}, {"figure_id": "corner"}):
+            with self.subTest(alias=alias):
+                spec["figure"] = {"template": "rectangle_points", "length": "{span}", "width": "{gaps}", **alias}
+                path.write_text(yaml.safe_dump(spec))
+                result = self.run_tool(path, count=2, extra=("--first", "9", "--figures-out", figures))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                result = subprocess.run([sys.executable, ROOT / "tools/vdd_templates.py", "build", figures,
+                                         "--out", figure_dir], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                result = subprocess.run([sys.executable, ROOT / "tools/precritic-lint.py", self.work],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                for item in yaml.safe_load(self.content.read_text())["questions"]:
+                    for node in (item, item["parts"][0]["parts"][0]):
+                        for citations in node["figure_refs"].values():
+                            self.assertEqual(citations, [{"figure": f"Q{item['n']}", "kind": "point", "id": "A"}])
+
     def test_figure_only_changes_count_as_distinct_surfaces(self):
         spec = yaml.safe_load(FIXTURE.read_text())
         spec["params"] = {"wide": {"choices": [3, 4]}}

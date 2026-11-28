@@ -8,7 +8,10 @@ The spec declares `id`, `cell_id`, `id_seed`, `difficulty`, `lessons`, `params`,
 Solver entries are ordered exact arithmetic expressions over parameters and
 earlier entries. Constraints use the existing answers-as-code whitelist.
 Optional `figure` is an existing VDD builder template; pass `--figures-out` for
-the figure specs JSON that run-gates reads. Keep these outputs in the run directory.
+the figure specs JSON that run-gates reads. Bilingual `figure_refs` can use
+`figure.figure_id` as a local alias, or use one shared key if the alias is
+omitted; the expansion binds that key to the generated figure on each variant.
+Keep these outputs in the run directory.
 """
 from __future__ import annotations
 
@@ -159,6 +162,31 @@ def surface_key(question, figure=None):
     return hashlib.sha256(clean.encode("utf-8")).hexdigest()
 
 
+def figure_references(node):
+    pair = node.get("figure_refs")
+    if isinstance(pair, dict):
+        for language in ("english", "sinhala"):
+            refs = pair.get(language)
+            if isinstance(refs, list):
+                for ref in refs:
+                    if isinstance(ref, dict) and isinstance(ref.get("figure"), str):
+                        yield ref
+    for child in node.get("parts", []):
+        yield from figure_references(child)
+
+
+def bind_figure_refs(question, alias, figure_id):
+    refs = list(figure_references(question))
+    if alias is None:
+        names = {ref["figure"] for ref in refs}
+        if len(names) > 1:
+            raise ValueError("figure_refs use multiple keys; declare the template alias with figure.figure_id")
+        alias = next(iter(names), None)
+    for ref in refs:
+        if ref["figure"] == alias:
+            ref["figure"] = figure_id
+
+
 def expand(spec, count, seed, first, history=()):
     if not isinstance(spec, dict):
         raise ValueError("expected a family mapping")
@@ -232,6 +260,7 @@ def expand(spec, count, seed, first, history=()):
                 raise ValueError(f"q{n} {label}: independent check did not pass for {params}")
         if fig is not None:
             fid = f"Q{n}"
+            bind_figure_refs(item, fig.get("figure_id"), fid)
             figures.append({**fig, "figure_id": fid, "stem": fig.get("stem") or item["stem"]})
             item["figure"] = fid
         questions.append({"n": n, "difficulty": difficulty, **item})
