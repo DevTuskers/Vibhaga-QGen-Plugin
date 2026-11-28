@@ -68,6 +68,48 @@ class CheckAnswersTest(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("1 checked · 0 false · 0 warn · 0 without check", r.stdout)
 
+    def test_checks_use_exact_division_decimal_literals_and_integer_powers(self):
+        with tempfile.TemporaryDirectory() as td:
+            questions = BASE.split("questions:\n", 1)[1]
+            check = "25 * (28 / 25) == 28 and 0.1 + 0.2 == 0.3 and 25 ** -1 * 25 == 1"
+            run = write_run(Path(td), questions.replace("40 * 23 == 920", check).replace("$920$", "$1.12$"))
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("1 checked · 0 false · 0 warn", r.stdout)
+            run = write_run(Path(td), questions.replace("40 * 23 == 920", "0.1 + 0.2 == 0.30000000000000001"))
+            r = run_tool(run)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("check evaluates to False", r.stdout)
+
+    def test_rounded_irrational_checks_preserve_float_comparisons(self):
+        with tempfile.TemporaryDirectory() as td:
+            questions = BASE.split("questions:\n", 1)[1]
+            checks = (
+                "round(2 ** 0.5, 2) == 1.41",
+                "1.41 <= round(2 ** 0.5, 2) < 1.42",
+                "(round(2 ** 0.5, 2), 25 * (28 / 25)) == (1.41, 28)",
+            )
+            for check in checks:
+                with self.subTest(check=check):
+                    run = write_run(Path(td), questions.replace("40 * 23 == 920", check).replace("$920$", "$1.41$"))
+                    r = run_tool(run)
+                    self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                    self.assertIn("1 checked · 0 false · 0 warn", r.stdout)
+
+    def test_nested_sequence_comparison_stops_at_first_difference(self):
+        with tempfile.TemporaryDirectory() as td:
+            questions = BASE.split("questions:\n", 1)[1]
+            checks = (
+                "[1] + [[[0] * 999] * 999] * 999 != [2] + [[[0] * 999] * 999] * 999",
+                "[1] + [[[0] * 999] * 999] * 999 < [2] + [[[0] * 999] * 999] * 999",
+                "([round(2 ** 0.5, 2)],) <= ([1.41],)",
+            )
+            for check in checks:
+                with self.subTest(check=check):
+                    run = write_run(Path(td), questions.replace("40 * 23 == 920", check).replace("$920$", "$1$"))
+                    r = run_tool(run)
+                    self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
     def test_worked_approximation_uses_trailing_zeros_or_explicit_place(self):
         with tempfile.TemporaryDirectory() as td:
             run = write_run(Path(td), """\

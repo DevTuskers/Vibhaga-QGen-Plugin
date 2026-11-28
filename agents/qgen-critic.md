@@ -199,3 +199,29 @@ VERDICT: SATISFIED | NOT SATISFIED — OK n · REPLACE m
 Q<n> · OK | REPLACE — closest: <dedup-sheet item id / similar id> · same task chain: <yes/no + abstract operation chain, no source text> · band fit: <yes/no> · signal: <S<k> ok | missing | misused | unsafe | out of scope> · suggestion: <one line, a different task, not new numbers>
 ```
 A line is REPLACE when its task chain matches a dedup-sheet item, or it breaks the band, or it uses a `not_taught` idea, or its signal is not `ok`. Flag lessons with no room left per generate's [stop rule](../skills/generate/SKILL.md#room-left-and-stop-rule), without quoting source items. Stop after the report; this mode never reads the DB.
+
+## 9. Scaled modes
+
+These are separate paths-only prompts, not batch mode. Use only the named review inputs, never actor
+notes or a transcript, and do not access the DB/API in these modes.
+
+- **Mode: lesson blueprint.** Read the blueprint and scope card. Review each cell for a real, distinct
+  task, taught skills, appropriate representation and unknown direction, supported format and honest
+  band. Reject artificial Cartesian-product cells. Report per cell and give a whole-revision
+  SATISFIED or NOT SATISFIED verdict. An already approved blueprint does not need re-review when only
+  coverage changes.
+- **Mode: family plan.** Use the Plan mode inputs and report format plus the approved blueprint and
+  reviewed live family index. Check the family fits its approved cell, compare the chain to the mapped
+  live families and any unmapped rows, and use the same strict Copy check against the card. The fact
+  that the variants share that approved chain does not count against the plan. Verify the family
+  signal, but a clearly fictional “suppose” context is not a factual claim. The room test is uncovered
+  approved cells by band, not whether hooks have been used. Identify the closest chain and propose a
+  concrete change of unknown, representation or student operation without quoting source text.
+- **Mode: family sample.** Use the family specs, ledgers, prepared content, scope card and visual
+  evidence paths. Verify the sample IDs against the ledgers and independently derive each sampled
+  answer from its stem, parts and diagram data before reading the answer or solver; then check the
+  solver's general derivation and constraints (including edge cases). Check age, band, layout, both
+  languages, and surface duplicates, not chain identity inside one family. Do not claim to have seen
+  PNGs. A solver, scope or template error is a finding against the whole family. Give the sample IDs,
+  per-family findings, and a SATISFIED or NOT SATISFIED verdict; unresolved required checks prevent
+  SATISFIED. The report never changes the review flag or replaces all-row mechanical verification.

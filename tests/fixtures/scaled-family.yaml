@@ -1,0 +1,36 @@
+id: block-span-synthetic
+cell_id: fill-gaps
+id_seed: offline-family-fixture
+difficulty: easy
+lessons:
+  L01: 00000000-0000-4000-8000-000000000001
+params:
+  span: {range: [10, 24], step: 2}
+  gaps: {choices: [3, 4, 5]}
+constraints:
+  - span > gaps
+solver:
+  width: span / gaps
+max_denominator: 5
+question:
+  lessons: [L01]
+  stem: |-
+    Suppose a row ${span}$ units long is split into ${gaps}$ equal gaps.
+
+    How wide is one gap?
+  stem_si: |-
+    ඒකක ${span}$ දිග පේළියක් සමාන හිඩැස් ${gaps}$ කට බෙදා ඇතැයි සිතන්න.
+
+    එක් හිඩැසක පළල කීය ද?
+  approach: |-
+    Divide the total span by the number of gaps.
+
+    ${span} \div {gaps} = {width}$
+  approach_si: |-
+    මුළු දිග හිඩැස් ගණනෙන් බෙදන්න.
+
+    ${span} \div {gaps} = {width}$
+  final: 'One gap is ${width}$ units wide.'
+  final_si: 'එක් හිඩැසක පළල ඒකක ${width}$ කි.'
+  check: 'abs({gaps} * {width} - {span}) < 0.00000001'
+  level: R

@@ -161,3 +161,38 @@ class CritiqueWorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "plan critique round limit exceeded"):
             self.run_round({"stage": "plan", "round": 3})
         self.assertEqual(self.events, ["register"])
+
+    def test_scaled_plan_round_four_uses_family_index_and_round_five_stops(self):
+        config = {
+            "stage": "plan", "mode": "families", "round": 4,
+            "reports": {"plan": str(self.critic / "plan-r4.md")},
+            "plan": {"items": "/test/plan.yaml", "similar": "/test/similar.json",
+                     "dedup": "/test/dedup.md", "signals": "/test/signals.md", "cards": ["/test/card.yaml"],
+                     "blueprint": "/test/blueprint.yaml", "families": "/test/live-families.yaml"},
+        }
+        self.run_round(config)
+        _, (prompt, args) = self.events
+        self.assertIn("Mode: family plan", prompt)
+        self.assertIn("Approved lesson blueprint: /test/blueprint.yaml", prompt)
+        self.assertIn("mapped live family index: /test/live-families.yaml", prompt)
+        self.assertIn("replace", args["schema"]["required"])
+        self.events.clear()
+        with self.assertRaisesRegex(ValueError, "plan critique round limit exceeded"):
+            self.run_round({**config, "round": 5})
+        self.assertEqual(self.events, ["register"])
+
+    def test_scaled_blueprint_and_sample_are_offline_path_only(self):
+        for stage, tag, inputs, expected in (
+            ("blueprint", "lesson blueprint", {"blueprint": "/test/grid.yaml"}, "blueprint /test/grid.yaml"),
+            ("sample", "family sample", {"content": "/test/content.yaml", "families": ["/test/family.yaml"],
+                                         "ledgers": ["/test/ledger.yaml"]}, 'ledgers ["/test/ledger.yaml"]'),
+        ):
+            with self.subTest(stage=stage):
+                self.events.clear()
+                self.run_round({"stage": stage, "mode": "families", "round": 1, "card": "/test/card.yaml",
+                                "reports": {stage: str(self.critic / f"{stage}.md")}, **inputs})
+                _, (prompt, args) = self.events
+                self.assertIn(f"Mode: {tag}", prompt)
+                self.assertIn(expected, prompt)
+                self.assertNotIn("VIBHAGA_ADMIN_ENV", prompt)
+                self.assertEqual(args["vm_mode"], "shared")

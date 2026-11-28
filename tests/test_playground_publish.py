@@ -78,6 +78,35 @@ class PlaygroundTests(unittest.TestCase):
     def api(self, fake):
         return tool.PlaygroundApi(FAKE_ENV, transport=fake, log=self.logs.append)
 
+    def test_family_upsert_uses_expansion_ledger_and_admin_transport(self):
+        ledger = self.root / "variants.yaml"
+        metadata = self.root / "family.json"
+        row = {"family_id": "routes", "lesson_id": LESSON, "band": "medium", "variant_cap": 30}
+        ledger.write_text(json.dumps({"variants": [row]}))
+        attributes = {"title": "Compare routes", "title_si": "මාර්ග සසඳන්න",
+                      "description": "Choose a route", "description_si": "මාර්ගයක් තෝරන්න",
+                      "task_chain": "Compare distances", "representation": "word",
+                      "unknown_direction": "decide", "format": "short", "creative_rationale": "Justify a choice"}
+        metadata.write_text(json.dumps(attributes))
+        body = tool.family_registration_body(ledger, metadata)
+        self.assertEqual(body, {**attributes, "family_key": "routes", "lesson_id": LESSON,
+                                "band": "medium", "variant_cap": 30})
+        fake = self.fake()
+        for status in (201, 200):
+            def transport(method, url, headers, data):
+                if url.endswith("/v1/admin/families"):
+                    self.assertEqual(method, "POST")
+                    self.assertTrue(headers["authorization"].startswith("Bearer tok"))
+                    self.assertEqual(json.loads(data), body)
+                    return status, json.dumps({**body, "family_id": ID1}).encode()
+                return fake(method, url, headers, data)
+            api = self.api(transport)
+            self.assertEqual(tool.cmd_family_upsert(api, body, self.logs.append), 0)
+            self.assertEqual(api.logout_global(), 204)
+        ledger.write_text(json.dumps({"variants": [row, {**row, "family_id": "another"}]}))
+        with self.assertRaises(tool.Refuse):
+            tool.family_registration_body(ledger, metadata)
+
     def call(self, fn, *args, write=True, **kwargs):
         self.logs.clear()
         api = self.api(self.fake_obj)

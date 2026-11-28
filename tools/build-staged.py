@@ -129,7 +129,7 @@ def check_bilingual(en, si, where, si_key):
 
 
 Q_KEYS = {"n", "lessons", "stem", "stem_si", "figure", "figure_refs", "figure_asks", "approach", "approach_si", "final",
-          "final_si", "parts", "check", "level", "blueprint_id", "blueprint_seed", "difficulty"}
+          "final_si", "parts", "check", "level", "blueprint_id", "blueprint_seed", "difficulty", "family_key"}
 P_KEYS = {"label", "text", "text_si", "figure", "figure_refs", "figure_asks", "approach", "approach_si", "final", "final_si",
           "parts", "check", "level"}
 TOP_KEYS = {"id_seed", "difficulty", "lessons", "figures", "figure_features", "questions"}
@@ -343,6 +343,11 @@ def build_question(node, index, figures, lessons, base, seed, default_difficulty
         "lesson_ids": lesson_ids,
         "diagram_dsl": resolve_figure(node["figure"], figures, base, f"{where} (q{n})") if node.get("figure") else None,
     }
+    if "family_key" in node:
+        key = node["family_key"]
+        if not isinstance(key, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,79}", key):
+            die(f"{where} (q{n}): invalid family_key")
+        out["family_key"] = key
     if has_answer:
         out["answers"] = [{"answer_id": q_id(seed_q, "+answer"),
                            "approach": node["approach"],
