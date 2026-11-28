@@ -253,9 +253,7 @@ def expand(spec, count, seed, first, history=()):
             continue
         n = first + len(questions)
         for label, leaf in bp.question_leaves(item):
-            tree = bp.ca.parse_check(leaf["check"], f"q{n} {label}")
-            with bp.ca._deadline(bp.ca.EVAL_SECONDS):
-                check = bp.ca._eval(tree)
+            _, check = bp.ca.evaluate_check(leaf["check"], f"q{n} {label}")
             if check is not True:
                 raise ValueError(f"q{n} {label}: independent check did not pass for {params}")
         if fig is not None:

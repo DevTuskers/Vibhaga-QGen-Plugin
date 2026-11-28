@@ -155,6 +155,20 @@ class FamilyExpandTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("exceed limit 30", result.stderr)
 
+    def test_exact_fraction_check_passes_expansion_and_answer_gate(self):
+        spec = yaml.safe_load(FIXTURE.read_text())
+        spec["params"] = {"span": {"choices": [28]}, "gaps": {"choices": [25]}}
+        spec["max_denominator"] = 25
+        spec["question"]["check"] = "{gaps} * {width} == {span}"
+        path = self.work / "fraction.yaml"
+        path.write_text(yaml.safe_dump(spec))
+        result = self.run_tool(path, count=1)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = subprocess.run([sys.executable, ROOT / "tools/check-answers.py", self.content],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("1 checked · 0 false · 0 warn", result.stdout)
+
     def test_rejects_invalid_or_failed_solver_check(self):
         spec = yaml.safe_load(FIXTURE.read_text())
         path = self.work / "family.yaml"

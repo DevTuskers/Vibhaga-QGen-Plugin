@@ -11,7 +11,8 @@ part) — `build-staged` never emits them:
           numbers, + - * / // % **, unary -, comparisons (chained ok), and/or/not,
           parentheses, tuple/list literals (constant indexing ok; tuple comparisons
           like `(a, b) == (1, 2)` count), and calls to
-          ceil floor divmod min max abs sum round sorted int len. Nothing else — no
+          ceil floor divmod min max abs sum round sorted int len. Decimal literals
+          and rational arithmetic are evaluated exactly. Nothing else — no
           names, no attributes. The check must contain at least one comparison, and
           every comparison must compute something — a bare `True` or a constant-only
           compare (`1 == 1`, `1 < 2`, `(1, 2) == (1, 2)`) re-derives nothing and is
@@ -76,6 +77,7 @@ _CMP = {ast.Eq: lambda a, b: a == b, ast.NotEq: lambda a, b: a != b,
 MAX_NODES = 200          # a check is one line of arithmetic — bigger is a mistake or worse
 MAX_POW = 1000           # |exponent| cap so `10**(10**8)` cannot hang the gate
 MAX_ABS = 10 ** 15       # every intermediate number stays small — big-int bombs die at birth
+MAX_FRACTION_BITS = 16_384
 MAX_SEQ = 1000           # every intermediate list/tuple stays short — `[1]*10**9` never exists
 EVAL_SECONDS = 2         # wall-clock backstop per leaf, on top of the structural caps
 NONE_CHECK = re.compile(r"^none\s*(?:—|-)\s*(.+)$", re.S)
@@ -89,6 +91,12 @@ def _cap(v):
     """Refuse any intermediate value that escaped the bounds — |number| > MAX_ABS or
     a list/tuple longer than MAX_SEQ."""
     if isinstance(v, bool):
+        return v
+    if isinstance(v, Fraction):
+        if max(v.numerator.bit_length(), v.denominator.bit_length()) > MAX_FRACTION_BITS:
+            raise Refuse("fraction too large")
+        if abs(v) > MAX_ABS:
+            raise Refuse(f"fraction magnitude exceeds {MAX_ABS:g}")
         return v
     if isinstance(v, (int, float)):
         if abs(v) > MAX_ABS:
@@ -119,16 +127,24 @@ def _deadline(seconds: int):
         signal.signal(signal.SIGALRM, prev)
 
 
-def _eval(node):
+def _eval(node, source=None):
     """_eval_node under the resource caps — every value a node produces is bounded,
     so nothing downstream of it can be huge."""
-    return _cap(_eval_node(node))
+    return _cap(_eval_node(node, source))
 
 
-def _eval_node(node):
+def _eval_node(node, source):
+    def evaluate(child):
+        return _eval(child, source)
+
     if isinstance(node, ast.Expression):
-        return _eval(node.body)
+        return evaluate(node.body)
     if isinstance(node, ast.Constant):
+        if source is not None and isinstance(node.value, float):
+            decimal = Decimal(ast.get_source_segment(source, node))
+            if abs(decimal.as_tuple().exponent) > MAX_FRACTION_BITS // 4:
+                raise Refuse("decimal exponent is too large for exact arithmetic")
+            return Fraction(decimal)
         if isinstance(node.value, (int, float, bool)):
             return node.value
         raise Refuse(f"constant {node.value!r} — only numbers")
@@ -139,16 +155,27 @@ def _eval_node(node):
     if isinstance(node, ast.Call):
         if node.keywords:
             raise Refuse("keyword arguments")
-        f = _eval(node.func)
+        f = evaluate(node.func)
         if f not in FUNCS.values():
             raise Refuse("call target is not a whitelisted function")
-        return f(*[_eval(a) for a in node.args])
+        return f(*[evaluate(a) for a in node.args])
     if isinstance(node, ast.BinOp):
-        a, b = _eval(node.left), _eval(node.right)
+        a, b = evaluate(node.left), evaluate(node.right)
+        if source is not None and isinstance(node.op, ast.Div) and all(
+                isinstance(value, (int, Fraction)) for value in (a, b)):
+            return Fraction(a, b)
         if isinstance(node.op, ast.Pow):
-            if not isinstance(b, (int, float)) or isinstance(b, bool) \
+            if not isinstance(b, (int, float, Fraction)) or isinstance(b, bool) \
                     or abs(b) > MAX_POW:
                 raise Refuse(f"** exponent {b!r} — |exp| must be ≤ {MAX_POW}")
+            if isinstance(b, Fraction) and b.denominator == 1:
+                b = b.numerator
+            if source is not None and isinstance(b, int):
+                if isinstance(a, int) and b < 0:
+                    a = Fraction(a)
+                if (isinstance(a, Fraction)
+                        and max(a.numerator.bit_length(), a.denominator.bit_length()) * abs(b) > MAX_FRACTION_BITS):
+                    raise Refuse("power would produce a fraction too large")
             return a ** b                        # result itself is capped by _eval
         op = _BIN.get(type(node.op))
         if op is None:
@@ -165,32 +192,32 @@ def _eval_node(node):
         return op(a, b)
     if isinstance(node, ast.UnaryOp):
         if isinstance(node.op, ast.USub):
-            return -_eval(node.operand)
+            return -evaluate(node.operand)
         if isinstance(node.op, ast.UAdd):
-            return +_eval(node.operand)
+            return +evaluate(node.operand)
         if isinstance(node.op, ast.Not):
-            return not _eval(node.operand)
+            return not evaluate(node.operand)
         raise Refuse(f"unary {type(node.op).__name__}")
     if isinstance(node, ast.BoolOp):
-        vals = [_eval(v) for v in node.values]
+        vals = [evaluate(v) for v in node.values]
         if isinstance(node.op, ast.And):
             return all(vals)
         if isinstance(node.op, ast.Or):
             return any(vals)
         raise Refuse("boolean operator")
     if isinstance(node, ast.Compare):
-        left = _eval(node.left)
+        left = evaluate(node.left)
         for op, comp in zip(node.ops, node.comparators):
             f = _CMP.get(type(op))
             if f is None:
                 raise Refuse(f"comparison {type(op).__name__}")
-            right = _eval(comp)
+            right = evaluate(comp)
             if not f(left, right):
                 return False
             left = right
         return True
     if isinstance(node, (ast.Tuple, ast.List)):
-        vals = [_eval(e) for e in node.elts]
+        vals = [evaluate(e) for e in node.elts]
         return tuple(vals) if isinstance(node, ast.Tuple) else vals
     if isinstance(node, ast.Subscript):
         # trivial literal indexing only: (23, 5)[0] / [1, 2][1]
@@ -198,7 +225,7 @@ def _eval_node(node):
                 or not isinstance(node.slice, ast.Constant) \
                 or not isinstance(node.slice.value, int):
             raise Refuse("subscript — only a tuple/list literal indexed by a constant")
-        return _eval(node.value)[node.slice.value]
+        return evaluate(node.value)[node.slice.value]
     raise Refuse(f"{type(node).__name__} is not in the whitelist")
 
 
@@ -241,6 +268,12 @@ def parse_check(expr: str, where: str):
             raise Refuse(f"constant-only comparison {ast.unparse(c)!r} — at least one "
                          f"side must compute something")
     return tree
+
+
+def evaluate_check(expr, where):
+    tree = parse_check(expr, where)
+    with _deadline(EVAL_SECONDS):
+        return tree, _eval(tree, expr)
 
 
 # ---------------------------------------------------------------------------
@@ -321,14 +354,14 @@ def _worked_rational(node, source):
             if abs(b) > MAX_POW:
                 raise Refuse("worked exponent outside the permitted range")
             if b.denominator == 1:
-                if max(a.numerator.bit_length(), a.denominator.bit_length()) * abs(b) > 16384:
+                if max(a.numerator.bit_length(), a.denominator.bit_length()) * abs(b) > MAX_FRACTION_BITS:
                     raise Refuse("worked fraction too large")
                 value = a ** b.numerator
             else:
                 value = Fraction(str(_cap(float(a) ** float(b))))
         else:
             value = _BIN[type(node.op)](a, b)
-    if abs(value) > MAX_ABS or max(value.numerator.bit_length(), value.denominator.bit_length()) > 16384:
+    if abs(value) > MAX_ABS or max(value.numerator.bit_length(), value.denominator.bit_length()) > MAX_FRACTION_BITS:
         raise Refuse("worked fraction too large")
     return value
 
@@ -425,18 +458,18 @@ def final_numbers(final: str) -> list[float]:
     return [float(m) for m in NUM_RE.findall(LATEX_RE.sub(" ", final or ""))]
 
 
-def covered_values(tree) -> list[float]:
+def covered_values(tree, source) -> list[float]:
     """Literals in the check + the value of every Call/BinOp in it."""
     vals = [n.value for n in ast.walk(tree)
             if isinstance(n, ast.Constant) and isinstance(n.value, (int, float))]
     for n in ast.walk(tree):
         if isinstance(n, (ast.Call, ast.BinOp)):
             try:
-                v = _eval(n)
+                v = _eval(n, source)
             except Exception:
                 continue
-            if isinstance(v, (int, float)) and not isinstance(v, bool):
-                vals.append(v)
+            if isinstance(v, (int, float, Fraction)) and not isinstance(v, bool):
+                vals.append(float(v))
     return vals
 
 
@@ -520,9 +553,7 @@ def main() -> int:
             continue
         checked += 1
         try:
-            tree = parse_check(expr, name)
-            with _deadline(EVAL_SECONDS):
-                ok = _eval(tree)
+            tree, ok = evaluate_check(expr, name)
         except Refuse as e:
             print(f"FAIL {name}: check refused — {e}")
             false += 1
@@ -536,7 +567,7 @@ def main() -> int:
             false += 1
         final = node.get("final")
         if isinstance(final, str):
-            covered = covered_values(tree)
+            covered = covered_values(tree, expr)
             for num in final_numbers(final):
                 if not any(num == v for v in covered):
                     warns += 1
