@@ -103,6 +103,9 @@ class PlaygroundTests(unittest.TestCase):
             api = self.api(transport)
             self.assertEqual(tool.cmd_family_upsert(api, body, self.logs.append), 0)
             self.assertEqual(api.logout_global(), 204)
+        self.assertEqual(tool.family_registration_body(ledger, metadata, "active"), {**body, "status": "active"})
+        with self.assertRaises(tool.Refuse):
+            tool.family_registration_body(ledger, metadata, "live")
         ledger.write_text(json.dumps({"variants": [row, {**row, "family_id": "another"}]}))
         with self.assertRaises(tool.Refuse):
             tool.family_registration_body(ledger, metadata)

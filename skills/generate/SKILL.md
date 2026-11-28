@@ -117,7 +117,7 @@ per-row build, visual, validation, flagged publish and SQL proof gates remain in
 5. **Register and publish.** After the sample passes, save a private `family-metadata.json` per family
    with `title`, `title_si`, `description`, `description_si`, `task_chain`, `representation`,
    `unknown_direction`, `format` and `creative_rationale` from the approved plan and blueprint.
-   Run `python3 tools/playground-publish.py families upsert --variants <variants.yaml> --metadata <family-metadata.json>`
+   Run `python3 tools/playground-publish.py families upsert --variants <variants.yaml> --metadata <family-metadata.json> [--status draft|active|retired]`
    for each family before the ship gates. This reuses the normal admin credentials and takes the
    lesson, key, band and cap from the expansion ledger. Expansion and build already carry the
    ledger's key as `family_key` into each staged question; never strip it when merging families.
