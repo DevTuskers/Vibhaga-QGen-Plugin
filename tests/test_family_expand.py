@@ -66,6 +66,31 @@ class FamilyExpandTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue((self.work / "figures/Q9.json").is_file())
 
+    def test_figure_only_changes_count_as_distinct_surfaces(self):
+        spec = yaml.safe_load(FIXTURE.read_text())
+        spec["params"] = {"wide": {"choices": [3, 4]}}
+        spec["constraints"] = []
+        spec["solver"] = {"corners": "4"}
+        spec["question"].update(
+            stem="How many corners does the rectangle have?",
+            stem_si="සෘජුකෝණාස්‍රයට කොන් කීයක් තිබේ ද?",
+            approach="Count the corners.", approach_si="කොන් ගණන් කරන්න.",
+            final="${corners}$", final_si="${corners}$", check="2 + 2 == {corners}",
+        )
+        spec["figure"] = {"template": "rectangle_points", "aspect": ["{wide}", 2]}
+        path, figures = self.work / "family.yaml", self.work / "figures.json"
+        path.write_text(yaml.safe_dump(spec))
+        result = self.run_tool(path, count=2, extra=("--figures-out", figures))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = yaml.safe_load(self.ledger.read_text())["variants"]
+        self.assertEqual(len({row["surface_sha256"] for row in rows}), 2)
+
+        spec["figure"]["aspect"] = [3, 2]
+        path.write_text(yaml.safe_dump(spec))
+        result = self.run_tool(path, count=2, extra=("--figures-out", figures))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("only 1 distinct friendly variants", result.stderr)
+
     def test_history_excludes_previous_number_tuples_and_enforces_cap(self):
         result = self.run_tool(count=4)
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -147,12 +147,15 @@ def validate_template(node, solver, depth=0):
         validate_template(part, solver, depth + 1)
 
 
-def surface_key(question):
+def surface_key(question, figure=None):
     def text(node):
         return [node.get(k, "") for k in ("stem", "stem_si", "text", "text_si")] + [
             field for part in node.get("parts", []) for field in text(part)
         ]
     clean = "\n".join(" ".join(unicodedata.normalize("NFC", s).casefold().split()) for s in text(question))
+    if figure is not None:
+        payload = {key: value for key, value in figure.items() if key != "figure_id"}
+        clean += "\n" + json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(clean.encode("utf-8")).hexdigest()
 
 
@@ -216,7 +219,8 @@ def expand(spec, count, seed, first, history=()):
         if any(x.denominator > max_den or abs(x) > max_abs for x in answers.values()):
             continue
         item = render(question, env)
-        surface = surface_key(item)
+        fig = render(figure, env, typed=True) if figure is not None else None
+        surface = surface_key(item, fig)
         if surface in seen_surface:
             continue
         n = first + len(questions)
@@ -226,9 +230,8 @@ def expand(spec, count, seed, first, history=()):
                 check = bp.ca._eval(tree)
             if check is not True:
                 raise ValueError(f"q{n} {label}: independent check did not pass for {params}")
-        if figure is not None:
+        if fig is not None:
             fid = f"Q{n}"
-            fig = render(figure, env, typed=True)
             figures.append({**fig, "figure_id": fid, "stem": fig.get("stem") or item["stem"]})
             item["figure"] = fid
         questions.append({"n": n, **item})
