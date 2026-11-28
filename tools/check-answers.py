@@ -12,7 +12,8 @@ part) — `build-staged` never emits them:
           parentheses, tuple/list literals (constant indexing ok; tuple comparisons
           like `(a, b) == (1, 2)` count), and calls to
           ceil floor divmod min max abs sum round sorted int len. Decimal literals
-          and rational arithmetic are evaluated exactly. Nothing else — no
+          and rational arithmetic are evaluated exactly; operations and comparisons
+          involving an approximate result use float semantics. Nothing else — no
           names, no attributes. The check must contain at least one comparison, and
           every comparison must compute something — a bare `True` or a constant-only
           compare (`1 == 1`, `1 < 2`, `(1, 2) == (1, 2)`) re-derives nothing and is
@@ -133,6 +134,23 @@ def _eval(node, source=None):
     return _cap(_eval_node(node, source))
 
 
+def _promote_numbers(a, b):
+    if isinstance(a, float) and isinstance(b, Fraction):
+        return a, float(b)
+    if isinstance(a, Fraction) and isinstance(b, float):
+        return float(a), b
+    return a, b
+
+
+def _comparison_operands(a, b):
+    if type(a) is type(b) and isinstance(a, (list, tuple)):
+        pairs = [_comparison_operands(left, right) for left, right in zip(a, b)]
+        size = len(pairs)
+        return (type(a)([left for left, _ in pairs] + list(a[size:])),
+                type(b)([right for _, right in pairs] + list(b[size:])))
+    return _promote_numbers(a, b)
+
+
 def _eval_node(node, source):
     def evaluate(child):
         return _eval(child, source)
@@ -160,7 +178,7 @@ def _eval_node(node, source):
             raise Refuse("call target is not a whitelisted function")
         return f(*[evaluate(a) for a in node.args])
     if isinstance(node, ast.BinOp):
-        a, b = evaluate(node.left), evaluate(node.right)
+        a, b = _promote_numbers(evaluate(node.left), evaluate(node.right))
         if source is not None and isinstance(node.op, ast.Div) and all(
                 isinstance(value, (int, Fraction)) for value in (a, b)):
             return Fraction(a, b)
@@ -170,6 +188,8 @@ def _eval_node(node, source):
                 raise Refuse(f"** exponent {b!r} — |exp| must be ≤ {MAX_POW}")
             if isinstance(b, Fraction) and b.denominator == 1:
                 b = b.numerator
+            elif isinstance(b, Fraction):
+                a, b = _promote_numbers(a, float(b))
             if source is not None and isinstance(b, int):
                 if isinstance(a, int) and b < 0:
                     a = Fraction(a)
@@ -212,7 +232,8 @@ def _eval_node(node, source):
             if f is None:
                 raise Refuse(f"comparison {type(op).__name__}")
             right = evaluate(comp)
-            if not f(left, right):
+            pair = _comparison_operands(left, right) if source is not None else (left, right)
+            if not f(*pair):
                 return False
             left = right
         return True
