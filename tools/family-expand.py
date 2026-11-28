@@ -234,7 +234,7 @@ def expand(spec, count, seed, first, history=()):
             fid = f"Q{n}"
             figures.append({**fig, "figure_id": fid, "stem": fig.get("stem") or item["stem"]})
             item["figure"] = fid
-        questions.append({"n": n, **item})
+        questions.append({"n": n, "difficulty": difficulty, **item})
         ledger.append({"family_id": family, "cell_id": cell, "n": n, "seed": seed,
                        "question_id": bs.q_id(id_seed.strip(), f"q{n}"),
                        "params": params, "number_key": list(number_key), "surface_sha256": surface,

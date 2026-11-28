@@ -51,6 +51,25 @@ class FamilyExpandTests(unittest.TestCase):
         self.assertEqual(answer_result.returncode, 0, answer_result.stdout + answer_result.stderr)
         self.assertIn("8 checked · 0 false · 0 warn", answer_result.stdout)
 
+    def test_mixed_families_keep_their_bands_when_merged(self):
+        result = self.run_tool(count=1)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        merged = yaml.safe_load(self.content.read_text())
+        spec = yaml.safe_load(FIXTURE.read_text())
+        spec.update(id="block-span-reverse-synthetic", difficulty="medium")
+        path = self.work / "medium.yaml"
+        path.write_text(yaml.safe_dump(spec))
+        result = self.run_tool(path, count=1, extra=("--first", "2"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        merged["questions"].extend(yaml.safe_load(self.content.read_text())["questions"])
+        self.content.write_text(yaml.safe_dump(merged))
+        staged = self.work / "staged.json"
+        result = subprocess.run([sys.executable, ROOT / "tools/build-staged.py", self.content, "--out", staged],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        questions = json.loads(staged.read_text())["questions"]
+        self.assertEqual([q["difficulty_band"] for q in questions], ["easy", "medium"])
+
     def test_vdd_template_specs_use_typed_slots(self):
         spec = yaml.safe_load(FIXTURE.read_text())
         path, figures = self.work / "family.yaml", self.work / "figures.json"
